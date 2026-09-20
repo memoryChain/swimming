@@ -17,7 +17,6 @@ const {
     STIMULANT_PUBLIC_WAVE_DISTANCES,
     stimulantIsOnCurrentCourseLeg,
     stimulantPickupDistanceSquared,
-    stimulantPickupRaceDistanceEligible,
     stimulantTurnDragScale,
     stimulantTurnImpulseScale,
 } = Rules;
@@ -138,7 +137,6 @@ test('心跳苏打显式预制体包含模型渲染器，加载器保留多路�
     assert.doesNotMatch(controller, /this\.presentationTime \* 82/);
     assert.match(controller, /depthWrite: false/);
     assert.match(controller, /if \(item\.collected \|\| !item\.visualLanded\) continue/);
-    assert.match(controller, /stimulantIsOnCurrentCourseLeg\(\s*item\.distance,\s*this\.pickupCurrentDistance\[lane\]/);
     assert.match(controller, /const energyRatioBefore = racer\.condition\.energyRatio/);
     assert.match(controller, /const heartRateBefore = racer\.swimmer\.heartRate/);
     assert.match(controller, /energyRatioAfter: racer\.condition\.energyRatio/);
@@ -146,6 +144,23 @@ test('心跳苏打显式预制体包含模型渲染器，加载器保留多路�
     assert.match(controller, /heartRateBefore,/);
     assert.doesNotMatch(controller, /StimulantBottleGlowMaterial|applyMaterialRecursively/);
     assert.doesNotMatch(controller, /StimulantMarkerCube|MARKER_SCALE|MARKER_HEIGHT/);
+});
+
+test('已投放补给使用世界公共拾取并按物理方位显示', () => {
+    const controller = readFileSync(
+        new URL('../assets/scripts/core/StimulantBrawlController.ts', import.meta.url),
+        'utf8',
+    );
+    const rules = readFileSync(
+        new URL('../assets/scripts/core/StimulantBrawlRules.ts', import.meta.url),
+        'utf8',
+    );
+    assert.doesNotMatch(controller, /stimulantPickupRaceDistanceEligible/);
+    assert.doesNotMatch(rules, /export function stimulantPickupRaceDistanceEligible/);
+    assert.match(controller, /const referenceWorldX = this\.course\.distanceToWorldX\(distance\)/);
+    assert.match(controller, /const worldAhead = \(item\.x - referenceWorldX\) \* referenceDirection/);
+    assert.match(controller, /item\.visualSpawnStarted\s*&& Math\.abs\(worldAhead\) <= ITEM_VISIBLE_DISTANCE/);
+    assert.match(controller, /if \(item\.collected \|\| !item\.visualSpawnStarted\) continue/);
 });
 
 test('心跳苏打赛程由种子稳定生成七波公共争抢且不再包含开局保证波', () => {
@@ -167,6 +182,58 @@ test('心跳苏打赛程由种子稳定生成七波公共争抢且不再包含�
         assert.notEqual(laneKey, previousLaneKey);
         previousLaneKey = laneKey;
     }
+});
+
+test('补给按波次使用二比一洗牌袋且同一波不会混装', () => {
+    for (let seed = 1; seed <= 40; seed++) {
+        const schedule = buildStimulantSchedule(seed);
+        const kinds = [];
+        for (let wave = 1; wave <= STIMULANT_PUBLIC_WAVE_DISTANCES.length; wave++) {
+            const waveKinds = new Set(schedule.filter(item => item.wave === wave).map(item => item.kind));
+            assert.equal(waveKinds.size, 1, `seed=${seed} wave=${wave}`);
+            kinds.push([...waveKinds][0]);
+        }
+        for (let start = 0; start + 3 <= kinds.length; start += 3) {
+            const bag = kinds.slice(start, start + 3);
+            assert.equal(bag.filter(kind => kind === 'heartbeat-soda').length, 2);
+            assert.equal(bag.filter(kind => kind === 'calm-slush').length, 1);
+        }
+    }
+});
+
+test('冷静冰沙资源保持单网格单材质并接入独立蓝色表现', () => {
+    const gltf = JSON.parse(readFileSync(
+        new URL('../assets/race/items/CalmSlush.gltf', import.meta.url),
+        'utf8',
+    ));
+    assert.equal(gltf.meshes.length, 1);
+    assert.equal(gltf.materials.length, 1);
+    assert.equal(gltf.meshes[0].primitives.length, 1);
+    assert.ok(gltf.meshes[0].primitives[0].attributes.COLOR_0 !== undefined);
+
+    const controller = readFileSync(
+        new URL('../assets/scripts/core/StimulantBrawlController.ts', import.meta.url),
+        'utf8',
+    );
+    assert.match(controller, /calmSlushPrefabCandidates/);
+    assert.match(controller, /buildStimulantBeaconGeometry\('calm-slush'\)/);
+    assert.match(controller, /applyCalmSlush/);
+    assert.match(controller, /triggerCalmSlushReaction/);
+    assert.match(controller, /CALM_SLUSH_SWAY_READABILITY_SCALE = 1\.55/);
+    assert.match(controller, /CALM_SLUSH_YAW_READABILITY_SCALE = 1\.18/);
+    assert.match(controller, /item\.kind === 'calm-slush' \? CALM_SLUSH_SWAY_READABILITY_SCALE : 1/);
+
+    const ui = readFileSync(
+        new URL('../assets/scripts/ui/SharkEventBanner.ts', import.meta.url),
+        'utf8',
+    );
+    const resourcePaths = readFileSync(
+        new URL('../assets/scripts/core/ResourcePaths.ts', import.meta.url),
+        'utf8',
+    );
+    assert.doesNotMatch(resourcePaths, /calm-slush-pickup-base/);
+    assert.match(ui, /this\.artFrames\.get\('stimulant-card'\)/);
+    assert.match(ui, /推进 90%/);
 });
 
 test('公共争抢在一批种子中覆盖全部泳道', () => {
@@ -211,35 +278,7 @@ test('公共心跳苏打使用身体胶囊并扫掠短距离经过路径', () =>
     assert.ok(correctionMiss > 1.2 ** 2, '过长网络校正不能沿整段路径补捡');
 });
 
-test('公共心跳苏打只允许拾取当前赛程趟数附近的道具', () => {
-    assert.equal(
-        stimulantPickupRaceDistanceEligible(35, 34.2, 33.9, 1.2, 0.8, 3),
-        true,
-        '身体判定范围内的当前波次应该允许拾取',
-    );
-    assert.equal(
-        stimulantPickupRaceDistanceEligible(35, 37.4, 34.8, 1.2, 0.8, 3),
-        true,
-        '一次短更新跨过道具时应该允许扫掠拾取',
-    );
-    assert.equal(
-        stimulantPickupRaceDistanceEligible(135, 35, 34.8, 1.2, 0.8, 3),
-        false,
-        '物理位置重合也不能提前拾取后续趟数的隐藏道具',
-    );
-    assert.equal(
-        stimulantPickupRaceDistanceEligible(35, 135, 134.8, 1.2, 0.8, 3),
-        false,
-        '经过同一物理位置时不能补拾已经错过的前序趟数道具',
-    );
-    assert.equal(
-        stimulantPickupRaceDistanceEligible(35, 40, 30, 1.2, 0.8, 3),
-        false,
-        '过长的网络校正不能沿整段赛程距离补捡',
-    );
-});
-
-test('折返泳池只显示当前单程的苏打瓶和光柱', () => {
+test('折返泳池仍按赛程单程触发对应波次投放', () => {
     assert.equal(stimulantIsOnCurrentCourseLeg(35, 40, 50), true);
     assert.equal(
         stimulantIsOnCurrentCourseLeg(60, 40, 50),
@@ -285,7 +324,7 @@ test('心跳苏打增加四十心率并在四秒内只许上升不许自然回�
         new URL('../assets/resources/config/tuning.json', import.meta.url),
         'utf8',
     ));
-    assert.equal(savedTuning.version, 58);
+    assert.equal(savedTuning.version, 59);
     assert.equal(savedTuning.values['stimulant.energyRestoreRatio'], 0.3);
     assert.equal(savedTuning.values['stimulant.heartRateBurden'], 40);
     assert.equal(savedTuning.values['stimulant.heartRateRecoveryHoldSeconds'], 4);
@@ -320,6 +359,30 @@ test('心跳苏打增加四十心率并在四秒内只许上升不许自然回�
     rising.addBurden(10, 4);
     rising.tick(1);
     assert.ok(rising.heartRate > 90, '滞留只能禁止回落，不能阻止划水继续推高心率');
+});
+
+test('冷静冰沙降低六十心率并立即解除苏打回落锁定', () => {
+    assert.equal(STIMULANT_BRAWL_TUNING.calmSlushHeartRateDrop, 60);
+    assert.equal(STIMULANT_BRAWL_TUNING.calmSlushDuration, 3);
+    assert.equal(STIMULANT_BRAWL_TUNING.calmSlushPropulsionScale, 0.9);
+    const model = new StrokeHeartRateModel();
+    model.addBurden(80, 4);
+    assert.equal(model.heartRate, 160);
+    model.applyCooling(STIMULANT_BRAWL_TUNING.calmSlushHeartRateDrop);
+    assert.equal(model.heartRate, 100);
+    model.tick(1);
+    assert.ok(model.heartRate < 100, '冰沙必须清除苏打留下的四秒回落锁定');
+    model.applyCooling(60);
+    assert.equal(model.heartRate, 80, '冰沙不能把心率降到静息下限以下');
+
+    const motor = readFileSync(
+        new URL('../assets/scripts/swimmer/SwimmerMotor.ts', import.meta.url),
+        'utf8',
+    );
+    assert.match(motor, /strokeAcceleration \*= propulsionScale/);
+    assert.match(motor, /kickAcceleration \*= propulsionScale/);
+    assert.match(motor, /this\._calmSlushTimer <= 0\s*\? stimulantTurnImpulseScale/);
+    assert.match(motor, /applyHeartbeatSoda[\s\S]*this\._calmSlushTimer = 0/);
 });
 
 test('心跳苏打规则只允许快速比赛 200 米并可从存档恢复', () => {

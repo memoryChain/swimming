@@ -42,11 +42,12 @@ export class RemoteSwimmerController extends Component {
     // modifiers instead of falling back to a local AI model.
     private _ownerEnergyRatio = -1;
     private _ownerHeartRate = -1;
+    private _ownerCalmSlushRemaining = -1;
 
     // Apply the owner's pre-input condition snapshot before replaying events from the
     // same reliable/broadcast frame. Repeated values are a no-op, keeping the 30Hz net
     // path allocation-free and avoiding redundant motor writes.
-    applyOwnerCondition(energyRatio: number, heartRate: number): void {
+    applyOwnerCondition(energyRatio: number, heartRate: number, calmSlushRemaining = -1): void {
         if (!Number.isFinite(energyRatio)
             || !Number.isFinite(heartRate)
             || energyRatio < 0
@@ -54,12 +55,19 @@ export class RemoteSwimmerController extends Component {
             return;
         }
         const safeEnergyRatio = Math.max(0, Math.min(1, energyRatio));
-        if (safeEnergyRatio === this._ownerEnergyRatio && heartRate === this._ownerHeartRate) {
+        const safeCalmRemaining = Number.isFinite(calmSlushRemaining) && calmSlushRemaining >= 0
+            ? calmSlushRemaining
+            : -1;
+        if (safeEnergyRatio === this._ownerEnergyRatio
+            && heartRate === this._ownerHeartRate
+            && safeCalmRemaining === this._ownerCalmSlushRemaining) {
             return;
         }
         this._ownerEnergyRatio = safeEnergyRatio;
         this._ownerHeartRate = heartRate;
+        this._ownerCalmSlushRemaining = safeCalmRemaining;
         this.applyConditionScales(safeEnergyRatio, heartRate);
+        if (safeCalmRemaining >= 0) this.swimmer?.applyNetCalmSlushRemaining(safeCalmRemaining);
     }
 
     // Apply an older packet's condition only while replaying the inputs carried by
@@ -80,6 +88,9 @@ export class RemoteSwimmerController extends Component {
             return;
         }
         this.applyConditionScales(this._ownerEnergyRatio, this._ownerHeartRate);
+        if (this._ownerCalmSlushRemaining >= 0) {
+            this.swimmer?.applyNetCalmSlushRemaining(this._ownerCalmSlushRemaining);
+        }
     }
 
     private applyConditionScales(energyRatio: number, heartRate: number): void {

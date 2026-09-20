@@ -73,7 +73,9 @@
 // 版本85：巡游鲨鱼补咬增加独立蓄势状态；闭合节点才击倒，结束后回到巡游且不推进追猎轮次。
 // 版本86：六合一心跳苏打避开折返墙，且只允许已落水、与选手同趟数的瓶子被权威拾取。
 // 版本87：垃圾漂流加入房主权威接触事件与独立周期 L| 状态恢复包。
-export const NET_RACE_PROTOCOL_VERSION = 87;
+// 版本88：心跳苏打赛程加入冷静冰沙，并同步三条泳者状态通道中的冰沙剩余时间。
+// 版本89：已落水补给改为世界公共物品，移除拾取趟数门槛并按物理位置显示与争抢。
+export const NET_RACE_PROTOCOL_VERSION = 89;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

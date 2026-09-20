@@ -403,6 +403,10 @@ export const RESOURCE_PATHS = {
         'items/StimulantBottle/StimulantBottle',
         'items/StimulantBottle',
     ],
+    calmSlushPrefabCandidates: [
+        'items/CalmSlush/CalmSlush',
+        'items/CalmSlush',
+    ],
     swimmerSplashMaterial: 'pool/SwimmerSplash',
     swimmerSplashParticleTexture: 'pool/SwimmerSplashDroplet/texture',
     swimmerSplashSurfaceTexture: 'pool/SwimmerSplashSurface/texture',
@@ -525,6 +529,8 @@ export const RESOURCE_PATHS = {
         },
         stimulantCard: 'ui/entertainment-banner-v1/stimulant-pickup-base/texture',
         stimulantTitle: 'ui/entertainment-banner-v1/stimulant-pickup-title/texture',
+        calmSlushTitle: 'ui/entertainment-banner-v1/calm-slush-pickup-title/texture',
+        calmSlushIcon: 'ui/entertainment-banner-v1/icon-calm-slush/texture',
         icons: {
             stimulant: 'ui/entertainment-banner-v1/icon-stimulant/texture',
             timedBomb: 'ui/entertainment-banner-v1/icon-timed-bomb/texture',

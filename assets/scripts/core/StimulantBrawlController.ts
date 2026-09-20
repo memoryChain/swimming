@@ -16,8 +16,8 @@ import {
     buildStimulantSchedule,
     stimulantIsOnCurrentCourseLeg,
     stimulantPickupDistanceSquared,
-    stimulantPickupRaceDistanceEligible,
     STIMULANT_BRAWL_TUNING,
+    StimulantItemKind,
     StimulantSpawn,
 } from './StimulantBrawlRules';
 
@@ -39,6 +39,7 @@ type ItemState = StimulantSpawn & {
 
 export type StimulantPickup = { itemId: number; collectorLane: number; revision: number };
 export type StimulantPickupFeedback = StimulantPickup & {
+    kind: StimulantItemKind;
     wave: number;
     local: boolean;
     energyRatioBefore: number;
@@ -62,6 +63,9 @@ const ITEM_YAW_SPEED_DEGREES = 34;
 const ITEM_BASE_LEAN_DEGREES = 8;
 const ITEM_PITCH_SWAY_DEGREES = 2.25;
 const ITEM_ROLL_SWAY_DEGREES = 3;
+// 冰沙杯比斜切药瓶更矮、更接近轴对称；只放大同一波形的摇摆幅度，漂浮节奏仍完全共享。
+const CALM_SLUSH_SWAY_READABILITY_SCALE = 1.55;
+const CALM_SLUSH_YAW_READABILITY_SCALE = 1.18;
 const BEACON_HEIGHT = 10.5;
 const BEACON_HALF_WIDTH = 0.3;
 const BEACON_HALO_INNER_RADIUS = 0.52;
@@ -87,6 +91,7 @@ const LANDING_SPLASH_SECONDS = 0.42;
 const LANDING_SPLASH_INTENSITY = 0.30;
 const MAX_PICKUP_SWEEP_DISTANCE = 3;
 const STIMULANT_CUBE_COLOR = new Color(92, 255, 48, 255);
+const CALM_SLUSH_CUBE_COLOR = new Color(82, 218, 255, 255);
 
 /** 心跳苏打玩法的独立规则控制器；GameManager 只负责传入泳者和网络事件。 */
 export class StimulantBrawlController {
@@ -97,16 +102,14 @@ export class StimulantBrawlController {
     private presentationElapsed = PRESENTATION_INTERVAL;
     private presentationTime = 0;
     private visualMesh: Mesh | null = null;
-    private visualMaterial: Material | null = null;
-    private beaconMesh: Mesh | null = null;
+    private readonly visualMaterials: Material[] = [];
+    private readonly beaconMeshes: Mesh[] = [];
     private beaconMaterial: Material | null = null;
     private readonly pickupRacers: Array<Racer | null>;
     private readonly pickupCurrentX: Float64Array;
     private readonly pickupCurrentZ: Float64Array;
     private readonly pickupPreviousX: Float64Array;
     private readonly pickupPreviousZ: Float64Array;
-    private readonly pickupCurrentDistance: Float64Array;
-    private readonly pickupPreviousDistance: Float64Array;
     private readonly splashWorldPosition = new Vec3();
 
     constructor(
@@ -117,7 +120,7 @@ export class StimulantBrawlController {
         racerForLane: (lane: number) => Racer | null,
         private readonly resolveAuthoritatively: (pickup: StimulantPickup) => void,
         private readonly onPickup: (feedback: StimulantPickupFeedback) => void,
-        private readonly onWaveApproach: (wave: number) => void,
+        private readonly onWaveApproach: (wave: number, kind: StimulantItemKind) => void,
         private readonly localPlayerLane: () => number,
         private readonly waterSplashes: EntertainmentWaterSplashPool | null,
         schedule?: readonly StimulantSpawn[],
@@ -127,14 +130,10 @@ export class StimulantBrawlController {
         this.pickupCurrentZ = new Float64Array(laneLayout.laneCount);
         this.pickupPreviousX = new Float64Array(laneLayout.laneCount);
         this.pickupPreviousZ = new Float64Array(laneLayout.laneCount);
-        this.pickupCurrentDistance = new Float64Array(laneLayout.laneCount);
-        this.pickupPreviousDistance = new Float64Array(laneLayout.laneCount);
         this.pickupCurrentX.fill(Number.NaN);
         this.pickupCurrentZ.fill(Number.NaN);
         this.pickupPreviousX.fill(Number.NaN);
         this.pickupPreviousZ.fill(Number.NaN);
-        this.pickupCurrentDistance.fill(Number.NaN);
-        this.pickupPreviousDistance.fill(Number.NaN);
         for (let lane = 0; lane < laneLayout.laneCount; lane++) {
             this.pickupRacers[lane] = racerForLane(lane);
         }
@@ -170,13 +169,11 @@ export class StimulantBrawlController {
             if (!racer?.swimmer?.node?.active) {
                 this.pickupCurrentX[lane] = Number.NaN;
                 this.pickupCurrentZ[lane] = Number.NaN;
-                this.pickupCurrentDistance[lane] = Number.NaN;
                 continue;
             }
             const position = racer.swimmer.node.worldPosition;
             this.pickupCurrentX[lane] = position.x;
             this.pickupCurrentZ[lane] = position.z;
-            this.pickupCurrentDistance[lane] = racer.swimmer.distance;
         }
 
         for (const item of this.items) {
@@ -189,19 +186,6 @@ export class StimulantBrawlController {
                 const currentX = this.pickupCurrentX[lane];
                 const currentZ = this.pickupCurrentZ[lane];
                 if (!racer || !Number.isFinite(currentX) || !Number.isFinite(currentZ)) continue;
-                if (!stimulantIsOnCurrentCourseLeg(
-                    item.distance,
-                    this.pickupCurrentDistance[lane],
-                    this.course.courseLength,
-                )) continue;
-                if (!stimulantPickupRaceDistanceEligible(
-                    item.distance,
-                    this.pickupCurrentDistance[lane],
-                    this.pickupPreviousDistance[lane],
-                    STIMULANT_BRAWL_TUNING.pickupRadius,
-                    STIMULANT_BRAWL_TUNING.pickupBodyHalfLength,
-                    MAX_PICKUP_SWEEP_DISTANCE,
-                )) continue;
                 const heading = racer.swimmer.movementHeading;
                 const distanceSq = stimulantPickupDistanceSquared(
                     item.x,
@@ -230,7 +214,6 @@ export class StimulantBrawlController {
         for (let lane = 0; lane < this.laneLayout.laneCount; lane++) {
             this.pickupPreviousX[lane] = this.pickupCurrentX[lane];
             this.pickupPreviousZ[lane] = this.pickupCurrentZ[lane];
-            this.pickupPreviousDistance[lane] = this.pickupCurrentDistance[lane];
         }
     }
 
@@ -244,7 +227,7 @@ export class StimulantBrawlController {
                 const ahead = item.distance - distance;
                 if (ahead > WAVE_ANNOUNCEMENT_LEAD_DISTANCE || ahead < -2) continue;
                 this.announcedWaveMask |= waveBit;
-                this.onWaveApproach(item.wave);
+                this.onWaveApproach(item.wave, item.kind);
             }
         }
 
@@ -253,13 +236,10 @@ export class StimulantBrawlController {
         const presentationStep = this.presentationElapsed;
         this.presentationTime += presentationStep;
         this.presentationElapsed = 0;
+        const referenceWorldX = this.course.distanceToWorldX(distance);
+        const referenceDirection = this.course.directionAtDistance(distance);
         for (const item of this.items) {
-            const ahead = item.distance - distance;
-            const onCurrentLeg = stimulantIsOnCurrentCourseLeg(
-                item.distance,
-                distance,
-                this.course.courseLength,
-            );
+            const worldAhead = (item.x - referenceWorldX) * referenceDirection;
             this.updateThrowState(
                 item,
                 this.getLaunchReferenceDistance(item, distance),
@@ -267,8 +247,7 @@ export class StimulantBrawlController {
             );
             const itemVisible = !item.collected
                 && item.visualSpawnStarted
-                && onCurrentLeg
-                && Math.abs(ahead) <= ITEM_VISIBLE_DISTANCE;
+                && Math.abs(worldAhead) <= ITEM_VISIBLE_DISTANCE;
             if (item.node?.isValid) {
                 if (item.node.active !== itemVisible) item.node.active = itemVisible;
                 if (itemVisible) {
@@ -276,7 +255,7 @@ export class StimulantBrawlController {
                     else this.applyThrowPresentation(item);
                 }
             }
-            this.updateBeaconPresentation(item, ahead, onCurrentLeg, presentationStep);
+            this.updateBeaconPresentation(item, worldAhead, presentationStep);
         }
     }
 
@@ -287,17 +266,27 @@ export class StimulantBrawlController {
         energyRatio: number,
         infiniteStamina: boolean,
     ): number | null {
-        if (heartRate >= STIMULANT_BRAWL_TUNING.aiSkipHeartRate) return null;
         let best: ItemState | null = null;
         let bestUtility = -Infinity;
+        const currentX = this.course.distanceToWorldX(distance);
+        const direction = this.course.directionAtDistance(distance);
         for (const item of this.items) {
-            if (item.collected) continue;
-            const ahead = item.distance - distance;
+            if (item.collected || !item.visualSpawnStarted) continue;
+            const ahead = (item.x - currentX) * direction;
             if (ahead < 0.5 || ahead > 14) continue;
             const lateral = Math.abs(item.z - currentZ);
-            const recoveryValue = Math.max(0, 1 - energyRatio) * 12;
-            const denialValue = (infiniteStamina || energyRatio >= 0.98) && ahead < 3 && lateral < 2 ? 1.2 : 0;
-            const utility = recoveryValue + denialValue - ahead * 0.22 - lateral * 0.55;
+            let utility = -Infinity;
+            if (item.kind === 'calm-slush') {
+                const coolingValue = Math.max(0, heartRate - 125) * 0.13;
+                const stableValue = heartRate >= STIMULANT_BRAWL_TUNING.calmSlushAiStronglyPreferHeartRate
+                    ? 5
+                    : heartRate >= STIMULANT_BRAWL_TUNING.calmSlushAiPreferHeartRate ? 2.2 : 0;
+                utility = coolingValue + stableValue - ahead * 0.2 - lateral * 0.48;
+            } else if (heartRate < STIMULANT_BRAWL_TUNING.aiSkipHeartRate) {
+                const recoveryValue = Math.max(0, 1 - energyRatio) * 12;
+                const denialValue = (infiniteStamina || energyRatio >= 0.98) && ahead < 3 && lateral < 2 ? 1.2 : 0;
+                utility = recoveryValue + denialValue - ahead * 0.22 - lateral * 0.55;
+            }
             if (utility > bestUtility) {
                 bestUtility = utility;
                 best = item;
@@ -325,18 +314,28 @@ export class StimulantBrawlController {
         if (!racer) return true;
         const energyRatioBefore = racer.condition.energyRatio;
         const heartRateBefore = racer.swimmer.heartRate;
-        const restored = racer.condition.restoreEnergyRatio(STIMULANT_BRAWL_TUNING.energyRestoreRatio);
-        racer.swimmer.motor.addHeartRateBurden(
-            STIMULANT_BRAWL_TUNING.heartRateBurden,
-            STIMULANT_BRAWL_TUNING.heartRateRecoveryHoldSeconds,
-        );
+        let restored = 0;
+        if (item.kind === 'calm-slush') {
+            racer.swimmer.motor.applyCalmSlush(
+                STIMULANT_BRAWL_TUNING.calmSlushHeartRateDrop,
+                STIMULANT_BRAWL_TUNING.calmSlushDuration,
+            );
+            racer.swimmer.triggerCalmSlushReaction(STIMULANT_BRAWL_TUNING.calmSlushDuration);
+        } else {
+            restored = racer.condition.restoreEnergyRatio(STIMULANT_BRAWL_TUNING.energyRestoreRatio);
+            racer.swimmer.motor.applyHeartbeatSoda(
+                STIMULANT_BRAWL_TUNING.heartRateBurden,
+                STIMULANT_BRAWL_TUNING.heartRateRecoveryHoldSeconds,
+            );
+            racer.swimmer.triggerStimulantReaction(
+                racer.swimmer.heartRate,
+                STIMULANT_BRAWL_TUNING.reactionDuration,
+            );
+        }
         racer.condition.syncHeartRate(racer.swimmer.heartRate);
-        racer.swimmer.triggerStimulantReaction(
-            racer.swimmer.heartRate,
-            STIMULANT_BRAWL_TUNING.reactionDuration,
-        );
         this.onPickup({
             ...pickup,
+            kind: item.kind,
             wave: item.wave,
             local: pickup.collectorLane === this.localPlayerLane(),
             energyRatioBefore,
@@ -380,27 +379,30 @@ export class StimulantBrawlController {
             if (item.node?.isValid) item.node.destroy();
             if (item.beaconNode?.isValid) item.beaconNode.destroy();
         }
-        if (this.visualMaterial?.isValid) this.visualMaterial.destroy();
+        for (const material of this.visualMaterials) {
+            if (material?.isValid) material.destroy();
+        }
         if (this.visualMesh?.isValid) this.visualMesh.destroy();
         if (this.beaconMaterial?.isValid) this.beaconMaterial.destroy();
-        if (this.beaconMesh?.isValid) this.beaconMesh.destroy();
-        this.visualMaterial = null;
+        for (const mesh of this.beaconMeshes) {
+            if (mesh?.isValid) mesh.destroy();
+        }
+        this.visualMaterials.length = 0;
+        this.beaconMeshes.length = 0;
         this.visualMesh = null;
         this.beaconMaterial = null;
-        this.beaconMesh = null;
     }
 
     private createProgramVisuals(): void {
         if (this.disposed || !this.root.isValid) return;
         const mesh = utils.createMesh(primitives.box());
-        const material = new Material();
-        material.initialize({ effectName: 'builtin-unlit' });
-        material.name = 'StimulantCubeMaterial';
-        material.setProperty('mainColor', STIMULANT_CUBE_COLOR);
+        const sodaMaterial = this.createFallbackMaterial('StimulantCubeMaterial', STIMULANT_CUBE_COLOR);
+        const calmMaterial = this.createFallbackMaterial('CalmSlushCubeMaterial', CALM_SLUSH_CUBE_COLOR);
         this.visualMesh = mesh;
-        this.visualMaterial = material;
+        this.visualMaterials.push(sodaMaterial, calmMaterial);
 
         for (const item of this.items) {
+            const material = item.kind === 'calm-slush' ? calmMaterial : sodaMaterial;
             const node = this.createProgramCube(`StimulantCube_${item.id}`, mesh, material);
             node.setWorldPosition(item.x, item.baseY, item.z);
             node.setScale(ITEM_SCALE, ITEM_SCALE, ITEM_SCALE);
@@ -409,11 +411,20 @@ export class StimulantBrawlController {
         }
     }
 
-    private loadModelVisuals(candidateIndex = 0, failures: string[] = []): void {
-        const candidates = RESOURCE_PATHS.stimulantBottlePrefabCandidates;
+    private loadModelVisuals(): void {
+        this.loadModelVisualsForKind('heartbeat-soda', RESOURCE_PATHS.stimulantBottlePrefabCandidates);
+        this.loadModelVisualsForKind('calm-slush', RESOURCE_PATHS.calmSlushPrefabCandidates);
+    }
+
+    private loadModelVisualsForKind(
+        kind: StimulantItemKind,
+        candidates: readonly string[],
+        candidateIndex = 0,
+        failures: string[] = [],
+    ): void {
         if (candidateIndex >= candidates.length) {
             console.warn(
-                `[SpeedSwimming] stimulant model unavailable; keeping program cube fallback; ${failures.join(' | ')}`,
+                `[SpeedSwimming] ${kind} model unavailable; keeping program cube fallback; ${failures.join(' | ')}`,
             );
             return;
         }
@@ -422,7 +433,7 @@ export class StimulantBrawlController {
             if (this.disposed || !this.root.isValid) return;
             if (error || !prefab) {
                 failures.push(`${path}: ${error?.message ?? 'Prefab asset missing'}`);
-                this.loadModelVisuals(candidateIndex + 1, failures);
+                this.loadModelVisualsForKind(kind, candidates, candidateIndex + 1, failures);
                 return;
             }
 
@@ -430,15 +441,16 @@ export class StimulantBrawlController {
             if (!this.hasMeshRenderer(probe)) {
                 probe.destroy();
                 failures.push(`${path}: loaded prefab has no MeshRenderer`);
-                this.loadModelVisuals(candidateIndex + 1, failures);
+                this.loadModelVisualsForKind(kind, candidates, candidateIndex + 1, failures);
                 return;
             }
             probe.destroy();
 
             for (const item of this.items) {
+                if (item.kind !== kind) continue;
                 const fallback = item.node;
                 const node = instantiate(prefab);
-                node.name = `StimulantPotion_${item.id}`;
+                node.name = `${kind === 'calm-slush' ? 'CalmSlush' : 'StimulantPotion'}_${item.id}`;
                 node.setParent(this.root);
                 this.applyLayerRecursively(node, this.root.layer);
                 node.setWorldPosition(item.x, item.baseY, item.z);
@@ -469,7 +481,7 @@ export class StimulantBrawlController {
         }
     }
 
-    private updateBeaconPresentation(item: ItemState, ahead: number, onCurrentLeg: boolean, dt: number): void {
+    private updateBeaconPresentation(item: ItemState, worldAhead: number, dt: number): void {
         const beacon = item.beaconNode;
         if (!beacon?.isValid) return;
 
@@ -492,9 +504,8 @@ export class StimulantBrawlController {
         }
 
         const visible = item.visualSpawnStarted
-            && onCurrentLeg
-            && ahead <= BEACON_VISIBLE_AHEAD_DISTANCE
-            && ahead >= -BEACON_VISIBLE_BEHIND_DISTANCE;
+            && worldAhead <= BEACON_VISIBLE_AHEAD_DISTANCE
+            && worldAhead >= -BEACON_VISIBLE_BEHIND_DISTANCE;
         if (beacon.active !== visible) beacon.active = visible;
         if (!visible) return;
         const pulse = 1 + Math.sin(this.presentationTime * 2.25 + item.phase) * 0.055;
@@ -507,7 +518,8 @@ export class StimulantBrawlController {
 
     private createBeaconVisuals(): void {
         if (this.disposed || !this.root.isValid) return;
-        const mesh = utils.createMesh(buildStimulantBeaconGeometry());
+        const sodaMesh = utils.createMesh(buildStimulantBeaconGeometry('heartbeat-soda'));
+        const calmMesh = utils.createMesh(buildStimulantBeaconGeometry('calm-slush'));
         const material = new Material();
         material.initialize({
             effectName: 'builtin-unlit',
@@ -520,7 +532,7 @@ export class StimulantBrawlController {
         });
         material.name = 'StimulantBeaconMaterial';
         material.setProperty('mainColor', Color.WHITE);
-        this.beaconMesh = mesh;
+        this.beaconMeshes.push(sodaMesh, calmMesh);
         this.beaconMaterial = material;
 
         for (const item of this.items) {
@@ -528,7 +540,7 @@ export class StimulantBrawlController {
             beacon.setParent(this.root);
             beacon.layer = this.root.layer;
             const renderer = beacon.addComponent(MeshRenderer);
-            renderer.mesh = mesh;
+            renderer.mesh = item.kind === 'calm-slush' ? calmMesh : sodaMesh;
             renderer.setMaterial(material, 0);
             beacon.setWorldPosition(item.x, this.course.waterY + BEACON_BASE_Y_OFFSET, item.z);
             beacon.active = false;
@@ -602,10 +614,12 @@ export class StimulantBrawlController {
         const floatAngle = waterFloatPhase(this.presentationTime, item.phase, WATER_FLOAT_PROFILES.pickup);
         const bob = sampleWaterFloatOffset(this.presentationTime, item.phase, WATER_FLOAT_PROFILES.pickup);
         const leanDirection = (item.id & 1) === 0 ? 1 : -1;
+        const swayScale = item.kind === 'calm-slush' ? CALM_SLUSH_SWAY_READABILITY_SCALE : 1;
+        const yawScale = item.kind === 'calm-slush' ? CALM_SLUSH_YAW_READABILITY_SCALE : 1;
         const pitch = leanDirection * ITEM_BASE_LEAN_DEGREES
-            + Math.sin(floatAngle * 0.72 + item.phase * 0.19) * ITEM_PITCH_SWAY_DEGREES;
-        const roll = Math.cos(floatAngle * 0.61 + item.phase * 1.37) * ITEM_ROLL_SWAY_DEGREES;
-        const yaw = (this.presentationTime * ITEM_YAW_SPEED_DEGREES + item.id * 37) % 360;
+            + Math.sin(floatAngle * 0.72 + item.phase * 0.19) * ITEM_PITCH_SWAY_DEGREES * swayScale;
+        const roll = Math.cos(floatAngle * 0.61 + item.phase * 1.37) * ITEM_ROLL_SWAY_DEGREES * swayScale;
+        const yaw = (this.presentationTime * ITEM_YAW_SPEED_DEGREES * yawScale + item.id * 37) % 360;
         item.node!.setWorldPosition(item.x, item.baseY + bob, item.z);
         item.node!.setRotationFromEuler(pitch, yaw, roll);
     }
@@ -635,6 +649,14 @@ export class StimulantBrawlController {
         renderer.setMaterial(material, 0);
         return node;
     }
+
+    private createFallbackMaterial(name: string, color: Readonly<Color>): Material {
+        const material = new Material();
+        material.initialize({ effectName: 'builtin-unlit' });
+        material.name = name;
+        material.setProperty('mainColor', color);
+        return material;
+    }
 }
 
 function smoothstep(value: number): number {
@@ -650,13 +672,13 @@ function lerp(a: number, b: number, t: number): number {
     return a + (b - a) * t;
 }
 
-function buildStimulantBeaconGeometry(): primitives.IGeometry {
+function buildStimulantBeaconGeometry(kind: StimulantItemKind): primitives.IGeometry {
     const positions: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
-    appendBeaconRibbon(positions, colors, indices, 'x');
-    appendBeaconRibbon(positions, colors, indices, 'z');
-    appendBeaconBaseHalo(positions, colors, indices);
+    appendBeaconRibbon(positions, colors, indices, 'x', kind);
+    appendBeaconRibbon(positions, colors, indices, 'z', kind);
+    appendBeaconBaseHalo(positions, colors, indices, kind);
     return {
         positions,
         colors,
@@ -671,6 +693,7 @@ function appendBeaconRibbon(
     colors: number[],
     indices: number[],
     axis: 'x' | 'z',
+    kind: StimulantItemKind,
 ): void {
     const levels = [0, 0.16, 0.48, 0.78, 1] as const;
     const widths = [0.18, 0.76, 1, 0.68, 0.16] as const;
@@ -685,7 +708,8 @@ function appendBeaconRibbon(
         for (let column = 0; column < columns.length; column++) {
             const offset = columns[column] * BEACON_HALF_WIDTH * widths[row];
             positions.push(axis === 'x' ? offset : 0, y, axis === 'z' ? offset : 0);
-            colors.push(0.58, 1, 0.72, alphas[row] * columnAlpha[column]);
+            const rgb = kind === 'calm-slush' ? [0.34, 0.86, 1] : [0.58, 1, 0.72];
+            colors.push(rgb[0], rgb[1], rgb[2], alphas[row] * columnAlpha[column]);
         }
     }
 
@@ -698,7 +722,12 @@ function appendBeaconRibbon(
     }
 }
 
-function appendBeaconBaseHalo(positions: number[], colors: number[], indices: number[]): void {
+function appendBeaconBaseHalo(
+    positions: number[],
+    colors: number[],
+    indices: number[],
+    kind: StimulantItemKind,
+): void {
     const segments = 16;
     const base = positions.length / 3;
     const radii = [BEACON_HALO_INNER_RADIUS, BEACON_HALO_PEAK_RADIUS, BEACON_BASE_RADIUS] as const;
@@ -711,7 +740,8 @@ function appendBeaconBaseHalo(positions: number[], colors: number[], indices: nu
                 0.025,
                 Math.sin(angle) * radii[ring],
             );
-            colors.push(0.42, 1, 0.54, alphas[ring]);
+            const rgb = kind === 'calm-slush' ? [0.25, 0.78, 1] : [0.42, 1, 0.54];
+            colors.push(rgb[0], rgb[1], rgb[2], alphas[ring]);
         }
     }
     for (let segment = 0; segment < segments; segment++) {

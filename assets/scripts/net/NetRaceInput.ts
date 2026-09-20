@@ -18,7 +18,7 @@ import { encodeCollisionSoftness, decodeCollisionSoftness } from './NetCollision
 //   "<senderPos>|<token>;<token>;...|<selfPos>|<inputSeq>"
 // where senderPos identifies which room member produced it (WeChat posNum), each token
 // is one input event, and the optional trailing "<selfPos>" is the sender's OWN
-// authoritative state "<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>,<conditionEnergyPermille>,<conditionHeartRate>,<ownerStateSeq>,<softness>".
+// authoritative state "<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>,<conditionEnergyPermille>,<conditionHeartRate>,<ownerStateSeq>,<softness>,<ability>,<calmSlushMs>".
 // Position, pose speed, outcome-affecting ultimate energy, and condition state ride the
 // RELIABLE lock-step frame channel (not best-effort broadcasts, which drop intermittently),
 // so every client's copy of every human catches up to its owner reliably.
@@ -27,8 +27,10 @@ import { encodeCollisionSoftness, decodeCollisionSoftness } from './NetCollision
 import {
     decodeConditionEnergyRatio,
     decodeConditionHeartRate,
+    decodeConditionCooldown,
     encodeConditionEnergyRatio,
     encodeConditionHeartRate,
+    encodeConditionCooldown,
     encodeOwnerStateSeq,
     decodeOwnerStateSeq,
     type NetSnapshotEntry,
@@ -353,7 +355,7 @@ export function encodeInputFrame(
     const body = events.map(encodeEvent).filter((token) => token.length > 0).join(TOKEN_SEP);
     let out = `${senderPos}${HEADER_SEP}${body}`;
     if (self) {
-        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${Math.round(self.axialRoll * 1000)},${Math.round(self.axialRollVelocity * 1000)},${Math.round(self.headingVelocity * 1000)},${Math.round(self.collisionPitch * 1000)},${Math.round(self.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(self.conditionEnergyRatio)},${encodeConditionHeartRate(self.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeCollisionSoftness(self.collisionSoftness)},${encodeCharacterAbility(self.abilityState)}`;
+        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${Math.round(self.axialRoll * 1000)},${Math.round(self.axialRollVelocity * 1000)},${Math.round(self.headingVelocity * 1000)},${Math.round(self.collisionPitch * 1000)},${Math.round(self.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(self.conditionEnergyRatio)},${encodeConditionHeartRate(self.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeCollisionSoftness(self.collisionSoftness)},${encodeCharacterAbility(self.abilityState)},${encodeConditionCooldown(self.calmSlushRemaining ?? -1)}`;
     } else if (inputSeq >= 0) {
         // Preserve the self slot so old decoders still see a valid empty field.
         out += HEADER_SEP;
@@ -424,6 +426,7 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                     ownerStateSeq: decodeOwnerStateSeq(ownerStateSeq),
                     collisionSoftness: decodeCollisionSoftness(p[15]),
                 abilityState: decodeCharacterAbility(p[16]),
+                calmSlushRemaining: decodeConditionCooldown(p.length > 17 ? parseInt(p[17], 10) : -1),
                 };
             }
         }

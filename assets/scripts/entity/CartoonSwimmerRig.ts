@@ -129,6 +129,13 @@ const STIMULANT_PULSE_COLORS = [
     new Color(246, 58, 20, 255),
     new Color(255, 82, 28, 255),
 ] as const;
+const CALM_SLUSH_FLASH_COLOR = new Color(190, 248, 255, 255);
+const CALM_SLUSH_PULSE_COLORS = [
+    new Color(38, 154, 228, 255),
+    new Color(54, 184, 242, 255),
+    new Color(86, 216, 255, 255),
+    new Color(156, 244, 255, 255),
+] as const;
 const STIMULANT_REACTION_VISUAL_INTERVAL = 1 / 20;
 const DIVE_CHARGE_BLUE = new Color(48, 198, 255, 255);
 const DIVE_CHARGE_YELLOW = new Color(255, 218, 42, 255);
@@ -241,6 +248,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _stimulantReactionTimer = 0;
     private _stimulantReactionDuration = 0;
     private _stimulantPulseHz = 2.4;
+    private _stimulantReactionKind: 'soda' | 'calm' = 'soda';
     private _stimulantVisualElapsed = STIMULANT_REACTION_VISUAL_INTERVAL;
     private _bodyFeedbackColorKey = 0;
     private _diveChargeGatherEffect: DiveChargeGatherEffect | null = null;
@@ -1745,6 +1753,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         const normalizedHeartRate = Math.max(0, Math.min(1, (safeHeartRate - 90) / 90));
         this._stimulantReactionDuration = safeDuration;
         this._stimulantReactionTimer = safeDuration;
+        this._stimulantReactionKind = 'soda';
         this._stimulantPulseHz = 2.2 + normalizedHeartRate * 1.8;
         this._stimulantVisualElapsed = STIMULANT_REACTION_VISUAL_INTERVAL;
         this.updatePerfectGlowMaterial();
@@ -1757,6 +1766,22 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._stimulantReactionTimer = 0;
         this._stimulantReactionDuration = 0;
         this._stimulantVisualElapsed = 0;
+        this.updatePerfectGlowMaterial();
+    }
+
+    /** 冷静冰沙沿用原材质轮廓光，只切换为低频冰蓝脉冲。 */
+    triggerCalmSlushReaction(duration: number) {
+        if (!this._bodyFeedbackEnabled || !this.node?.isValid) return;
+        const safeDuration = Math.max(0, Number.isFinite(duration) ? duration : 0);
+        if (safeDuration <= 0) {
+            this.clearStimulantReaction();
+            return;
+        }
+        this._stimulantReactionDuration = safeDuration;
+        this._stimulantReactionTimer = safeDuration;
+        this._stimulantReactionKind = 'calm';
+        this._stimulantPulseHz = 1.5;
+        this._stimulantVisualElapsed = STIMULANT_REACTION_VISUAL_INTERVAL;
         this.updatePerfectGlowMaterial();
     }
 
@@ -2512,18 +2537,20 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         const yellowGlow = this._perfectGlowIntensity;
         if (stimulantReaction) {
             const elapsed = Math.max(0, this._stimulantReactionDuration - this._stimulantReactionTimer);
+            const calm = this._stimulantReactionKind === 'calm';
             if (elapsed < 0.28) {
-                this.applyBodyMaterialGlow(STIMULANT_FLASH_COLOR, 1, 10);
+                this.applyBodyMaterialGlow(calm ? CALM_SLUSH_FLASH_COLOR : STIMULANT_FLASH_COLOR, 1, calm ? 20 : 10);
             } else {
                 const pulse = Math.sin(elapsed * this._stimulantPulseHz * Math.PI * 2) * 0.5 + 0.5;
+                const colors = calm ? CALM_SLUSH_PULSE_COLORS : STIMULANT_PULSE_COLORS;
                 const index = Math.max(
                     0,
-                    Math.min(STIMULANT_PULSE_COLORS.length - 1, Math.floor(pulse * STIMULANT_PULSE_COLORS.length)),
+                    Math.min(colors.length - 1, Math.floor(pulse * colors.length)),
                 );
                 this.applyBodyMaterialGlow(
-                    STIMULANT_PULSE_COLORS[index],
-                    0.58 + index * 0.12,
-                    11 + index,
+                    colors[index],
+                    (calm ? 0.42 : 0.58) + index * (calm ? 0.1 : 0.12),
+                    (calm ? 21 : 11) + index,
                 );
             }
             return;

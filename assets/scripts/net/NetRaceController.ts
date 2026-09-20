@@ -985,7 +985,11 @@ export class NetRaceController {
         } else {
             this._selfSnapshots[entry.lane] = { entry, time: now };
         }
-        remote?.applyOwnerCondition(entry.conditionEnergyRatio, entry.conditionHeartRate);
+        remote?.applyOwnerCondition(
+            entry.conditionEnergyRatio,
+            entry.conditionHeartRate,
+            entry.calmSlushRemaining ?? -1,
+        );
         return true;
     }
 

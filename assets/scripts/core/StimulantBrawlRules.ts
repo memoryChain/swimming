@@ -14,7 +14,14 @@ export const STIMULANT_BRAWL_TUNING = {
     maxTurnImpulseScale: 1.65,
     minTurnDragScale: 0.55,
     aiSkipHeartRate: 165,
+    calmSlushHeartRateDrop: 60,
+    calmSlushDuration: 3,
+    calmSlushPropulsionScale: 0.9,
+    calmSlushAiPreferHeartRate: 145,
+    calmSlushAiStronglyPreferHeartRate: 165,
 };
+
+export type StimulantItemKind = 'heartbeat-soda' | 'calm-slush';
 
 export type StimulantSpawn = {
     id: number;
@@ -22,6 +29,7 @@ export type StimulantSpawn = {
     distance: number;
     laneIndex: number;
     lateralOffset: number;
+    kind: StimulantItemKind;
 };
 
 export const STIMULANT_PUBLIC_WAVE_DISTANCES = [35, 60, 85, 110, 135, 160, 185] as const;
@@ -125,13 +133,16 @@ function buildScheduleAtDistances(
     distances: readonly number[],
 ): StimulantSpawn[] {
     const rng = new SeededRandom((seed ^ 0x51a7e11d) >>> 0);
+    const kindRng = new SeededRandom((seed ^ 0x43414c4d) >>> 0);
     const result: StimulantSpawn[] = [];
     const safeLaneCount = Math.max(1, Math.floor(laneCount));
+    const waveKinds = buildWaveKinds(distances.length, kindRng);
     let id = 0;
 
     let previousLaneKey = '';
     for (let publicWave = 0; publicWave < distances.length; publicWave++) {
         const wave = publicWave + 1;
+        const kind = waveKinds[publicWave];
         const lanes = Array.from({ length: safeLaneCount }, (_, index) => index);
         rng.shuffle(lanes);
         const count = Math.min(STIMULANT_BRAWL_TUNING.itemsPerWave, safeLaneCount);
@@ -151,7 +162,25 @@ function buildScheduleAtDistances(
                 distance: distances[publicWave],
                 laneIndex,
                 lateralOffset,
+                kind,
             });
+        }
+    }
+    return result;
+}
+
+/**
+ * 每三波固定两波心跳苏打和一波冷静冰沙，再按共享种子洗牌。
+ * 类型在波次层决定，同一波的三个公共争抢点始终是同一种补给。
+ */
+function buildWaveKinds(waveCount: number, rng: SeededRandom): StimulantItemKind[] {
+    const result: StimulantItemKind[] = [];
+    while (result.length < waveCount) {
+        const bag: StimulantItemKind[] = ['heartbeat-soda', 'heartbeat-soda', 'calm-slush'];
+        rng.shuffle(bag);
+        for (const kind of bag) {
+            if (result.length >= waveCount) break;
+            result.push(kind);
         }
     }
     return result;
@@ -203,35 +232,8 @@ export function stimulantPickupDistanceSquared(
 }
 
 /**
- * 先按赛程距离筛掉其他趟数的道具，再进行世界坐标中的身体胶囊判定。
- * 50 米泳池会把 200 米赛程折返到重复的世界坐标；缺少这一层会提前拾取后续趟数的隐藏道具。
- */
-export function stimulantPickupRaceDistanceEligible(
-    itemDistance: number,
-    currentDistance: number,
-    previousDistance: number,
-    pickupRadius: number,
-    bodyHalfLength: number,
-    maxSweepDistance: number,
-): boolean {
-    if (!Number.isFinite(itemDistance) || !Number.isFinite(currentDistance)) return false;
-    const reach = Math.max(0, Number.isFinite(pickupRadius) ? pickupRadius : 0)
-        + Math.max(0, Number.isFinite(bodyHalfLength) ? bodyHalfLength : 0);
-    let startDistance = currentDistance;
-    const maxSweep = Math.max(0, Number.isFinite(maxSweepDistance) ? maxSweepDistance : 0);
-    if (
-        Number.isFinite(previousDistance)
-        && Math.abs(currentDistance - previousDistance) <= maxSweep
-    ) {
-        startDistance = previousDistance;
-    }
-    return itemDistance >= Math.min(startDistance, currentDistance) - reach
-        && itemDistance <= Math.max(startDistance, currentDistance) + reach;
-}
-
-/**
- * 折返泳池中，道具只在它所属的当前单程内显示。
- * 否则下一单程的道具会提前映射到眼前的同一池段，形成“看得见但吃不到”的假目标。
+ * 折返泳池仍用赛程单程决定某波何时从看台投放。
+ * 道具一旦开始投放便转为世界公共物品，显示和拾取不再调用这一门槛。
  */
 export function stimulantIsOnCurrentCourseLeg(
     itemDistance: number,

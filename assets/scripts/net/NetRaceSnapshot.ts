@@ -13,7 +13,7 @@ import { encodeCollisionSoftness, decodeCollisionSoftness } from './NetCollision
 // This module is the pure codec (no engine deps). NetRaceController sends/receives it.
 //
 // Wire format (broadcast message body):
-//   "S|<hostPos>#<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>,<conditionEnergyPermille>,<conditionHeartRate>,<conditionCooldownMs>,<softness>;..."
+//   "S|<hostPos>#<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>,<conditionEnergyPermille>,<conditionHeartRate>,<conditionCooldownMs>,<softness>,<ability>,<calmSlushMs>;..."
 // hostPos   = the seat index (posNum) of the client that produced this snapshot, i.e.
 //             who currently believes it is the authoritative host. Clients use it for
 //             deterministic host migration: if the host goes silent, the lowest
@@ -63,6 +63,9 @@ export interface NetSnapshotEntry {
     // Genuine-AI depletion cooldown remaining, authoritative only on host S|.
     // Optional/-1 on human P|/frame self and legacy snapshots.
     conditionDepletionCooldown?: number;
+    // Heartbeat-brawl cooling status. Appended after ability state on every owner
+    // snapshot so a missed pickup event or host migration recovers the 3s penalty.
+    calmSlushRemaining?: number;
     // Human owner-state ordering token. Appended after condition fields on P| and
     // input-frame self payloads; -1/undefined means an older sender without ordering.
     ownerStateSeq?: number;
@@ -183,7 +186,7 @@ export function encodeRaceSnapshot(
     entertainmentDirector?: NetEntertainmentDirectorState | null,
 ): string {
     const body = entries
-        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)}`)
+        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)},${encodeConditionCooldown(e.calmSlushRemaining ?? -1)}`)
         .join(';');
     const revision = Math.max(0, Math.floor(stimulant?.revision ?? 0));
     const mask = Math.max(0, Math.floor(stimulant?.collectedMask ?? 0)).toString(16);
@@ -343,6 +346,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
                 conditionDepletionCooldown: decodeConditionCooldown(conditionCooldownMs),
                 collisionSoftness: decodeCollisionSoftness(parts[15]),
                 abilityState: decodeCharacterAbility(parts[16]),
+                calmSlushRemaining: decodeConditionCooldown(parts.length > 17 ? parseInt(parts[17], 10) : -1),
             });
         }
     }
@@ -474,7 +478,7 @@ function safeMilliseconds(value: number): number {
 // and drifting. Same field layout as one snapshot entry (incl. speed + energy), so it
 // also carries authoritative pose-speed and ultimate energy — required in broadcast-only
 // mode (iOS high-performance+), where these can no longer ride the lock-step frame self.
-//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>,<conditionEnergyPermille>,<conditionHeartRate>,<ownerStateSeq>,<ownerPos>,<softness>"
+//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>,<conditionEnergyPermille>,<conditionHeartRate>,<ownerStateSeq>,<ownerPos>,<softness>,<ability>,<calmSlushMs>"
 const SELF_TAG = 'P|';
 
 export function encodeSelfSnapshot(
@@ -482,7 +486,7 @@ export function encodeSelfSnapshot(
     ownerStateSeq = entry.ownerStateSeq ?? -1,
     ownerPos = entry.ownerPos ?? -1,
 ): string {
-    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeOwnerStateSeq(ownerPos)},${encodeCollisionSoftness(entry.collisionSoftness)},${encodeCharacterAbility(entry.abilityState)}`;
+    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeOwnerStateSeq(ownerPos)},${encodeCollisionSoftness(entry.collisionSoftness)},${encodeCharacterAbility(entry.abilityState)},${encodeConditionCooldown(entry.calmSlushRemaining ?? -1)}`;
 }
 
 // Returns null if the payload is not a self-position report.
@@ -532,6 +536,7 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
         ownerPos: decodeOwnerStateSeq(ownerPos),
         collisionSoftness: decodeCollisionSoftness(parts[16]),
         abilityState: decodeCharacterAbility(parts[17]),
+        calmSlushRemaining: decodeConditionCooldown(parts.length > 18 ? parseInt(parts[18], 10) : -1),
     };
 }
 

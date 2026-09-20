@@ -43,26 +43,36 @@ test('共用横幅保留鲨鱼大字描边，同时以稳定节点分离个人�
     assert.match(resourcePaths, /stimulantTitle: 'ui\/entertainment-banner-v1\/stimulant-pickup-title\/texture'/);
     assert.doesNotMatch(banner, /makeUiNode\('Heartbeat', stimulantRoot/);
     assert.doesNotMatch(banner, /loadFrame\('heartbeat'/);
-    assert.match(banner, /const STIMULANT_STAT_TEXT_X = 210/);
-    assert.match(banner, /const STIMULANT_STAT_TEXT_WIDTH = 104/);
-    assert.match(banner, /energyNode\.getComponent\(UITransform\)!\.setContentSize\(STIMULANT_STAT_TEXT_WIDTH, STIMULANT_STAT_TEXT_HEIGHT\)/);
-    assert.match(banner, /energyNode\.setPosition\(STIMULANT_STAT_TEXT_X, STIMULANT_ENERGY_TEXT_Y, 1\)/);
-    assert.match(banner, /heartNode\.setPosition\(STIMULANT_STAT_TEXT_X, STIMULANT_HEART_TEXT_Y, 1\)/);
+    assert.match(banner, /const STIMULANT_ENERGY_TEXT_X = 211/);
+    assert.match(banner, /const STIMULANT_ENERGY_TEXT_Y = 23/);
+    assert.match(banner, /const STIMULANT_ENERGY_TEXT_WIDTH = 116/);
+    assert.match(banner, /const STIMULANT_HEART_TEXT_X = 213/);
+    assert.match(banner, /const STIMULANT_HEART_TEXT_Y = -29/);
+    assert.match(banner, /const STIMULANT_HEART_TEXT_WIDTH = 110/);
+    assert.match(banner, /energyNode\.setPosition\(STIMULANT_ENERGY_TEXT_X, STIMULANT_ENERGY_TEXT_Y, 1\)/);
+    assert.match(banner, /heartNode\.setPosition\(STIMULANT_HEART_TEXT_X, STIMULANT_HEART_TEXT_Y, 1\)/);
     assert.match(banner, /energyLabel\.overflow = Label\.Overflow\.SHRINK/);
     assert.match(banner, /heartLabel\.overflow = Label\.Overflow\.SHRINK/);
     assert.doesNotMatch(banner, /loadFrame\('stimulant-card',[^\n]*110, 110, 26/);
 });
 
-test('心跳超频标题使用衰减震动，体力百分比和真实心率按十赫兹跳到拾取后数值', () => {
+test('两种补给共用标题与图标动效，体力百分比和真实心率按十赫兹跳到拾取后数值', () => {
     assert.match(gameManager, /feedback\.energyRatioBefore,[\s\S]*?feedback\.energyRatioAfter,[\s\S]*?feedback\.heartRateBefore,[\s\S]*?feedback\.heartRate,[\s\S]*?feedback\.infiniteStamina/);
     assert.match(banner, /const STIMULANT_COUNTER_STEPS = 5/);
     assert.match(banner, /const STIMULANT_COUNTER_STEP_SECONDS = 0\.1/);
     assert.match(banner, /Math\.round\(Math\.max\(0, Math\.min\(1, energyRatioBefore\)\) \* 100\)/);
     assert.match(banner, /`体力 \$\{value\}%`/);
-    assert.match(banner, /playStimulantPickupMotion\(energyFrom, energyTo, heartFrom, heartTo, infiniteStamina\)/);
+    assert.match(banner, /playStimulantPickupMotion\(energyFrom, energyTo, heartFrom, heartTo, infiniteStamina, kind\)/);
     assert.match(banner, /STIMULANT_TITLE_X - 7/);
     assert.match(banner, /angle: 2\.2/);
     assert.match(banner, /scale: new Vec3\(1\.055, 1\.055, 1\)/);
+    assert.match(banner, /private playPickupIconMotion\(\): void/);
+    assert.match(banner, /STIMULANT_ICON_X - 3/);
+    assert.match(banner, /STIMULANT_ICON_X \+ 4/);
+    assert.match(banner, /pendingPickupTitleMotionKind/);
+    assert.match(banner, /pendingPickupIconMotionKind/);
+    assert.match(banner, /key === pendingTitleKey[\s\S]*?this\.playPickupTitleMotion\(\)/);
+    assert.match(banner, /key === pendingIconKey[\s\S]*?this\.playPickupIconMotion\(\)/);
     assert.match(banner, /for \(let step = 1; step <= STIMULANT_COUNTER_STEPS; step\+\+\)/);
     assert.match(banner, /Tween\.stopAllByTarget\(this\.stimulantCounterTimeline\)/);
     assert.doesNotMatch(banner, /stimulantCardRoot|tween\(energyRoot\)|tween\(heartRoot\)/);

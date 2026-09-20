@@ -1812,17 +1812,20 @@ export class GameManager extends Component {
                             feedback.heartRate,
                             feedback.infiniteStamina,
                             1700,
+                            feedback.kind,
                         );
                     }
                 },
-                wave => {
+                (wave, kind) => {
                     if (this._state !== GameState.RACING) return;
                     if (isEntertainmentBrawlMode() && wave === 1) return;
                     this._entertainmentEventBanner.showEvent(
-                        `第 ${wave} 波心跳苏打出现 · 争抢开始`,
+                        kind === 'calm-slush'
+                            ? `第 ${wave} 波冷静冰沙出现 · 争抢开始`
+                            : `第 ${wave} 波心跳苏打出现 · 争抢开始`,
                         'warning',
                         1500,
-                        'stimulant',
+                        kind === 'calm-slush' ? 'calm-slush' : 'stimulant',
                         '补给投放',
                     );
                 },
@@ -3996,6 +3999,7 @@ export class GameManager extends Component {
                         conditionEnergyRatio: aiCondition?.energyRatio ?? -1,
                         conditionHeartRate: swimmer.heartRate,
                         conditionDepletionCooldown: aiCondition?.depletionCooldownRemaining ?? -1,
+                        calmSlushRemaining: swimmer.motor.calmSlushRemaining,
                     });
                 }
                 this._netRaceController.sendSnapshot(
@@ -4145,6 +4149,11 @@ export class GameManager extends Component {
                 if (hostTarget && hostTarget.energy >= 0) {
                     swimmer.applyNetEnergy(hostTarget.energy, 1);
                 }
+                // The host snapshot is a correction edge, not a render-frame target.
+                // Applying this every frame would keep resetting the countdown between snapshots.
+                if (applyAiConditionSnapshot && hostTarget) {
+                    swimmer.applyNetCalmSlushRemaining(hostTarget.calmSlushRemaining ?? -1);
+                }
                 // S| is authoritative for genuine AI condition. Non-host peers also
                 // keep stepping a shadow model, then reconcile it here so a promoted
                 // peer can assume AI authority without resetting condition state.
@@ -4221,6 +4230,7 @@ export class GameManager extends Component {
             abilityState: player.netAbilityState,
             conditionEnergyRatio: this._playerCondition.energyRatio,
             conditionHeartRate: player.heartRate,
+            calmSlushRemaining: player.motor.calmSlushRemaining,
         };
     }
 

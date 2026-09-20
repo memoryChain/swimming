@@ -15,12 +15,14 @@ import {
 } from 'cc';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
+import type { StimulantItemKind } from '../core/StimulantBrawlRules';
 import { makeLabel, makeUiNode } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 
 export type EntertainmentBannerTone = 'info' | 'warning' | 'danger' | 'success';
 export type EntertainmentBannerIcon =
     | 'stimulant'
+    | 'calm-slush'
     | 'timed-bomb'
     | 'whirlpool'
     | 'cannon'
@@ -60,11 +62,17 @@ const STIMULANT_CARD_WIDTH = 640;
 const STIMULANT_CARD_HEIGHT = 135;
 // 心跳苏打使用个人反馈通道内的独立低位；1.04 倍入场回弹时仍与赛事广播保留约 17px 间隔。
 const STIMULANT_CARD_Y = -68;
-const STIMULANT_STAT_TEXT_X = 210;
-const STIMULANT_STAT_TEXT_WIDTH = 104;
-const STIMULANT_STAT_TEXT_HEIGHT = 34;
-const STIMULANT_ENERGY_TEXT_Y = 27;
-const STIMULANT_HEART_TEXT_Y = -26;
+const STIMULANT_ICON_X = -214;
+const STIMULANT_ICON_Y = 0;
+// 右侧两格并非上下完全同心：按 720×152 底板的实际可见槽位分别校准。
+// 上栏文案较长，使用稍宽文本框，避免 SHRINK 把“推进 90%”压得比心率小一档。
+const STIMULANT_ENERGY_TEXT_X = 211;
+const STIMULANT_ENERGY_TEXT_Y = 23;
+const STIMULANT_ENERGY_TEXT_WIDTH = 116;
+const STIMULANT_HEART_TEXT_X = 213;
+const STIMULANT_HEART_TEXT_Y = -29;
+const STIMULANT_HEART_TEXT_WIDTH = 110;
+const STIMULANT_STAT_TEXT_HEIGHT = 32;
 const STIMULANT_TITLE_WIDTH = 245;
 const STIMULANT_TITLE_HEIGHT = 89;
 const STIMULANT_TITLE_X = -8;
@@ -77,6 +85,7 @@ const WHITE = new Color(248, 252, 255, 255);
 const CATEGORY_TEXT = new Color(14, 22, 28, 255);
 const ENERGY_CYAN = new Color(122, 244, 255, 255);
 const HEART_ORANGE = new Color(255, 174, 79, 255);
+const CALM_ECHO = new Color(72, 198, 255, 255);
 const TONE_COLORS: Record<EntertainmentBannerTone, Readonly<Color>> = {
     info: new Color(116, 226, 255, 255),
     warning: new Color(255, 196, 82, 255),
@@ -128,6 +137,9 @@ export class EntertainmentEventBanner {
     private stimulantEnergyLabel: Label | null = null;
     private stimulantHeartLabel: Label | null = null;
     private stimulantCounterTimeline: Node | null = null;
+    private currentPickupKind: StimulantItemKind = 'heartbeat-soda';
+    private pendingPickupTitleMotionKind: StimulantItemKind | null = null;
+    private pendingPickupIconMotionKind: StimulantItemKind | null = null;
     private personalUntil = 0;
 
     private pictureInPictureLeft: number | null = null;
@@ -223,6 +235,7 @@ export class EntertainmentEventBanner {
         heartRateAfter: number,
         infiniteStamina: boolean,
         durationMs = 1700,
+        kind: StimulantItemKind = 'heartbeat-soda',
     ): void {
         if (!this.personalRoot?.isValid || !this.stimulantEnergyLabel || !this.stimulantHeartLabel) return;
         this.setPersonalMode(true);
@@ -230,10 +243,24 @@ export class EntertainmentEventBanner {
         const energyTo = Math.round(Math.max(0, Math.min(1, energyRatioAfter)) * 100);
         const heartFrom = Math.max(0, Math.round(heartRateBefore));
         const heartTo = Math.max(0, Math.round(heartRateAfter));
-        this.setLabel(this.stimulantEnergyLabel, this.stimulantEnergyText(energyFrom, infiniteStamina), ENERGY_CYAN);
-        this.setLabel(this.stimulantHeartLabel, `心率 ${heartFrom}`, HEART_ORANGE);
+        this.currentPickupKind = kind;
+        const titleKey = kind === 'calm-slush' ? 'calm-slush-title' : 'stimulant-title';
+        const iconKey = kind === 'calm-slush' ? 'icon-calm-slush' : 'icon-stimulant';
+        this.pendingPickupTitleMotionKind = this.artFrames.has(titleKey) ? null : kind;
+        this.pendingPickupIconMotionKind = this.artFrames.has(iconKey) ? null : kind;
+        this.applyPickupArtwork(kind);
+        this.setLabel(
+            this.stimulantEnergyLabel,
+            this.stimulantEnergyText(energyFrom, infiniteStamina, kind),
+            ENERGY_CYAN,
+        );
+        this.setLabel(
+            this.stimulantHeartLabel,
+            `心率 ${heartFrom}`,
+            HEART_ORANGE,
+        );
         this.showPersonalRoot(durationMs, true);
-        this.playStimulantPickupMotion(energyFrom, energyTo, heartFrom, heartTo, infiniteStamina);
+        this.playStimulantPickupMotion(energyFrom, energyTo, heartFrom, heartTo, infiniteStamina, kind);
     }
 
     update(): void {
@@ -360,7 +387,7 @@ export class EntertainmentEventBanner {
 
         const iconNode = makeUiNode('StimulantIcon', stimulantRoot);
         iconNode.getComponent(UITransform)!.setContentSize(84, 84);
-        iconNode.setPosition(-214, 0, 1);
+        iconNode.setPosition(STIMULANT_ICON_X, STIMULANT_ICON_Y, 1);
         const iconSprite = iconNode.addComponent(Sprite);
         iconSprite.sizeMode = Sprite.SizeMode.CUSTOM;
         iconSprite.trim = false;
@@ -384,16 +411,22 @@ export class EntertainmentEventBanner {
         titleSprite.trim = false;
 
         const energyNode = makeLabel('Energy', stimulantRoot, '', 22, ENERGY_CYAN);
-        energyNode.getComponent(UITransform)!.setContentSize(STIMULANT_STAT_TEXT_WIDTH, STIMULANT_STAT_TEXT_HEIGHT);
-        energyNode.setPosition(STIMULANT_STAT_TEXT_X, STIMULANT_ENERGY_TEXT_Y, 1);
+        energyNode.getComponent(UITransform)!.setContentSize(
+            STIMULANT_ENERGY_TEXT_WIDTH,
+            STIMULANT_STAT_TEXT_HEIGHT,
+        );
+        energyNode.setPosition(STIMULANT_ENERGY_TEXT_X, STIMULANT_ENERGY_TEXT_Y, 1);
         const energyLabel = energyNode.getComponent(Label)!;
         energyLabel.enableWrapText = false;
         energyLabel.overflow = Label.Overflow.SHRINK;
         styleProjectUiLabel(energyLabel, 'semibold', 30);
 
         const heartNode = makeLabel('HeartRate', stimulantRoot, '', 22, HEART_ORANGE);
-        heartNode.getComponent(UITransform)!.setContentSize(STIMULANT_STAT_TEXT_WIDTH, STIMULANT_STAT_TEXT_HEIGHT);
-        heartNode.setPosition(STIMULANT_STAT_TEXT_X, STIMULANT_HEART_TEXT_Y, 1);
+        heartNode.getComponent(UITransform)!.setContentSize(
+            STIMULANT_HEART_TEXT_WIDTH,
+            STIMULANT_STAT_TEXT_HEIGHT,
+        );
+        heartNode.setPosition(STIMULANT_HEART_TEXT_X, STIMULANT_HEART_TEXT_Y, 1);
         const heartLabel = heartNode.getComponent(Label)!;
         heartLabel.enableWrapText = false;
         heartLabel.overflow = Label.Overflow.SHRINK;
@@ -432,6 +465,8 @@ export class EntertainmentEventBanner {
         this.loadFrame('stimulant-card', paths.stimulantCard);
         this.loadFrame('stimulant-title', paths.stimulantTitle);
         this.loadFrame('icon-stimulant', paths.icons.stimulant);
+        this.loadFrame('calm-slush-title', paths.calmSlushTitle);
+        this.loadFrame('icon-calm-slush', paths.calmSlushIcon);
         this.loadFrame('icon-timed-bomb', paths.icons.timedBomb);
         this.loadFrame('icon-whirlpool', paths.icons.whirlpool);
         this.loadFrame('icon-cannon', paths.icons.cannon);
@@ -462,15 +497,39 @@ export class EntertainmentEventBanner {
         if (key === `icon-${this.currentEventIcon}` && this.eventIconSprite?.spriteFrame !== frame) {
             this.eventIconSprite!.spriteFrame = frame;
         }
-        if (key === 'stimulant-card' && this.stimulantCardSprite?.spriteFrame !== frame) {
+        if (key === 'stimulant-card' && this.currentPickupKind === 'heartbeat-soda'
+            && this.stimulantCardSprite?.spriteFrame !== frame) {
             this.stimulantCardSprite!.spriteFrame = frame;
         }
-        if (key === 'stimulant-title') {
+        if (key === 'stimulant-title' && this.currentPickupKind === 'heartbeat-soda') {
             this.setSpriteFrame(this.stimulantTitleSprite, frame);
             this.setSpriteFrame(this.stimulantTitleEchoSprite, frame);
         }
-        if (key === 'icon-stimulant' && this.stimulantIconSprite?.spriteFrame !== frame) {
-            this.stimulantIconSprite!.spriteFrame = frame;
+        if (key === 'icon-stimulant' && this.currentPickupKind === 'heartbeat-soda') {
+            this.setSpriteFrame(this.stimulantIconSprite, frame);
+        }
+        if (key === 'calm-slush-title' || key === 'icon-calm-slush') {
+            if (this.currentPickupKind === 'calm-slush') this.applyPickupArtwork('calm-slush');
+        }
+        const pendingTitleKey = this.pendingPickupTitleMotionKind === 'calm-slush'
+            ? 'calm-slush-title'
+            : this.pendingPickupTitleMotionKind === 'heartbeat-soda' ? 'stimulant-title' : '';
+        if (key === pendingTitleKey
+            && this.currentPickupKind === this.pendingPickupTitleMotionKind
+            && this.personalRoot?.active
+            && this.stimulantRoot?.active) {
+            this.pendingPickupTitleMotionKind = null;
+            this.playPickupTitleMotion();
+        }
+        const pendingIconKey = this.pendingPickupIconMotionKind === 'calm-slush'
+            ? 'icon-calm-slush'
+            : this.pendingPickupIconMotionKind === 'heartbeat-soda' ? 'icon-stimulant' : '';
+        if (key === pendingIconKey
+            && this.currentPickupKind === this.pendingPickupIconMotionKind
+            && this.personalRoot?.active
+            && this.stimulantRoot?.active) {
+            this.pendingPickupIconMotionKind = null;
+            this.playPickupIconMotion();
         }
     }
 
@@ -542,14 +601,50 @@ export class EntertainmentEventBanner {
         heartFrom: number,
         heartTo: number,
         infiniteStamina: boolean,
+        kind: StimulantItemKind,
     ): void {
+        const timeline = this.stimulantCounterTimeline;
+        if (!timeline?.isValid) return;
+        this.playPickupTitleMotion();
+        this.playPickupIconMotion();
+
+        let counterTween = tween(timeline);
+        for (let step = 1; step <= STIMULANT_COUNTER_STEPS; step++) {
+            const progress = step / STIMULANT_COUNTER_STEPS;
+            counterTween = counterTween
+                .delay(STIMULANT_COUNTER_STEP_SECONDS)
+                .call(() => {
+                    const eased = 1 - (1 - progress) * (1 - progress);
+                    const energy = Math.round(energyFrom + (energyTo - energyFrom) * eased);
+                    const heart = Math.round(heartFrom + (heartTo - heartFrom) * eased);
+                    if (this.stimulantEnergyLabel) {
+                        this.setLabel(
+                            this.stimulantEnergyLabel,
+                            this.stimulantEnergyText(energy, infiniteStamina, kind),
+                            ENERGY_CYAN,
+                        );
+                    }
+                    if (this.stimulantHeartLabel) {
+                        this.setLabel(
+                            this.stimulantHeartLabel,
+                            `心率 ${heart}`,
+                            HEART_ORANGE,
+                        );
+                    }
+                });
+        }
+        counterTween.start();
+    }
+
+    /** 标题和残影也共用同一节奏，并可在异步贴图补齐时单独重播。 */
+    private playPickupTitleMotion(): void {
         const title = this.stimulantTitleRoot;
         const echo = this.stimulantTitleEchoRoot;
         const echoOpacity = this.stimulantTitleEchoOpacity;
-        const icon = this.stimulantIconRoot;
-        const timeline = this.stimulantCounterTimeline;
-        if (!title?.isValid || !echo?.isValid || !echoOpacity || !icon?.isValid || !timeline?.isValid) return;
-
+        if (!title?.isValid || !echo?.isValid || !echoOpacity) return;
+        Tween.stopAllByTarget(title);
+        Tween.stopAllByTarget(echo);
+        Tween.stopAllByTarget(echoOpacity);
         title.setPosition(STIMULANT_TITLE_X - 7, STIMULANT_TITLE_Y, 2);
         title.setScale(0.94, 0.94, 1);
         title.angle = -2.4;
@@ -603,49 +698,75 @@ export class EntertainmentEventBanner {
                 angle: 1.2,
             }, { easing: 'quadOut' })
             .start();
+    }
 
+    /** 两种补给严格共用同一段图标节奏；少量横移让对称冰沙杯也能读出晃动。 */
+    private playPickupIconMotion(): void {
+        const icon = this.stimulantIconRoot;
+        if (!icon?.isValid) return;
+        Tween.stopAllByTarget(icon);
+        icon.setPosition(STIMULANT_ICON_X - 3, STIMULANT_ICON_Y, 1);
         icon.setScale(0.8, 0.8, 1);
         icon.angle = -8;
         tween(icon)
-            .to(0.14, { scale: new Vec3(1.12, 1.12, 1), angle: 5 }, { easing: 'backOut' })
-            .to(0.08, { scale: new Vec3(0.98, 0.98, 1), angle: -2 }, { easing: 'quadInOut' })
-            .to(0.1, { scale: new Vec3(1, 1, 1), angle: 0 }, { easing: 'quadOut' })
+            .to(0.14, {
+                position: new Vec3(STIMULANT_ICON_X + 4, STIMULANT_ICON_Y + 1, 1),
+                scale: new Vec3(1.12, 1.12, 1),
+                angle: 5,
+            }, { easing: 'backOut' })
+            .to(0.08, {
+                position: new Vec3(STIMULANT_ICON_X - 2, STIMULANT_ICON_Y, 1),
+                scale: new Vec3(0.98, 0.98, 1),
+                angle: -2,
+            }, { easing: 'quadInOut' })
+            .to(0.1, {
+                position: new Vec3(STIMULANT_ICON_X, STIMULANT_ICON_Y, 1),
+                scale: new Vec3(1, 1, 1),
+                angle: 0,
+            }, { easing: 'quadOut' })
             .delay(0.12)
-            .to(0.06, { scale: new Vec3(1.08, 1.08, 1) }, { easing: 'quadOut' })
-            .to(0.09, { scale: new Vec3(1, 1, 1) }, { easing: 'quadInOut' })
-            .to(0.07, { scale: new Vec3(1.06, 1.06, 1) }, { easing: 'quadOut' })
-            .to(0.1, { scale: new Vec3(1, 1, 1) }, { easing: 'quadInOut' })
+            .to(0.06, { scale: new Vec3(1.08, 1.08, 1), angle: 1.4 }, { easing: 'quadOut' })
+            .to(0.09, { scale: new Vec3(1, 1, 1), angle: -0.8 }, { easing: 'quadInOut' })
+            .to(0.07, { scale: new Vec3(1.06, 1.06, 1), angle: 0.7 }, { easing: 'quadOut' })
+            .to(0.1, { scale: new Vec3(1, 1, 1), angle: 0 }, { easing: 'quadInOut' })
             .start();
-
-        let counterTween = tween(timeline);
-        for (let step = 1; step <= STIMULANT_COUNTER_STEPS; step++) {
-            const progress = step / STIMULANT_COUNTER_STEPS;
-            counterTween = counterTween
-                .delay(STIMULANT_COUNTER_STEP_SECONDS)
-                .call(() => {
-                    const eased = 1 - (1 - progress) * (1 - progress);
-                    const energy = Math.round(energyFrom + (energyTo - energyFrom) * eased);
-                    const heart = Math.round(heartFrom + (heartTo - heartFrom) * eased);
-                    if (this.stimulantEnergyLabel) {
-                        this.setLabel(
-                            this.stimulantEnergyLabel,
-                            this.stimulantEnergyText(energy, infiniteStamina),
-                            ENERGY_CYAN,
-                        );
-                    }
-                    if (this.stimulantHeartLabel) {
-                        this.setLabel(this.stimulantHeartLabel, `心率 ${heart}`, HEART_ORANGE);
-                    }
-                });
-        }
-        counterTween.start();
     }
 
-    private stimulantEnergyText(value: number, infiniteStamina: boolean): string {
+    private stimulantEnergyText(
+        value: number,
+        infiniteStamina: boolean,
+        kind: StimulantItemKind = 'heartbeat-soda',
+    ): string {
+        if (kind === 'calm-slush') return '推进 90%';
         return infiniteStamina ? '体力 无限' : `体力 ${value}%`;
     }
 
+    private applyPickupArtwork(kind: StimulantItemKind): void {
+        const calm = kind === 'calm-slush';
+        this.setSpriteFrame(
+            this.stimulantCardSprite,
+            this.artFrames.get('stimulant-card') ?? null,
+        );
+        const title = this.artFrames.get(calm ? 'calm-slush-title' : 'stimulant-title') ?? null;
+        this.setSpriteFrame(this.stimulantTitleSprite, title);
+        this.setSpriteFrame(this.stimulantTitleEchoSprite, title);
+        this.setSpriteFrame(
+            this.stimulantIconSprite,
+            this.artFrames.get(calm ? 'icon-calm-slush' : 'icon-stimulant') ?? null,
+        );
+        if (this.stimulantTitleEchoSprite) {
+            const color = calm ? CALM_ECHO : HEART_ORANGE;
+            if (!this.stimulantTitleEchoSprite.color.equals(color)) {
+                this.stimulantTitleEchoSprite.color = color;
+            }
+        }
+    }
+
     private setPersonalMode(stimulant: boolean): void {
+        if (!stimulant) {
+            this.pendingPickupTitleMotionKind = null;
+            this.pendingPickupIconMotionKind = null;
+        }
         if (this.genericPersonalRoot?.active === stimulant) this.genericPersonalRoot.active = !stimulant;
         if (this.stimulantRoot?.active !== stimulant) this.stimulantRoot.active = stimulant;
     }
@@ -689,6 +810,7 @@ export class EntertainmentEventBanner {
         }
         if (this.stimulantTitleEchoOpacity?.isValid) this.stimulantTitleEchoOpacity.opacity = 0;
         if (this.stimulantIconRoot?.isValid) {
+            this.stimulantIconRoot.setPosition(STIMULANT_ICON_X, STIMULANT_ICON_Y, 1);
             this.stimulantIconRoot.setScale(1, 1, 1);
             this.stimulantIconRoot.angle = 0;
         }

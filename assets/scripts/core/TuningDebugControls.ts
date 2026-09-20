@@ -54,7 +54,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 58;
+const TUNING_FILE_VERSION = 59;
 
 type TuningFileData = {
     version: number;
@@ -356,6 +356,11 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('stimulant.maxTurnImpulseScale', '最大转向倍率', '180 心率时单次划水转向冲量倍率。', () => STIMULANT_BRAWL_TUNING.maxTurnImpulseScale, v => STIMULANT_BRAWL_TUNING.maxTurnImpulseScale = v, 0.05, 1, 3, 2),
             control('stimulant.minTurnDragScale', '最低转向阻尼倍率', '180 心率时转向阻尼倍率；越低越容易持续甩尾。', () => STIMULANT_BRAWL_TUNING.minTurnDragScale, v => STIMULANT_BRAWL_TUNING.minTurnDragScale = v, 0.05, 0.1, 1, 2),
             control('stimulant.aiSkipHeartRate', 'AI 放弃争抢心率', 'AI 心率达到该值后不再主动追苏打，避免连续猛喝导致过度失控。', () => STIMULANT_BRAWL_TUNING.aiSkipHeartRate, v => STIMULANT_BRAWL_TUNING.aiSkipHeartRate = v, 1, 100, 180, 0),
+            control('stimulant.calmSlushHeartRateDrop', '冰沙降心率', '拾取冷静冰沙时立即降低的心率，最低保持 80。', () => STIMULANT_BRAWL_TUNING.calmSlushHeartRateDrop, v => STIMULANT_BRAWL_TUNING.calmSlushHeartRateDrop = v, 5, 0, 100, 0),
+            control('stimulant.calmSlushDuration', '冰沙冷静时长', '冰蓝轮廓、稳定转向与推进代价持续时间；重复拾取会刷新。', () => STIMULANT_BRAWL_TUNING.calmSlushDuration, v => STIMULANT_BRAWL_TUNING.calmSlushDuration = v, 0.5, 0, 10, 1, ' s'),
+            control('stimulant.calmSlushPropulsionScale', '冰沙推进倍率', '冷静期间所有划水与踢腿推进的保留比例。', () => STIMULANT_BRAWL_TUNING.calmSlushPropulsionScale, v => STIMULANT_BRAWL_TUNING.calmSlushPropulsionScale = v, 0.05, 0.5, 1, 2),
+            control('stimulant.calmSlushAiPreferHeartRate', 'AI 冰沙偏好心率', '达到该心率后 AI 开始主动绕行争抢冷静冰沙。', () => STIMULANT_BRAWL_TUNING.calmSlushAiPreferHeartRate, v => STIMULANT_BRAWL_TUNING.calmSlushAiPreferHeartRate = v, 1, 100, 179, 0),
+            control('stimulant.calmSlushAiStronglyPreferHeartRate', 'AI 冰沙强偏好心率', '达到该心率后 AI 会显著提高冰沙争抢优先级。', () => STIMULANT_BRAWL_TUNING.calmSlushAiStronglyPreferHeartRate, v => STIMULANT_BRAWL_TUNING.calmSlushAiStronglyPreferHeartRate = v, 1, 101, 180, 0),
         ],
     },
     {

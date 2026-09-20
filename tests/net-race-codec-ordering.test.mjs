@@ -49,6 +49,7 @@ function entry(overrides = {}) {
         conditionEnergyRatio: 0.1496,
         conditionHeartRate: 149.9,
         conditionDepletionCooldown: 0.321,
+        calmSlushRemaining: 2.345,
         ...overrides,
     };
 }
@@ -106,6 +107,7 @@ test('S| keeps legacy pose fields and appends condition cooldown', () => {
     assert.equal(decoded.entries[0].conditionEnergyRatio, 0.15);
     assert.equal(decoded.entries[0].conditionHeartRate, 149);
     assert.equal(decoded.entries[0].conditionDepletionCooldown, 0.321);
+    assert.equal(decoded.entries[0].calmSlushRemaining, 2.345);
 });
 
 test('stimulant pickup event round-trips on the reliable input channel', () => {
@@ -365,6 +367,7 @@ test('legacy S| and P| payloads keep safe sentinel defaults', () => {
     assert.equal(legacyS.entries[0].conditionEnergyRatio, -1);
     assert.equal(legacyS.entries[0].conditionHeartRate, -1);
     assert.equal(legacyS.entries[0].conditionDepletionCooldown, -1);
+    assert.equal(legacyS.entries[0].calmSlushRemaining, -1);
     assert.equal(legacyS.mineRelay.activeRoundId, -1);
     assert.equal(legacyS.mineRelay.carrierLane, -1);
     assert.deepEqual(legacyS.minefield, {
@@ -380,6 +383,7 @@ test('legacy S| and P| payloads keep safe sentinel defaults', () => {
     assert.equal(legacyP.conditionEnergyRatio, -1);
     assert.equal(legacyP.ownerStateSeq, -1);
     assert.equal(legacyP.ownerPos, -1);
+    assert.equal(legacyP.calmSlushRemaining, -1);
 });
 
 test('P| appends owner sequence and seat after condition without shifting pose fields', () => {
@@ -394,6 +398,7 @@ test('P| appends owner sequence and seat after condition without shifting pose f
     const decoded = decodeSelfSnapshot(encoded);
     assert.equal(decoded.ownerStateSeq, 41);
     assert.equal(decoded.ownerPos, 5);
+    assert.equal(decoded.calmSlushRemaining, 2.345);
 });
 
 test('frame self and input sequence round-trip, including an empty self slot', () => {
@@ -408,6 +413,7 @@ test('frame self and input sequence round-trip, including an empty self slot', (
     assert.equal(decoded.senderPos, 5);
     assert.equal(decoded.inputSeq, 99);
     assert.equal(decoded.self.ownerStateSeq, 42);
+    assert.equal(decoded.self.calmSlushRemaining, 2.345);
     assert.deepEqual(decoded.events, [{ kind: 'H', side: 1 }]);
 
     const noSelf = decodeInputFrame(encodeInputFrame(5, [], null, -1, 100));
@@ -455,7 +461,7 @@ test('an attributed P| or frame self cannot update another registered lane', () 
 });
 
 test('lobby protocol hello rejects missing or mixed versions', () => {
-    assert.equal(NET_RACE_PROTOCOL_VERSION, 87);
+    assert.equal(NET_RACE_PROTOCOL_VERSION, 89);
     const hello = decodeProtocolHello(encodeProtocolHello(4));
     assert.deepEqual(hello, { pos: 4, version: NET_RACE_PROTOCOL_VERSION });
     assert.equal(decodeProtocolHello('PV|4|bad'), null);

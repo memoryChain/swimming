@@ -75,6 +75,13 @@ export class StrokeHeartRateModel {
         this.clock = end;
     }
 
+    /** 冷静冰沙立即降温，并解除心跳苏打留下的自然回落锁定。 */
+    applyCooling(amount: number) {
+        const safeAmount = Number.isFinite(amount) ? Math.max(0, amount) : 0;
+        this.value = Math.max(80, this.value - safeAmount);
+        this.recoveryHoldUntil = this.clock;
+    }
+
     private approachInterval(dt: number) {
         if (!(dt > 0)) return;
         const heldSeconds = Math.min(dt, Math.max(0, this.recoveryHoldUntil - this.clock));

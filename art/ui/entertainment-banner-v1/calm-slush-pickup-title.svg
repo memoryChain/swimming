@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="116" viewBox="0 0 320 116">
+  <defs>
+    <style>
+      @font-face {
+        font-family: "ShuiMaster UI";
+        src: url("../../../assets/race/fonts/ShuiMasterUI-SemiBold.ttf");
+        font-weight: 600;
+      }
+    </style>
+    <linearGradient id="iceTitle" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.48" stop-color="#B9F7FF"/>
+      <stop offset="1" stop-color="#42C9F2"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 与“心跳超频”相同的四字标题＋单条节奏线结构，只替换冷色语义。 -->
+  <path d="M3 91H105L123 84 137 98 151 71 160 113 174 91H317"
+        fill="none" stroke="#06234D" stroke-width="10" stroke-linejoin="miter"/>
+  <path d="M3 91H105L123 84 137 98 151 71 160 113 174 91H317"
+        fill="none" stroke="#41D9F5" stroke-width="4" stroke-linejoin="miter"/>
+
+  <text x="158" y="76" text-anchor="middle"
+        font-family="ShuiMaster UI, Microsoft YaHei, sans-serif" font-size="61" font-weight="600"
+        font-style="italic" stroke="#06234D" stroke-width="12" stroke-linejoin="round"
+        paint-order="stroke" fill="url(#iceTitle)">强制冷静</text>
+  <text x="158" y="76" text-anchor="middle"
+        font-family="ShuiMaster UI, Microsoft YaHei, sans-serif" font-size="61" font-weight="600"
+        font-style="italic" stroke="#E8FDFF" stroke-width="2.2" stroke-linejoin="round"
+        paint-order="stroke" fill="url(#iceTitle)">强制冷静</text>
+</svg>

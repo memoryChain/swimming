@@ -6,7 +6,7 @@ import { getRaceDistance, isRaceSteeringEnabled, isStimulantBrawlMode, TECHNIQUE
 import { Rating, StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from '../core/SteeringTuning';
-import { stimulantTurnDragScale, stimulantTurnImpulseScale } from '../core/StimulantBrawlRules';
+import { stimulantTurnDragScale, stimulantTurnImpulseScale, STIMULANT_BRAWL_TUNING } from '../core/StimulantBrawlRules';
 import { SwimPhysicsModel } from './SwimPhysicsModel';
 import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
 import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
@@ -134,6 +134,7 @@ export class SwimmerMotor {
     private _playerBalance: PlayerBalanceOverrides | null = null;
     private _conditionSpeedScale = 1;
     private _conditionCadenceScale = 1;
+    private _calmSlushTimer = 0;
     private _lastStrokeQuality = 0;
     private _currentAcceleration = 0;
     // Underwater-glide flag: while true (post-dive, before surfacing) the physics
@@ -188,6 +189,7 @@ export class SwimmerMotor {
         this._glidePhaseActive = false;
         this._glideDrag = SWIMMER_BALANCE.glideDrag;
         this._environmentDrag = 0;
+        this._calmSlushTimer = 0;
         this._axialRoll.reset();
         this._collisionPitch.reset();
         this.collisionSoftness.reset();
@@ -510,14 +512,19 @@ export class SwimmerMotor {
         this._motionClock += dt;
         this._armAction = Math.max(0, this._armAction - dt * 4.6);
         this._kickAction = Math.max(0, this._kickAction - dt * 6.8);
-        const strokeAcceleration = this.consumeStrokeAcceleration(dt)
+        let strokeAcceleration = this.consumeStrokeAcceleration(dt)
             + this.consumeHeldBaseAcceleration(this._leftActions[0], dt)
             + this.consumeHeldBaseAcceleration(this._rightActions[0], dt);
         // Normal-dive player and AI inputs both register discrete kick taps. AI
         // uses the same cadence-derived underwater propulsion instead of a tiny
         // one-off pulse that cannot overcome glide drag.
         this.updateKickCadence();
-        const kickAcceleration = this.computeKickAcceleration();
+        let kickAcceleration = this.computeKickAcceleration();
+        if (this._calmSlushTimer > 0) {
+            const propulsionScale = clamp(STIMULANT_BRAWL_TUNING.calmSlushPropulsionScale, 0, 1);
+            strokeAcceleration *= propulsionScale;
+            kickAcceleration *= propulsionScale;
+        }
         const next = this._physics.step(
             {
                 currentSpeed: this._currentSpeed,
@@ -551,6 +558,7 @@ export class SwimmerMotor {
         );
         this._collisionPitch.update(dt, !this._glidePhaseActive, this.ability.recoveryScale);
         this.collisionSoftness.update(dt);
+        this._calmSlushTimer = Math.max(0, this._calmSlushTimer - Math.max(0, dt));
         const raceDistance = getRaceDistance();
         // Forward race progress uses only the along-lane component; veering with a
         // large heading is naturally slower (this is the whole steering cost).
@@ -616,6 +624,7 @@ export class SwimmerMotor {
         this._speedCapBonus = 0;
         this._conditionSpeedScale = 1;
         this._conditionCadenceScale = 1;
+        this._calmSlushTimer = 0;
         this._environmentDrag = 0;
         this._lastStrokeQuality = 0;
         this._currentAcceleration = 0;
@@ -686,6 +695,31 @@ export class SwimmerMotor {
         if (this._isRacing && this._authoritativeHeartRate < 0) {
             this._heartRate.addBurden(amount, recoveryHoldSeconds);
         }
+    }
+    /** 心跳苏打会立即打断冷静状态，再施加原有心率负担。 */
+    applyHeartbeatSoda(amount: number, recoveryHoldSeconds = 0) {
+        this._calmSlushTimer = 0;
+        this.addHeartRateBurden(amount, recoveryHoldSeconds);
+    }
+
+    /** 冷静冰沙降低心率、解除苏打回落锁定，并刷新三秒稳定推进状态。 */
+    applyCalmSlush(heartRateDrop: number, duration: number) {
+        const safeDuration = Number.isFinite(duration) ? Math.max(0, duration) : 0;
+        const safeDrop = Number.isFinite(heartRateDrop) ? Math.max(0, heartRateDrop) : 0;
+        if (this._authoritativeHeartRate >= 0) {
+            this._authoritativeHeartRate = Math.max(80, this._authoritativeHeartRate - safeDrop);
+            this._heartRate.applyAuthoritative(this._authoritativeHeartRate);
+        } else {
+            this._heartRate.applyCooling(safeDrop);
+        }
+        this._calmSlushTimer = safeDuration;
+    }
+
+    get calmSlushRemaining(): number { return this._calmSlushTimer; }
+
+    applyAuthoritativeCalmSlushRemaining(seconds: number) {
+        if (!Number.isFinite(seconds) || seconds < 0) return;
+        this._calmSlushTimer = Math.max(0, seconds);
     }
 
     // 海豚跳冻结心率数值但采样时钟照走；普通转身等阶段自然恢复。
@@ -1528,7 +1562,9 @@ export class SwimmerMotor {
                 this._headingTurnRate = 0;
             }
         }
-        const modeDragScale = isStimulantBrawlMode() ? stimulantTurnDragScale(this.heartRate) : 1;
+        const modeDragScale = isStimulantBrawlMode() && this._calmSlushTimer <= 0
+            ? stimulantTurnDragScale(this.heartRate)
+            : 1;
         const drag = Math.max(0, finiteOr(STEERING_TUNING.turnAngularDrag, 0)) * modeDragScale;
         this._headingTurnRate *= Math.exp(-drag * step);
         if (Math.abs(this._headingTurnRate) < 1e-5) {
@@ -1628,7 +1664,9 @@ export class SwimmerMotor {
         }
         const minFactor = clamp01(STEERING_TUNING.turnPowerMinFactor);
         const factor = minFactor + (1 - minFactor) * clamp01(powerFactor);
-        const modeImpulseScale = isStimulantBrawlMode() ? stimulantTurnImpulseScale(this.heartRate) : 1;
+        const modeImpulseScale = isStimulantBrawlMode() && this._calmSlushTimer <= 0
+            ? stimulantTurnImpulseScale(this.heartRate)
+            : 1;
         const turnImpulse = Math.max(0, finiteOr(STEERING_TUNING.turnAngularImpulse, 0))
             * DEG2RAD
             * factor

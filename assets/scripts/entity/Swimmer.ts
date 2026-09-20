@@ -262,6 +262,10 @@ export class Swimmer extends Component {
         this.cartoonRig?.triggerStimulantReaction(heartRate, duration);
     }
 
+    triggerCalmSlushReaction(duration: number) {
+        this.cartoonRig?.triggerCalmSlushReaction(duration);
+    }
+
     clearStimulantReaction() {
         this.cartoonRig?.clearStimulantReaction();
     }
@@ -1657,6 +1661,16 @@ export class Swimmer extends Component {
 
     applyAuthoritativeHeartRate(value: number, remoteHuman = false) {
         this._motor.applyAuthoritativeHeartRate(value, remoteHuman);
+    }
+
+    applyNetCalmSlushRemaining(seconds: number) {
+        const previous = this._motor.calmSlushRemaining;
+        this._motor.applyAuthoritativeCalmSlushRemaining(seconds);
+        // Reliable pickup events normally start the reaction. This edge is the
+        // snapshot recovery path when that event was missed by a remote peer.
+        if (seconds > 0 && previous <= 0) {
+            this.cartoonRig?.triggerCalmSlushReaction(seconds);
+        }
     }
 
     applyConditionSpeedScale(scale: number) {

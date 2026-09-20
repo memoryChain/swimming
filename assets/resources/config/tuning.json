@@ -1,5 +1,5 @@
 {
-  "version": 58,
+  "version": 59,
   "updatedAt": "2026-09-20T00:00:00.000Z",
   "values": {
     "camera.kickDiveBackDistance": 2.8,
@@ -266,6 +266,11 @@
     "stimulant.maxTurnImpulseScale": 1.65,
     "stimulant.minTurnDragScale": 0.55,
     "stimulant.aiSkipHeartRate": 165,
+    "stimulant.calmSlushHeartRateDrop": 60,
+    "stimulant.calmSlushDuration": 3,
+    "stimulant.calmSlushPropulsionScale": 0.9,
+    "stimulant.calmSlushAiPreferHeartRate": 145,
+    "stimulant.calmSlushAiStronglyPreferHeartRate": 165,
     "recovery.knockedSeconds": 3.5,
     "recovery.invulnerableSeconds": 2,
     "recovery.respawnSpeed": 0,
