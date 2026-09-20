@@ -1423,6 +1423,7 @@ export class SwimmerMotor {
         rollAcceleration: number,
         dt: number,
         maxFlowSpeed: number,
+        captureDrag = 0,
     ) {
         if (!this._isRacing || this._glidePhaseActive || !(dt > 0)) return;
         const step = Math.min(0.1, dt);
@@ -1437,6 +1438,24 @@ export class SwimmerMotor {
             -cap,
             cap,
         );
+        // Inside the capture band, progressively cancel the swimmer's own
+        // propulsion vector while leaving the water-current velocity intact.
+        // This makes the flow take control of the route without disabling input
+        // or creating a timed/hard-locked state.
+        const safeCaptureDrag = Math.max(0, finiteOr(captureDrag, 0));
+        if (safeCaptureDrag > 0 && this._currentSpeed > 0) {
+            const cancelledSpeed = this._currentSpeed * (1 - Math.exp(-safeCaptureDrag * step));
+            this._knockbackDistance = clamp(
+                this._knockbackDistance - Math.cos(this._heading) * cancelledSpeed,
+                -cap,
+                cap,
+            );
+            this._knockbackLateral = clamp(
+                this._knockbackLateral - Math.sin(this._heading) * cancelledSpeed,
+                -cap,
+                cap,
+            );
+        }
         if (isRaceSteeringEnabled()) {
             const maxRate = safeMaxTurnRateRadians();
             this._headingTurnRate = clamp(

@@ -139,7 +139,7 @@ export class WhirlpoolBrawlController {
             const flowScale = (MIN_VISIBLE_SCALE + (1 - MIN_VISIBLE_SCALE) * flowStrength)
                 * (1 + pulse * 0.025 * strength);
             const coreScale = (0.12 + 0.88 * coreStrength)
-                * (1 - pulse * 0.018 * strength);
+                * (1 - pulse * 0.035 * strength);
             const rotationSpeed = MIN_ROTATION_DEGREES_PER_SECOND
                 + (MAX_ROTATION_DEGREES_PER_SECOND - MIN_ROTATION_DEGREES_PER_SECOND) * strength
                 + (visual.superVariant ? 8 * strength : 0);
@@ -147,7 +147,7 @@ export class WhirlpoolBrawlController {
             visual.flowRotationDegrees = (visual.flowRotationDegrees
                 - visual.spin * rotationSpeed * step) % 360;
             visual.coreRotationDegrees = (visual.coreRotationDegrees
-                - visual.spin * (rotationSpeed * 0.62 + 5) * step) % 360;
+                - visual.spin * (rotationSpeed * 0.78 + 8) * step) % 360;
             setMirroredScale(visual.flow, flowScale, visual.spin);
             setMirroredScale(visual.core, coreScale, visual.spin);
             visual.flow.setRotationFromEuler(0, visual.flowRotationDegrees, 0);
@@ -390,6 +390,21 @@ function buildWhirlpoolCoreGeometry(superVariant = false): primitives.IGeometry 
         buffers.indices.push(center, center + segment + 1, center + segment + 2);
     }
 
+    // Bake inward-curving water lines into the existing core mesh so the eye
+    // reads as moving water instead of a static dark disc. This adds no node,
+    // material or draw call at runtime.
+    const suctionArms = superVariant ? 4 : 3;
+    const suctionSegments = superVariant ? 10 : 8;
+    for (let arm = 0; arm < suctionArms; arm++) {
+        appendCoreSuctionRibbon(
+            buffers,
+            coreRadius,
+            arm / suctionArms * Math.PI * 2,
+            suctionSegments,
+            superVariant,
+        );
+    }
+
     // 破碎泡沫环让危险核心边界在比赛镜头下仍然可读，又避免一整圈白色贴纸感。
     const dashCount = superVariant ? 14 : 10;
     for (let dash = 0; dash < dashCount; dash++) {
@@ -398,6 +413,50 @@ function buildWhirlpoolCoreGeometry(superVariant = false): primitives.IGeometry 
             superVariant ? 0.82 : 0.72, superVariant ? 0.90 : 0.96, 1, superVariant ? 0.72 : 0.58);
     }
     return finishGeometry(buffers, coreRadius * 1.35);
+}
+
+function appendCoreSuctionRibbon(
+    buffers: GeometryBuffers,
+    coreRadius: number,
+    baseAngle: number,
+    segments: number,
+    superVariant: boolean,
+): void {
+    const base = buffers.positions.length / 3;
+    for (let segment = 0; segment <= segments; segment++) {
+        const t = segment / segments;
+        const radius = coreRadius * (0.10 + t * 0.78);
+        const angle = baseAngle + t * Math.PI * 0.92;
+        const halfWidth = coreRadius * (0.042 + t * 0.018);
+        const tangentX = -Math.sin(angle);
+        const tangentZ = Math.cos(angle);
+        const centerX = Math.cos(angle) * radius;
+        const centerZ = Math.sin(angle) * radius;
+        buffers.positions.push(
+            centerX - tangentX * halfWidth, 0.001, centerZ - tangentZ * halfWidth,
+            centerX + tangentX * halfWidth, 0.001, centerZ + tangentZ * halfWidth,
+        );
+        const centerEmphasis = 1 - t;
+        const alpha = 0.28 + centerEmphasis * (superVariant ? 0.46 : 0.38);
+        pushColor(
+            buffers.colors,
+            superVariant ? 0.48 : 0.34,
+            superVariant ? 0.66 : 0.82,
+            1,
+            alpha * 0.68,
+        );
+        pushColor(
+            buffers.colors,
+            superVariant ? 0.76 : 0.72,
+            superVariant ? 0.86 : 0.96,
+            1,
+            alpha,
+        );
+    }
+    for (let segment = 0; segment < segments; segment++) {
+        const lower = base + segment * 2;
+        buffers.indices.push(lower, lower + 2, lower + 1, lower + 1, lower + 2, lower + 3);
+    }
 }
 
 function buildWhirlpoolAfterglowGeometry(superVariant = false): primitives.IGeometry {

@@ -55,6 +55,8 @@ export class Swimmer extends Component {
         rollAcceleration: 0,
         intensity: 0,
         coreIntensity: 0,
+        captureIntensity: 0,
+        captureDrag: 0,
         whirlpoolId: -1,
         maxFlowSpeed: WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed,
     };
@@ -802,6 +804,7 @@ export class Swimmer extends Component {
                 this._whirlpoolInfluence.rollAcceleration * submergedScale,
                 dt,
                 this._whirlpoolInfluence.maxFlowSpeed,
+                this._whirlpoolInfluence.captureDrag * submergedScale,
             );
         }
         const finished = this._motor.update(dt, {

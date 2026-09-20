@@ -29,6 +29,10 @@ const gameManagerSource = readFileSync(
     new URL('../assets/scripts/core/GameManager.ts', import.meta.url),
     'utf8',
 );
+const tuningSource = readFileSync(
+    new URL('../assets/scripts/core/TuningDebugControls.ts', import.meta.url),
+    'utf8',
+);
 
 function influence() {
     return {
@@ -38,8 +42,76 @@ function influence() {
         rollAcceleration: 0,
         intensity: 0,
         coreIntensity: 0,
+        captureIntensity: 0,
+        captureDrag: 0,
         whirlpoolId: -1,
     };
+}
+
+function simulateStraightPass(spawn, initialLateral = 0, speed = 3.4) {
+    const superVariant = spawn.variant === 'super';
+    const alongRadius = WHIRLPOOL_BRAWL_TUNING.alongRadius
+        * (superVariant ? WHIRLPOOL_SUPER_TUNING.alongRadiusScale : 1);
+    const endDistance = spawn.distance + alongRadius + 1;
+    const sample = influence();
+    const dt = 1 / 60;
+    const flowDecay = Math.exp(-dt / 0.5);
+    const turnDecay = Math.exp(-0.6 * dt);
+    const maxTurnRate = 95 * Math.PI / 180;
+    const maxHeading = 65 * Math.PI / 180;
+    let distance = spawn.distance - alongRadius - 1;
+    let lateral = initialLateral;
+    let flowForward = 0;
+    let flowLateral = 0;
+    let heading = 0;
+    let turnRate = 0;
+    let elapsed = 0;
+    let maxAbsLateral = Math.abs(lateral);
+    let maxAbsHeading = 0;
+    let minForwardSpeed = speed;
+    let maxCaptureIntensity = 0;
+    let maxCoreIntensity = 0;
+
+    for (let frame = 0; frame < 60 * 20 && distance <= endDistance; frame++) {
+        sampleWhirlpoolInfluence(distance, lateral, 20, sample, [spawn]);
+        const cap = sample.maxFlowSpeed;
+        flowForward = clampTest(flowForward + sample.forwardAcceleration * dt, -cap, cap);
+        flowLateral = clampTest(flowLateral + sample.lateralAcceleration * dt, -cap, cap);
+        if (sample.captureDrag > 0) {
+            const cancelledSpeed = speed * (1 - Math.exp(-sample.captureDrag * dt));
+            flowForward = clampTest(flowForward - Math.cos(heading) * cancelledSpeed, -cap, cap);
+            flowLateral = clampTest(flowLateral - Math.sin(heading) * cancelledSpeed, -cap, cap);
+        }
+        turnRate = clampTest(turnRate + sample.yawAcceleration * dt, -maxTurnRate, maxTurnRate);
+        heading = clampTest(heading + turnRate * dt, -maxHeading, maxHeading);
+        turnRate *= turnDecay;
+        const forwardSpeed = speed * Math.cos(heading) + flowForward;
+        distance += forwardSpeed * dt;
+        lateral += (speed * Math.sin(heading) + flowLateral) * dt;
+        flowForward *= flowDecay;
+        flowLateral *= flowDecay;
+        elapsed += dt;
+        minForwardSpeed = Math.min(minForwardSpeed, forwardSpeed);
+        maxAbsLateral = Math.max(maxAbsLateral, Math.abs(lateral));
+        maxAbsHeading = Math.max(maxAbsHeading, Math.abs(heading));
+        maxCaptureIntensity = Math.max(maxCaptureIntensity, sample.captureIntensity);
+        maxCoreIntensity = Math.max(maxCoreIntensity, sample.coreIntensity);
+    }
+
+    return {
+        passed: distance > endDistance,
+        elapsed,
+        finalLateral: lateral,
+        maxAbsLateral,
+        maxHeadingDegrees: maxAbsHeading * 180 / Math.PI,
+        minForwardSpeed,
+        maxCaptureIntensity,
+        maxCoreIntensity,
+    };
+}
+
+function clampTest(value, min, max) {
+    return Math.max(min, Math.min(max, value));
 }
 
 test('漩涡按种子安全随机分布在四个泳段', () => {
@@ -144,6 +216,66 @@ test('漩涡外圈给前进收益，核心产生明显回卷惩罚', () => {
     assert.ok(core.coreIntensity > 0.9);
 });
 
+test('漩涡核心保持强向心锁吸并显著压低正向逃离速度', () => {
+    const source = whirlpoolSpawnsForSeed(2468)[0];
+    const spawn = { ...source, variant: 'normal', centerFraction: 0 };
+    const center = whirlpoolCenterZ(spawn, 20);
+    const nearCore = sampleWhirlpoolInfluence(
+        spawn.distance,
+        center + WHIRLPOOL_BRAWL_TUNING.lateralRadius * 0.04,
+        20,
+        influence(),
+        [spawn],
+    );
+    const eye = sampleWhirlpoolInfluence(spawn.distance, center, 20, influence(), [spawn]);
+    assert.ok(nearCore.lateralAcceleration < -5);
+    assert.ok(eye.forwardAcceleration <= -5.5);
+    assert.equal(eye.maxFlowSpeed, WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed);
+    assert.match(tuningSource, /whirlpool\.coreCaptureAcceleration/);
+    assert.match(tuningSource, /whirlpool\.capturePropulsionDrag/);
+});
+
+test('完整直穿轨迹会被减速并按旋向显著带偏，偏心进入后难以直接脱离', () => {
+    const source = whirlpoolSpawnsForSeed(2468)[0];
+    const clockwise = { ...source, distance: 30, centerFraction: 0, spin: 1, variant: 'normal' };
+    const counterclockwise = { ...clockwise, spin: -1 };
+    const straight = simulateStraightPass(clockwise);
+    const mirrored = simulateStraightPass(counterclockwise);
+    const captured = simulateStraightPass(clockwise, 1.2);
+
+    assert.equal(straight.passed, true);
+    assert.ok(straight.maxAbsLateral >= 1.3);
+    assert.ok(straight.maxHeadingDegrees >= 18);
+    assert.ok(straight.minForwardSpeed <= 2.9);
+    assert.ok(straight.maxCaptureIntensity >= 0.6);
+    assert.ok(straight.finalLateral < -0.7);
+    assert.ok(mirrored.finalLateral > 0.7);
+    assert.ok(captured.maxCoreIntensity >= 0.45);
+    assert.ok(captured.minForwardSpeed <= 1);
+    assert.ok(captured.elapsed >= 5);
+});
+
+test('超级漩涡保持相对核心尺寸并用更宽捕获带阻止高速直穿', () => {
+    const source = whirlpoolSpawnsForSeed(2468)[0];
+    const spawn = { ...source, distance: 30, centerFraction: 0, spin: 1, variant: 'super' };
+    const lateralRadius = WHIRLPOOL_BRAWL_TUNING.lateralRadius
+        * WHIRLPOOL_SUPER_TUNING.lateralRadiusScale;
+    const nearCore = sampleWhirlpoolInfluence(
+        spawn.distance,
+        lateralRadius * 0.30,
+        20,
+        influence(),
+        [spawn],
+    );
+    const straight = simulateStraightPass(spawn);
+
+    assert.ok(nearCore.coreIntensity > 0);
+    assert.ok(straight.maxCaptureIntensity >= 0.5);
+    assert.ok(straight.maxAbsLateral >= 3.5);
+    assert.ok(straight.maxHeadingDegrees >= 35);
+    assert.ok(straight.minForwardSpeed <= 2.8);
+});
+
 test('旋向决定外圈顺流加速侧与逆流受阻侧', () => {
     const source = whirlpoolSpawnsForSeed(2468)[0];
     const clockwise = { ...source, spin: 1 };
@@ -244,6 +376,8 @@ test('漩涡美术层复用固定网格且不引入逐帧程序绘制或粒子�
     assert.match(controllerSource, /normal: createWhirlpoolVisualResourceSet\(false\)/);
     assert.match(controllerSource, /super: createWhirlpoolVisualResourceSet\(true\)/);
     assert.match(controllerSource, /const arms = superVariant \? 5 : 3/);
+    assert.match(controllerSource, /appendCoreSuctionRibbon/);
+    assert.match(controllerSource, /const suctionArms = superVariant \? 4 : 3/);
     assert.match(controllerSource, /const PRESENTATION_INTERVAL = 1 \/ 20/);
     assert.doesNotMatch(controllerSource, /Graphics|ParticleSystem/);
 });

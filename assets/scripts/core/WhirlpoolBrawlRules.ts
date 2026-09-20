@@ -18,6 +18,8 @@ export type WhirlpoolInfluence = {
     rollAcceleration: number;
     intensity: number;
     coreIntensity: number;
+    captureIntensity: number;
+    captureDrag: number;
     whirlpoolId: number;
     maxFlowSpeed: number;
 };
@@ -135,22 +137,28 @@ export const WHIRLPOOL_BRAWL_TUNING = {
     lateralRadius: 4.2,
     coreRadiusRatio: 0.32,
     inwardPullAcceleration: 3.6,
+    coreCaptureAcceleration: 2.4,
+    captureRadiusRatio: 0.62,
+    capturePropulsionDrag: 2.0,
+    approachForwardPullScale: 0.25,
     outerInwardScale: 0.58,
     swirlAcceleration: 5.2,
-    coreSwirlScale: 0.65,
+    coreSwirlScale: 0.82,
     outerBoostAcceleration: 2.0,
     outerCounterflowAcceleration: 1.2,
-    coreBackwardAcceleration: 3.2,
+    coreBackwardAcceleration: 6.0,
     yawAccelerationScale: 0.22,
     rollAccelerationScale: 0.42,
-    maxFlowSpeed: 3.2,
+    maxFlowSpeed: 3.4,
     submergedInfluenceScale: 0.35,
 };
 
 export const WHIRLPOOL_SUPER_TUNING = {
     alongRadiusScale: 1.35,
     lateralRadiusScale: 1.5,
-    coreRadiusScale: 1.25,
+    coreRadiusScale: 1.5,
+    captureRadiusScale: 1.15,
+    captureDragScale: 1.35,
     inwardPullScale: 1.3,
     swirlScale: 1.25,
     outerBoostScale: 1.4,
@@ -166,6 +174,8 @@ export function resetWhirlpoolInfluence(out: WhirlpoolInfluence): void {
     out.rollAcceleration = 0;
     out.intensity = 0;
     out.coreIntensity = 0;
+    out.captureIntensity = 0;
+    out.captureDrag = 0;
     out.whirlpoolId = -1;
     out.maxFlowSpeed = WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed;
 }
@@ -206,6 +216,9 @@ export function sampleWhirlpoolInfluence(
         const coreRadius = Math.max(0.05, Math.min(0.8,
             baseCoreRadius * (superVariant ? WHIRLPOOL_SUPER_TUNING.coreRadiusScale : 1)
             / lateralRadius));
+        const captureRadius = Math.max(coreRadius, Math.min(0.92,
+            WHIRLPOOL_BRAWL_TUNING.captureRadiusRatio
+            * (superVariant ? WHIRLPOOL_SUPER_TUNING.captureRadiusScale : 1)));
         const along = distance - spawn.distance;
         if (Math.abs(along) > alongRadius) continue;
         const lateral = worldZ - whirlpoolCenterZ(spawn, poolWidth);
@@ -218,15 +231,21 @@ export function sampleWhirlpoolInfluence(
         const edgeFalloff = 1 - radius;
         const smoothFalloff = edgeFalloff * edgeFalloff * (3 - 2 * edgeFalloff);
         const core = Math.max(0, Math.min(1, (coreRadius - radius) / coreRadius));
+        const captureLinear = Math.max(0, Math.min(1, (captureRadius - radius) / captureRadius));
+        const capture = captureLinear * captureLinear * (3 - 2 * captureLinear);
         const ring = Math.max(0, 1 - Math.abs(radius - 0.68) / 0.28);
-        const safeRadius = Math.max(0.08, radius);
+        // Keep only a tiny numerical dead zone at the exact eye. The previous
+        // floor softened a visibly large area and made the core easy to cross.
+        const safeRadius = Math.max(0.04, radius);
         const outerInwardScale = Math.max(0, Math.min(1, WHIRLPOOL_BRAWL_TUNING.outerInwardScale));
         const coreSwirlScale = Math.max(0, Math.min(1, WHIRLPOOL_BRAWL_TUNING.coreSwirlScale));
         const inwardBandScale = outerInwardScale + (1 - outerInwardScale) * core;
         const swirlBandScale = 1 - (1 - coreSwirlScale) * core;
-        const inward = WHIRLPOOL_BRAWL_TUNING.inwardPullAcceleration
-            * (superVariant ? WHIRLPOOL_SUPER_TUNING.inwardPullScale : 1)
-            * smoothFalloff * inwardBandScale;
+        const inward = (
+            WHIRLPOOL_BRAWL_TUNING.inwardPullAcceleration * inwardBandScale
+            + WHIRLPOOL_BRAWL_TUNING.coreCaptureAcceleration * core
+        ) * (superVariant ? WHIRLPOOL_SUPER_TUNING.inwardPullScale : 1)
+            * smoothFalloff;
         const swirl = WHIRLPOOL_BRAWL_TUNING.swirlAcceleration
             * (superVariant ? WHIRLPOOL_SUPER_TUNING.swirlScale : 1)
             * smoothFalloff * swirlBandScale;
@@ -234,7 +253,13 @@ export function sampleWhirlpoolInfluence(
         // nx/nz are dimensionless; convert their directions back into the two
         // gameplay acceleration channels. The alternating spin produces different
         // entry/exit routes without any outcome-affecting randomness.
-        const radialForward = -nx / safeRadius * inward;
+        const rawRadialForward = -nx / safeRadius * inward;
+        // Approaching the eye used to bank a large positive flow velocity before
+        // the core penalty began. Keep a hint of forward suction, but do not let
+        // the vortex become a straight-line speed boost.
+        const radialForward = rawRadialForward > 0
+            ? rawRadialForward * Math.max(0, Math.min(1, WHIRLPOOL_BRAWL_TUNING.approachForwardPullScale))
+            : rawRadialForward;
         const radialLateral = -nz / safeRadius * inward;
         const tangentForwardDirection = -spawn.spin * nz / safeRadius;
         const tangentLateralDirection = spawn.spin * nx / safeRadius;
@@ -258,6 +283,12 @@ export function sampleWhirlpoolInfluence(
         out.lateralAcceleration += lateralForce;
         out.yawAcceleration += lateralForce * WHIRLPOOL_BRAWL_TUNING.yawAccelerationScale;
         out.rollAcceleration += -lateralForce * WHIRLPOOL_BRAWL_TUNING.rollAccelerationScale;
+        if (capture > out.captureIntensity) {
+            out.captureIntensity = capture;
+            out.captureDrag = capture
+                * WHIRLPOOL_BRAWL_TUNING.capturePropulsionDrag
+                * (superVariant ? WHIRLPOOL_SUPER_TUNING.captureDragScale : 1);
+        }
         if (smoothFalloff > out.intensity) {
             out.intensity = smoothFalloff;
             out.coreIntensity = core;
