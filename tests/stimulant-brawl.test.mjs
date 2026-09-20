@@ -7,10 +7,12 @@ import PlayerCondition from '../assets/scripts/condition/PlayerConditionModel.ts
 import CareerRules from '../assets/scripts/progression/CareerRules.ts';
 import PlayerProfile from '../assets/scripts/backend/PlayerProfile.ts';
 import WaterFloatMotion from '../assets/scripts/core/WaterFloatMotion.ts';
+import StrokeHeartRate from '../assets/scripts/condition/StrokeHeartRateModel.ts';
 
 const {
     buildStimulantSchedule,
     buildEntertainmentStimulantSchedule,
+    STIMULANT_BRAWL_TUNING,
     STIMULANT_PUBLIC_WAVE_DISTANCES,
     stimulantIsOnCurrentCourseLeg,
     stimulantPickupDistanceSquared,
@@ -22,6 +24,7 @@ const { PlayerConditionModel } = PlayerCondition;
 const { executeCareer } = CareerRules;
 const { createDefaultProfile, normalizeProfile } = PlayerProfile;
 const { sampleWaterFloatOffset, WATER_FLOAT_PROFILES } = WaterFloatMotion;
+const { StrokeHeartRateModel } = StrokeHeartRate;
 
 test('水面漂浮物共用双波形规则并按物体质量分档', () => {
     const pickup = WATER_FLOAT_PROFILES.pickup;
@@ -225,16 +228,63 @@ test('心率只在 130 以上逐步放大转向并降低阻尼', () => {
     assert.ok(Math.abs(stimulantTurnDragScale(180) - 0.55) < 1e-9);
 });
 
-test('苏打瓶按自身上限恢复一半且不溢出', () => {
+test('苏打瓶按自身上限恢复三成且不溢出', () => {
     const condition = new PlayerConditionModel();
     condition.setProgressionOverrides({ energyTotal: 120 });
     condition.reset();
     condition.consumeEnergy(100);
     assert.equal(condition.energy, 20);
-    assert.equal(condition.restoreEnergyRatio(0.5), 60);
-    assert.equal(condition.energy, 80);
-    assert.equal(condition.restoreEnergyRatio(0.5), 40);
+    assert.equal(STIMULANT_BRAWL_TUNING.energyRestoreRatio, 0.3);
+    assert.equal(condition.restoreEnergyRatio(STIMULANT_BRAWL_TUNING.energyRestoreRatio), 36);
+    assert.equal(condition.energy, 56);
+    assert.equal(condition.restoreEnergyRatio(STIMULANT_BRAWL_TUNING.energyRestoreRatio), 36);
+    assert.equal(condition.energy, 92);
+    assert.equal(condition.restoreEnergyRatio(STIMULANT_BRAWL_TUNING.energyRestoreRatio), 28);
     assert.equal(condition.energy, 120);
+});
+
+test('心跳苏打增加四十心率并在四秒内只许上升不许自然回落', () => {
+    assert.equal(STIMULANT_BRAWL_TUNING.heartRateBurden, 40);
+    assert.equal(STIMULANT_BRAWL_TUNING.heartRateRecoveryHoldSeconds, 4);
+    const savedTuning = JSON.parse(readFileSync(
+        new URL('../assets/resources/config/tuning.json', import.meta.url),
+        'utf8',
+    ));
+    assert.equal(savedTuning.version, 58);
+    assert.equal(savedTuning.values['stimulant.energyRestoreRatio'], 0.3);
+    assert.equal(savedTuning.values['stimulant.heartRateBurden'], 40);
+    assert.equal(savedTuning.values['stimulant.heartRateRecoveryHoldSeconds'], 4);
+
+    const model = new StrokeHeartRateModel();
+    model.addBurden(
+        STIMULANT_BRAWL_TUNING.heartRateBurden,
+        STIMULANT_BRAWL_TUNING.heartRateRecoveryHoldSeconds,
+    );
+    assert.equal(model.heartRate, 120);
+    model.tick(2.5);
+    assert.equal(model.heartRate, 120, '滞留时间内不能向静息目标回落');
+
+    model.addBurden(
+        STIMULANT_BRAWL_TUNING.heartRateBurden,
+        STIMULANT_BRAWL_TUNING.heartRateRecoveryHoldSeconds,
+    );
+    assert.equal(model.heartRate, 160);
+    model.tick(4);
+    assert.equal(model.heartRate, 160, '重复拾取应从最后一次拾取重新计算四秒滞留');
+    model.tick(2.5);
+    assert.ok(Math.abs(model.heartRate - (80 + 80 * Math.exp(-1))) < 1e-9);
+
+    const singleStep = new StrokeHeartRateModel();
+    singleStep.addBurden(40, 4);
+    singleStep.tick(6.5);
+    assert.ok(Math.abs(singleStep.heartRate - (80 + 40 * Math.exp(-1))) < 1e-9,
+        '跨过滞留边界的大步长必须与拆分更新得到相同结果');
+
+    const rising = new StrokeHeartRateModel();
+    rising.recordStart();
+    rising.addBurden(10, 4);
+    rising.tick(1);
+    assert.ok(rising.heartRate > 90, '滞留只能禁止回落，不能阻止划水继续推高心率');
 });
 
 test('心跳苏打规则只允许快速比赛 200 米并可从存档恢复', () => {

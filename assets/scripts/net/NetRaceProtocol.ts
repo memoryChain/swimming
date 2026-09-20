@@ -67,7 +67,9 @@
 // 版本79：定时炸弹采用附近可追目标优先发放、宽容身体接触和接棒期 AI 反应窗口。
 // 版本80：娱乐玩法击倒急救延长至3.5秒，避免新旧客户端复活时机不一致。
 // 版本81：定时炸弹优先消费人物碰撞求解器的稳定接触，避免翻滚后因先行分离而漏传。
-export const NET_RACE_PROTOCOL_VERSION = 81;
+// 版本82：六合一首位完赛后取消定时炸弹待触发轮次，只保留已装载炸弹自然结算。
+// 版本83：心跳苏打恢复降至30%、心率负担升至40，并在拾取后禁止心率自然回落4秒。
+export const NET_RACE_PROTOCOL_VERSION = 83;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

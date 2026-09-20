@@ -314,7 +314,10 @@ export class StimulantBrawlController {
         const racer = this.pickupRacers[pickup.collectorLane] ?? null;
         if (!racer) return true;
         const restored = racer.condition.restoreEnergyRatio(STIMULANT_BRAWL_TUNING.energyRestoreRatio);
-        racer.swimmer.motor.addHeartRateBurden(STIMULANT_BRAWL_TUNING.heartRateBurden);
+        racer.swimmer.motor.addHeartRateBurden(
+            STIMULANT_BRAWL_TUNING.heartRateBurden,
+            STIMULANT_BRAWL_TUNING.heartRateRecoveryHoldSeconds,
+        );
         racer.condition.syncHeartRate(racer.swimmer.heartRate);
         racer.swimmer.triggerStimulantReaction(
             racer.swimmer.heartRate,

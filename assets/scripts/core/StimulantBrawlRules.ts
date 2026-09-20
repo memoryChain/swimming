@@ -3,8 +3,9 @@ import { SeededRandom } from './SharedRNG';
 export const STIMULANT_BRAWL_TUNING = {
     waveCount: 7,
     itemsPerWave: 3,
-    energyRestoreRatio: 0.5,
-    heartRateBurden: 30,
+    energyRestoreRatio: 0.3,
+    heartRateBurden: 40,
+    heartRateRecoveryHoldSeconds: 4,
     pickupRadius: 1.2,
     pickupBodyHalfLength: 0.8,
     reactionDuration: 6,

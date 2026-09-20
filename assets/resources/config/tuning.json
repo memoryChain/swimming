@@ -1,6 +1,6 @@
 {
-  "version": 57,
-  "updatedAt": "2026-09-19T00:00:00.000Z",
+  "version": 58,
+  "updatedAt": "2026-09-20T00:00:00.000Z",
   "values": {
     "camera.kickDiveBackDistance": 2.8,
     "camera.kickDiveBelowDistance": 0.35,
@@ -256,8 +256,9 @@
     "heartRate.steadyRecoverySeconds": 3.5,
     "heartRate.slowRiseSeconds": 12,
     "heartRate.slowRecoverySeconds": 4.5,
-    "stimulant.energyRestoreRatio": 0.5,
-    "stimulant.heartRateBurden": 30,
+    "stimulant.energyRestoreRatio": 0.3,
+    "stimulant.heartRateBurden": 40,
+    "stimulant.heartRateRecoveryHoldSeconds": 4,
     "stimulant.pickupRadius": 1.2,
     "stimulant.pickupBodyHalfLength": 0.8,
     "stimulant.reactionDuration": 6,

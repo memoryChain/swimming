@@ -682,8 +682,10 @@ export class SwimmerMotor {
 
     get heartRate(): number { return this._authoritativeHeartRate >= 0 ? this._authoritativeHeartRate : this._heartRate.heartRate; }
     // 只供本地成功动作使用，远端真人心率由 owner 覆盖，不能重复叠加负担。
-    addHeartRateBurden(amount: number) {
-        if (this._isRacing && this._authoritativeHeartRate < 0) this._heartRate.addBurden(amount);
+    addHeartRateBurden(amount: number, recoveryHoldSeconds = 0) {
+        if (this._isRacing && this._authoritativeHeartRate < 0) {
+            this._heartRate.addBurden(amount, recoveryHoldSeconds);
+        }
     }
 
     // 海豚跳冻结心率数值但采样时钟照走；普通转身等阶段自然恢复。

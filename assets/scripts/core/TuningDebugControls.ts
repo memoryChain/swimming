@@ -54,7 +54,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 57;
+const TUNING_FILE_VERSION = 58;
 
 type TuningFileData = {
     version: number;
@@ -348,6 +348,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
         controls: [
             control('stimulant.energyRestoreRatio', '体力恢复比例', '每瓶按角色自己的体力上限恢复，1 表示一整条体力。', () => STIMULANT_BRAWL_TUNING.energyRestoreRatio, v => STIMULANT_BRAWL_TUNING.energyRestoreRatio = v, 0.05, 0, 1, 2),
             control('stimulant.heartRateBurden', '心率惩罚', '拾取后立即增加的心率，最终封顶 180。', () => STIMULANT_BRAWL_TUNING.heartRateBurden, v => STIMULANT_BRAWL_TUNING.heartRateBurden = v, 1, 0, 100, 0),
+            control('stimulant.heartRateRecoveryHoldSeconds', '心率滞留时间', '拾取后允许心率继续上升，但在这段时间内禁止自然回落。重复拾取会重新计时。', () => STIMULANT_BRAWL_TUNING.heartRateRecoveryHoldSeconds, v => STIMULANT_BRAWL_TUNING.heartRateRecoveryHoldSeconds = v, 0.5, 0, 12, 1, ' s'),
             control('stimulant.pickupRadius', '拾取半径', '俯视平面中的拾取距离；潜水和海豚跳不受高度影响。', () => STIMULANT_BRAWL_TUNING.pickupRadius, v => STIMULANT_BRAWL_TUNING.pickupRadius = v, 0.05, 0.2, 3, 2, 'm'),
             control('stimulant.pickupBodyHalfLength', '身体判定半长', '沿角色前进方向扩展的拾取胶囊半长；提高后更容易在翻滚和擦身时吃到。', () => STIMULANT_BRAWL_TUNING.pickupBodyHalfLength, v => STIMULANT_BRAWL_TUNING.pickupBodyHalfLength = v, 0.05, 0, 2, 2, 'm'),
             control('stimulant.reactionDuration', '上头发光时长', '喝下苏打后角色身体保持橙红脉冲发光的时间；再次拾取会刷新。', () => STIMULANT_BRAWL_TUNING.reactionDuration, v => STIMULANT_BRAWL_TUNING.reactionDuration = v, 0.5, 1, 12, 1, ' s'),
