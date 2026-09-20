@@ -29,9 +29,10 @@ test('娱乐玩法共用一套低分辨率事件镜头', () => {
     assert.equal((camera.match(/new RenderTexture/g) ?? []).length, 1);
     assert.match(camera, /const FEED_WIDTH = 256/);
     assert.match(camera, /const FEED_HEIGHT = 144/);
-    assert.match(camera, /const PANEL_HEIGHT = 200/);
+    assert.match(camera, /const FEED_BOTTOM_INSET = 6/);
+    assert.match(camera, /const PANEL_HEIGHT = 210/);
     assert.match(camera, /statusNode\.setPosition\(0, PANEL_HEIGHT \* 0\.5 - 41, 0\)/);
-    assert.match(camera, /image\.setPosition\(0, -27, 0\)/);
+    assert.match(camera, /image\.setPosition\(0, -PANEL_HEIGHT \* 0\.5 \+ FEED_BOTTOM_INSET \+ FEED_HEIGHT \* 0\.5, 0\)/);
     assert.match(camera, /const RENDER_INTERVAL_SECONDS = 1 \/ 30/);
     assert.match(camera, /const TIMED_BOMB_ARM_PREVIEW_SECONDS = 1\.2/);
     assert.match(camera, /const TIMED_BOMB_TRANSFER_PREVIEW_SECONDS = 0\.8/);

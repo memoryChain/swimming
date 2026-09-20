@@ -11,8 +11,9 @@ import { platform } from '../platform/PlatformManager';
 
 const FEED_WIDTH = 256;
 const FEED_HEIGHT = 144;
+const FEED_BOTTOM_INSET = 6;
 const PANEL_WIDTH = FEED_WIDTH + 12;
-const PANEL_HEIGHT = 200;
+const PANEL_HEIGHT = 210;
 const PANEL_MARGIN = 18;
 const RANKING_RAIL_WIDTH = 117;
 const RANKING_RAIL_GAP = 16;
@@ -734,7 +735,7 @@ export class RaceEventPictureInPictureCamera {
         outline.width = 2;
         const image = makeUiNode('Feed', root);
         image.getComponent(UITransform)!.setContentSize(FEED_WIDTH, FEED_HEIGHT);
-        image.setPosition(0, -27, 0);
+        image.setPosition(0, -PANEL_HEIGHT * 0.5 + FEED_BOTTOM_INSET + FEED_HEIGHT * 0.5, 0);
         const sprite = image.addComponent(Sprite);
         sprite.sizeMode = Sprite.SizeMode.CUSTOM;
         const spriteFrame = new SpriteFrame();
