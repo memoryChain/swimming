@@ -102,6 +102,27 @@ test('鲨鱼模式使用固定场景控制器而非角色技能召唤', () => {
     assert.equal(existsSync(new URL('../assets/race/models/SharkModel.glb', import.meta.url)), true);
 });
 
+test('鲨鱼咬合状态播放独立骨骼动作并在状态结束后恢复游动', () => {
+    const manager = readFileSync(
+        new URL('../assets/scripts/core/GameManager.ts', import.meta.url),
+        'utf8',
+    );
+    const model = readFileSync(
+        new URL('../assets/race/models/SharkModel.glb', import.meta.url),
+    );
+    const biteIndex = manager.indexOf('private startSharkBiteAnimation()');
+    const biteEnd = manager.indexOf('private resetSharkArtPresentation()', biteIndex);
+    const biteSource = manager.slice(biteIndex, biteEnd);
+    assert.ok(biteIndex >= 0);
+    assert.match(biteSource, /getState\('Shark_Bite'\)/);
+    assert.match(biteSource, /state\.speed = SHARK_MODEL_PRESENTATION\.biteAnimationSpeed/);
+    assert.match(biteSource, /animation\.play\('Shark_Bite'\)/);
+    assert.match(manager, /private playSharkBitePresentation\(\)[\s\S]*?this\.startSharkBiteAnimation\(\)/);
+    assert.match(manager, /private resetSharkArtPresentation\(\)[\s\S]*?this\.startSharkSwimAnimation\(\)/);
+    assert.notEqual(model.indexOf(Buffer.from('Shark_Bite')), -1);
+    assert.notEqual(model.indexOf(Buffer.from('Shark_Swim_Loop')), -1);
+});
+
 test('鲨鱼首次现身会先激活节点再启动警告动画', () => {
     const controller = readFileSync(
         new URL('../assets/scripts/entity/SharkController.ts', import.meta.url),
@@ -167,20 +188,20 @@ test('鲨鱼咬伤只复用画中画可见的大水花进行遮挡', () => {
     assert.equal(existsSync(new URL('../assets/scripts/entity/SharkBiteOcclusionEffect.ts', import.meta.url)), false);
 });
 
-test('鲨鱼锁定标记缓存投影组件并只在量化结果变化时写变换', () => {
+test('鲨鱼锁定只使用分阶段池化追踪箭头', () => {
     const overlay = readFileSync(
         new URL('../assets/scripts/ui/SharkLockOnOverlay.ts', import.meta.url),
         'utf8',
     );
-    assert.match(overlay, /const UPDATE_INTERVAL_MS = 34;/);
-    assert.match(overlay, /private _hudTransform: UITransform \| null = null;/);
-    assert.match(overlay, /if \(x !== this\._lastX \|\| y !== this\._lastY\)/);
-    assert.match(overlay, /if \(pulse !== this\._lastPulse\)/);
-    const updateIndex = overlay.indexOf('update(shark: SharkController');
-    const hideIndex = overlay.indexOf('hide(): void', updateIndex);
-    const updateSource = overlay.slice(updateIndex, hideIndex);
-    assert.doesNotMatch(updateSource, /getComponent\(UITransform\)/);
-    assert.doesNotMatch(updateSource, /Graphics\.clear|\.clear\(\)/);
+    assert.match(overlay, /const UPDATE_INTERVAL = 1 \/ 30;/);
+    assert.match(overlay, /buildHuntRippleGeometry\(\)/);
+    assert.match(overlay, /const TRAIL_COUNT = 3;/);
+    assert.match(overlay, /state === SharkState\.WARNING \|\| state === SharkState\.HUNT/);
+    assert.match(overlay, /state === SharkState\.HUNT \? HUNT_ARROW_COLOR : WARNING_ARROW_COLOR/);
+    assert.match(overlay, /const speed = hunting \? 0\.82 : 0\.38/);
+    assert.match(overlay, /const spacing = hunting \? 0\.22 : 1 \/ this\._trails\.length/);
+    assert.doesNotMatch(overlay, /TargetReticle|buildLockReticleGeometry|updateReticle/);
+    assert.doesNotMatch(overlay, /Graphics|worldToScreen|screenToWorld|UITransform/);
 });
 
 test('鲨鱼规则只允许快速比赛二百米并可从存档恢复', () => {

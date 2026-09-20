@@ -74,6 +74,7 @@ export const SHARK_MODEL_PRESENTATION = {
     visualYOffset: -0.18,
     visualEulerDegrees: [0, 90, 0] as const,
     swimAnimationSpeed: 1.2,
+    biteAnimationSpeed: 1.1,
 };
 const CARTON_SWIMMER5_PREFAB_CANDIDATES = [
     'models/CartonSwimmer5',
@@ -505,6 +506,24 @@ export const RESOURCE_PATHS = {
     },
     entertainmentRecoveryUi: {
         rescueCard: 'ui/entertainment-recovery-v1/rescue-card/texture',
+    },
+    entertainmentBannerUi: {
+        events: {
+            info: 'ui/entertainment-banner-v1/event-banner-info/texture',
+            warning: 'ui/entertainment-banner-v1/event-banner-warning/texture',
+            danger: 'ui/entertainment-banner-v1/event-banner-danger/texture',
+            success: 'ui/entertainment-banner-v1/event-banner-success/texture',
+        },
+        stimulantCard: 'ui/entertainment-banner-v1/stimulant-pickup-base/texture',
+        icons: {
+            stimulant: 'ui/entertainment-banner-v1/icon-stimulant/texture',
+            timedBomb: 'ui/entertainment-banner-v1/icon-timed-bomb/texture',
+            whirlpool: 'ui/entertainment-banner-v1/icon-whirlpool/texture',
+            cannon: 'ui/entertainment-banner-v1/icon-cannon/texture',
+            mine: 'ui/entertainment-banner-v1/icon-mine/texture',
+            shark: 'ui/entertainment-banner-v1/icon-shark/texture',
+            broadcast: 'ui/entertainment-banner-v1/icon-broadcast/texture',
+        },
     },
     entertainmentKnockoutUi: {
         dizzyStars: 'ui/entertainment-knockout-v1/dizzy-stars/texture',

@@ -42,7 +42,7 @@ test('六种娱乐事件各有十组确定性广播，同一事件前十次不�
         assert.equal(new Set(indices).size, ENTERTAINMENT_BROADCAST_VARIANT_COUNT);
         assert.equal(new Set(previews).size, ENTERTAINMENT_BROADCAST_VARIANT_COUNT);
         assert.equal(new Set(actions).size, ENTERTAINMENT_BROADCAST_VARIANT_COUNT);
-        assert.ok(previews.every(copy => copy.startsWith('泳池广播：') && copy.length <= 31));
+        assert.ok(previews.every(copy => !copy.startsWith('泳池广播：') && copy.length <= 31));
         assert.ok(actions.every(copy => copy.includes('·') && copy.length <= 24));
     }
 });

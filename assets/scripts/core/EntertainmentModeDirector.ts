@@ -117,6 +117,7 @@ export function entertainmentEventName(event: EntertainmentEventId): string {
 type EntertainmentBroadcastCopy = readonly [preview: string, action: string];
 
 export const ENTERTAINMENT_BROADCAST_VARIANT_COUNT = 10;
+const ENTERTAINMENT_PREVIEW_PREFIX = '泳池广播：';
 
 const ENTERTAINMENT_BROADCAST_COPIES: Readonly<Record<
     EntertainmentEventId,
@@ -240,7 +241,10 @@ export function entertainmentPreviewCopy(
     activationSerial = 1,
 ): string {
     const copies = entertainmentBroadcastCopies(event, special);
-    return copies[entertainmentBroadcastVariantIndex(event, seed, activationSerial, special)][0];
+    const copy = copies[entertainmentBroadcastVariantIndex(event, seed, activationSerial, special)][0];
+    return copy.startsWith(ENTERTAINMENT_PREVIEW_PREFIX)
+        ? copy.slice(ENTERTAINMENT_PREVIEW_PREFIX.length)
+        : copy;
 }
 
 export function entertainmentActionCopy(

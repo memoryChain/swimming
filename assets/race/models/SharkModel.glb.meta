@@ -4,7 +4,8 @@
   "imported": true,
   "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0",
   "files": [
-    "__original-animation-0.bin"
+    "__original-animation-0.bin",
+    "__original-animation-1.bin"
   ],
   "subMetas": {
     "96632": {
@@ -49,6 +50,29 @@
       ],
       "subMetas": {}
     },
+    "d4c35": {
+      "importer": "gltf-animation",
+      "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@d4c35",
+      "displayName": "",
+      "id": "d4c35",
+      "name": "Shark_Bite.animation",
+      "userData": {
+        "gltfIndex": 0,
+        "wrapMode": 2,
+        "sample": 30,
+        "span": {
+          "from": 0,
+          "to": 0.46666666865348816
+        },
+        "events": []
+      },
+      "ver": "1.0.18",
+      "imported": true,
+      "files": [
+        ".bin"
+      ],
+      "subMetas": {}
+    },
     "bb942": {
       "importer": "gltf-animation",
       "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@bb942",
@@ -56,12 +80,12 @@
       "id": "bb942",
       "name": "Shark_Swim_Loop.animation",
       "userData": {
-        "gltfIndex": 0,
+        "gltfIndex": 1,
         "wrapMode": 2,
         "sample": 30,
         "span": {
           "from": 0,
-          "to": 1.0416666269302368
+          "to": 0.8333333134651184
         },
         "events": []
       },
@@ -154,14 +178,28 @@
     ],
     "animationImportSettings": [
       {
+        "name": "Shark_Bite",
+        "duration": 0.46666666865348816,
+        "fps": 30,
+        "splits": [
+          {
+            "name": "Shark_Bite",
+            "from": 0,
+            "to": 0.46666666865348816,
+            "wrapMode": 2,
+            "previousId": "d4c35"
+          }
+        ]
+      },
+      {
         "name": "Shark_Swim_Loop",
-        "duration": 1.0416666269302368,
+        "duration": 0.8333333134651184,
         "fps": 30,
         "splits": [
           {
             "name": "Shark_Swim_Loop",
             "from": 0,
-            "to": 1.0416666269302368,
+            "to": 0.8333333134651184,
             "wrapMode": 2,
             "previousId": "bb942"
           }

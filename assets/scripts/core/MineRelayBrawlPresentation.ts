@@ -8,7 +8,7 @@ import {
 import { MINE_RELAY_TUNING, type MineRelayArm } from './MineRelayBrawlController';
 
 const PRESENTATION_INTERVAL = 1 / 20;
-const EXPLOSION_SECONDS = 0.58;
+const EXPLOSION_SECONDS = 0.95;
 const TIMED_BOMB_EXPLOSION_INTENSITY = 1.25;
 const ATTACH_X = -0.28;
 const ATTACH_Y = 0.48;

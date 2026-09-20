@@ -158,6 +158,19 @@ export class MineRelayBrawlController {
         this.reset();
     }
 
+    /** 首位完赛收尾时取消尚未装载的轮次；已装载炸弹继续自然结算。 */
+    cancelPendingRoundsAfterCurrent(): boolean {
+        const roundMask = this.rounds.length >= 31
+            ? 0x7fffffff
+            : (1 << this.rounds.length) - 1;
+        const activeBit = this.activeArm ? 1 << this.activeArm.roundId : 0;
+        const nextCompletedMask = (this.completedRoundMask | (roundMask & ~activeBit)) >>> 0;
+        if (nextCompletedMask === this.completedRoundMask) return false;
+        this.completedRoundMask = nextCompletedMask;
+        this.revision++;
+        return true;
+    }
+
     update(dt: number, state: GameState, authoritative: boolean): void {
         if (state !== GameState.RACING) {
             this.previousRacerDistance.fill(Number.NaN);

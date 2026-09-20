@@ -78,6 +78,7 @@ export class RaceEventPictureInPictureCamera {
     private timedBombReopenCooldownSeconds = 0;
     private timedBombResolution: TimedBombResolution = 'none';
     private timedBombResolutionHoldSeconds = 0;
+    private timedBombBlastPositionReady = false;
     private timedBombPoseReady = false;
     private lastTimedBombCopyLane = -2;
     private lastTimedBombCopySeconds = -1;
@@ -95,6 +96,7 @@ export class RaceEventPictureInPictureCamera {
     private readonly biteHoldFocus = new Vec3();
     private readonly timedBombDesiredCameraPosition = new Vec3();
     private readonly timedBombDesiredFocus = new Vec3();
+    private readonly timedBombBlastPosition = new Vec3();
 
     constructor(private readonly options: RaceEventPictureInPictureOptions) {
         this.buildCamera();
@@ -341,7 +343,13 @@ export class RaceEventPictureInPictureCamera {
         this.finishRender();
     }
 
-    showTimedBombResolution(carrier: Node | null, lane: number, exploded: boolean, local: boolean): void {
+    showTimedBombResolution(
+        carrier: Node | null,
+        lane: number,
+        exploded: boolean,
+        local: boolean,
+        blastPosition: Readonly<Vec3> | null = null,
+    ): void {
         this.timedBombCarrier = carrier?.isValid ? carrier : this.timedBombCarrier;
         this.timedBombLane = lane;
         this.timedBombLocal = local;
@@ -349,6 +357,11 @@ export class RaceEventPictureInPictureCamera {
         this.timedBombRemainingSeconds = 0;
         this.timedBombResolution = exploded ? 'exploded' : 'disarmed';
         this.timedBombResolutionHoldSeconds = TIMED_BOMB_RESOLUTION_HOLD_SECONDS;
+        this.timedBombBlastPositionReady = exploded && !!blastPosition;
+        if (this.timedBombBlastPositionReady && blastPosition) {
+            this.timedBombBlastPosition.set(blastPosition);
+            this.timedBombPoseReady = false;
+        }
         if (!this.timedBombCarrier?.isValid || this.isTimedBombBlockedByHigherPriority()) return;
         const alreadyTracking = this.mode === 'timed-bomb';
         this.mode = 'timed-bomb';
@@ -410,6 +423,26 @@ export class RaceEventPictureInPictureCamera {
     private updateTimedBombCameraPose(dt: number): void {
         const carrier = this.timedBombCarrier;
         if (!carrier?.isValid) return;
+        if (this.timedBombResolution === 'exploded' && this.timedBombBlastPositionReady) {
+            const outward = this.timedBombBlastPosition.z >= 0 ? 1 : -1;
+            this.timedBombDesiredFocus.set(
+                this.timedBombBlastPosition.x,
+                this.options.course.waterY + 0.08,
+                this.timedBombBlastPosition.z,
+            );
+            this.timedBombDesiredCameraPosition.set(
+                this.timedBombBlastPosition.x - this.options.course.direction * 2.8,
+                this.options.course.waterY + 6.4,
+                this.timedBombBlastPosition.z + outward * 3.8,
+            );
+            if (!this.timedBombPoseReady) {
+                this.cameraPosition.set(this.timedBombDesiredCameraPosition);
+                this.focus.set(this.timedBombDesiredFocus);
+                this.timedBombPoseReady = true;
+            }
+            this.applyCameraPose(56);
+            return;
+        }
         carrier.getWorldPosition(this.subjectPosition);
         const outward = this.subjectPosition.z >= 0 ? 1 : -1;
         this.timedBombDesiredFocus.set(
@@ -578,6 +611,7 @@ export class RaceEventPictureInPictureCamera {
         this.timedBombReopenCooldownSeconds = 0;
         this.timedBombResolution = 'none';
         this.timedBombResolutionHoldSeconds = 0;
+        this.timedBombBlastPositionReady = false;
         this.timedBombPoseReady = false;
         this.invalidateTimedBombCopy();
     }

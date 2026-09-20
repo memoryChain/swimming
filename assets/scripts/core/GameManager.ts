@@ -61,7 +61,11 @@ import { styleProjectUiLabel } from '../ui/ProjectUiFonts';
 import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { FinishRankOverlay } from '../ui/FinishRankOverlay';
-import { EntertainmentEventBanner } from '../ui/SharkEventBanner';
+import {
+    EntertainmentEventBanner,
+    type EntertainmentBannerCategory,
+    type EntertainmentBannerIcon,
+} from '../ui/SharkEventBanner';
 import { SharkLockOnOverlay } from '../ui/SharkLockOnOverlay';
 import { pickSharkBannerLine } from '../ui/SharkBannerCopy';
 import {
@@ -190,6 +194,30 @@ const NET_SNAPSHOT_INTERVAL = 0.15;
 // dive was never triggered (DiveRelease lost/failed), force it into the race so it can't
 // stay stuck on the starting block while its position data keeps moving.
 const NET_DIVE_STUCK_M = 1;
+
+function entertainmentBannerIcon(event: EntertainmentEventId): EntertainmentBannerIcon {
+    switch (event) {
+        case EntertainmentEventId.STIMULANT: return 'stimulant';
+        case EntertainmentEventId.TIMED_BOMB: return 'timed-bomb';
+        case EntertainmentEventId.WHIRLPOOL: return 'whirlpool';
+        case EntertainmentEventId.CANNON: return 'cannon';
+        case EntertainmentEventId.MINEFIELD: return 'mine';
+        case EntertainmentEventId.SHARK: return 'shark';
+        default: return 'broadcast';
+    }
+}
+
+function entertainmentActiveBannerCategory(event: EntertainmentEventId): EntertainmentBannerCategory {
+    switch (event) {
+        case EntertainmentEventId.STIMULANT: return '补给投放';
+        case EntertainmentEventId.TIMED_BOMB: return '炸弹接力';
+        case EntertainmentEventId.WHIRLPOOL: return '漩涡警报';
+        case EntertainmentEventId.CANNON: return '炮火警报';
+        case EntertainmentEventId.MINEFIELD: return '水雷警报';
+        case EntertainmentEventId.SHARK: return '鲨鱼警报';
+        default: return '广播通知';
+    }
+}
 // A dive that hasn't reached racing this long after it started (ms) is treated as stuck
 // (its tween never completed), so the redundancy forces it straight into racing. Longer
 // than the ~1.5s dive tween so a normal in-progress dive isn't cut short.
@@ -577,6 +605,7 @@ export class GameManager extends Component {
         this._litterBrawl = null;
         this._litterPresentation?.dispose();
         this._litterPresentation = null;
+        this._sharkLockOnOverlay.dispose();
         this._sharkEntryPresentation?.dispose();
         this._sharkEntryPresentation = null;
         this._entertainmentWaterSplashes?.dispose();
@@ -764,11 +793,7 @@ export class GameManager extends Component {
             netDt,
         );
         if (this._shark) {
-            this._sharkLockOnOverlay.update(
-                this._shark,
-                this._cameraNode?.getComponent(Camera) ?? null,
-                this._uiCamera,
-            );
+            this._sharkLockOnOverlay.update(this._shark, dt);
         }
         // Pin the finish-line rank badges above each finished swimmer using this
         // frame's final camera transform.
@@ -1497,6 +1522,10 @@ export class GameManager extends Component {
         if (!director || this._modelDebugFlow?.active || this._state !== GameState.RACING) return;
         if (this._netRaceController && !this._netRaceController.isHost) return;
         if (this._raceManager?.hasAnyFinisher()) {
+            if (director.currentEvent() === EntertainmentEventId.TIMED_BOMB
+                && isTimedBombBrawlMode()) {
+                this._mineRelayBrawl?.cancelPendingRoundsAfterCurrent();
+            }
             this.handleEntertainmentDirectorTransition(director.lockAfterFirstFinish());
             const closingEvent = director.currentEvent();
             const closingTransition = director.update(
@@ -1566,6 +1595,8 @@ export class GameManager extends Component {
                 ),
                 'warning',
                 previewDurationMs,
+                entertainmentBannerIcon(transition.previewEvent),
+                '广播通知',
             );
         }
         if (transition.activatedEvent !== null) {
@@ -1588,6 +1619,8 @@ export class GameManager extends Component {
                 ),
                 'danger',
                 3000,
+                entertainmentBannerIcon(transition.activatedEvent),
+                entertainmentActiveBannerCategory(transition.activatedEvent),
             );
         }
         if (transition.finishedEvent === EntertainmentEventId.CANNON) {
@@ -1742,10 +1775,11 @@ export class GameManager extends Component {
                 ),
                 feedback => {
                     if (feedback.local) {
-                        const text = feedback.energyRestored > 0
-                            ? `咕咚！心跳苏打 · 体力 +${Math.round(feedback.energyRestored)} · 心率 ${Math.round(feedback.heartRate)}`
-                            : `咕咚！心跳苏打 · 体力已满 · 心率 ${Math.round(feedback.heartRate)}`;
-                        this._entertainmentEventBanner.showPersonal(text, 'success', 1400);
+                        this._entertainmentEventBanner.showStimulantPickup(
+                            feedback.energyRestored,
+                            feedback.heartRate,
+                            1400,
+                        );
                     }
                 },
                 wave => {
@@ -1755,6 +1789,8 @@ export class GameManager extends Component {
                         `第 ${wave} 波心跳苏打出现 · 争抢开始`,
                         'warning',
                         1500,
+                        'stimulant',
+                        '补给投放',
                     );
                 },
                 () => this._playerLaneIndex,
@@ -1840,6 +1876,8 @@ export class GameManager extends Component {
                             : '前方漩涡 · 贴外圈借力',
                         'warning',
                         1500,
+                        'whirlpool',
+                        '漩涡警报',
                     );
                     if (index === (featuredIndex >= 0 ? featuredIndex : 0)) {
                         this._eventPictureInPicture?.showWhirlpoolPreview(
@@ -2136,6 +2174,8 @@ export class GameManager extends Component {
                 '炮击来袭 · 观察落点并横移躲避',
                 'warning',
                 2000,
+                'cannon',
+                '炮火警报',
             );
         }
         if (broadcast && this._netRaceController?.isHost) {
@@ -2200,6 +2240,8 @@ export class GameManager extends Component {
             `${swimmer.swimmerName}被炮弹核心命中`,
             'danger',
             1800,
+            'cannon',
+            '炮击命中',
         );
     }
 
@@ -2372,6 +2414,8 @@ export class GameManager extends Component {
                 `定时炸弹落到${event.carrierLane + 1}号泳道`,
                 'warning',
                 1200,
+                'timed-bomb',
+                '炸弹接力',
             );
         }
         if (broadcast && this._netRaceController?.isHost) {
@@ -2437,6 +2481,8 @@ export class GameManager extends Component {
                     `${event.carrierLane + 1}号泳道带雷冲线 · 拆弹成功`,
                     'success',
                     1200,
+                    'timed-bomb',
+                    '拆弹成功',
                 );
             }
         }
@@ -2456,12 +2502,6 @@ export class GameManager extends Component {
     ) {
         const swimmer = this.swimmerForLane(lane);
         if (!swimmer?.node?.active) return;
-        this._eventPictureInPicture?.showTimedBombResolution(
-            swimmer.node,
-            lane,
-            true,
-            lane === this._playerLaneIndex,
-        );
         if (distance !== undefined && lateral !== undefined) {
             this._mineExplosionWorldPosition.set(
                 COURSE_LAYOUT.distanceToWorldX(distance),
@@ -2471,6 +2511,13 @@ export class GameManager extends Component {
         } else {
             swimmer.node.getWorldPosition(this._mineExplosionWorldPosition);
         }
+        this._eventPictureInPicture?.showTimedBombResolution(
+            swimmer.node,
+            lane,
+            true,
+            lane === this._playerLaneIndex,
+            this._mineExplosionWorldPosition,
+        );
         this._mineRelayPresentation?.showResolution(true, this._mineExplosionWorldPosition);
         const swimmerLateral = swimmer.node.position.z;
         const away = swimmerLateral === 0 ? (lane & 1 ? 1 : -1) : Math.sign(swimmerLateral);
@@ -2496,6 +2543,8 @@ export class GameManager extends Component {
             `${swimmer.swimmerName}被定时炸弹炸倒 · 等待重生`,
             'danger',
             1250,
+            'timed-bomb',
+            '炸弹爆炸',
         );
     }
 
@@ -2649,6 +2698,8 @@ export class GameManager extends Component {
                     : '又有垃圾被扔进泳池·注意水面漂浮物',
                 'warning',
                 2200,
+                'broadcast',
+                '赛道异物',
             ),
             impact => this.handleLitterRigidImpact(impact),
         );
@@ -2782,6 +2833,8 @@ export class GameManager extends Component {
                     pickSharkBannerLine('reveal'),
                     'warning',
                     Math.round(SHARK_TUNING.warningSeconds * 1000),
+                    'shark',
+                    '鲨鱼警报',
                 );
             },
             onStateChange: state => this.handleSharkStateChange(state),
@@ -2789,6 +2842,8 @@ export class GameManager extends Component {
                 pickSharkBannerLine('attack'),
                 'danger',
                 1500,
+                'shark',
+                '鲨鱼警报',
             ),
             hungerSchedule: isEntertainmentBrawlMode()
                 ? (getRaceDistance() >= 400 ? [0, 9] : [0])
@@ -2842,6 +2897,18 @@ export class GameManager extends Component {
         animation.play('Shark_Swim_Loop');
     }
 
+    private startSharkBiteAnimation() {
+        const animation = this._sharkAnimation;
+        if (!animation?.isValid) return;
+        const state = animation.getState('Shark_Bite');
+        if (!state) {
+            this.debug('shark bite clip missing');
+            return;
+        }
+        state.speed = SHARK_MODEL_PRESENTATION.biteAnimationSpeed;
+        animation.play('Shark_Bite');
+    }
+
     private resetSharkArtPresentation() {
         const model = this._sharkArtModel;
         if (!model?.isValid) return;
@@ -2853,6 +2920,7 @@ export class GameManager extends Component {
     private playSharkBitePresentation() {
         const model = this._sharkArtModel;
         if (!model?.isValid) return;
+        this.startSharkBiteAnimation();
         Tween.stopAllByTarget(model);
         const y = SHARK_MODEL_PRESENTATION.visualYOffset;
         model.setPosition(0, y, 0);
@@ -2866,13 +2934,21 @@ export class GameManager extends Component {
         if (state === SharkState.WARNING) {
             this.resetSharkArtPresentation();
             if ((this._shark?.huntIndex ?? 0) > 0) {
-                this._entertainmentEventBanner.showEvent('鲨鱼再次出现 · 正在锁定最近选手', 'warning', 2200);
+                this._entertainmentEventBanner.showEvent(
+                    '鲨鱼再次出现 · 正在锁定最近选手',
+                    'warning',
+                    2200,
+                    'shark',
+                    '鲨鱼警报',
+                );
             }
         } else if (state === SharkState.HUNT) {
             this._entertainmentEventBanner.showEvent(
                 '锁定完成 · 立刻变向拉开距离',
                 'danger',
                 Math.round(SHARK_TUNING.huntOpeningGraceSeconds * 1000),
+                'shark',
+                '鲨鱼警报',
             );
         } else if (state === SharkState.BITE) {
             this.playSharkBitePresentation();
@@ -2880,7 +2956,13 @@ export class GameManager extends Component {
             this.resetSharkArtPresentation();
             this._sharkLockOnOverlay.hide();
             if (!isEntertainmentBrawlMode()) {
-                this._entertainmentEventBanner.enqueueEvent(pickSharkBannerLine('retreat'), 'success', 1800);
+                this._entertainmentEventBanner.enqueueEvent(
+                    pickSharkBannerLine('retreat'),
+                    'success',
+                    1800,
+                    'shark',
+                    '警报解除',
+                );
             }
         } else if (state === SharkState.SATIATED) {
             this._sharkLockOnOverlay.hide();
@@ -2893,7 +2975,13 @@ export class GameManager extends Component {
                 }, { easing: 'quadIn' }).start();
             }
             if (!isEntertainmentBrawlMode()) {
-                this._entertainmentEventBanner.enqueueEvent('鲨鱼已经吃饱 · 本场警报解除', 'success', 1800);
+                this._entertainmentEventBanner.enqueueEvent(
+                    '鲨鱼已经吃饱 · 本场警报解除',
+                    'success',
+                    1800,
+                    'shark',
+                    '警报解除',
+                );
             }
         }
     }
@@ -2919,6 +3007,8 @@ export class GameManager extends Component {
             `${swimmer.swimmerName}被鲨鱼咬伤`,
             'danger',
             1800,
+            'shark',
+            '咬伤播报',
         );
         const splashNode = swimmer.cartoonRig?.splashNode;
         if (splashNode?.isValid) setLayerRecursive(splashNode, SWIMMER_LAYER);
@@ -4143,7 +4233,7 @@ export class GameManager extends Component {
                 this._entertainmentEventBanner.bind(this._raceHud);
             }
             if (isEntertainmentBrawlMode() || isSharkBrawlMode()) {
-                this._sharkLockOnOverlay.bind(this._raceHud);
+                this._sharkLockOnOverlay.bind(this._worldRoot, COURSE_LAYOUT.waterY, SWIMMER_LAYER);
             }
             this.refreshSwimmerNameRoster();
             this._finishRankOverlay.bind(this._raceHud);

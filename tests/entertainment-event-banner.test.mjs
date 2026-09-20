@@ -10,7 +10,7 @@ const bombHud = readFileSync(new URL('../assets/scripts/ui/MineRelayBrawlHud.ts'
 
 test('六种娱乐玩法共用赛事广播与个人反馈，不再从比赛编排调用通用 Toast', () => {
     assert.match(gameManager, /new EntertainmentEventBanner\(\)/);
-    assert.match(gameManager, /isStimulantBrawlMode[\s\S]*?showPersonal/);
+    assert.match(gameManager, /isStimulantBrawlMode[\s\S]*?showStimulantPickup/);
     assert.match(gameManager, /updateWhirlpoolBrawl[\s\S]*?showEvent/);
     assert.match(gameManager, /handleCannonLaunch[\s\S]*?showEvent/);
     assert.match(gameManager, /handleMineRelayArm[\s\S]*?showPersonal/);
@@ -28,22 +28,71 @@ test('共用横幅保留鲨鱼大字描边，同时以稳定节点分离个人�
     assert.doesNotMatch(banner, /showEventWithAction\(/);
     assert.doesNotMatch(banner, /makeLabel\('Action'/);
     assert.match(banner, /showPersonal\(/);
-    assert.doesNotMatch(banner, /destroy\(\)/);
+    assert.match(banner, /showStimulantPickup\(/);
+    assert.match(banner, /loadRaceAsset\(/);
+    assert.match(banner, /const STIMULANT_CARD_WIDTH = 640/);
+    assert.match(banner, /const STIMULANT_CARD_HEIGHT = 135/);
+    assert.match(banner, /const STIMULANT_CARD_Y = -68/);
+    assert.match(banner, /cardSprite\.type = Sprite\.Type\.SIMPLE/);
+    assert.doesNotMatch(banner, /makeLabel\('Title', stimulantRoot/);
+    assert.doesNotMatch(banner, /makeUiNode\('Heartbeat', stimulantRoot/);
+    assert.doesNotMatch(banner, /loadFrame\('heartbeat'/);
+    assert.match(banner, /const STIMULANT_STAT_TEXT_X = 210/);
+    assert.match(banner, /const STIMULANT_STAT_TEXT_WIDTH = 104/);
+    assert.match(banner, /energyNode\.getComponent\(UITransform\)!\.setContentSize\(STIMULANT_STAT_TEXT_WIDTH, STIMULANT_STAT_TEXT_HEIGHT\)/);
+    assert.match(banner, /energyNode\.setPosition\(STIMULANT_STAT_TEXT_X, STIMULANT_ENERGY_TEXT_Y, 1\)/);
+    assert.match(banner, /heartNode\.setPosition\(STIMULANT_STAT_TEXT_X, STIMULANT_HEART_TEXT_Y, 1\)/);
+    assert.match(banner, /energyLabel\.overflow = Label\.Overflow\.SHRINK/);
+    assert.match(banner, /heartLabel\.overflow = Label\.Overflow\.SHRINK/);
+    assert.doesNotMatch(banner, /loadFrame\('stimulant-card',[^\n]*110, 110, 26/);
 });
 
 test('画中画出现时广播复用原节点并收窄到镜头左侧', () => {
     assert.match(banner, /setPictureInPictureLeft\(leftEdge: number \| null\)/);
     assert.match(banner, /this\.pictureInPictureLeft - PICTURE_IN_PICTURE_GAP/);
-    assert.match(banner, /layoutChannel\(this\.eventRoot, this\.eventLabel/);
-    assert.doesNotMatch(banner, /setPictureInPictureLeft[\s\S]*?makeUiNode/);
+    assert.match(banner, /this\.layoutEventChannel\(\)/);
+    assert.doesNotMatch(banner, /setPictureInPictureLeft\(leftEdge: number \| null\): void \{[^}]*makeUiNode/);
+});
+
+test('事件图标和顶部栏目固定锚定横幅左端，正文在独立内容区居中', () => {
+    assert.match(banner, /const EVENT_ICON_FROM_LEFT = 48/);
+    assert.match(banner, /const EVENT_CATEGORY_FROM_LEFT = 120/);
+    assert.match(banner, /const EVENT_CATEGORY_Y = 34/);
+    assert.match(banner, /const iconX = -width \* 0\.5 \+ EVENT_ICON_FROM_LEFT/);
+    assert.match(banner, /const categoryX = -width \* 0\.5 \+ EVENT_CATEGORY_FROM_LEFT/);
+    assert.match(banner, /EVENT_CATEGORY_Y/);
+    assert.match(banner, /'广播通知', 20, CATEGORY_TEXT/);
+    assert.doesNotMatch(banner, /'娱乐突发', 20, CATEGORY_TEXT/);
+    assert.match(banner, /private eventCategoryLabel: Label \| null = null/);
+    assert.match(banner, /this\.setLabel\(categoryLabel, category, CATEGORY_TEXT\)/);
+    assert.match(banner, /label\.horizontalAlign = Label\.HorizontalAlign\.CENTER/);
+    assert.match(banner, /EVENT_TEXT_LEFT_INSET[\s\S]*?EVENT_TEXT_RIGHT_INSET/);
+    assert.doesNotMatch(banner, /const artOffset = \(width - EVENT_WIDTH\)/);
+});
+
+test('广播栏目使用受控四字词库，并随排队消息一起保存', () => {
+    for (const category of [
+        '广播通知', '补给投放', '炸弹接力', '漩涡警报', '水雷警报', '鲨鱼警报',
+        '炮火警报', '炮击命中', '炸弹爆炸', '拆弹成功', '警报解除', '赛道异物', '咬伤播报',
+    ]) {
+        assert.match(banner, new RegExp(`\\| '${category}'`));
+    }
+    assert.match(banner, /category: EntertainmentBannerCategory/);
+    assert.match(banner, /this\.eventQueue\.push\(\{[\s\S]*?category,/);
+    assert.match(banner, /next\.text, next\.tone, next\.durationMs, next\.icon, next\.category/);
+    assert.match(gameManager, /entertainmentPreviewCopy\([\s\S]*?'广播通知'/);
+    assert.match(gameManager, /entertainmentActiveBannerCategory\(transition\.activatedEvent\)/);
+    assert.match(gameManager, /被鲨鱼咬伤[\s\S]*?'咬伤播报'/);
+    assert.match(gameManager, /被炮弹核心命中[\s\S]*?'炮击命中'/);
+    assert.match(gameManager, /被定时炸弹炸倒[\s\S]*?'炸弹爆炸'/);
 });
 
 test('六合一激活时用原广播位置显示三秒红色行动提示', () => {
     assert.match(gameManager, /showDirectorEvent\([\s\S]*?entertainmentActionCopy\([\s\S]*?transition\.activatedEvent[\s\S]*?'danger'[\s\S]*?3000/);
     assert.match(banner, /const EVENT_WIDTH = 840/);
-    assert.match(banner, /const EVENT_HEIGHT = 86/);
+    assert.match(banner, /const EVENT_HEIGHT = 98/);
     assert.match(banner, /const EVENT_Y = 180/);
-    assert.match(banner, /makeLabel\('Label', eventRoot, '', 40, TONE_COLORS\.warning\)/);
+    assert.match(banner, /makeLabel\('Label', motion, '', 34, WHITE\)/);
     assert.match(gameManager, /isEntertainmentBrawlMode\(\) && wave === 1/);
     assert.match(gameManager, /launch\.strikeId === 0 && !isEntertainmentBrawlMode\(\)/);
     assert.match(gameManager, /onRevealed: \(\) => \{[\s\S]*?if \(isEntertainmentBrawlMode\(\)\) return/);

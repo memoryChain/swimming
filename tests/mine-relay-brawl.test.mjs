@@ -249,6 +249,38 @@ test('定时炸弹携带者冲线后拆弹，快照不会重复爆炸', () => {
     assert.equal(guest.controller.currentArm(), null);
 });
 
+test('六合一首位完赛时取消待触发轮次，只保留当前炸弹自然结算', () => {
+    const host = timedBombFixture(79);
+    const guest = timedBombFixture(79);
+    host.controller.update(0, GameState.RACING, true);
+    assert.ok(host.controller.currentArm());
+    assert.equal(host.controller.remainingRoundCount(), MINE_RELAY_ROUNDS.length);
+
+    guest.controller.applySnapshotState(host.controller.snapshotState());
+    assert.equal(host.controller.cancelPendingRoundsAfterCurrent(), true);
+    assert.equal(host.controller.cancelPendingRoundsAfterCurrent(), false, '重复收尾必须保持幂等');
+    assert.ok(host.controller.currentArm(), '已经装载的炸弹不能被收尾直接删除');
+    assert.equal(host.controller.remainingRoundCount(), 1);
+
+    const applied = guest.controller.applySnapshotState(host.controller.snapshotState());
+    assert.equal(applied.activeChanged, false);
+    assert.ok(guest.controller.currentArm());
+    assert.equal(guest.controller.remainingRoundCount(), 1);
+
+    host.controller.update(MINE_RELAY_ROUNDS[0].fuseSeconds + 0.01, GameState.RACING, true);
+    assert.equal(host.controller.currentArm(), null);
+    assert.equal(host.controller.remainingRoundCount(), 0);
+});
+
+test('六合一首位完赛时若尚未装载炸弹，待命轮次立即清零', () => {
+    const fixture = timedBombFixture(83);
+    assert.equal(fixture.controller.currentArm(), null);
+    assert.equal(fixture.controller.cancelPendingRoundsAfterCurrent(), true);
+    assert.equal(fixture.controller.remainingRoundCount(), 0);
+    fixture.controller.update(10, GameState.RACING, true);
+    assert.equal(fixture.arms.length, 0);
+});
+
 test('水雷模式的出生布局和漂移由共享种子稳定生成', () => {
     const a = minefieldFixture(123);
     const b = minefieldFixture(123);
@@ -538,6 +570,7 @@ test('两种玩法的 HUD 与表现不逐帧重建 UI，也不接管主镜头', 
     assert.match(manager, /transfer\(arm \?\? \{/);
     assert.match(manager, /hasSwimmerCollisionContact/);
     assert.match(timedBombController, /pickPhysicalContactTarget/);
+    assert.match(manager, /cancelPendingRoundsAfterCurrent/);
     assert.doesNotMatch(timedBombPresentation, /this\.clock \* \(locked \? 190 : 75\)/);
     assert.doesNotMatch(manager, /showMineFloating|showMineCarrier|showMineExplosion|updateMine\(/);
 });

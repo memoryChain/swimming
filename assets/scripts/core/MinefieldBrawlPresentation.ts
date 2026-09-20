@@ -14,7 +14,7 @@ import {
 } from './EntertainmentWaterSplash';
 
 const PRESENTATION_INTERVAL = 1 / 20;
-const EXPLOSION_SECONDS = 0.58;
+const EXPLOSION_SECONDS = 0.95;
 const MINEFIELD_EXPLOSION_INTENSITY = 1;
 const ENTRY_STAGGER_SECONDS = 0.04;
 const ENTRY_DISTURB_SECONDS = 0.28;
