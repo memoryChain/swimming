@@ -6,6 +6,8 @@ library/
 temp/
 local/
 build/
+!/config/build/
+!/config/build/wechatgame.json
 /output/
 profiles/
 native
@@ -17,9 +19,8 @@ node_modules/
 # Local UI production sources and previews
 /docs/ui-production/
 /docs/design/
-/art/dive-charge-preview/
-/art/interaction-preview/
-/art/lobby-career-design/
+# 美术制作文件仅保留本地，运行时资源放在 assets/。
+/art/
 
 # Blender/Python generated scene artifacts
 **/__pycache__/

@@ -1,0 +1,25 @@
+{
+  "name": "划水大师",
+  "platform": "wechatgame",
+  "buildPath": "project://build",
+  "outputName": "wechatgame",
+  "debug": true,
+  "sourceMaps": false,
+  "startScene": "074665cc-6b6a-4138-bf91-410cd0b70e4d",
+  "scenes": [
+    {
+      "url": "db://assets/scenes/Login.scene",
+      "uuid": "074665cc-6b6a-4138-bf91-410cd0b70e4d"
+    }
+  ],
+  "mainBundleCompressionType": "merge_dep",
+  "packages": {
+    "wechatgame": {
+      "appid": "wx89ee56c51312f147",
+      "orientation": "landscapeRight",
+      "startSceneAssetBundle": false,
+      "separateEngine": false,
+      "buildOpenDataContextTemplate": false
+    }
+  }
+}

@@ -5,6 +5,7 @@ const path = require('path');
 const { assertTextureCompressionPolicy } = require('./texture-compression-policy');
 const { assertBuildMipmaps } = require('./texture-mipmap-policy');
 const { assertUiFontPolicy } = require('../../scripts/ui-font-policy');
+const { applyWechatProjectConfig, assertWechatProjectOutput } = require('./wechat-project-config');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -44,6 +45,8 @@ exports.onBeforeBuild = async function onBeforeBuild(options) {
     if (options.platform !== 'wechatgame') {
         return;
     }
+
+    applyWechatProjectConfig(options);
 
     // Do not silently publish newly imported large images or GLB-embedded images
     // without the project's tiered ASTC policy. The fixer must run before this
@@ -184,6 +187,7 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
             );
         }
     }
+    assertWechatProjectOutput(result.dest);
     const packageAudit = auditWechatPackageOutput(result.dest);
     console.log(
         `[wechat-race-subpackage] generated and verified race/music subpackages; `
