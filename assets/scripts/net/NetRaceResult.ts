@@ -8,7 +8,7 @@
 // Pure codec (no engine deps). NetRaceController sends/receives it.
 //
 // Wire format (broadcast message body):
-//   "R|<hostPos>,<sequence>|<lane>,<placement>,<fin>,<timeCs>,<elim>,<shark>,<cannon>;..."
+//   "R|<hostPos>,<sequence>|<lane>,<placement>,<fin>,<timeCs>,<elim>,<shark>,<cannon>,<quit>;..."
 // timeCs = finish time in centiseconds (round(time*100)); clients adopt it so the
 //          displayed result matches the host (local finish times drift a little
 //          because each client integrates on its own frame clock).
@@ -22,6 +22,7 @@ export interface NetResultEntry {
     eliminated?: boolean;
     sharkEliminated?: boolean;
     cannonEliminated?: boolean;
+    quit?: boolean;
 }
 
 const TAG = 'R|';
@@ -34,7 +35,7 @@ export interface NetRaceResultPacket {
 
 export function encodeRaceResult(entries: NetResultEntry[], hostPos: number, sequence: number): string {
     const body = entries
-        .map((e) => `${e.lane},${e.placement},${e.finished ? 1 : 0},${Math.round(e.time * 100)},${e.eliminated ? 1 : 0},${e.sharkEliminated ? 1 : 0},${e.cannonEliminated ? 1 : 0}`)
+        .map((e) => `${e.lane},${e.placement},${e.finished ? 1 : 0},${Math.round(e.time * 100)},${e.eliminated ? 1 : 0},${e.sharkEliminated ? 1 : 0},${e.cannonEliminated ? 1 : 0},${e.quit ? 1 : 0}`)
         .join(';');
     return `${TAG}${hostPos},${sequence}|${body}`;
 }
@@ -57,7 +58,8 @@ export function decodeRaceResult(payload: string): NetRaceResultPacket | null {
     const placements = new Set<number>();
     for (const token of body.split(';')) {
         const parts = token.split(',');
-        if (parts.length !== 7 || !parts.every(p => /^\d+$/.test(p))) return null;
+        if ((parts.length !== 7 && parts.length !== 8) || !parts.every(p => /^\d+$/.test(p))) return null;
+        if (parts.length === 8 && parts[7] !== '0' && parts[7] !== '1') return null;
         const lane = Number(parts[0]);
         const placement = Number(parts[1]);
         const fin = parts[2] === '1';
@@ -73,6 +75,7 @@ export function decodeRaceResult(payload: string): NetRaceResultPacket | null {
             eliminated: parts[4] === '1',
             sharkEliminated: parts[5] === '1',
             cannonEliminated: parts[6] === '1',
+            quit: parts[7] === '1',
         });
     }
     return { hostPos, sequence, entries };

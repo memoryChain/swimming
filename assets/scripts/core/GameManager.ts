@@ -1176,6 +1176,9 @@ export class GameManager extends Component {
                     this._sharkLockOnOverlay.hide();
                 }
                 this.syncConditionPhase(state);
+                if (state === GameState.COUNTDOWN || state === GameState.DIVING || state === GameState.RACING) {
+                    this._netRaceController?.flushPlayerQuits();
+                }
                 if ((state === GameState.READY || state === GameState.PRECOUNTDOWN)
                     && this._spectatorCameraFlashEmitter?.isValid) {
                     this._spectatorCameraFlashEmitter.resetRaceIntensity();
@@ -2096,7 +2099,8 @@ export class GameManager extends Component {
 
     private respawnEntertainmentSwimmer(lane: number, distance: number) {
         const swimmer = this.swimmerForLane(lane);
-        if (!swimmer || this._raceManager?.hasSwimmerFinished(swimmer)) return;
+        if (!swimmer || this._raceManager?.hasSwimmerFinished(swimmer)
+            || this._raceManager?.hasSwimmerEliminated(swimmer)) return;
         swimmer.respawnAfterEntertainmentHit(
             Math.min(Math.max(0, distance), getRaceDistance()),
             LANE_LAYOUT.centerZ(lane),
@@ -3745,7 +3749,7 @@ export class GameManager extends Component {
             // plan), NOT RaceManager's world-Z-derived lane — at the finish wall
             // collisions/lateral drift push swimmers into a neighbour's Z bucket, so
             // two rows can collide on that lane and break the client's placement match.
-            const entries = [] as { lane: number; placement: number; finished: boolean; time: number; eliminated?: boolean; sharkEliminated?: boolean; cannonEliminated?: boolean }[];
+            const entries = [] as { lane: number; placement: number; finished: boolean; time: number; eliminated?: boolean; sharkEliminated?: boolean; cannonEliminated?: boolean; quit?: boolean }[];
             for (const row of leaderboard) {
                 const lane = this.assignedLaneOfSwimmer(row.swimmer);
                 if (lane >= 0) {
@@ -3757,6 +3761,7 @@ export class GameManager extends Component {
                         eliminated: row.eliminated,
                         sharkEliminated: row.sharkEliminated,
                         cannonEliminated: row.cannonEliminated,
+                        quit: row.quit,
                     });
                 }
             }
@@ -3780,7 +3785,7 @@ export class GameManager extends Component {
             this._netRaceController?.setAuthResultListener(null);
             done(leaderboard);
         };
-        const apply = (result: { lane: number; placement: number; finished: boolean; time: number; eliminated?: boolean; sharkEliminated?: boolean; cannonEliminated?: boolean }[]) => {
+        const apply = (result: { lane: number; placement: number; finished: boolean; time: number; eliminated?: boolean; sharkEliminated?: boolean; cannonEliminated?: boolean; quit?: boolean }[]) => {
             const byLane = new Map(result.map((e) => [e.lane, e]));
             for (const row of leaderboard) {
                 // Match by the same STABLE assigned lane the host keyed by.
@@ -3792,6 +3797,7 @@ export class GameManager extends Component {
                     row.eliminated = auth.eliminated;
                     row.sharkEliminated = auth.sharkEliminated;
                     row.cannonEliminated = auth.cannonEliminated;
+                    row.quit = auth.quit ?? false;
                 }
             }
             leaderboard.sort((a, b) => a.placement - b.placement);
@@ -3840,19 +3846,24 @@ export class GameManager extends Component {
     // out of the finish accounting (the race can then conclude without waiting for the
     // straggler countdown to DNF a frozen body). If it was the host, host migration
     // separately hands authority to the next seat. No-op if we can't resolve the seat.
-    private onNetPlayerQuit(pos: number) {
+    private onNetPlayerQuit(pos: number): boolean {
         if (!this._netLanePlan || !this._raceManager) {
-            return;
+            return false;
         }
         const remote = this._netLanePlan.remotes.find((r) => r.pos === pos);
         if (!remote) {
-            return;
+            return false;
         }
         const swimmer = this.swimmerForLane(remote.lane);
-        if (swimmer) {
-            this._raceManager.eliminateSwimmer(swimmer, true);
+        if (!swimmer) return false;
+        if (this._raceManager.hasSwimmerFinished(swimmer)) return true;
+        if (this._raceManager.hasSwimmerEliminated(swimmer)) return true;
+        if (this._raceManager.eliminateSwimmer(swimmer, true)) {
+            this._entertainmentRecovery?.retireLane(remote.lane);
             this.debug(`net player pos=${pos} quit — retired lane=${remote.lane}`);
+            return true;
         }
+        return false;
     }
 
     // Deterministic fixed-step driver (net race only). Advances every net-driven body

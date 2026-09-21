@@ -245,7 +245,11 @@ export class ShopDailySupplyPanel {
     }
 
     private async claim(card: CardView): Promise<void> {
-        if (this._busySlot || this.isClaimed(PlayerData.profile, card.slot)) return;
+        const root = this._root;
+        if (!root?.isValid || this._cards.indexOf(card) < 0
+            || this._busySlot || this.isClaimed(PlayerData.profile, card.slot)) return;
+        // 奖励请求可以完成，但旧页面的回调不能修改重建后的按钮、忙碌状态或弹窗。
+        const ownsView = () => this._root === root && root.isValid;
         this._busySlot = card.slot;
         this.refresh(PlayerData.profile);
         let grantedReward: RewardPresentation | null = null;
@@ -254,8 +258,10 @@ export class ShopDailySupplyPanel {
                 setLabel(card.action, '广告播放中');
                 const outcome = await platform().showRewardedAd(rewardedAdUnitId(platform().name));
                 if (outcome !== 'completed') {
-                    if (outcome === 'unavailable') this._toast('暂无可用广告，请稍后再试');
-                    if (outcome === 'error') this._toast('广告加载失败，请稍后再试');
+                    if (ownsView() && this.isVisible()) {
+                        if (outcome === 'unavailable') this._toast('暂无可用广告，请稍后再试');
+                        if (outcome === 'error') this._toast('广告加载失败，请稍后再试');
+                    }
                     return;
                 }
                 card.adVerified = true;
@@ -263,7 +269,7 @@ export class ShopDailySupplyPanel {
             if (!card.pendingTransactionId) {
                 card.pendingTransactionId = `${dailyShopCycleKey()}-${card.slot}-${Date.now()}-${++this._transactionSerial}`;
             }
-            setLabel(card.action, '奖励到账中');
+            if (ownsView()) setLabel(card.action, '奖励到账中');
             const result = await PlayerData.claimDailyShopReward(card.slot, card.adVerified, card.pendingTransactionId);
             if (result.ok || result.reason === 'claimed') {
                 card.pendingTransactionId = null;
@@ -276,16 +282,20 @@ export class ShopDailySupplyPanel {
             } else if (result.reason === 'ad_incomplete') {
                 card.pendingTransactionId = null;
                 card.adVerified = false;
-            } else {
+            } else if (ownsView() && this.isVisible()) {
                 this._toast('奖励发放失败，可点击重试到账');
             }
         } catch (error) {
             console.warn('[Shop] daily reward claim failed', error);
-            this._toast(card.adVerified ? '奖励发放失败，可点击重试到账' : '领取失败，请稍后再试');
+            if (ownsView() && this.isVisible()) {
+                this._toast(card.adVerified ? '奖励发放失败，可点击重试到账' : '领取失败，请稍后再试');
+            }
         } finally {
-            this._busySlot = null;
-            this.refresh(PlayerData.profile);
-            if (grantedReward && this.isVisible()) this._rewardPopup?.show(grantedReward);
+            if (ownsView()) {
+                this._busySlot = null;
+                this.refresh(PlayerData.profile);
+                if (grantedReward && this.isVisible()) this._rewardPopup?.show(grantedReward);
+            }
         }
     }
 
@@ -344,6 +354,7 @@ class RewardClaimPopup {
     private _rewardText: Label | null = null;
     private _burstNode: Node | null = null;
     private _iconPath = '';
+    private _ownedIconFrame: SpriteFrame | null = null;
     private _iconTween: Tween<Node> | null = null;
     private _burstTween: Tween<Node> | null = null;
 
@@ -351,6 +362,11 @@ class RewardClaimPopup {
         const root = makeUiNode('RewardClaimPopup', parent);
         root.getComponent(UITransform)!.setContentSize(designWidth, designHeight);
         this._root = root;
+        root.once(Node.EventType.NODE_DESTROYED, () => {
+            if (this._root !== root) return;
+            this._ownedIconFrame?.destroy();
+            this._ownedIconFrame = null;
+        });
 
         const dim = makeRect('Dim', root, designWidth, designHeight, uiColor(2, 20, 38, 178));
         fitFullScreenSolidCover(dim, designWidth, designHeight);
@@ -401,6 +417,8 @@ class RewardClaimPopup {
         this.stopRewardPulse();
         this._motion?.dispose();
         this._motion = null;
+        this._ownedIconFrame?.destroy();
+        this._ownedIconFrame = null;
         if (this._root?.isValid) this._root.destroy();
         this._root = null;
         this._rewardIcon = null;
@@ -420,10 +438,14 @@ class RewardClaimPopup {
         if (!sprite?.node.isValid || this._iconPath === path) return;
         this._iconPath = path;
         sprite.spriteFrame = null;
+        this._ownedIconFrame?.destroy();
+        this._ownedIconFrame = null;
         loadRaceAsset(path, Texture2D, (error, texture) => {
             if (error || !texture || !sprite.isValid || !sprite.node.isValid || this._iconPath !== path) return;
             const frame = new SpriteFrame();
             frame.texture = texture;
+            this._ownedIconFrame?.destroy();
+            this._ownedIconFrame = frame;
             sprite.spriteFrame = frame;
         });
     }
@@ -478,10 +500,17 @@ function makeSprite(name: string, parent: Node, path: string, width: number, hei
     const sprite = node.addComponent(Sprite);
     sprite.sizeMode = Sprite.SizeMode.CUSTOM;
     sprite.trim = false;
+    let ownedFrame: SpriteFrame | null = null;
+    node.once(Node.EventType.NODE_DESTROYED, () => {
+        ownedFrame?.destroy();
+        ownedFrame = null;
+    });
     loadRaceAsset(path, Texture2D, (error, texture) => {
         if (error || !texture || !node.isValid || !sprite.isValid) return;
         const frame = new SpriteFrame();
         frame.texture = texture;
+        ownedFrame?.destroy();
+        ownedFrame = frame;
         sprite.spriteFrame = frame;
     });
     return node;

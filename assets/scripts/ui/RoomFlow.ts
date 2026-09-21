@@ -106,7 +106,7 @@ export class RoomFlow {
     // The WeChat game-start signal (onGameStart / roomState) has fired. On its own this
     // is NOT enough to enter a race: a fresh JOIN into a keep-alive room sees a stale
     // roomState=started and would auto-enter a phantom race. Entry also requires a real
-    // 'start' broadcast (_pendingSeed != 0). See maybeEnterNetRace.
+    // 'start' broadcast (_pendingRaceId is valid). See maybeEnterNetRace.
     private _gameStartConfirmed = false;
     // True once we've shown the "room gone" notice (invited room dissolved / in-game), so
     // render() stops repainting the lobby over it.
@@ -678,6 +678,9 @@ export class RoomFlow {
         if (data.id === this._rulesId && data.rev < this._rulesRevision) return true;
         if (data.id !== this._rulesId || data.rev !== this._rulesRevision) {
             const hadRules = !!this._rulesId;
+            // 新赛制使尚未入场的旧尝试失效，迟到平台信号不能混用旧身份和新距离。
+            // 已发起的平台请求保留；重新准备后由最新 start 消费其开始信号。
+            if (this._startRequested) this.clearPendingStart();
             this._rulesId = data.id;
             this._rulesOwnerPos = owner.pos;
             this._rulesRevision = data.rev;
@@ -825,21 +828,25 @@ export class RoomFlow {
                 || !this._root?.isValid || this._roomUnavailable || this._leaving || this._raceEntered) {
                 return;
             }
-            this._startTimeoutHandle = null;
-            this._startRequested = false;
+            this.clearPendingStart();
             this._gameStartCalled = false;
-            this._pendingSeed = 0;
-            this._pendingRaceId = '';
-            this._pendingStartMessage = '';
-            this._startDelivery?.dispose();
-            this._startDelivery = null;
-            this._pendingModifiers = null;
-            this._pendingMembers = null;
             this._gameStartConfirmed = false;
             this.setHint('开始失败，请确认好友已回到房间并准备后重试');
             this.render();
         }, 8000);
         this._startTimeoutHandle = timeout;
+    }
+
+    private clearPendingStart() {
+        this.clearStartTimeout();
+        this._startRequested = false;
+        this._pendingSeed = 0;
+        this._pendingRaceId = '';
+        this._pendingStartMessage = '';
+        this._startDelivery?.dispose();
+        this._startDelivery = null;
+        this._pendingModifiers = null;
+        this._pendingMembers = null;
     }
 
     private clearStartTimeout() {
@@ -984,7 +991,7 @@ export class RoomFlow {
         if (!this._root?.isValid || this._roomUnavailable || this._leaving || this._raceEntered) {
             return;
         }
-        if (this._pendingSeed !== 0 && this._gameStartConfirmed) {
+        if (this._startRequested && isNetRaceId(this._pendingRaceId) && this._gameStartConfirmed) {
             this.enterNetRace();
         }
     }
@@ -1012,7 +1019,7 @@ export class RoomFlow {
         setNetRaceSession({
             raceId: this._pendingRaceId,
             startMessage: this._pendingStartMessage,
-            seed: (this._pendingSeed >>> 0) || SeededRandom.entropySeed(),
+            seed: this._pendingSeed >>> 0,
             members,
             localIsHost: this._pendingRaceId.startsWith(`${this._localPos}.`),
             localPos: this._localPos >= 0 ? this._localPos : (this._isHost ? 0 : 0),

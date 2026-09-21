@@ -78,6 +78,7 @@ export interface NetSnapshotEntry {
 // A decoded snapshot: the authoritative host's seat plus the per-lane state.
 export interface DecodedRaceSnapshot {
     hostPos: number;
+    sequence: number;
     entries: NetSnapshotEntry[];
     stimulantRevision: number;
     stimulantMask: number;
@@ -227,6 +228,15 @@ function decodeStimulantLedger(body: string): { collectors: number[]; revisions:
     return { collectors, revisions };
 }
 
+// 大修订号使用紧凑整数，给整包序号保留字节；小整数保持原长度。
+function encodeSnapshotRevision(value: number): number | string {
+    return value >= 10000 ? '!' + value.toString(36) : value;
+}
+
+function decodeSnapshotRevision(value = ''): number {
+    return value.startsWith('!') ? parseInt(value.slice(1), 36) : parseInt(value, 10);
+}
+
 export function encodeRaceSnapshot(
     hostPos: number,
     entries: NetSnapshotEntry[],
@@ -238,23 +248,25 @@ export function encodeRaceSnapshot(
     minefield?: NetMinefieldState | null,
     entertainmentDirector?: NetEntertainmentDirectorState | null,
     eventEpochs?: readonly number[],
+    sequence = -1,
 ): string {
     const body = entries
         .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)},${encodeConditionCooldown(e.calmSlushRemaining ?? -1)}`)
         .join(';');
-    const revision = Math.max(0, Math.floor(stimulant?.revision ?? 0));
+    const revision = encodeSnapshotRevision(Math.max(0, Math.floor(stimulant?.revision ?? 0)));
     const mask = Math.max(0, Math.floor(stimulant?.collectedMask ?? 0)).toString(16);
     const collectors = encodeStimulantLedger(stimulant);
     const epochs = eventEpochs ? '!' + eventEpochs.slice(0, 3).map(value => safeNonNegativeInteger(value).toString(36)).join('.') : '';
-    const cannonRevision = Math.max(0, Math.floor(cannon?.revision ?? 0));
-    // Header slot 4 remains reserved to keep the rest of the compact layout stable.
-    const cannonReservedMask = '0';
+    const cannonRevision = encodeSnapshotRevision(Math.max(0, Math.floor(cannon?.revision ?? 0)));
+    // 复用保留槽位记录整包序号，其他字段位置不变；0 保留为旧格式。
+    const cannonReservedMask = Number.isSafeInteger(sequence) && sequence >= 0
+        ? '!' + sequence.toString(36) : '0';
     const cannonCompletedMask = Math.max(0, Math.floor(cannon?.completedStrikeMask ?? 0)).toString(16);
     const cannonActiveStrike = Math.max(0, Math.floor((cannon?.activeStrikeId ?? -1) + 1));
     const cannonTargetDistance = Math.max(0, Math.round((cannon?.targetDistance ?? 0) * 100));
     const cannonTargetZ = Math.round((cannon?.targetZ ?? 0) * 1000);
     const cannonRemainingMs = Math.max(0, Math.round((cannon?.remainingSeconds ?? 0) * 1000));
-    const mineRevision = Math.max(0, Math.floor(mineRelay?.revision ?? 0));
+    const mineRevision = encodeSnapshotRevision(Math.max(0, Math.floor(mineRelay?.revision ?? 0)));
     const mineCompletedMask = Math.max(0, Math.floor(mineRelay?.completedRoundMask ?? 0)).toString(16);
     const mineExplodedMask = Math.max(0, Math.floor(mineRelay?.explodedRoundMask ?? 0)).toString(16);
     const mineResolvedCarriers = Math.max(0, Math.floor(mineRelay?.resolvedCarrierLanesPacked ?? 0)).toString(16);
@@ -266,19 +278,19 @@ export function encodeRaceSnapshot(
     const mineTransferCooldownMs = Math.max(0, Math.round((mineRelay?.transferCooldownSeconds ?? 0) * 1000));
     const mineReturnProtectionMs = Math.max(0, Math.round((mineRelay?.returnProtectionSeconds ?? 0) * 1000));
     const mineRecoveryMs = Math.max(0, Math.round((mineRelay?.recoverySeconds ?? 0) * 1000));
-    const recoveryRevision = Math.max(0, Math.floor(recovery?.revision ?? 0));
+    const recoveryRevision = encodeSnapshotRevision(Math.max(0, Math.floor(recovery?.revision ?? 0)));
     // 整数使用 36 进制，抵消领取账本和返场代次的新增字节；不降低量化精度。
     const recoveryBody = recovery ? '!' + recovery.lanes
         .map((lane) => `${Math.max(0, Math.floor(lane.phase)).toString(36)}.${Math.max(0, Math.floor(lane.reason)).toString(36)}.${Math.max(0, Math.round(lane.remainingSeconds * 1000)).toString(36)}.${Math.max(0, Math.round(lane.distance * 100)).toString(36)}.${Math.max(0, Math.floor(lane.revision)).toString(36)}`)
         .join(':') : '';
-    const minefieldRevision = Math.max(0, Math.floor(minefield?.revision ?? 0));
+    const minefieldRevision = encodeSnapshotRevision(Math.max(0, Math.floor(minefield?.revision ?? 0)));
     const minefieldElapsedMs = Math.max(0, Math.round((minefield?.elapsedSeconds ?? 0) * 1000));
     const minefieldActiveMask = Math.max(0, Math.floor(minefield?.activeMask ?? 0)).toString(16);
     // Slot 27 now carries the host-authoritative spawn-safe/armed state without shifting later fields.
     const minefieldArmedMask = Math.max(0, Math.floor(minefield?.armedMask ?? 0)).toString(16);
     const minefieldWaveIndex = Math.max(0, Math.floor(minefield?.waveIndex ?? 0));
     const minefieldSlotWavesPacked = Math.max(0, Math.floor(minefield?.slotWavesPacked ?? 0)).toString(16);
-    const directorRevision = Math.max(0, Math.floor(entertainmentDirector?.revision ?? 0));
+    const directorRevision = encodeSnapshotRevision(Math.max(0, Math.floor(entertainmentDirector?.revision ?? 0)));
     const directorPhase = Math.max(0, Math.floor(entertainmentDirector?.phase ?? 0));
     const directorEventIndex = Math.max(0, Math.floor(entertainmentDirector?.eventIndex ?? 0));
     const directorEventCount = Math.max(0, Math.floor(entertainmentDirector?.eventCount ?? 0));
@@ -292,8 +304,8 @@ export function encodeRaceSnapshot(
         .map(distance => Math.max(0, Math.round(distance * 100)).toString(36))
         .join('.') : '';
     const directorSpecialMask = Math.max(0, Math.floor(entertainmentDirector?.specialMask ?? 0)).toString(16);
-    const directorActivationSerial = Math.max(0, Math.floor(entertainmentDirector?.activationSerial ?? 0));
-    const directorEncoreRound = Math.max(0, Math.floor(entertainmentDirector?.encoreRound ?? 0));
+    const directorActivationSerial = encodeSnapshotRevision(Math.max(0, Math.floor(entertainmentDirector?.activationSerial ?? 0)));
+    const directorEncoreRound = encodeSnapshotRevision(Math.max(0, Math.floor(entertainmentDirector?.encoreRound ?? 0)));
     const directorEncoreEvent = Math.max(0, Math.floor((entertainmentDirector?.encoreEvent ?? -1) + 1));
     const directorLastActivatedEvent = Math.max(0, Math.floor((entertainmentDirector?.lastActivatedEvent ?? -1) + 1));
     const sharkBody = shark
@@ -315,15 +327,19 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     }
     const header = rest.slice(0, hash).split(',');
     const hostPos = parseInt(header[0], 10);
-    const stimulantRevision = header.length > 1 ? parseInt(header[1], 10) : 0;
+    const sequenceField = header[4] ?? '0';
+    const sequence = sequenceField === '0' ? -1 : parseInt(sequenceField.slice(1), 36);
+    if (sequenceField !== '0' && (!/^![0-9a-z]+$/.test(sequenceField)
+        || !Number.isSafeInteger(sequence) || sequence < 0)) return null;
+    const stimulantRevision = decodeSnapshotRevision(header[1]);
     const stimulantMask = header.length > 2 ? parseInt(header[2], 16) : 0;
-    const cannonRevision = header.length > 3 ? parseInt(header[3], 10) : 0;
+    const cannonRevision = decodeSnapshotRevision(header[3]);
     const cannonCompletedMask = header.length > 5 ? parseInt(header[5], 16) : 0;
     const cannonActiveStrike = header.length > 6 ? parseInt(header[6], 10) : 0;
     const cannonTargetDistanceCm = header.length > 7 ? parseInt(header[7], 10) : 0;
     const cannonTargetZMm = header.length > 8 ? parseInt(header[8], 10) : 0;
     const cannonRemainingMs = header.length > 9 ? parseInt(header[9], 10) : 0;
-    const mineRevision = header.length > 10 ? parseInt(header[10], 10) : 0;
+    const mineRevision = decodeSnapshotRevision(header[10]);
     const mineCompletedMask = header.length > 11 ? parseInt(header[11], 16) : 0;
     const mineExplodedMask = header.length > 12 ? parseInt(header[12], 16) : 0;
     const mineResolvedCarriers = header.length > 13 ? parseInt(header[13], 16) : 0;
@@ -335,13 +351,13 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     const mineTransferCooldownMs = header.length > 19 ? parseInt(header[19], 10) : 0;
     const mineReturnProtectionMs = header.length > 20 ? parseInt(header[20], 10) : 0;
     const mineRecoveryMs = header.length > 21 ? parseInt(header[21], 10) : 0;
-    const recoveryRevision = header.length > 22 ? parseInt(header[22], 10) : 0;
+    const recoveryRevision = decodeSnapshotRevision(header[22]);
     const recoveryBody = header.length > 23 ? header[23] : '';
-    const minefieldRevision = header.length > 24 ? parseInt(header[24], 10) : 0;
+    const minefieldRevision = decodeSnapshotRevision(header[24]);
     const minefieldElapsedMs = header.length > 25 ? parseInt(header[25], 10) : 0;
     const minefieldActiveMask = header.length > 26 ? parseInt(header[26], 16) : 0;
     const minefieldArmedMask = header.length > 27 ? parseInt(header[27], 16) : 0;
-    const directorRevision = header.length > 28 ? parseInt(header[28], 10) : 0;
+    const directorRevision = decodeSnapshotRevision(header[28]);
     const directorPhase = header.length > 29 ? parseInt(header[29], 10) : 0;
     const directorEventIndex = header.length > 30 ? parseInt(header[30], 10) : 0;
     const directorRemainingMs = header.length > 31 ? parseInt(header[31], 10) : 0;
@@ -352,8 +368,8 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     const directorEventAnchors = header.length > 36 ? decodeCentimeterList(header[36]) : [0, 0, 0, 0, 0, 0];
     const directorEventCount = header.length > 37 ? parseInt(header[37], 10) : 0;
     const directorSpecialMask = header.length > 38 ? parseInt(header[38], 16) : 0;
-    const directorActivationSerial = header.length > 39 ? parseInt(header[39], 10) : 0;
-    const directorEncoreRound = header.length > 40 ? parseInt(header[40], 10) : 0;
+    const directorActivationSerial = decodeSnapshotRevision(header[39]);
+    const directorEncoreRound = decodeSnapshotRevision(header[40]);
     const directorEncoreEvent = header.length > 41 ? parseInt(header[41], 10) : 0;
     const directorLastActivatedEvent = header.length > 42 ? parseInt(header[42], 10) : 0;
     const minefieldWaveIndex = header.length > 43 ? parseInt(header[43], 10) : 0;
@@ -434,6 +450,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     const ledger = decodeStimulantLedger(header[45] ?? '');
     return {
         hostPos: Number.isFinite(hostPos) ? hostPos : 0,
+        sequence,
         entries,
         stimulantRevision: Number.isSafeInteger(stimulantRevision) && stimulantRevision >= 0 ? stimulantRevision : 0,
         stimulantMask: Number.isSafeInteger(stimulantMask) && stimulantMask >= 0 ? stimulantMask : 0,

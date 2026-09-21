@@ -91,6 +91,9 @@ export class NetRaceController {
     private readonly _reliableFrameOrder = new MonotonicSequenceTracker();
     private readonly _inputOrder = new MonotonicSequenceTracker();
     private readonly _ownerStateOrder = new MonotonicSequenceTracker();
+    private readonly _hostSnapshotOrder = new MonotonicSequenceTracker();
+    private readonly _hostLitterOrder = new MonotonicSequenceTracker();
+    private readonly _hostAuthorityOrder = new MonotonicSequenceTracker();
     // Remote-human swimmers keyed by their seat (posNum). Decoded input for a pos is
     // replayed onto its controller. Registered by GameManager after the roster builds.
     private readonly _remoteByPos: Record<number, RemoteSwimmerController> = {};
@@ -140,7 +143,8 @@ export class NetRaceController {
     private _countdownStartListener: (() => void) | null = null;
     private _goTimeoutHandle: any = null;
     // Notified when a member quits mid-race (Q| broadcast) so its swimmer is retired.
-    private _playerQuitListener: ((pos: number) => void) | null = null;
+    private _playerQuitListener: ((pos: number) => boolean | void) | null = null;
+    private readonly _pendingPlayerQuits = new Set<number>();
     // Host migration state. `_isHost` starts from the session but can flip: a client
     // promotes itself if the host goes silent, and a self-promoted host steps back down
     // if a lower-pos (higher-priority) host appears. `_activeHostPos` is the seat of the
@@ -187,7 +191,7 @@ export class NetRaceController {
         this._racePrefix = raceMessagePrefix(_session.raceId);
         this._net = netRoom();
         this._isHost = _session.localIsHost;
-        // The host trusts itself; a client trusts nobody until a snapshot arrives.
+        // 快照仲裁仍从首个 S| 开始计时；可靠事件可先按开赛身份采信原房主。
         this._activeHostPos = _session.localIsHost ? _session.localPos : Number.MAX_SAFE_INTEGER;
         // Turn on local-player input capture for the duration of this networked race.
         setNetInputCaptureActive(true);
@@ -226,10 +230,12 @@ export class NetRaceController {
 
     private flushDeferredGameplayEvents(): void {
         // 快照或监听就绪时处理；无待收事件时不分配临时数组。
+        const hostPos = this._activeHostPos === Number.MAX_SAFE_INTEGER
+            ? Number(this._session.raceId.charAt(0)) : this._activeHostPos;
         for (let i = 0; i < this._deferredGameplayEvents.length;) {
             const pending = this._deferredGameplayEvents[i];
             const slot = gameplayEpochSlot(pending.event.kind);
-            if (pending.sender === this._activeHostPos
+            if (pending.sender === hostPos && !this._departedPositions.has(pending.sender)
                 && ((slot >= 0 && (pending.event.eventEpoch ?? 0) > this._eventEpochs[slot])
                     || !this.hasGameplayEventListener(pending.event.kind))) {
                 i++;
@@ -544,12 +550,19 @@ export class NetRaceController {
         return this._activeHostPos;
     }
 
+    private hasCurrentAuthorityResult(): boolean {
+        if (!this._authResult) return false;
+        const hostPos = this._activeHostPos === Number.MAX_SAFE_INTEGER
+            ? Number(this._session.raceId.charAt(0)) : this._activeHostPos;
+        return !this._departedPositions.has(hostPos);
+    }
+
     // Called every frame by GameManager while the race is live. If the current host has
     // gone silent past this client's staggered threshold, promote this client to host so
     // the race keeps a single authority (position/heading correction + final result)
     // even if the original host drops. No-op for the current host or once the race ends.
     checkHostMigration(raceActive: boolean): void {
-        if (this._disposed || this._isHost || !raceActive) {
+        if (this._disposed || this._isHost || !raceActive || this.hasCurrentAuthorityResult()) {
             return;
         }
         const now = Date.now();
@@ -577,12 +590,25 @@ export class NetRaceController {
         // Discard the departed host's cached targets immediately; otherwise
         // GameManager would keep easing AI bodies toward a stale S| packet even after
         // authority changed, corrupting both movement and distance-derived phases.
+        this.clearAuthorityTransientState();
+        console.warn(`[NetRace] host silent — pos=${this._session.localPos} taking over as host`);
+    }
+
+    private clearAuthorityTransientState(): void {
         this._snapshotTargets = [];
         this._prevSnapshot = [];
         this._snapshotTime = 0;
         this._prevSnapshotTime = 0;
         this._snapshotRevision++;
-        console.warn(`[NetRace] host silent — pos=${this._session.localPos} taking over as host`);
+        this.clearPendingAuthorityEvents();
+    }
+
+    private clearPendingAuthorityEvents(): void {
+        // 未发送、待补发和待交付事件只属于当前权威，不能跨退位与再次接管。
+        this._authoritativeEvents.length = 0;
+        this._contactRecoveryEvents.length = 0;
+        this._contactRecoveryCursor = 0;
+        this._deferredGameplayEvents.length = 0;
     }
 
     // Reconcile who the authoritative host is from an incoming snapshot's hostPos.
@@ -591,8 +617,12 @@ export class NetRaceController {
     // self-promoted host steps back down if a lower-pos host is (still) alive.
     private adoptHostFromSnapshot(hostPos: number): void {
         if (this._departedPositions.has(hostPos)) return;
+        // 房主不能以未收到自身回声为由采信低优先级竞争者。
+        if (this._isHost && hostPos > this._session.localPos) return;
         const previousHost = this._activeHostPos === Number.MAX_SAFE_INTEGER
             ? Number(this._session.raceId.charAt(0)) : this._activeHostPos;
+        // 最终成绩已到时，房主停止位置广播不代表失联；明确离房仍可迁移。
+        if (hostPos !== previousHost && this.hasCurrentAuthorityResult()) return;
         const now = Date.now();
         if (hostPos < this._activeHostPos) {
             this._activeHostPos = hostPos;
@@ -610,7 +640,10 @@ export class NetRaceController {
                 this._isHost = false;
             }
         }
-        if (previousHost !== this._activeHostPos) this.invalidateAuthorityResult();
+        if (previousHost !== this._activeHostPos) {
+            this.invalidateAuthorityResult();
+            this.clearAuthorityTransientState();
+        }
     }
 
     private invalidateAuthorityResult(): void {
@@ -643,7 +676,7 @@ export class NetRaceController {
             return;
         }
         for (const member of this._session.members) {
-            if (member.pos >= 0 && present.indexOf(member.pos) < 0) this._departedPositions.add(member.pos);
+            if (member.pos >= 0 && present.indexOf(member.pos) < 0) this.recordPlayerQuit(member.pos);
         }
         this._startDelivery?.retainMembers(present);
         if (this._isHost) return;
@@ -671,6 +704,8 @@ export class NetRaceController {
         if (this._session.localPos === lowest) {
             console.warn(`[NetRace] host seat=${previousHost} left room — pos=${lowest} taking over`);
             this.promoteToHost();
+        } else {
+            this.clearAuthorityTransientState();
         }
     }
 
@@ -701,8 +736,9 @@ export class NetRaceController {
             minefield,
             entertainmentDirector,
             this._eventEpochs,
+            this._snapSent,
         ));
-        if (litter) this.broadcastRaceMessage(encodeLitterSnapshot(this._session.localPos, litter));
+        if (litter) this.broadcastRaceMessage(encodeLitterSnapshot(this._session.localPos, litter, this._snapSent));
         this.resendContactEvents();
     }
 
@@ -798,8 +834,29 @@ export class NetRaceController {
     }
 
     // Be notified when a member quits mid-race (its seat pos). Set once by GameManager.
-    setPlayerQuitListener(listener: ((pos: number) => void) | null): void {
+    setPlayerQuitListener(listener: ((pos: number) => boolean | void) | null): void {
+        if (this._disposed) return;
         this._playerQuitListener = listener;
+        this.flushPlayerQuits();
+    }
+
+    /** 监听器返回 false 表示场景尚未就绪；进入比赛阶段时重试，不逐帧轮询。 */
+    flushPlayerQuits(): void {
+        if (this._disposed || !this._playerQuitListener) return;
+        for (const pos of this._pendingPlayerQuits) {
+            if (this._playerQuitListener(pos) !== false) this._pendingPlayerQuits.delete(pos);
+        }
+    }
+
+    private recordPlayerQuit(pos: number): void {
+        if (!Number.isInteger(pos) || pos < 0 || pos >= 8 || pos === this._session.localPos
+            || this._departedPositions.has(pos) || !this._session.members.some(member => member.pos === pos)) return;
+        this._departedPositions.add(pos);
+        this._pendingPlayerQuits.add(pos);
+        const lane = this._remoteLaneByPos[pos];
+        if (lane !== undefined) delete this._selfSnapshots[lane];
+        this.flushPlayerQuits();
+        if (this._isHost && this._raceReadyReported) this.maybeStartCountdown();
     }
 
     // Client: the authoritative final placement, or null if not received yet.
@@ -824,6 +881,24 @@ export class NetRaceController {
         if (!this._disposed) this._net.uploadFrame(this._racePrefix + msg);
     }
 
+    private acceptHostSnapshot(hostPos: number, sequence: number, order: MonotonicSequenceTracker): boolean {
+        // 自身旧广播的迟到回声不能在退位后变成新的权威来源。
+        if (hostPos === this._session.localPos || this._departedPositions.has(hostPos)) return false;
+        let memberFound = false;
+        for (let index = 0; index < this._session.members.length; index++) {
+            if (this._session.members[index].pos === hostPos) { memberFound = true; break; }
+        }
+        if (!memberFound || !order.accept(hostPos, sequence)) return false;
+        const activeHost = this._activeHostPos === Number.MAX_SAFE_INTEGER
+            ? Number(this._session.raceId.charAt(0)) : this._activeHostPos;
+        // S 与 L 独立去重，同一轮先到任何一种都不能丢掉另一种状态。
+        // 迁移后却不能用已见过的旧轮次重新夺权，序号按来源跨迁移保留。
+        if (hostPos !== activeHost && sequence <= this._hostAuthorityOrder.latest(hostPos)
+            && this._hostAuthorityOrder.hasSequenced(hostPos)) return false;
+        this._hostAuthorityOrder.accept(hostPos, sequence);
+        return true;
+    }
+
     private onBroadcast(msg: string): void {
         if (this._disposed) return;
         if (this._startDelivery?.receive(msg)) return;
@@ -835,7 +910,7 @@ export class NetRaceController {
         msg = msg.slice(this._racePrefix.length);
         const snapshot = decodeRaceSnapshot(msg);
         if (snapshot) {
-            if (this._departedPositions.has(snapshot.hostPos)) return;
+            if (!this.acceptHostSnapshot(snapshot.hostPos, snapshot.sequence, this._hostSnapshotOrder)) return;
             this._snapRecv++;
             // Reconcile authority first (may demote a self-promoted host); then, only if
             // we are NOT the host, adopt the position targets. Ignoring our own echo this
@@ -889,7 +964,7 @@ export class NetRaceController {
         }
         const litter = decodeLitterSnapshot(msg);
         if (litter) {
-            if (this._departedPositions.has(litter.hostPos)) return;
+            if (!this.acceptHostSnapshot(litter.hostPos, litter.sequence, this._hostLitterOrder)) return;
             this.adoptHostFromSnapshot(litter.hostPos);
             if (!this._isHost && litter.hostPos === this._activeHostPos) {
                 this._litterStateListener?.(litter.state);
@@ -941,10 +1016,7 @@ export class NetRaceController {
         }
         // A member quit mid-race: retire its swimmer on this client.
         if (msg.slice(0, 2) === 'Q|') {
-            const pos = parseInt(msg.slice(2), 10);
-            if (Number.isFinite(pos) && pos !== this._session.localPos) {
-                this._playerQuitListener?.(pos);
-            }
+            if (/^Q\|[0-7]$/.test(msg)) this.recordPlayerQuit(Number(msg.slice(2)));
             return;
         }
         if (msg.slice(0, 3) === 'CR|' && this.isHost) {
@@ -1002,7 +1074,8 @@ export class NetRaceController {
 
     private maybeStartCountdown(): void {
         // Host only: have all room members reported ready?
-        const allReady = this._session.members.every((m) => m.pos < 0 || this._readyPoses.has(m.pos));
+        const allReady = this._session.members.every((m) => m.pos < 0
+            || this._departedPositions.has(m.pos) || this._readyPoses.has(m.pos));
         if (allReady) {
             this.broadcastGo();
         }
@@ -1165,6 +1238,7 @@ export class NetRaceController {
     }
 
     private recordRemoteSelf(entry: NetSnapshotEntry, senderPos = -1): boolean {
+        if (this._departedPositions.has(senderPos)) return false;
         const remote = this.remoteForOwnedEntry(entry, senderPos);
         // Once registration is complete, an attributed packet must resolve to that
         // owner's controller. Unattributed legacy P| may still resolve by lane until
@@ -1198,6 +1272,7 @@ export class NetRaceController {
         events: NetInputEvent[],
         self?: NetSnapshotEntry,
     ): void {
+        if (this._departedPositions.has(senderPos)) return;
         // Validate the sender/owned lane before accepting its sequence. Otherwise a
         // malformed high-sequence packet for another lane could advance this sender's
         // watermark and make its following legitimate inputs look stale.
@@ -1241,7 +1316,9 @@ export class NetRaceController {
     }
 
     private processAuthoritativeEvents(senderPos: number, events: readonly NetInputEvent[]): void {
-        if (senderPos !== this._activeHostPos) return;
+        const hostPos = this._activeHostPos === Number.MAX_SAFE_INTEGER
+            ? Number(this._session.raceId.charAt(0)) : this._activeHostPos;
+        if (senderPos !== hostPos || this._departedPositions.has(senderPos)) return;
         for (const event of events) {
             const slot = gameplayEpochSlot(event.kind);
             const epoch = event.eventEpoch ?? 0;
@@ -1401,8 +1478,9 @@ export class NetRaceController {
             this._goTimeoutHandle = null;
         }
         this._countdownStartListener = null;
-        this._contactRecoveryEvents.length = 0;
-        this._deferredGameplayEvents.length = 0;
+        this._playerQuitListener = null;
+        this._pendingPlayerQuits.clear();
+        this.clearPendingAuthorityEvents();
         this._eventEpochListener = null;
         // Stop capturing local input once the networked race ends.
         setNetInputCaptureActive(false);

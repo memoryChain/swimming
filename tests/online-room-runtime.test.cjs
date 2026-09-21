@@ -424,6 +424,57 @@ test('房主先超时重试，仍等待的访客切换最新身份、种子与�
     } finally { f.dispose(); }
 });
 
+test('房主超时改赛制后取消访客的旧开赛，迟到平台信号只供最新尝试使用', async () => {
+    const f = startRetryFixture();
+    try {
+        f.h.startRace(); f.send(f.messages[0]);
+        const oldGuestTimeout = takeStartTimeout(f.g);
+        takeStartTimeout(f.h)();
+        f.h.changeMode('championship', 400);
+        f.send({ t: 'rules', owner: 0, id: f.h._rulesId, rev: f.h._rulesRevision,
+            mode: f.h._mode, distance: f.h._distance });
+        assert.equal(f.g._startRequested, false);
+        assert.equal(f.g._pendingRaceId, '');
+        assert.equal(f.g._pendingMembers, null);
+        assert.equal(f.g._startTimeoutHandle, null);
+        f.g.onNetGameStart();
+        f.send(f.messages[0]);
+        assert.equal(f.sessions.length, 0);
+        await new Promise(resolve => setImmediate(resolve));
+        f.g._localReady = true;
+        f.h._members[1].ready = true; f.h._ruleReady[2] = f.h.ruleKey();
+        f.h.startRace();
+        oldGuestTimeout();
+        f.send(f.messages[1]); f.h.onNetGameStart();
+        assert.equal(f.sessions.length, 2);
+        for (const session of f.sessions) {
+            assert.equal(session.raceId, f.messages[1].raceId);
+            assert.equal(session.distance, 400);
+        }
+        assert.equal(f.calls(), 3, '访客沿用已发起的平台请求');
+    } finally { f.dispose(); }
+});
+
+test('零种子首局可入场，保活重赛也保持双方同一随机种子', () => {
+    const { SeededRandom } = load(path.join(root, 'assets/scripts/core/SharedRNG.ts'));
+    const entropy = SeededRandom.entropySeed;
+    try {
+        for (const reconnect of [false, true]) {
+            const f = startRetryFixture();
+            let calls = 0;
+            SeededRandom.entropySeed = () => calls++ === 0 ? 0 : 123 + calls;
+            try {
+                f.h._reconnect = f.g._reconnect = reconnect;
+                f.h.startRace(); f.send(f.messages[0]);
+                if (!reconnect) { f.h.onNetGameStart(); f.g.onNetGameStart(); }
+                assert.equal(f.sessions.length, 2);
+                assert.deepEqual(f.sessions.map(session => session.seed), [0, 0]);
+                assert.equal(calls, 1);
+            } finally { f.dispose(); }
+        }
+    } finally { SeededRandom.entropySeed = entropy; }
+});
+
 test('更新尝试先到后，重复与乱序旧 start 不回拨参数、不延长超时', () => {
     const f = startRetryFixture();
     try {

@@ -188,8 +188,8 @@ test('shark state and knockdown event round-trip across both sync fallbacks', ()
 
 test('authoritative results preserve shark and cannon elimination separately from ordinary DNF', () => {
     const entries = [
-        { lane: 2, placement: 7, finished: false, time: 0, eliminated: true, sharkEliminated: true, cannonEliminated: false },
-        { lane: 3, placement: 6, finished: false, time: 0, eliminated: true, sharkEliminated: false, cannonEliminated: true },
+        { lane: 2, placement: 7, finished: false, time: 0, eliminated: true, sharkEliminated: true, cannonEliminated: false, quit: false },
+        { lane: 3, placement: 6, finished: false, time: 0, eliminated: true, sharkEliminated: false, cannonEliminated: true, quit: false },
     ];
     assert.deepEqual(decodeRaceResult(encodeRaceResult(entries, 0, 1)), { hostPos: 0, sequence: 1, entries });
 });
@@ -203,6 +203,17 @@ test('成绩来源与序号严格校验，非法或重复泳道不能生成部�
     const payload = encodeRaceResult(rows, 7, 999999);
     assert.equal(decodeRaceResult(payload).entries.length, 8);
     assert.ok(Buffer.byteLength(payload) < 512);
+});
+
+test('权威成绩保留主动退出标记，兼容旧行并拒绝非法退出值', () => {
+    const rows = [{ lane: 1, placement: 2, finished: false, time: 0, eliminated: true, quit: true }];
+    const result = decodeRaceResult(encodeRaceResult(rows, 0, 1));
+    assert.equal(result.entries[0].quit, true);
+    assert.equal(result.entries[0].eliminated, true);
+    assert.equal(decodeRaceResult('R|0,1|1,2,0,0,1,0,0').entries[0].quit, false);
+    for (const value of ['2', '-1', '', 'true']) {
+        assert.equal(decodeRaceResult(`R|0,1|1,2,0,0,1,0,0,${value}`), null);
+    }
 });
 
 test('cannon launch, impact and active strike round-trip across reliable events and snapshot fallback', () => {
@@ -285,10 +296,28 @@ test('18槽负坐标和高接触修订含房间前缀仍有载荷余量，量化
         slot.impactRevision = 999999;
         slot.bounceAlongVelocity = -2.45;
     }
-    const payload = encodeLitterSnapshot(7, state);
+    const payload = encodeLitterSnapshot(7, state, Number.MAX_SAFE_INTEGER);
     const bytes = Buffer.byteLength(Protocol.raceMessagePrefix('7.zzzzzzzzzzz') + payload);
     assert.ok(bytes <= 1450, `18槽须在1536字节内保留余量，实际${bytes}`);
-    assert.deepEqual(decodeLitterSnapshot(payload), { hostPos: 7, state });
+    assert.deepEqual(decodeLitterSnapshot(payload), { hostPos: 7, sequence: Number.MAX_SAFE_INTEGER, state });
+});
+
+test('整包序号支持旧格式读取与安全整数边界，非法序号不能降级成无序快照', () => {
+    const race = sequence => encodeRaceSnapshot(0, [entry()], null, null, null, null, null, null, null, null, sequence);
+    const litter = sequence => encodeLitterSnapshot(0, litterState(0), sequence);
+    assert.equal(decodeRaceSnapshot(race()).sequence, -1);
+    assert.equal(decodeLitterSnapshot(litter()).sequence, -1);
+    for (const sequence of [0, 1, 36, 999999, Number.MAX_SAFE_INTEGER]) {
+        assert.equal(decodeRaceSnapshot(race(sequence)).sequence, sequence);
+        assert.equal(decodeLitterSnapshot(litter(sequence)).sequence, sequence);
+    }
+    for (const invalid of ['!', '!-1', '!1$', '!zzzzzzzzzzzzz']) {
+        for (const [payload, slot, decode] of [[race(1), 4, decodeRaceSnapshot], [litter(1), 9, decodeLitterSnapshot]]) {
+            const [header, body] = payload.split('#');
+            const fields = header.split(','); fields[slot] = invalid;
+            assert.equal(decode(fields.join(',') + '#' + body), null);
+        }
+    }
 });
 
 test('八泳道满状态快照保持在项目的一点五千字节回归预算内', () => {
@@ -354,14 +383,21 @@ test('八泳道满状态快照保持在项目的一点五千字节回归预算�
             eventAnchorDistances: [32, 96, 160, 224, 288, 360],
         },
         [999999, 999999, 999999],
+        Number.MAX_SAFE_INTEGER,
     );
     const prefix = Protocol.raceMessagePrefix('7.zzzzzzzzzzz');
     const snapshotBytes = Buffer.byteLength(prefix + payload, 'utf8');
     assert.ok(snapshotBytes <= 1536, `snapshot bytes=${snapshotBytes}`);
     const decoded = decodeRaceSnapshot(payload);
+    assert.equal(decoded.sequence, Number.MAX_SAFE_INTEGER);
+    for (const revision of [decoded.stimulantRevision, decoded.cannonRevision, decoded.mineRelay.revision,
+        decoded.recovery.revision, decoded.minefield.revision, decoded.entertainmentDirector.revision,
+        decoded.entertainmentDirector.activationSerial, decoded.entertainmentDirector.encoreRound]) {
+        assert.equal(revision, 999999);
+    }
     assert.deepEqual(decoded.eventEpochs, [999999, 999999, 999999]);
     assert.deepEqual(decoded.entertainmentDirector.eventAnchorDistances, [32, 96, 160, 224, 288, 360]);
-    const litterPayload = encodeLitterSnapshot(7, litterState(18));
+    const litterPayload = encodeLitterSnapshot(7, litterState(18), Number.MAX_SAFE_INTEGER);
     const litterBytes = Buffer.byteLength(prefix + litterPayload, 'utf8');
     assert.ok(litterBytes <= 1536, `litter snapshot bytes=${litterBytes}`);
 });
@@ -492,7 +528,7 @@ test('an attributed P| or frame self cannot update another registered lane', () 
 });
 
 test('lobby protocol hello rejects missing or mixed versions', () => {
-    assert.equal(NET_RACE_PROTOCOL_VERSION, 96);
+    assert.equal(NET_RACE_PROTOCOL_VERSION, 103);
     const hello = decodeProtocolHello(encodeProtocolHello(4));
     assert.deepEqual(hello, { pos: 4, version: NET_RACE_PROTOCOL_VERSION });
     assert.equal(decodeProtocolHello('PV|4|bad'), null);

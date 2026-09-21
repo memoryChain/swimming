@@ -89,6 +89,7 @@ export type EntertainmentRecoveryHooks = {
  */
 export class EntertainmentRecoveryController {
     private readonly laneStates: EntertainmentRecoveryLaneState[];
+    private readonly retiredLanes = new Set<number>();
     private revision = 0;
 
     constructor(
@@ -106,6 +107,7 @@ export class EntertainmentRecoveryController {
 
     reset(): void {
         this.revision = 0;
+        this.retiredLanes.clear();
         for (const state of this.laneStates) {
             state.phase = EntertainmentRecoveryPhase.ACTIVE;
             state.reason = EntertainmentRecoveryReason.NONE;
@@ -113,6 +115,16 @@ export class EntertainmentRecoveryController {
             state.distance = 0;
             state.revision = 0;
         }
+    }
+
+    /** 终止本局恢复任务并拒绝迟到状态；reset 后仍由比赛淘汰资格兜底。 */
+    retireLane(lane: number): void {
+        const state = this.laneStates[lane];
+        if (!state || this.retiredLanes.has(lane)) return;
+        this.retiredLanes.add(lane);
+        state.phase = EntertainmentRecoveryPhase.ACTIVE;
+        state.reason = EntertainmentRecoveryReason.NONE;
+        state.remainingSeconds = 0;
     }
 
     tryKnockDown(
@@ -135,7 +147,7 @@ export class EntertainmentRecoveryController {
     applyKnockDown(event: EntertainmentRecoveryEvent): boolean {
         if (!isValidRecoveryEvent(event)) return false;
         const state = this.laneStates[event.lane];
-        if (!state || event.revision <= state.revision) return false;
+        if (!state || this.retiredLanes.has(event.lane) || event.revision <= state.revision) return false;
         this.revision = Math.max(this.revision, event.revision);
         state.phase = EntertainmentRecoveryPhase.KNOCKED;
         state.reason = event.reason;
@@ -195,10 +207,12 @@ export class EntertainmentRecoveryController {
     }
 
     isDamageable(lane: number): boolean {
-        return this.laneStates[lane]?.phase === EntertainmentRecoveryPhase.ACTIVE;
+        return this.laneStates[lane]?.phase === EntertainmentRecoveryPhase.ACTIVE
+            && !this.retiredLanes.has(lane);
     }
 
     private applyLaneSnapshot(lane: number, incoming: Readonly<EntertainmentRecoveryLaneState>): void {
+        if (this.retiredLanes.has(lane)) return;
         const state = this.laneStates[lane];
         if (incoming.revision < state.revision) return;
         const previousPhase = state.phase;

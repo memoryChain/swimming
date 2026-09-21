@@ -63,6 +63,156 @@ const { LitterBrawlController, LITTER_BRAWL_TUNING } = load('assets/scripts/core
 const { MinefieldBrawlController } = load('assets/scripts/core/MinefieldBrawlController.ts');
 const { GameState } = load('assets/scripts/core/GameConstants.ts');
 
+function recoveryQuitFixture() {
+    const { EntertainmentRecoveryController, ENTERTAINMENT_RECOVERY_TUNING } = load('assets/scripts/core/EntertainmentRecoveryController.ts');
+    const swimmerFile = 'assets/scripts/entity/Swimmer.ts';
+    const raceFile = 'assets/scripts/core/RaceManager.ts';
+    const gameFile = 'assets/scripts/core/GameManager.ts';
+    const swimmer = {
+        node: { active: true }, racing: true, respawns: 0,
+        _startPosition: { z: 0 }, _phases: { clearFlipTurnPhase() {}, clearDiveUnderwaterPhase() {} },
+        stopRace() { this.racing = false; }, resetEntertainmentKnockoutPresentation() {},
+        applyCoursePosition() {}, resetPose() {},
+    };
+    swimmer._motor = { distance: 20, setLateralOffset() {},
+        resumeAfterEntertainmentHit(distance) { this.distance = distance; swimmer.racing = true; swimmer.respawns++; } };
+    swimmer.eliminate = method(swimmerFile, 'Swimmer', 'eliminate');
+    swimmer.respawnAfterEntertainmentHit = method(swimmerFile, 'Swimmer', 'respawnAfterEntertainmentHit', { Tween: { stopAllByTarget() {} } });
+    const race = {
+        _state: GameState.RACING, _eliminated: new Set(), _quit: new Set(), _finishTimes: new Map(),
+        _eliminationOrder: new Map(), _eliminationSerial: 0, _sharkEliminated: new Set(), _cannonEliminated: new Set(),
+    };
+    for (const name of ['eliminateSwimmer', 'hasSwimmerFinished', 'hasSwimmerEliminated']) {
+        race[name] = method(raceFile, 'RaceManager', name, { GameState });
+    }
+    const game = {
+        _netLanePlan: { remotes: [{ pos: 1, lane: 1 }] }, _raceManager: race, _playerLaneIndex: 0,
+        swimmerForLane: lane => lane === 1 ? swimmer : null, aiIndexForLane: () => -1, debug() {},
+    };
+    game.onNetPlayerQuit = method(gameFile, 'GameManager', 'onNetPlayerQuit');
+    game.respawnEntertainmentSwimmer = method(gameFile, 'GameManager', 'respawnEntertainmentSwimmer', {
+        getRaceDistance: () => 200, LANE_LAYOUT: { centerZ: () => 0 }, ENTERTAINMENT_RECOVERY_TUNING,
+    });
+    const hooks = [];
+    const controller = new EntertainmentRecoveryController(2, {
+        onKnocked: lane => hooks.push(['knocked', lane]),
+        onRespawn: (lane, state) => { hooks.push(['respawn', lane]); game.respawnEntertainmentSwimmer(lane, state.distance); },
+        onRecovered: lane => hooks.push(['recovered', lane]),
+    });
+    game._entertainmentRecovery = controller;
+    return { swimmer, race, game, controller, hooks };
+}
+
+test('急救各阶段退出后，计时结束和迟到恢复快照都不能复活选手', () => {
+    for (const elapsed of [-1, 0, 3.1, 3.5, 4.5]) {
+        const f = recoveryQuitFixture();
+        if (elapsed >= 0) {
+            f.controller.tryKnockDown(1, 1, 20);
+            f.controller.update(elapsed);
+        }
+        const oldSnapshot = f.controller.snapshot();
+        f.game.onNetPlayerQuit(1);
+        const respawns = f.swimmer.respawns;
+        const hookCount = f.hooks.length;
+        f.controller.update(10);
+        assert.equal(f.swimmer.node.active, false, `退出时点 ${elapsed}`);
+        assert.equal(f.swimmer.racing, false);
+        assert.equal(f.race._quit.has(f.swimmer), true);
+        let revision = 50;
+        for (const phase of [1, 2, 0]) {
+            const late = JSON.parse(JSON.stringify(oldSnapshot));
+            late.revision = ++revision;
+            Object.assign(late.lanes[1], { phase, remainingSeconds: 1, revision: late.revision });
+            f.controller.applySnapshot(late);
+            f.controller.update(10);
+        }
+        assert.equal(f.controller.applyKnockDown({ lane: 1, reason: 2, distance: 22, revision: 100 }), false);
+        assert.equal(f.controller.isDamageable(1), false);
+        assert.equal(f.swimmer.node.active, false);
+        assert.equal(f.swimmer.respawns, respawns);
+        assert.equal(f.hooks.length, hookCount);
+        // 比赛结束也会清空恢复控制器，但淘汰资格仍应阻止迟到的重生回调。
+        f.controller.reset();
+        const afterFinish = f.controller.snapshot();
+        afterFinish.revision = 101;
+        Object.assign(afterFinish.lanes[1], { phase: 2, reason: 1, revision: 101, remainingSeconds: 1 });
+        f.controller.applySnapshot(afterFinish);
+        assert.equal(f.swimmer.node.active, false);
+        assert.equal(f.swimmer.respawns, respawns);
+    }
+});
+
+test('重生入口拒绝已淘汰和已完赛选手，正常选手仍能恢复', () => {
+    const f = recoveryQuitFixture();
+    f.race.eliminateSwimmer(f.swimmer, true);
+    f.game.respawnEntertainmentSwimmer(1, 20);
+    assert.equal(f.swimmer.node.active, false);
+    assert.equal(f.swimmer.respawns, 0);
+    f.race._eliminated.clear();
+    f.race._finishTimes.set(f.swimmer, 90);
+    f.game.respawnEntertainmentSwimmer(1, 20);
+    assert.equal(f.swimmer.respawns, 0);
+    f.race._finishTimes.clear();
+    f.game.respawnEntertainmentSwimmer(1, 20);
+    assert.equal(f.swimmer.respawns, 1);
+});
+
+test('已确认完赛的选手不能再被退出或普通淘汰撤销成绩', () => {
+    for (const quit of [false, true]) {
+        const f = recoveryQuitFixture();
+        f.race._finishTimes.set(f.swimmer, 81);
+        assert.equal(f.race.eliminateSwimmer(f.swimmer, quit), false);
+        assert.equal(f.race._eliminated.has(f.swimmer), false);
+        assert.equal(f.race._quit.has(f.swimmer), false);
+        assert.equal(f.race._finishTimes.get(f.swimmer), 81);
+        assert.equal(f.swimmer.node.active, true);
+    }
+});
+
+test('完赛后离房应确认通知，其他选手仍可用完剩余冲线时间', () => {
+    const f = recoveryQuitFixture();
+    const unfinished = { node: { active: true }, distance: 100 };
+    let finished = 0;
+    Object.assign(f.race, {
+        playerSwimmer: unfinished, aiSwimmer: f.swimmer, aiSwimmers: [f.swimmer],
+        _raceRoster: [unfinished, f.swimmer], _aiFinishTimes: new Map([[f.swimmer, 81]]),
+        _raceTimer: 81, _playerFinished: false, _finishCountdownActive: true,
+        _finishCountdownTimer: 8, _lastFinishCountdownValue: 8,
+        finishRace() { finished++; },
+    });
+    f.race._finishTimes.set(f.swimmer, 81);
+    const file = 'assets/scripts/core/RaceManager.ts';
+    for (const name of ['trackFinishers', 'activeAiSwimmers', 'activeRacers', 'bestAiFinishTime']) {
+        f.race[name] = method(file, 'RaceManager', name, { getRaceDistance: () => 200 });
+    }
+    assert.equal(f.game.onNetPlayerQuit(1), true);
+    f.race.trackFinishers(.1);
+    assert.equal(finished, 0);
+    assert.ok(f.race._finishCountdownTimer > 7);
+    assert.equal(f.race._quit.has(f.swimmer), false);
+    f.race._state = GameState.FINISHED;
+    assert.equal(f.game.onNetPlayerQuit(1), true);
+});
+
+test('正常急救仍重生一次；退出仅影响本泳道，重开清除退休状态', () => {
+    const f = recoveryQuitFixture();
+    f.controller.tryKnockDown(1, 1, 20);
+    f.game.onNetPlayerQuit(1);
+    f.game.onNetPlayerQuit(1);
+    assert.equal(f.controller.tryKnockDown(1, 1, 20), null);
+    assert.ok(f.controller.tryKnockDown(0, 2, 21));
+    f.controller.update(6);
+    assert.ok(f.hooks.some(([event, lane]) => event === 'respawn' && lane === 0));
+    f.controller.reset();
+    f.race._eliminated.clear(); f.race._quit.clear();
+    assert.equal(f.controller.isDamageable(1), true);
+    assert.ok(f.controller.tryKnockDown(1, 1, 20));
+    f.controller.update(3.5); f.controller.update(2);
+    assert.equal(f.swimmer.respawns, 1);
+    assert.equal(f.swimmer.node.active, true);
+    assert.equal(f.swimmer.racing, true);
+});
+
 function pickups(kind = 'stimulant', kinds = [kind]) {
     const result = { gains: 0, effects: 0, feedback: 0, order: [], heartRate: 160, calm: false };
     const racer = {
@@ -87,6 +237,438 @@ function net(raceId = RACE_ID) {
     instance._activeHostPos = 0;
     return instance;
 }
+
+function hostSnapshotSender(pos = 0) {
+    return new NetRaceController({ raceId: RACE_ID, localIsHost: true, localPos: pos,
+        seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
+}
+function sendPosition(sender, distance, conditionEnergyRatio = .5) {
+    sender.sendSnapshot([{
+        lane: 3, distance, lateral: 0, finished: false, heading: 0, headingVelocity: 0,
+        speed: 3, energy: 20, axialRoll: 0, axialRollVelocity: 0,
+        collisionPitch: 0, collisionPitchVelocity: 0, conditionEnergyRatio, conditionHeartRate: 100,
+    }]);
+    return broadcasts.at(-1);
+}
+
+test('房主位置快照乱序和重复不能回拨位置、体力或重复调用玩法监听', () => {
+    const sender = hostSnapshotSender();
+    const receiver = net();
+    let applied = 0;
+    receiver.setStimulantStateListener(() => applied++);
+    try {
+        const old = sendPosition(sender, 10, .8);
+        const fresh = sendPosition(sender, 20, .3);
+        receiver.onBroadcast(fresh);
+        const revision = receiver.snapshotRevision;
+        receiver._lastSnapshotAt = 123;
+        receiver.onBroadcast(old);
+        assert.equal(receiver.snapshotTargets[0].distance, 20);
+        assert.equal(receiver.snapshotTargets[0].conditionEnergyRatio, .3);
+        receiver.onBroadcast(fresh);
+        assert.equal(receiver.snapshotTargets[0].distance, 20);
+        assert.equal(receiver.snapshotTargets[0].conditionEnergyRatio, .3);
+        assert.equal(receiver.snapshotRevision, revision);
+        assert.equal(receiver._lastSnapshotAt, 123);
+        assert.equal(applied, 1);
+    } finally { sender.dispose(); receiver.dispose(); }
+});
+
+test('迁移后各房主序号独立，旧包不能夺权，新包仍可恢复权威', () => {
+    const first = hostSnapshotSender(0), second = hostSnapshotSender(1);
+    const receiver = new NetRaceController({ raceId: RACE_ID, localIsHost: false, localPos: 2,
+        seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
+    try {
+        const stale = sendPosition(first, 10);
+        receiver.onBroadcast(sendPosition(first, 20));
+        receiver._lastSnapshotAt = 0;
+        receiver.onBroadcast(sendPosition(second, 30));
+        assert.equal(receiver.activeHostPos, 1);
+        assert.equal(receiver.snapshotTargets[0].distance, 30);
+        receiver.onBroadcast(stale);
+        assert.equal(receiver.activeHostPos, 1);
+        assert.equal(receiver.snapshotTargets[0].distance, 30);
+        receiver.onBroadcast(sendPosition(first, 40));
+        assert.equal(receiver.activeHostPos, 0);
+        assert.equal(receiver.snapshotTargets[0].distance, 40);
+    } finally { first.dispose(); second.dispose(); receiver.dispose(); }
+});
+
+test('S 与 L 任意顺序到达都交付一次，另一通道的迟到旧轮不能夺回房主', () => {
+    for (const firstChannel of [0, 1]) {
+        const first = hostSnapshotSender(0), second = hostSnapshotSender(1);
+        const receiver = new NetRaceController({ raceId: RACE_ID, localIsHost: false, localPos: 2,
+            seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
+        const litter = new LitterBrawlController(2, 7, 200, () => null, () => {});
+        let positions = 0, litters = 0;
+        receiver.setStimulantStateListener(() => positions++);
+        receiver.setLitterStateListener(() => litters++);
+        try {
+            first.sendSnapshot([], null, null, null, null, null, null, null, litter.snapshotState());
+            const cycle = broadcasts.slice(-2);
+            receiver.onBroadcast(cycle[firstChannel]);
+            receiver.onBroadcast(cycle[1 - firstChannel]);
+            receiver.onBroadcast(cycle[0]); receiver.onBroadcast(cycle[1]);
+            assert.equal(positions, 1); assert.equal(litters, 1);
+            first.sendSnapshot([], null, null, null, null, null, null, null, litter.snapshotState());
+            const nextCycle = broadcasts.slice(-2);
+            receiver.onBroadcast(nextCycle[firstChannel]);
+            receiver._lastSnapshotAt = 0;
+            receiver.onBroadcast(sendPosition(second, 30));
+            assert.equal(receiver.activeHostPos, 1);
+            // 另一通道此前未到，但同一轮已经见过，不能重新夺权。
+            receiver.onBroadcast(nextCycle[1 - firstChannel]);
+            assert.equal(receiver.activeHostPos, 1);
+            assert.equal(receiver.snapshotTargets[0].distance, 30);
+            receiver.onBroadcast(sendPosition(first, 40));
+            assert.equal(receiver.activeHostPos, 0);
+        } finally { first.dispose(); second.dispose(); receiver.dispose(); litter.dispose(); }
+    }
+});
+
+test('已收到有序快照后拒绝无序旧格式，非本局成员的快照不改变权威', () => {
+    const sender = hostSnapshotSender(), receiver = net(), outsider = hostSnapshotSender(7);
+    try {
+        receiver.onBroadcast(sendPosition(sender, 20));
+        const revision = receiver.snapshotRevision;
+        receiver.onBroadcast(wire(encodeRaceSnapshot(0, [])));
+        receiver._lastSnapshotAt = 0;
+        receiver.onBroadcast(sendPosition(outsider, 70));
+        assert.equal(receiver.activeHostPos, 0);
+        assert.equal(receiver.snapshotTargets[0].distance, 20);
+        assert.equal(receiver.snapshotRevision, revision);
+    } finally { sender.dispose(); receiver.dispose(); outsider.dispose(); }
+});
+
+test('正常房主没有收到自身广播回声时，低优先级竞争房主不能改写其权威', () => {
+    for (const hostPos of [0, 1]) {
+        const receiver = hostSnapshotSender(hostPos), competing = hostSnapshotSender(hostPos + 1);
+        let hits = 0;
+        receiver.setMinefieldImpactListener(() => hits++);
+        try {
+            receiver._lastSnapshotAt = Date.now() - 100000;
+            receiver.onBroadcast(sendPosition(competing, 50));
+            assert.equal(receiver.isHost, true);
+            assert.equal(receiver.activeHostPos, hostPos);
+            receiveFrame(receiver, { frameId: 1, items: [encodeInputFrame(hostPos + 1,
+                [{ kind: 'i', mineId: 0, mineHitLane: 1, mineDistance: 20, mineLateral: 0, hitMask: 2, revision: 1 }])] });
+            assert.equal(hits, 0);
+        } finally { receiver.dispose(); competing.dispose(); }
+    }
+});
+
+test('访客按名单更换房主后立即停止消费旧位置，新房主首包不沿用旧插值', () => {
+    const first = hostSnapshotSender(0), second = hostSnapshotSender(1);
+    const receiver = new NetRaceController({ raceId: RACE_ID, localIsHost: false, localPos: 2,
+        seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
+    try {
+        receiver.onBroadcast(sendPosition(first, 10));
+        receiver.onBroadcast(sendPosition(first, 20));
+        receiver.onRoomInfoChange({ members: [{ pos: 1 }, { pos: 2 }] });
+        assert.equal(receiver.activeHostPos, 1);
+        assert.equal(receiver.snapshotTargets.length, 0);
+        assert.equal(receiver.sampleTarget(3), null);
+        receiver.onBroadcast(sendPosition(second, 30));
+        assert.equal(receiver.snapshotTargets[0].distance, 30);
+        assert.equal(receiver._prevSnapshot.length, 0);
+    } finally { first.dispose(); second.dispose(); receiver.dispose(); }
+});
+
+test('退位后迟到的自身 S 与 L 回声不能重新取得权威，静默接管仍正常', () => {
+    for (const channel of [0, 1]) {
+        const receiver = hostSnapshotSender(2), first = hostSnapshotSender(0);
+        const litter = new LitterBrawlController(2, 7, 200, () => null, () => {});
+        try {
+            receiver.sendSnapshot([], null, null, null, null, null, null, null, litter.snapshotState());
+            const echo = broadcasts.slice(-2)[channel];
+            receiver.onBroadcast(sendPosition(first, 20));
+            assert.equal(receiver.isHost, false);
+            receiver._lastSnapshotAt = Date.now() - 100000;
+            receiver.onBroadcast(echo);
+            assert.equal(receiver.activeHostPos, 0);
+            assert.equal(receiver.snapshotTargets[0].distance, 20);
+            receiver.checkHostMigration(true);
+            assert.equal(receiver.isHost, true);
+            assert.equal(receiver.activeHostPos, 2);
+            assert.equal(receiver.snapshotTargets.length, 0);
+        } finally { receiver.dispose(); first.dispose(); litter.dispose(); }
+    }
+});
+
+test('退位再接管后，可靠帧不能携带上次主持时尚未发送的命中', () => {
+    const controller = hostSnapshotSender(2);
+    try {
+        controller.enqueueMinefieldImpact(0, 1, 20, 0, 2, 1, 1);
+        controller.onBroadcast(wire(encodeRaceSnapshot(0, [])));
+        controller.promoteToHost();
+        controller.enqueueMinefieldImpact(1, 1, 30, 0, 2, 2, 2);
+        controller.tick(.04);
+        const packet = decodeInputFrame(body(frames.at(-1)));
+        assert.deepEqual(packet.events.map(event => event.revision), [2]);
+    } finally { controller.dispose(); }
+});
+
+test('退位再接管后，降级广播不能重发上一任期的冲击缓存', () => {
+    const controller = hostSnapshotSender(2);
+    try {
+        controller._peerNeedsBroadcast = true;
+        controller.enqueueMinefieldImpact(0, 1, 20, 0, 2, 1, 1);
+        controller._authoritativeEvents.length = 0;
+        controller.onBroadcast(wire(encodeRaceSnapshot(0, [])));
+        controller.promoteToHost();
+        const begin = broadcasts.length;
+        controller.sendSnapshot([]);
+        assert.equal(broadcasts.slice(begin).filter(message => body(message).startsWith('IN|')).length, 0);
+        controller.enqueueMinefieldImpact(1, 1, 30, 0, 2, 2, 2);
+        controller._authoritativeEvents.length = 0;
+        controller.sendSnapshot([]);
+        const packet = decodeInputFrame(body(broadcasts.at(-1)).slice(3));
+        assert.deepEqual(packet.events.map(event => event.revision), [2]);
+    } finally { controller.dispose(); }
+});
+
+test('房主迁移清理旧来源的满队列，新房主早到事件仍可等待监听就绪', () => {
+    for (const channel of ['roster', 'litter']) {
+        const receiver = new NetRaceController({ raceId: RACE_ID, localIsHost: false, localPos: 2,
+            seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
+        const sender = hostSnapshotSender(1);
+        const litter = new LitterBrawlController(2, 7, 200, () => null, () => {});
+        const event = revision => ({ kind: 'i', mineId: 0, mineHitLane: 1, mineDistance: 20,
+            mineLateral: 0, hitMask: 2, revision });
+        try {
+            receiver.onBroadcast(wire(encodeRaceSnapshot(0, [])));
+            receiveFrame(receiver, { frameId: 1, items: [encodeInputFrame(0,
+                Array.from({ length: 128 }, (_, i) => event(i + 1)))] });
+            assert.equal(receiver._deferredGameplayEvents.length, 128);
+            if (channel === 'roster') receiver.onRoomInfoChange({ members: [{ pos: 1 }, { pos: 2 }] });
+            else {
+                receiver._lastSnapshotAt = Date.now() - 100000;
+                sender.sendSnapshot([], null, null, null, null, null, null, null, litter.snapshotState());
+                receiver.onBroadcast(broadcasts.at(-1));
+            }
+            receiveFrame(receiver, { frameId: 2, items: [encodeInputFrame(1, [event(500)])] });
+            const hits = [];
+            receiver.setMinefieldImpactListener((id, lane, x, z, mask, revision) => hits.push(revision));
+            assert.deepEqual(hits, [500]);
+            assert.equal(receiver._deferredGameplayEvents.length, 0);
+        } finally { receiver.dispose(); sender.dispose(); litter.dispose(); }
+    }
+});
+
+test('S 或 L 首先确认新房主时，旧权威位置缓存和插值均被清除', () => {
+    for (const channel of ['S', 'L']) {
+        const first = hostSnapshotSender(0), second = hostSnapshotSender(1);
+        const receiver = new NetRaceController({ raceId: RACE_ID, localIsHost: false, localPos: 2,
+            seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
+        const litter = new LitterBrawlController(2, 7, 200, () => null, () => {});
+        try {
+            receiver.onBroadcast(sendPosition(first, 10));
+            receiver.onBroadcast(sendPosition(first, 20));
+            receiver._lastSnapshotAt = 0;
+            if (channel === 'S') receiver.onBroadcast(sendPosition(second, 30));
+            else {
+                second.sendSnapshot([], null, null, null, null, null, null, null, litter.snapshotState());
+                receiver.onBroadcast(broadcasts.at(-1));
+                assert.equal(receiver.snapshotTargets.length, 0);
+            }
+            assert.equal(receiver.activeHostPos, 1);
+            assert.equal(receiver._prevSnapshot.length, 0);
+        } finally { first.dispose(); second.dispose(); receiver.dispose(); litter.dispose(); }
+    }
+});
+
+test('首个快照之前的房主可靠命中保留，非房主不能注入', () => {
+    const receiver = new NetRaceController({ raceId: RACE_ID, localIsHost: false, localPos: 1,
+        seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
+    let hits = 0;
+    const event = { kind: 'i', mineId: 0, mineHitLane: 1, mineDistance: 20, mineLateral: 0, hitMask: 2, revision: 1 };
+    try {
+        // 资源加载期间尚无玩法监听，事件应先缓存，不能等待 S| 才信任本局房主。
+        receiveFrame(receiver, { frameId: 1, items: [encodeInputFrame(0, [event])] });
+        // 逐个绑定其他玩法监听时保留待收事件，不能反复出队再入队卡死。
+        receiver.setStimulantPickupListener(() => {});
+        assert.equal(receiver._deferredGameplayEvents.length, 1);
+        receiver.setMinefieldImpactListener(() => hits++);
+        assert.equal(hits, 1);
+        receiveFrame(receiver, { frameId: 2, items: [encodeInputFrame(2, [{ ...event, revision: 2 }])] });
+        assert.equal(hits, 1);
+    } finally { receiver.dispose(); }
+});
+
+test('名单确认离房补偿丢失退出广播，房主和访客均只交付一次', () => {
+    for (const localPos of [0, 1]) {
+        const receiver = new NetRaceController({ raceId: RACE_ID, localIsHost: localPos === 0, localPos,
+            seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
+        const quits = [];
+        try {
+            receiver.setPlayerQuitListener(pos => quits.push(pos));
+            receiver.onRoomInfoChange({ members: [] });
+            receiver.onRoomInfoChange({ members: [{ pos: 2 }] });
+            assert.deepEqual(quits, []);
+            receiver.onRoomInfoChange({ members: [{ pos: 0 }, { pos: 1 }] });
+            assert.deepEqual(quits, [2]);
+            receiver.onRoomInfoChange({ members: [{ pos: 0 }, { pos: 1 }] });
+            receiver.onBroadcast(wire('Q|2'));
+            assert.deepEqual(quits, [2]);
+        } finally { receiver.dispose(); }
+    }
+});
+
+test('场景未就绪时暂存退出，比赛接受后去重，迟到输入和自身快照作废', () => {
+    const receiver = net();
+    const quits = [];
+    let ready = false, inputs = 0, conditions = 0;
+    try {
+        receiver.onBroadcast(wire('Q|0'));
+        const listener = pos => { if (!ready) return false; quits.push(pos); };
+        receiver.setPlayerQuitListener(listener);
+        assert.deepEqual(quits, []);
+        ready = true;
+        receiver.setPlayerQuitListener(listener);
+        assert.deepEqual(quits, [0]);
+        receiver.flushPlayerQuits(); receiver.flushPlayerQuits();
+        receiver.onBroadcast(wire('Q|0'));
+        assert.deepEqual(quits, [0]);
+        receiver.registerRemote(0, 0, { applyEvents() { inputs++; }, applyOwnerCondition() { conditions++; } });
+        receiver.processRemotePacket(0, 5, [{ kind: 'H', side: 0 }]);
+        assert.equal(inputs, 0);
+        receiver.recordRemoteSelf({ lane: 0, ownerStateSeq: 5 }, 0);
+        assert.equal(conditions, 0);
+        assert.equal(receiver.selfSnapshot(0), null);
+        receiver.dispose(); receiver.setPlayerQuitListener(() => { throw Error('销毁后不得回调'); });
+    } finally { receiver.dispose(); }
+});
+
+test('加载期退出等待倒计时建立名册，跳水和滑行期间也能淘汰；普通淘汰仍限比赛中', () => {
+    for (const state of [GameState.COUNTDOWN, GameState.DIVING, GameState.GLIDING, GameState.RACING]) {
+        const f = recoveryQuitFixture();
+        const receiver = net();
+        try {
+            f.game._netLanePlan.remotes[0].pos = 0;
+            f.race._state = GameState.READY;
+            receiver.setPlayerQuitListener(pos => f.game.onNetPlayerQuit(pos));
+            receiver.onBroadcast(wire('Q|0'));
+            assert.equal(f.swimmer.node.active, true);
+            f.race._state = state;
+            if (state !== GameState.RACING) assert.equal(f.race.eliminateSwimmer(f.swimmer), false);
+            receiver.flushPlayerQuits();
+            assert.equal(f.swimmer.node.active, false);
+            assert.equal(f.race._quit.has(f.swimmer), true);
+            assert.equal(f.controller.isDamageable(1), false);
+            assert.equal(receiver._pendingPlayerQuits.size, 0);
+        } finally { receiver.dispose(); }
+    }
+});
+
+test('非法退赛通知不改变本局资格，名单离房后旧房主玩法事件也失效', () => {
+    const receiver = net(); let quits = 0, hits = 0;
+    try {
+        receiver.setPlayerQuitListener(() => { quits++; });
+        for (const payload of ['Q|7', 'Q|1', 'Q|-1', 'Q|0junk', 'Q|0.5', 'Q|']) receiver.onBroadcast(wire(payload));
+        assert.equal(quits, 0); assert.equal(receiver._departedPositions.size, 0);
+        receiver.setMinefieldImpactListener(() => hits++);
+        receiver.onBroadcast(wire('Q|0'));
+        receiveFrame(receiver, { frameId: 1, items: [encodeInputFrame(0, [
+            { kind: 'i', mineId: 0, mineHitLane: 1, mineDistance: 20, mineLateral: 0, hitMask: 2, revision: 1 },
+        ])] });
+        assert.equal(hits, 0); assert.equal(quits, 1);
+    } finally { receiver.dispose(); }
+});
+
+test('补给奖励图标更换和页面销毁释放自建图片帧，迟到图片不再创建资源', () => {
+    const pending = [], frames = [];
+    class SpriteFrame {
+        constructor() { this.destroyCount = 0; frames.push(this); }
+        destroy() { this.destroyCount++; }
+    }
+    const sprite = { node: { isValid: true }, isValid: true, spriteFrame: null };
+    const popup = { _rewardIcon: sprite, _iconPath: '', _ownedIconFrame: null,
+        _root: { isValid: true, destroy() { this.isValid = false; sprite.node.isValid = false; sprite.isValid = false; } },
+        stopRewardPulse() {} };
+    const file = 'assets/scripts/ui/ShopDailySupplyPanel.ts';
+    popup.setRewardIcon = method(file, 'RewardClaimPopup', 'setRewardIcon', {
+        SpriteFrame, Texture2D: class {}, loadRaceAsset: (path, type, callback) => pending.push(callback),
+    });
+    popup.dispose = method(file, 'RewardClaimPopup', 'dispose');
+    popup.setRewardIcon('coins'); pending.shift()(null, {});
+    popup.setRewardIcon('gems'); pending.shift()(null, {});
+    assert.equal(frames[0].destroyCount, 1);
+    popup.dispose(); popup.dispose();
+    assert.equal(frames[1].destroyCount, 1);
+    const late = { ...popup, _rewardIcon: { node: { isValid: true }, isValid: true }, _iconPath: '' };
+    late.setRewardIcon('late'); late._rewardIcon.node.isValid = false;
+    pending.shift()(null, {});
+    assert.equal(frames.length, 2);
+});
+
+function pendingShopClaimFixture(waitForAd) {
+    let finishAd, finishClaim;
+    const ad = new Promise(resolve => { finishAd = resolve; });
+    const result = new Promise(resolve => { finishClaim = resolve; });
+    const calls = { claims: 0, invalidWrites: 0, refreshes: 0, popups: 0, toasts: 0 };
+    const oldRoot = { isValid: true, active: true, destroy() { this.isValid = false; } };
+    const card = { slot: waitForAd ? 'ad_gems' : 'free_coins', adVerified: false,
+        pendingTransactionId: null, action: {} };
+    const panel = { _root: oldRoot, _cards: [card], _busySlot: null, _transactionSerial: 0,
+        _motion: { dispose() {} }, _rewardPopup: { dispose() {} }, hide() {},
+        isClaimed: () => false, isVisible() { return !!this._root?.isValid && this._root.active; },
+        refresh() { calls.refreshes++; }, _toast() { calls.toasts++; } };
+    const file = 'assets/scripts/ui/ShopDailySupplyPanel.ts';
+    panel.dispose = method(file, 'ShopDailySupplyPanel', 'dispose', { PlayerData: { offChange() {} } });
+    panel.claim = method(file, 'ShopDailySupplyPanel', 'claim', {
+        PlayerData: { profile: {}, claimDailyShopReward() { calls.claims++; return result; } },
+        platform: () => ({ name: 'test', showRewardedAd: () => ad }), rewardedAdUnitId: () => '',
+        dailyShopCycleKey: () => '2026-09-22', setLabel: label => {
+            if (label === card.action && !oldRoot.isValid) calls.invalidWrites++;
+        }, RESOURCE_PATHS: { shopUi: { gemIcon: 'gems' }, characterUi: { upgradeCurrency: 'coins' } },
+    });
+    function replaceView() {
+        panel.dispose();
+        panel._root = { isValid: true, active: true };
+        panel._cards = [{ slot: 'ad_coins' }];
+        panel._busySlot = 'ad_coins';
+        panel._rewardPopup = { show() { calls.popups++; } };
+    }
+    return { panel, card, calls, finishAd, finishClaim, replaceView };
+}
+
+test('广告完成前页面销毁重建，奖励仍到账但旧任务不能写新旧页面或解锁新领取', async () => {
+    const f = pendingShopClaimFixture(true);
+    const pending = f.panel.claim(f.card);
+    f.replaceView();
+    const refreshes = f.calls.refreshes;
+    f.finishAd('completed');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(f.calls.claims, 1, '已完成广告仍提交原奖励请求');
+    f.finishClaim({ ok: true, grantedGems: 5, grantedCoins: 0 });
+    await pending;
+    assert.equal(f.calls.invalidWrites, 0);
+    assert.equal(f.panel._busySlot, 'ad_coins');
+    assert.equal(f.calls.refreshes, refreshes);
+    assert.equal(f.calls.popups, 0);
+});
+
+test('奖励响应晚于页面重建，旧任务不能弹奖励或错误提示；保留页面隐藏重开正常到账', async () => {
+    for (const ok of [true, false]) {
+        const f = pendingShopClaimFixture(false);
+        const pending = f.panel.claim(f.card);
+        f.replaceView();
+        const refreshes = f.calls.refreshes;
+        f.finishClaim(ok ? { ok: true, grantedGems: 0, grantedCoins: 100 } : { ok: false, reason: 'network_error' });
+        await pending;
+        assert.equal(f.panel._busySlot, 'ad_coins');
+        assert.equal(f.calls.popups + f.calls.toasts, 0);
+        assert.equal(f.calls.refreshes, refreshes);
+    }
+    const f = pendingShopClaimFixture(false);
+    f.panel._rewardPopup = { show() { f.calls.popups++; } };
+    const pending = f.panel.claim(f.card);
+    f.panel._root.active = false; f.panel._root.active = true;
+    f.finishClaim({ ok: true, grantedGems: 0, grantedCoins: 100 });
+    await pending;
+    assert.equal(f.panel._busySlot, null);
+    assert.equal(f.calls.popups, 1);
+});
 
 test('发令、场景回调和本地准备任意顺序到达，都只在就绪后启动一次', () => {
     for (const order of ['glr', 'grl', 'lgr', 'lrg', 'rgl', 'rlg']) {
@@ -140,6 +722,90 @@ test('成绩先于首个快照到达仍能保留，重复及无来源成绩不�
         assert.equal(calls, 1);
         assert.equal(receiver.authResult[0].placement, 1);
     } finally { receiver.dispose(); }
+});
+
+test('最终成绩先到而本地仍在比赛时，停止位置广播不能触发误接管或清空成绩', () => {
+    const { encodeRaceResult } = load('assets/scripts/net/NetRaceResult.ts');
+    for (const initialSnapshot of [false, true]) {
+        const receiver = net();
+        receiver._activeHostPos = Number.MAX_SAFE_INTEGER;
+        try {
+            if (initialSnapshot) receiver.onBroadcast(wire(encodeRaceSnapshot(0, [])));
+            receiver.onBroadcast(wire(encodeRaceResult([{ lane: 1, placement: 2, finished: true, time: 91 }], 0, 1)));
+            receiver._lastSnapshotAt = Date.now() - 100000;
+            receiver.checkHostMigration(true);
+            assert.equal(receiver.isHost, false);
+            assert.equal(receiver.authResult[0].placement, 2);
+        } finally { receiver.dispose(); }
+    }
+});
+
+test('已有有效最终成绩时，竞争房主的 S 和 L 不能让结算改信其他来源', () => {
+    const { encodeRaceResult } = load('assets/scripts/net/NetRaceResult.ts');
+    const competing = hostSnapshotSender(1);
+    const litter = new LitterBrawlController(2, 7, 200, () => null, () => {});
+    try {
+        for (const channel of [0, 1]) {
+            const receiver = new NetRaceController({ raceId: RACE_ID, localIsHost: false, localPos: 2,
+                seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
+            try {
+                receiver.onBroadcast(wire(encodeRaceSnapshot(0, [])));
+                receiver.onBroadcast(wire(encodeRaceResult([{ lane: 2, placement: 2, finished: true, time: 91 }], 0, 1)));
+                receiver._lastSnapshotAt = Date.now() - 100000;
+                competing.sendSnapshot([], null, null, null, null, null, null, null, litter.snapshotState());
+                receiver.onBroadcast(broadcasts.slice(-2)[channel]);
+                assert.equal(receiver.activeHostPos, 0);
+                assert.equal(receiver.authResult[0].placement, 2);
+                receiver.onBroadcast(wire(encodeRaceResult([{ lane: 2, placement: 1, finished: true, time: 90 }], 0, 2)));
+                assert.equal(receiver.authResult[0].placement, 1);
+            } finally { receiver.dispose(); }
+        }
+    } finally { competing.dispose(); litter.dispose(); }
+});
+
+test('收到最终成绩后明确退出或名单离房仍可接管，不会锁死旧房主', () => {
+    const { encodeRaceResult } = load('assets/scripts/net/NetRaceResult.ts');
+    for (const initialSnapshot of [false, true]) {
+        for (const channel of ['quit', 'roster']) {
+            const receiver = net();
+            receiver._activeHostPos = Number.MAX_SAFE_INTEGER;
+            try {
+                if (initialSnapshot) receiver.onBroadcast(wire(encodeRaceSnapshot(0, [])));
+                receiver.onBroadcast(wire(encodeRaceResult([{ lane: 1, placement: 2, finished: true, time: 91 }], 0, 1)));
+                if (channel === 'quit') {
+                    receiver.onBroadcast(wire('Q|0'));
+                    receiver._lastSnapshotAt = Date.now() - 100000;
+                    receiver.checkHostMigration(true);
+                } else receiver.onRoomInfoChange({ members: [{ pos: 1 }] });
+                assert.equal(receiver.isHost, true);
+                assert.equal(receiver.authResult, null);
+            } finally { receiver.dispose(); }
+        }
+    }
+});
+
+test('最终成绩同步退出原因，并清除访客本地过期的退出标记', () => {
+    const host = hostSnapshotSender(0), receiver = net();
+    const timers = [];
+    const resolve = method('assets/scripts/core/GameManager.ts', 'GameManager', 'resolveNetLeaderboard', {
+        setTimeout: callback => { timers.push(callback); return timers.length; },
+    });
+    const rows = [
+        { swimmer: { lane: 0 }, placement: 2, finished: false, time: 0, eliminated: true, quit: true },
+        { swimmer: { lane: 1 }, placement: 1, finished: true, time: 80, eliminated: false, quit: false },
+    ];
+    const game = controller => ({ _netSession: {}, _netRaceController: controller,
+        assignedLaneOfSwimmer: swimmer => swimmer.lane });
+    try {
+        resolve.call(game(host), rows, () => {});
+        receiver.onBroadcast(broadcasts.at(-1));
+        const localRows = rows.map(row => ({ ...row, quit: !row.quit }));
+        let completed = 0;
+        resolve.call(game(receiver), localRows, () => completed++);
+        assert.equal(completed, 1);
+        assert.equal(localRows.find(row => row.swimmer.lane === 0).quit, true);
+        assert.equal(localRows.find(row => row.swimmer.lane === 1).quit, false);
+    } finally { host.dispose(); receiver.dispose(); }
 });
 
 test('房主成绩补发保持序号，退位后禁止发送，重新接任产生更新序号', () => {

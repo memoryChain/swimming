@@ -262,7 +262,10 @@ export class RaceManager extends Component {
         presentationSeconds = 0,
         cannon = false,
     ): boolean {
-        if (!swimmer || this._eliminated.has(swimmer) || this._state !== GameState.RACING) {
+        const quitAfterStart = quit && (this._state === GameState.COUNTDOWN
+            || this._state === GameState.DIVING || this._state === GameState.GLIDING);
+        if (!swimmer || this._finishTimes.has(swimmer) || this._eliminated.has(swimmer)
+            || (this._state !== GameState.RACING && !quitAfterStart)) {
             return false;
         }
         this._eliminated.add(swimmer);
@@ -287,6 +290,10 @@ export class RaceManager extends Component {
 
     public hasSwimmerFinished(swimmer: Swimmer | null): boolean {
         return !!swimmer && this._finishTimes.has(swimmer);
+    }
+
+    public hasSwimmerEliminated(swimmer: Swimmer | null): boolean {
+        return !!swimmer && this._eliminated.has(swimmer);
     }
 
     public hasAnyFinisher(): boolean {

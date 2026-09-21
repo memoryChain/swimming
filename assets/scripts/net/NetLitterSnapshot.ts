@@ -4,6 +4,7 @@ const TAG = 'L|';
 
 export type DecodedLitterSnapshot = Readonly<{
     hostPos: number;
+    sequence: number;
     state: LitterSnapshotState;
 }>;
 
@@ -11,9 +12,10 @@ export type DecodedLitterSnapshot = Readonly<{
  * 垃圾活动槽位比主赛况头大，单独使用可丢包的周期状态包，避免 S| 超过 1536 字节警戒线。
  * 可靠碰撞事件仍走输入帧／IN|；本包负责丢包自愈、晚加入和房主迁移。
  */
-export function encodeLitterSnapshot(hostPos: number, state: LitterSnapshotState): string {
+export function encodeLitterSnapshot(hostPos: number, state: LitterSnapshotState, sequence = -1): string {
     const slots = state.slots.map(encodeSlot).join(':');
-    return `${TAG}${Math.max(0, Math.floor(hostPos))},${Math.max(0, Math.floor(state.revision))},${Math.max(0, Math.round(state.elapsedSeconds * 1000))},${Math.max(0, Math.floor(state.nextWave))},${Math.max(0, Math.floor(state.spawnOrder))},${Math.max(0, Math.floor(state.randomState)).toString(16)},${Math.max(0, Math.round(state.spawnRetryRemaining * 1000))},${Math.max(0, Math.round(state.blockedWaveSeconds * 1000))},${Math.max(0, Math.floor(state.cancelledWaveCount))}#${slots}`;
+    const order = Number.isSafeInteger(sequence) && sequence >= 0 ? ',!' + sequence.toString(36) : '';
+    return `${TAG}${Math.max(0, Math.floor(hostPos))},${Math.max(0, Math.floor(state.revision))},${Math.max(0, Math.round(state.elapsedSeconds * 1000))},${Math.max(0, Math.floor(state.nextWave))},${Math.max(0, Math.floor(state.spawnOrder))},${Math.max(0, Math.floor(state.randomState)).toString(16)},${Math.max(0, Math.round(state.spawnRetryRemaining * 1000))},${Math.max(0, Math.round(state.blockedWaveSeconds * 1000))},${Math.max(0, Math.floor(state.cancelledWaveCount))}${order}#${slots}`;
 }
 
 export function decodeLitterSnapshot(payload: string): DecodedLitterSnapshot | null {
@@ -21,7 +23,10 @@ export function decodeLitterSnapshot(payload: string): DecodedLitterSnapshot | n
     const hash = payload.indexOf('#', TAG.length);
     if (hash < 0) return null;
     const header = payload.slice(TAG.length, hash).split(',');
-    if (header.length !== 9) return null;
+    if (header.length !== 9 && header.length !== 10) return null;
+    const sequence = header.length === 9 ? -1 : parseInt(header[9].slice(1), 36);
+    if (header.length === 10 && (!/^![0-9a-z]+$/.test(header[9])
+        || !Number.isSafeInteger(sequence) || sequence < 0)) return null;
     const hostPos = parseInt(header[0], 10);
     const revision = parseInt(header[1], 10);
     const elapsedMs = parseInt(header[2], 10);
@@ -44,6 +49,7 @@ export function decodeLitterSnapshot(payload: string): DecodedLitterSnapshot | n
     }
     return {
         hostPos,
+        sequence,
         state: {
             revision,
             elapsedSeconds: elapsedMs / 1000,
