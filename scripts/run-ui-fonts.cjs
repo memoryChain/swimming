@@ -19,5 +19,5 @@ if (process.argv[2] === 'setup') {
     run(python, ['-m', 'pip', 'install', 'fonttools==4.64.0']);
 } else if (process.argv[2] === 'build') {
     if (!existsSync(python)) throw new Error('请先运行 pnpm fonts:setup');
-    run(python, ['scripts/build-ui-fonts.py']);
+    run(python, ['-X', 'utf8', 'scripts/build-ui-fonts.py']);
 } else throw new Error('用法：node scripts/run-ui-fonts.cjs setup|build');

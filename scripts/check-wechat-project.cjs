@@ -4,6 +4,8 @@ const path = require('node:path');
 const { readWechatConfig, assertWechatProjectOutput } = require('../extensions/wechat-race-subpackage/wechat-project-config');
 const { assertTextureCompressionPolicy } = require('../extensions/wechat-race-subpackage/texture-compression-policy');
 const { assertUiFontPolicy } = require('./ui-font-policy');
+const { auditWechatPackageOutput } = require('../extensions/wechat-race-subpackage/wechat-package-budget');
+const { assertBuiltMotionRuntime, assertBuiltMotionStorage } = require('../extensions/wechat-race-subpackage/sampled-motion-storage');
 
 const projectRoot = path.resolve(__dirname, '..');
 try {
@@ -20,7 +22,12 @@ try {
     if (args[0] === '--build') {
         const output = path.resolve(projectRoot, args[1] || 'build/wechatgame');
         const result = assertWechatProjectOutput(output);
+        assertBuiltMotionRuntime(output);
+        const motions = assertBuiltMotionStorage(projectRoot, output);
+        const budget = auditWechatPackageOutput(output);
+        console.log(`[wechat-project] ${motions.motions} 个动作的解码入口与无损构建后处理检查通过。`);
         console.log(`[wechat-project] 构建包入口、分包及 AppID 检查通过：${result.appid}。`);
+        console.log(`[wechat-project] 主包 ${(budget.mainBytes / 1024).toFixed(1)} / 4096 KiB；总包 ${(budget.totalBytes / 1024).toFixed(1)} / 30720 KiB。`);
     } else {
         console.log('[wechat-project] 本次只检查项目源文件；构建后请运行 npm run wechat:check -- --build。');
     }

@@ -3,6 +3,7 @@ import { RaceHudStatusView, preloadRaceHudStatus } from './RaceHudStatusView';
 import { RaceStartView, preloadRaceStartUi } from './RaceStartView';
 import { Button, Color, EventMouse, EventTouch, Graphics, instantiate, Label, LabelOutline, Node, Prefab, resources, Sprite, SpriteFrame, sys, Texture2D, UITransform, view } from 'cc';
 import { EDITOR } from 'cc/env';
+import { DEBUG_UI_ENABLED } from '../core/DebugUiPolicy';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { StrokeType } from '../core/GameConstants';
 import { UIController } from './UIController';
@@ -53,7 +54,6 @@ type LoginTextures = {
     primaryButton: Texture2D;
     primaryArrow: Texture2D;
     onlineButton: Texture2D;
-    onlineIcon: Texture2D;
 };
 
 export class SpeedStarsStartUiPrefabBuilder {
@@ -204,42 +204,11 @@ export class SpeedStarsUiPrefabBuilder {
         // 全屏划水输入板。颁奖仪式时隐藏，让指针事件穿透到驱动颁奖自由视角相机的全局输入监听。
         ui.strokeInput = requireNode(raceHud, 'StrokeInput');
         ui.diveTouchArea = requireNode(raceHud, 'DiveTouchArea');
-        ui.resultPanel = requireNode(raceHud, 'ResultPanel');
-        ui.resultTitle = requireLabel(raceHud, 'ResultTitle');
-        ui.resultTime = requireLabel(raceHud, 'ResultTime');
-        ui.resultPlacementStat = requireLabel(raceHud, 'ResultPlacementStat');
-        ui.resultSpeedStat = requireLabel(raceHud, 'ResultSpeedStat');
         ui.ratingLabel = requireLabel(raceHud, 'Rating');
         ui.comboLabel = requireLabel(raceHud, 'Combo');
         ui.ratingLabel.node.active = false;
         ui.comboLabel.node.active = false;
-        ui.resultRows = [];
-        ui.resultRankLabels = [];
-        ui.resultTimeLabels = [];
-        ui.resultSpeedLabels = [];
-        ui.resultRowBacks = [];
-        ui.resultAvatars = [];
-        ui.resultAvatarFrames = [];
-        for (let i = 0; i < 8; i++) {
-            ui.resultRows.push(requireLabel(raceHud, `ResultRow${i}`));
-            ui.resultRankLabels.push(requireLabel(raceHud, `ResultRank${i}`));
-            ui.resultTimeLabels.push(requireLabel(raceHud, `ResultTimeValue${i}`));
-            ui.resultSpeedLabels.push(requireLabel(raceHud, `ResultSpeedValue${i}`));
-            ui.resultRowBacks.push(requireNode(raceHud, `ResultRowBack${i}`));
-            const avatar = requireNode(raceHud, `ResultAvatar${i}`).getComponent(Sprite);
-            if (!avatar?.spriteFrame) {
-                throw new Error(`SpeedStarsUI avatar is missing SpriteFrame: ResultAvatar${i}`);
-            }
-            avatar.sizeMode = Sprite.SizeMode.CUSTOM;
-            avatar.node.getComponent(UITransform)?.setContentSize(38, 38);
-            ui.resultAvatars.push(avatar);
-            ui.resultAvatarFrames.push(avatar.spriteFrame);
-        }
-        ui.resultRowNormalFrame = ui.resultRowBacks[0]?.getComponent(Sprite)?.spriteFrame ?? null;
-        ui.resultRowPlayerFrame = ui.resultRowBacks[7]?.getComponent(Sprite)?.spriteFrame ?? null;
-
-        // 旧行资源仍供赛前名册复用，但旧结算面板不再显示。
-        ui.resultPanel.active = false;
+        // 赛前名册与结算均使用独立的新界面，不再挂载旧结算行与头像。
         ui.settlementView = new SettlementView(raceHud, this._callbacks);
         ui.resultPanel = ui.settlementView.root;
 
@@ -313,9 +282,6 @@ export class SpeedStarsUiPrefabBuilder {
             }
         });
         diveTouchArea.on(Node.EventType.MOUSE_UP, () => this.endDiveMouse());
-
-        requireNode(raceHud, 'RestartButton').on(Node.EventType.TOUCH_END, () => this._callbacks.onRestart());
-        requireNode(raceHud, 'MenuButton').on(Node.EventType.TOUCH_END, () => this._callbacks.onMenu());
 
         const speedBarRoot = requireNode(raceHud, 'SpeedBarRoot');
         reparentAt(requireNode(raceHud, 'SpeedFill'), speedBarRoot, 0, -3);
@@ -596,7 +562,6 @@ function applyLoginArtwork(startScreen: Node, art: LoginTextures) {
     if (onlineLabel) {
         stylePsdLabel(onlineLabel, '联机', 23, uiColor(0, 29, 65), 60, 34, 13, -0.5);
     }
-    makePsdSprite('OnlineIcon', online, art.onlineIcon, 28, 21, -32.5, 1);
 }
 
 function setSpriteTexture(node: Node, texture: Texture2D) {
@@ -703,7 +668,6 @@ function loadLoginTextures(done: (error: Error | null, art?: LoginTextures) => v
         ['primaryButton', paths.primaryButton],
         ['primaryArrow', paths.primaryArrow],
         ['onlineButton', paths.onlineButton],
-        ['onlineIcon', paths.onlineIcon],
     ];
     const art = {} as LoginTextures;
     let remaining = entries.length;
@@ -752,11 +716,10 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     // production friend-room action lives on the prepare-race screen.
     const roomButton = requireNode(startScreen, 'ModelDebugButton');
     roomButton.name = 'LegacyOnlineButton';
+    roomButton.active = false;
+    if (!DEBUG_UI_ENABLED) return;
 
-    // Auxiliary entries use the same artwork and press state as the current online
-    // button. Scene-effect preview is available in every runtime; model debug stays
-    // editor-only. Keep them in a separate bottom-right stack so they never move or
-    // rebuild the production login actions.
+    // 调试入口单独排在右下角；微信不创建，模型调试继续保留原有编辑器限制。
     const bottomRightButtons: Node[] = [];
     if (EDITOR) {
         const modelDebug = cloneLoginSecondaryButton(roomButton, 'ModelDebugButton', '模型调试', callbacks.onModelDebug);
@@ -765,7 +728,6 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     const sceneEffectPreview = cloneLoginSecondaryButton(roomButton, 'UnderwaterDebugButton', '场景效果预览', callbacks.onUnderwaterDebug);
     bottomRightButtons.push(sceneEffectPreview);
     layoutBottomRightDebugButtons(bottomRightButtons);
-    roomButton.active = false;
 }
 
 function cloneLoginSecondaryButton(template: Node, name: string, text: string, onClick: () => void): Node {
@@ -778,10 +740,6 @@ function cloneLoginSecondaryButton(template: Node, name: string, text: string, o
     const label = button.getChildByName('Label')?.getComponent(Label);
     if (label) {
         stylePsdLabel(label, text, 20, uiColor(0, 29, 65), 125, 34, 0, -0.5);
-    }
-    const onlineIcon = button.getChildByName('OnlineIcon');
-    if (onlineIcon?.active) {
-        onlineIcon.active = false;
     }
     button.on(Node.EventType.TOUCH_END, onClick);
     return button;

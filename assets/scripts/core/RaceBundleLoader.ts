@@ -1,4 +1,5 @@
-import { assetManager, Asset, AssetManager } from 'cc';
+import { assetManager, Asset, AssetManager, JsonAsset } from 'cc';
+import { decodeSampledMotion } from '../character/SampledMotionStorage';
 
 export const RACE_BUNDLE_NAME = 'race';
 
@@ -34,7 +35,18 @@ export function loadRaceAsset<T extends Asset>(
             done(bundleError ?? new Error(`Race Asset Bundle is unavailable: ${path}`));
             return;
         }
-        bundle.load(path, type, done);
+        bundle.load(path, type, (error, asset) => {
+            if (!error && asset instanceof JsonAsset) {
+                try {
+                    // 写回 Cocos 缓存，同一曲线供预览、选手骨架和比赛共用，只还原一次。
+                    asset.json = decodeSampledMotion(asset.json) as Record<string, any>;
+                } catch (decodeError) {
+                    done(decodeError instanceof Error ? decodeError : new Error(String(decodeError)));
+                    return;
+                }
+            }
+            done(error, asset);
+        });
     });
 }
 
@@ -48,6 +60,20 @@ export function loadRaceAssetDir<T extends Asset>(
             done(bundleError ?? new Error(`Race Asset Bundle is unavailable: ${path}`));
             return;
         }
-        bundle.loadDir(path, type, done);
+        bundle.loadDir(path, type, (error, assets) => {
+            if (!error) {
+                try {
+                    for (const asset of assets ?? []) {
+                        if (asset instanceof JsonAsset) {
+                            asset.json = decodeSampledMotion(asset.json) as Record<string, any>;
+                        }
+                    }
+                } catch (decodeError) {
+                    done(decodeError instanceof Error ? decodeError : new Error(String(decodeError)));
+                    return;
+                }
+            }
+            done(error, assets);
+        });
     });
 }

@@ -7,7 +7,9 @@ import argparse
 import io
 import os
 import shutil
+import struct
 import sys
+import zlib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -97,12 +99,17 @@ def parse_args() -> argparse.Namespace:
         help="图片超过建议字节或尺寸预算时也返回非零退出码。",
     )
     parser.add_argument(
+        "--allow-lossy-jpeg",
+        action="store_true",
+        help="显式允许 JPG 有损重编码；默认只优化 PNG，JPG 保持原文件。",
+    )
+    parser.add_argument(
         "--jpeg-quality",
         type=int,
         default=82,
         choices=range(60, 96),
         metavar="60..95",
-        help="JPG 目标质量，默认 82。已不高于该质量的 JPG 不会重复重编码。",
+        help="配合 --allow-lossy-jpeg 使用的 JPG 目标质量，默认 82。",
     )
     parser.add_argument(
         "--min-saving-percent",
@@ -179,7 +186,67 @@ def inspect_image(root: Path, path: Path) -> ImageInfo:
     )
 
 
+# 重编码只替换 PNG 图像数据；保留色彩、方向、像素比例和其他附加块。
+# 仅删除不参与渲染的文本注释。直接复用原始块，避免丢失 sRGB/gAMA/cHRM/ICC。
+PNG_DATA_CHUNKS = {b"IHDR", b"PLTE", b"tRNS", b"IDAT", b"IEND"}
+PNG_TEXT_CHUNKS = {b"tEXt", b"zTXt", b"iTXt"}
+
+
+def png_chunks(data: bytes) -> list[tuple[bytes, bytes]]:
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("PNG 签名无效")
+    chunks: list[tuple[bytes, bytes]] = []
+    offset = 8
+    while offset < len(data):
+        if offset + 12 > len(data):
+            raise ValueError("PNG 数据块不完整")
+        length = struct.unpack_from(">I", data, offset)[0]
+        end = offset + 12 + length
+        if end > len(data):
+            raise ValueError("PNG 数据块长度越界")
+        kind = data[offset + 4:offset + 8]
+        raw = data[offset:end]
+        crc = struct.unpack_from(">I", data, end - 4)[0]
+        if zlib.crc32(data[offset + 4:end - 4]) != crc:
+            raise ValueError("PNG 数据块校验失败")
+        chunks.append((kind, raw))
+        offset = end
+    if not chunks or chunks[0][0] != b"IHDR" or chunks[-1][0] != b"IEND":
+        raise ValueError("PNG 缺少文件头或结尾")
+    return chunks
+
+
+def preserve_png_metadata(original: bytes, encoded: bytes) -> bytes:
+    # 原数据块顺序保留；新图像数据写回原 IDAT 所在位置。
+    replacement: dict[bytes, list[bytes]] = {}
+    for kind, raw in png_chunks(encoded):
+        if kind in PNG_DATA_CHUNKS:
+            replacement.setdefault(kind, []).append(raw)
+    output = [original[:8]]
+    written: set[bytes] = set()
+    for kind, raw in png_chunks(original):
+        if kind in PNG_TEXT_CHUNKS:
+            continue
+        if kind in PNG_DATA_CHUNKS:
+            if kind not in written:
+                output.extend(replacement.get(kind, []))
+                written.add(kind)
+        else:
+            output.append(raw)
+    # 调色板/透明色键结构不应凭空增加，否则需要另外处理块顺序。
+    if set(replacement) - written:
+        raise ValueError("PNG 重编码产生新的图像块类型")
+    return b"".join(output)
+
+
 def png_candidate(info: ImageInfo) -> tuple[bytes, str]:
+    original = info.path.read_bytes()
+    source_chunks = png_chunks(original)
+    # 这些格式需要保留逐帧/高精度数据，当前工具不尝试转换。
+    if any(kind == b"acTL" for kind, _ in source_chunks):
+        return original, "动画 PNG 保持原文件"
+    if source_chunks[0][1][16] == 16:
+        return original, "16 位 PNG 保持原文件"
     with Image.open(info.path) as image:
         image.load()
         original_rgba = image.convert("RGBA").tobytes()
@@ -194,7 +261,7 @@ def png_candidate(info: ImageInfo) -> tuple[bytes, str]:
             save_options["transparency"] = image.info["transparency"]
         output = io.BytesIO()
         image.save(output, **save_options)
-        encoded = output.getvalue()
+        encoded = preserve_png_metadata(original, output.getvalue())
 
     with Image.open(io.BytesIO(encoded)) as decoded:
         decoded.load()
@@ -202,7 +269,7 @@ def png_candidate(info: ImageInfo) -> tuple[bytes, str]:
             raise ValueError("PNG 重编码后尺寸发生变化")
         if decoded.convert("RGBA").tobytes() != original_rgba:
             raise ValueError("PNG 重编码后像素发生变化")
-    return encoded, "无损像素重编码"
+    return encoded, "无损像素重编码，保留色彩与方向信息"
 
 
 _JPEG_QUALITY_TABLES: dict[int, tuple[tuple[int, ...], ...]] | None = None
@@ -285,10 +352,13 @@ def build_candidate(
     jpeg_quality: int,
     min_saving_percent: float,
     min_saving_bytes: int,
+    allow_lossy_jpeg: bool = False,
 ) -> tuple[Candidate | None, str | None]:
     if info.path.suffix.lower() == ".png":
         encoded, detail = png_candidate(info)
     else:
+        if not allow_lossy_jpeg:
+            return None, "无损模式：JPG 保持原文件"
         encoded, detail = jpeg_candidate(info, jpeg_quality)
         if encoded is None:
             return None, detail
@@ -395,6 +465,7 @@ def main() -> int:
                 jpeg_quality=args.jpeg_quality,
                 min_saving_percent=args.min_saving_percent,
                 min_saving_bytes=args.min_saving_bytes,
+                allow_lossy_jpeg=args.allow_lossy_jpeg,
             )
             if candidate:
                 candidates.append(candidate)
@@ -407,6 +478,8 @@ def main() -> int:
         f"扫描 {len(infos)} 张图片：{format_kib(total_bytes)}；"
         f"按当前策略预计 {format_kib(total_after)}，可节省 {format_kib(total_bytes - total_after)}。"
     )
+    if not args.allow_lossy_jpeg:
+        print("当前为无损模式：PNG 保留像素、色彩信息和透明度；JPG 不重编码。")
     print_candidates(candidates)
 
     budget_warnings = collect_budget_warnings(infos, candidates)

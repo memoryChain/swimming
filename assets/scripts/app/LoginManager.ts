@@ -1,5 +1,6 @@
 import { _decorator, Camera, Canvas, Color, Component, director, Layers, Node, UITransform, view } from 'cc';
 import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode, consumeReturnToRoom, consumeReturnToLobby, setRoomMode } from '../core/GameLaunchOptions';
+import { DEBUG_UI_ENABLED } from '../core/DebugUiPolicy';
 import { setSoloRaceTicket } from '../progression/SoloRaceSession';
 import { setSoloRaceDistance } from '../core/GameBalance';
 import { setSoloAiEvent } from '../competitor/CompetitorConfig';
@@ -173,6 +174,7 @@ export class LoginManager extends Component {
     // popup (hidden dev panel), NOT the headbar "+" which now runs the real ad flow.
     // See PROGRESSION_CONFIG.debugGrantCoins - remove before a production release.
     private async grantDebugCoins() {
+        if (!DEBUG_UI_ENABLED) return;
         await PlayerData.grantDebugCoins(PROGRESSION_CONFIG.debugGrantCoins);
         this.toast(`调试 +${PROGRESSION_CONFIG.debugGrantCoins} ${CURRENCY.coin.label}`);
     }
@@ -326,12 +328,14 @@ export class LoginManager extends Component {
 
     // 测试赛使用面板指定的赛程、人数、角色等级与智力。
     startAiDebug(difficulty: number) {
+        if (!DEBUG_UI_ENABLED) return;
         setAiDebugDifficulty(difficulty);
         setRaceDifficulty(getAiDebugSetup().mode);
         this.launchMainGame('ai-debug');
     }
 
     private launchMainGame(mode: MainGameLaunchMode) {
+        if (!DEBUG_UI_ENABLED && mode !== 'race') return;
         if (this._loadingRace) {
             return;
         }
@@ -452,7 +456,7 @@ export class LoginManager extends Component {
 
     // 弹框继承 Popup 专用渲染层，不能改为主界面的 UI_2D。
     private showAiDebugPicker() {
-        if (!this._canvasNode) {
+        if (!DEBUG_UI_ENABLED || !this._canvasNode) {
             return;
         }
         const popup = getUILayer(this._canvasNode, UILayer.Popup);

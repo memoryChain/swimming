@@ -62,6 +62,7 @@ import { CameraSpeedLineOverlay } from '../ui/CameraSpeedLineOverlay';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
+import { DEBUG_UI_ENABLED } from './DebugUiPolicy';
 import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugSetup, getAiDebugDifficulty, resolveAiDebugBuildOptions, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
 import { consumeNetRaceSession, NetRaceSessionData } from '../net/NetRaceSession';
 import { NetRaceController } from '../net/NetRaceController';
@@ -345,12 +346,12 @@ export class GameManager extends Component {
                             this.registerEvents();
                             this.debug('3D runtime initialized');
                             const launchMode = consumeMainGameLaunchMode();
-                            if (launchMode === 'model-debug') {
+                            if (DEBUG_UI_ENABLED && launchMode === 'model-debug') {
                                 this.enterModelDebug('freestyle');
-                            } else if (launchMode === 'underwater-debug') {
+                            } else if (DEBUG_UI_ENABLED && launchMode === 'underwater-debug') {
                                 this.enterUnderwaterDebug();
                             } else {
-                                this._aiDebugMode = launchMode === 'ai-debug';
+                                this._aiDebugMode = DEBUG_UI_ENABLED && launchMode === 'ai-debug';
                                 if (this._aiDebugMode) {
                                     this._aiDebugDifficulty = getAiDebugDifficulty();
                                 }
@@ -430,7 +431,7 @@ export class GameManager extends Component {
         this._netRaceController?.tick(netDt, this.buildLocalSelfSnapshot());
         this.consumePlayerRhythmResults();
         this.updatePlayerCondition(dt);
-        this._aiDifficultyPanel.update(dt);
+        if (DEBUG_UI_ENABLED) this._aiDifficultyPanel.update(dt);
         const timingGuide = this._aiDebugMode ? this._playerSwimmer.strokeTimingGuide : null;
         const raceActive = this._state === GameState.RACING;
         const raceDistance = getRaceDistance();
@@ -807,7 +808,7 @@ export class GameManager extends Component {
         this._worldRoot = scene.worldRoot;
         this._cameraNode = scene.cameraNode;
         // Networked race: show the sync debug HUD on the race canvas (debug-flag gated).
-        if (NET_RACE_DEBUG_HUD) {
+        if (DEBUG_UI_ENABLED && NET_RACE_DEBUG_HUD) {
             this._netRaceController?.attachHud(scene.canvasNode, scene.width, scene.height);
         }
         this._underwaterCameraTint = this.buildUnderwaterCameraTint(this._cameraNode, scene.width, scene.height);
@@ -1844,7 +1845,7 @@ export class GameManager extends Component {
                     this._netRaceController.sendSelfSnapshot(self);
                 }
             }
-            if (NET_RACE_DEBUG_HUD) {
+            if (DEBUG_UI_ENABLED && NET_RACE_DEBUG_HUD) {
                 this._netRaceController.setDiag(this.buildNetDiag());
             }
         }
@@ -2078,6 +2079,7 @@ export class GameManager extends Component {
     // reconstructed from the AI array order (AI lanes are pushed in ascending lane
     // order, skipping the player lane).
     private refreshAiDifficultyPanel() {
+        if (!DEBUG_UI_ENABLED) return;
         const entries = this._aiControllers.map((controller, i) => ({
             lane: this._raceLaneStart + i + (this._raceLaneStart + i >= this._playerLaneIndex ? 1 : 0),
             name: `${findPlayerCharacter(controller.characterId)?.name ?? controller.characterId} Lv.${controller.level}`,
@@ -2195,47 +2197,9 @@ export class GameManager extends Component {
             this.refreshSwimmerNameRoster();
             this._finishRankOverlay.bind(this._raceHud);
             this._preRaceIntroPanel.build(this._raceHud, visibleSize.width, visibleSize.height);
-            this.buildAiDebugCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
-            // Networked race: an overhead whole-field toggle to compare AI positions
-            // across clients.
-            if (this._netSession) {
-                this.buildFieldOverviewButton(this._raceHud, visibleSize.width, visibleSize.height);
+            if (DEBUG_UI_ENABLED) {
+                this.buildDebugUi(uiRoot, w, h, visibleSize.width, visibleSize.height);
             }
-            const modelDebugHudBuilder = new ModelDebugHudBuilder({
-                onExit: () => this.exitModelDebug(true),
-                onSlow: () => this.slowModelDebugMotion(),
-                onFast: () => this.speedUpModelDebugMotion(),
-                onSwitchModel: () => this.switchModelDebugVariant(),
-                onSwitchAction: () => this.switchModelDebugAction(),
-                onPlayFlipTurn: () => this._modelDebugFlow?.triggerFlipTurn(),
-                onSwitchTexture: () => this.switchModelDebugTexture(),
-                onSwitchSkybox: () => this.switchModelDebugSkybox(),
-                onTuningVisibilityChanged: (visible) => this.handleTuningVisibilityChanged(visible),
-                onTuningChanged: (id) => this.handleLiveTuningChanged(id),
-            }, DEV && !this._netSession);
-            this._modelDebugHudBuilder = modelDebugHudBuilder;
-            const modelDebugHud = modelDebugHudBuilder.build(uiRoot, w, h);
-            this._modelDebugHud = modelDebugHud.root;
-            this._modelDebugSpeedLabel = modelDebugHud.speedLabel;
-            this._modelDebugRatingLabel = modelDebugHud.ratingLabel;
-            this._modelDebugSwimSpeedLabel = modelDebugHud.swimSpeedLabel;
-            this._modelDebugModelLabel = modelDebugHud.modelLabel;
-            this._modelDebugActionLabel = modelDebugHud.actionLabel;
-            this._modelDebugFlipTurnButton = modelDebugHud.flipTurnButton;
-            this._modelDebugSkyboxLabel = modelDebugHud.skyboxLabel;
-            this._modelDebugHud.active = false;
-            this.buildRaceTuningButton(this._raceHud, w, h);
-            this.buildRecordingModeButton(this._raceHud, w, h);
-            if (DEV && !this._netSession && !this._roomMode && getSoloRaceTicket()) {
-                this._careerRaceDebugPanel.build(this._raceHud, w, h,
-                    () => this._raceManager.getLiveLeaderboard().length,
-                    (placement) => this.canDebugCareerFinish() && this._raceManager.debugFinishWithPlacement(placement));
-            }
-
-            const debugPanel = new DebugPanelBuilder().build(uiRoot, w, h);
-            this._debugLog.bind(debugPanel.root, debugPanel.logLabel);
-            this._aiDifficultyPanel.build(uiRoot, w, h);
-            this.refreshAiDifficultyPanel();
             if (this._recordingMode) {
                 this.applyRecordingModePresentation();
             }
@@ -2248,6 +2212,51 @@ export class GameManager extends Component {
             });
             done();
         });
+    }
+
+    // 调试节点、监听和调参面板只在允许的平台创建。
+    private buildDebugUi(uiRoot: Node, w: number, h: number, visibleWidth: number, visibleHeight: number) {
+        this.buildAiDebugCameraButton(this._raceHud, visibleWidth, visibleHeight);
+        // Networked race: an overhead whole-field toggle to compare AI positions
+        // across clients.
+        if (this._netSession) {
+            this.buildFieldOverviewButton(this._raceHud, visibleWidth, visibleHeight);
+        }
+        const modelDebugHudBuilder = new ModelDebugHudBuilder({
+            onExit: () => this.exitModelDebug(true),
+            onSlow: () => this.slowModelDebugMotion(),
+            onFast: () => this.speedUpModelDebugMotion(),
+            onSwitchModel: () => this.switchModelDebugVariant(),
+            onSwitchAction: () => this.switchModelDebugAction(),
+            onPlayFlipTurn: () => this._modelDebugFlow?.triggerFlipTurn(),
+            onSwitchTexture: () => this.switchModelDebugTexture(),
+            onSwitchSkybox: () => this.switchModelDebugSkybox(),
+            onTuningVisibilityChanged: (visible) => this.handleTuningVisibilityChanged(visible),
+            onTuningChanged: (id) => this.handleLiveTuningChanged(id),
+        }, DEV && !this._netSession);
+        this._modelDebugHudBuilder = modelDebugHudBuilder;
+        const modelDebugHud = modelDebugHudBuilder.build(uiRoot, w, h);
+        this._modelDebugHud = modelDebugHud.root;
+        this._modelDebugSpeedLabel = modelDebugHud.speedLabel;
+        this._modelDebugRatingLabel = modelDebugHud.ratingLabel;
+        this._modelDebugSwimSpeedLabel = modelDebugHud.swimSpeedLabel;
+        this._modelDebugModelLabel = modelDebugHud.modelLabel;
+        this._modelDebugActionLabel = modelDebugHud.actionLabel;
+        this._modelDebugFlipTurnButton = modelDebugHud.flipTurnButton;
+        this._modelDebugSkyboxLabel = modelDebugHud.skyboxLabel;
+        this._modelDebugHud.active = false;
+        this.buildRaceTuningButton(this._raceHud, w, h);
+        this.buildRecordingModeButton(this._raceHud, w, h);
+        if (DEV && !this._netSession && !this._roomMode && getSoloRaceTicket()) {
+            this._careerRaceDebugPanel.build(this._raceHud, w, h,
+                () => this._raceManager.getLiveLeaderboard().length,
+                (placement) => this.canDebugCareerFinish() && this._raceManager.debugFinishWithPlacement(placement));
+        }
+
+        const debugPanel = new DebugPanelBuilder().build(uiRoot, w, h);
+        this._debugLog.bind(debugPanel.root, debugPanel.logLabel);
+        this._aiDifficultyPanel.build(uiRoot, w, h);
+        this.refreshAiDifficultyPanel();
     }
 
     private buildLaneLockdownStatus(raceHud: Node, width: number, height: number) {
@@ -2527,7 +2536,7 @@ export class GameManager extends Component {
     }
 
     private canDebugCareerFinish(): boolean {
-        return DEV && !this._netSession && !this._roomMode && !this._aiDebugMode
+        return DEBUG_UI_ENABLED && DEV && !this._netSession && !this._roomMode && !this._aiDebugMode
             && !this._modelDebugFlow?.active && !this._recordingMode && !!getSoloRaceTicket()
             && (this._state === GameState.COUNTDOWN || this._state === GameState.DIVING
                 || this._state === GameState.GLIDING || this._state === GameState.RACING);
@@ -3245,6 +3254,7 @@ export class GameManager extends Component {
     }
 
     private cycleBulletTime() {
+        if (!DEBUG_UI_ENABLED) return;
         this._bulletTimeIndex = (this._bulletTimeIndex + 1) % BULLET_TIME_SCALES.length;
         const scale = BULLET_TIME_SCALES[this._bulletTimeIndex];
         setTimeScale(scale);
@@ -3268,7 +3278,7 @@ export class GameManager extends Component {
     }
 
     private toggleDebug() {
-        if (this._recordingMode) {
+        if (!DEBUG_UI_ENABLED || this._recordingMode) {
             return;
         }
         const visible = this._debugLog.toggle();

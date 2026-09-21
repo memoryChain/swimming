@@ -75,7 +75,7 @@ test('真实登录入口保持弹窗专用层，面板居中适配，遮挡覆�
     const popup = new Node('Popup'); popup.layer = 1 << 14;
     const Login = vm.runInNewContext(ts.transpileModule(`class Login { ${method.getText(source)} }; Login`,
         { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText,
-        { getUILayer: () => popup, UILayer: { Popup: 3 }, mountAiDebugSetupPicker });
+        { DEBUG_UI_ENABLED: true, getUILayer: () => popup, UILayer: { Popup: 3 }, mountAiDebugSetupPicker });
     const owner = new Login(); owner._canvasNode = new Node('主画布'); owner._canvasNode.setPosition(640, 360);
     owner.startAiDebug = () => {}; owner.grantDebugCoins = () => {};
     const descendants = node => [node, ...node.children.flatMap(descendants)];

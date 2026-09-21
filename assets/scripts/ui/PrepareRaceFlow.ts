@@ -15,13 +15,12 @@ import {
     UITransform,
     view,
 } from 'cc';
-import { RaceDifficulty, RACE_DIFFICULTY_OPTIONS, getRaceDistance, getRaceModeTitle, setRaceDifficulty } from '../core/GameBalance';
+import { DEBUG_UI_ENABLED } from '../core/DebugUiPolicy';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import {
     findPlayerCharacter,
     getPlayerCharacterSelection,
-    getSelectedRaceDifficulty,
     PLAYER_CHARACTER_DEFINITIONS,
     PLAYER_COLOR_SCHEMES,
     PLAYER_SKIN_TONES,
@@ -32,7 +31,6 @@ import {
     selectedPlayerSkinTone,
     setPlayerColorScheme,
     setPlayerSkinTone,
-    setSelectedRaceDifficulty,
 } from '../app/PlayerCharacterConfig';
 import { CHARACTER_PREVIEW_RIGHT_SHIFT, PrepareRaceCharacterPreview } from '../app/PrepareRaceCharacterPreview';
 import { getProgressionManager } from '../progression/ProgressionManager';
@@ -63,13 +61,6 @@ export type PrepareRaceFlowCallbacks = {
 type PrepareRaceView = 'ready' | 'characters';
 type CharacterInspectorTab = 'attributes' | 'appearance';
 
-type RaceModeCardView = {
-    id: RaceDifficulty;
-    root: Node;
-    selectedFrame: Node;
-    selected: boolean;
-};
-
 type CharacterCardView = {
     characterId: PlayerCharacterId | null;
     selectedFrame: Node;
@@ -95,7 +86,6 @@ type SwatchView = {
 
 const WHITE = UI_STYLE.white;
 const DARK_TEXT = uiColor(6, 35, 54);
-const PROTOTYPE_CHARACTER_SLOT_COUNT = 6;
 const CHARACTER_LIST_COLUMN_COUNT = 2;
 const CHARACTER_CARD_WIDTH = 171;
 const CHARACTER_CARD_HEIGHT = 202;
@@ -105,10 +95,6 @@ const CHARACTER_LIST_VIEW_WIDTH = 342;
 const CHARACTER_LIST_VIEW_HEIGHT = 562;
 const SWATCH_SIZE = 56;
 const SWATCH_ART_SIZE = 46;
-const RACE_MODE_CARD_VISIBLE_HEIGHT = 164;
-const RACE_MODE_CARD_UNSELECTED_SCALE = 0.8;
-const RACE_MODE_CARD_GAP = 7;
-const RACE_MODE_STACK_TOP_Y = 240;
 
 export class PrepareRaceFlow {
     private _root: Node | null = null;
@@ -130,7 +116,6 @@ export class PrepareRaceFlow {
     private _skillTips: CharacterAttributeTips | null = null;
     private _hasShownReady = false;
 
-    private readonly _raceModeCards: RaceModeCardView[] = [];
     private readonly _characterCards: CharacterCardView[] = [];
     private readonly _tabs: TabView[] = [];
     private readonly _swatches: SwatchView[] = [];
@@ -288,7 +273,6 @@ export class PrepareRaceFlow {
         this._readyManageButton = null;
         this._previewRotateArea = null;
         this._previewRotateTouchId = null;
-        this._raceModeCards.length = 0;
         this._characterCards.length = 0;
         this._tabs.length = 0;
         this._swatches.length = 0;
@@ -417,7 +401,7 @@ export class PrepareRaceFlow {
         stylePsdTitleLabel(manageLabel, 32);
         this._motion.bindButton(manage);
         manage.on(Button.EventType.CLICK, () => this.leaveCurrentScreen(() => this.showCharacterManagement()));
-        if (this._callbacks.onAiDebug) {
+        if (DEBUG_UI_ENABLED && this._callbacks.onAiDebug) {
             const ai = makeTouchArea('AiDebugButton', parent, 120, 44); ai.setPosition(-520, -290, 3);
             const label = makeBoundLabel('Label', ai, 'AI 测试', 18, DARK_TEXT, 120, 30, 0, 0);
             stylePsdTitleLabel(label, 24);
@@ -448,62 +432,6 @@ export class PrepareRaceFlow {
             setLabelString(this._readyStats[index], `${values[index]}`);
         }
         this._readySkillIcon?.setAbility(character.abilityId);
-    }
-
-    private buildRaceModeList(parent: Node): void {
-        const selected = getSelectedRaceDifficulty();
-        for (let index = 0; index < RACE_DIFFICULTY_OPTIONS.length; index++) {
-            const option = RACE_DIFFICULTY_OPTIONS[index];
-            const entrance = this._motion.group(parent, `ModeEntrance_${option.id}`, 24, 0, index * 0.045);
-            const card = makeUiNode(`RaceMode_${option.id}`, entrance);
-            card.getComponent(UITransform)!.setContentSize(410, 170);
-            const artPath = option.id === 'beginner'
-                ? RESOURCE_PATHS.lobbyUi.modeBeginner
-                : option.id === 'championship'
-                    ? RESOURCE_PATHS.lobbyUi.modeChampionship
-                    : RESOURCE_PATHS.lobbyUi.modeStandard;
-            makeRaceTextureSprite('Artwork', card, artPath, 410, 170, 0, 0, 1);
-            const selectedFrame = makeRaceTextureSprite('SelectedFrame', card, RESOURCE_PATHS.lobbyUi.modeSelectedFrame, 410, 170, 0, 0, 2);
-            const button = card.addComponent(Button);
-            button.target = card;
-            button.transition = Button.Transition.NONE;
-            const title = makeBoundLabel('Title', card, raceDifficultyTitle(option.id), 25, DARK_TEXT, 260, 34, -61, -59, Label.HorizontalAlign.LEFT);
-            stylePsdRuntimeLabel(title, 'PingFang SC', true, 32);
-            const distance = makeBoundLabel('Distance', card, raceDifficultyDistance(option.id), 20, DARK_TEXT, 78, 32, 155, -59, Label.HorizontalAlign.RIGHT);
-            stylePsdRuntimeLabel(distance, 'Arial Black', true, 27);
-            const view: RaceModeCardView = { id: option.id, root: card, selectedFrame, selected: option.id === selected };
-            this._raceModeCards.push(view);
-            this.applyRaceModeCardSelection(view);
-            card.on(Button.EventType.CLICK, () => this.selectRaceDifficulty(option.id));
-        }
-        this.layoutRaceModeCards();
-    }
-
-    private selectRaceDifficulty(difficulty: RaceDifficulty): void {
-        if (this._leaving || getSelectedRaceDifficulty() === difficulty) return;
-        setSelectedRaceDifficulty(difficulty);
-        for (const card of this._raceModeCards) {
-            const selected = card.id === difficulty;
-            if (card.selected === selected) continue;
-            card.selected = selected;
-            this.applyRaceModeCardSelection(card, true);
-        }
-        this.layoutRaceModeCards(true);
-    }
-
-    private applyRaceModeCardSelection(card: RaceModeCardView, animated = false): void {
-        this._motion.selectFrame(card.selectedFrame, card.selected, animated);
-    }
-
-    private layoutRaceModeCards(animated = false): void {
-        let topY = RACE_MODE_STACK_TOP_Y;
-        for (const card of this._raceModeCards) {
-            const scale = card.selected ? 1 : RACE_MODE_CARD_UNSELECTED_SCALE;
-            const visibleHeight = RACE_MODE_CARD_VISIBLE_HEIGHT * scale;
-            const y = topY - visibleHeight / 2;
-            this._motion.moveCard(card.root, card.selected ? 408 : 447, y, scale, animated);
-            topY = y - visibleHeight / 2 - RACE_MODE_CARD_GAP;
-        }
     }
 
     private buildReadyActions(parent: Node): void {
@@ -566,7 +494,7 @@ export class PrepareRaceFlow {
 
     private buildCharacterRoster(parent: Node): void {
         parent = this._motion.group(parent, 'CharacterRosterMotion', -24);
-        const slotCount = Math.max(PROTOTYPE_CHARACTER_SLOT_COUNT, PLAYER_CHARACTER_DEFINITIONS.length);
+        const slotCount = PLAYER_CHARACTER_DEFINITIONS.length;
         const rowCount = Math.ceil(slotCount / CHARACTER_LIST_COLUMN_COUNT);
         const contentHeight = Math.max(
             CHARACTER_LIST_VIEW_HEIGHT,
@@ -593,11 +521,11 @@ export class PrepareRaceFlow {
         scrollView.content = content;
 
         for (let index = 0; index < slotCount; index++) {
-            this.buildCharacterCard(content, PLAYER_CHARACTER_DEFINITIONS[index] ?? null, index);
+            this.buildCharacterCard(content, PLAYER_CHARACTER_DEFINITIONS[index], index);
         }
     }
 
-    private buildCharacterCard(parent: Node, character: PlayerCharacterDefinition | null, index: number): void {
+    private buildCharacterCard(parent: Node, character: PlayerCharacterDefinition, index: number): void {
         const column = index % CHARACTER_LIST_COLUMN_COUNT;
         const row = Math.floor(index / CHARACTER_LIST_COLUMN_COUNT);
         const firstRowY = (parent.getComponent(UITransform)!.contentSize.height - CHARACTER_CARD_HEIGHT) / 2;
@@ -605,7 +533,7 @@ export class PrepareRaceFlow {
         card.getComponent(UITransform)!.setContentSize(CHARACTER_CARD_WIDTH, CHARACTER_CARD_HEIGHT);
         card.setPosition(-84.5 + column * CHARACTER_CARD_X_PITCH, firstRowY - row * CHARACTER_CARD_Y_PITCH, 1);
 
-        // 固定圆角遮罩仅在挂载时绘制，覆盖新卡面和占位图；边框独立叠在外层。
+        // 固定圆角遮罩仅在挂载时绘制，边框独立叠在外层。
         const portraitClip = makeUiNode('PortraitClip', card);
         portraitClip.getComponent(UITransform)!.setContentSize(160, 190);
         portraitClip.setPosition(0.5, 0, 1);
@@ -616,39 +544,26 @@ export class PrepareRaceFlow {
         clipGraphics.roundRect(-80, -95, 160, 190, 12);
         clipGraphics.fill();
 
-        if (character) {
-            // 方形卡面居中裁切为 160×156，保持头胸比例，姓名栏仍独立覆盖。
-            makeRaceTextureRegionSprite(
-                'Portrait', portraitClip, RESOURCE_PATHS.characterUi.portraits[character.id],
-                new Rect(0, 4, 320, 312), 160, 156, 0, 17, 0,
-            );
-        } else {
-            const portraitPath = index % 2 === 0 ? RESOURCE_PATHS.characterUi.portraitBlue : RESOURCE_PATHS.characterUi.portraitRed;
-            makeRaceTextureSprite('Portrait', portraitClip, portraitPath, 160, 190, 0, 0, 0);
-        }
-
-        if (!character) {
-            const lockDim = makeRoundedRect('LockedDim', card, 160, 156, uiColor(8, 20, 32, 145), 10);
-            lockDim.setPosition(0.5, 17, 2);
-        }
+        // 方形卡面居中裁切为 160×156，保持头胸比例，姓名栏仍独立覆盖。
+        makeRaceTextureRegionSprite(
+            'Portrait', portraitClip, RESOURCE_PATHS.characterUi.portraits[character.id],
+            new Rect(0, 4, 320, 312), 160, 156, 0, 17, 0,
+        );
 
         // PSD stacking contract: artwork at the bottom, transparent white frame
         // above it, and the selected yellow outline above every other card layer.
         makeRaceTextureSprite('CardFrame', card, RESOURCE_PATHS.characterUi.cardFrame, 171, 202, 0, 0, 3);
 
-        const name = makeBoundLabel('Name', card, character?.name ?? '未获得', 18, DARK_TEXT, 116, 26, -17.5, -77.5, Label.HorizontalAlign.LEFT);
+        const name = makeBoundLabel('Name', card, character.name, 18, DARK_TEXT, 116, 26, -17.5, -77.5, Label.HorizontalAlign.LEFT);
         stylePsdTitleLabel(name, 23);
         const level = makeBoundLabel('Level', card, '', 14, DARK_TEXT, 40, 22, 54.5, -77.5, Label.HorizontalAlign.RIGHT);
         stylePsdRuntimeLabel(level, 'Arial Black', true, 19);
         const activeStatus = makeRaceTextureSprite('ActiveStatus', card, RESOURCE_PATHS.characterUi.statusActive, 62, 27, 49.5, 79.5, 5);
         activeStatus.active = false;
-        if (!character) {
-            makeRaceTextureSprite('LockIcon', card, RESOURCE_PATHS.characterUi.lockIcon, 38, 51, 1.5, 6.5, 6);
-        }
         const selectedFrame = makeRaceTextureSprite('SelectedFrame', card, RESOURCE_PATHS.characterUi.cardSelected, 172, 203, 0.5, 0, 7);
         selectedFrame.active = false;
         const view: CharacterCardView = {
-            characterId: character?.id ?? null,
+            characterId: character.id,
             selectedFrame,
             activeStatus,
             name,
@@ -657,7 +572,7 @@ export class PrepareRaceFlow {
             committed: false,
         };
         this._characterCards.push(view);
-        if (character?.unlocked) {
+        if (character.unlocked) {
             const button = card.addComponent(Button);
             button.target = card;
             button.transition = Button.Transition.SCALE;
@@ -1121,14 +1036,6 @@ function appearanceSwatchPath(group: 'skin' | 'color', id: string): string | nul
         case 'strawberry-pink': return RESOURCE_PATHS.characterUi.swatchStrawberryPink;
         default: return null;
     }
-}
-
-function raceDifficultyTitle(difficulty: RaceDifficulty): string {
-    return getRaceModeTitle(difficulty);
-}
-
-function raceDifficultyDistance(difficulty: RaceDifficulty): string {
-    return `${getRaceDistance(difficulty)}米`;
 }
 
 function stylePsdRuntimeLabel(label: Label, fontFamily: string, bold: boolean, lineHeight: number): void {

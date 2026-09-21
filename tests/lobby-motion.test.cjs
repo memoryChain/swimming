@@ -36,7 +36,7 @@ class Node {
     destroy(){this.isValid=false;this.children.forEach(c=>c.destroy());}
 }
 function setup() {
-    let now=0,selected='standard',selectionWrites=0,created=0;
+    let now=0,created=0;
     const running=new Set();
     class Animation {
         steps=[];
@@ -68,36 +68,30 @@ function setup() {
     const {LobbyUiMotion}=load('assets/scripts/ui/LobbyUiMotion.ts',{'cc':cc,'./RuntimeUiFactory':factory});
     const {PrepareRaceFlow}=load('assets/scripts/ui/PrepareRaceFlow.ts',{
         cc,'./RuntimeUiFactory':factory,'./LobbyUiMotion':{LobbyUiMotion},'./UIStyle':{UI_STYLE:{white:{}}},
-        '../app/PlayerCharacterConfig':{getSelectedRaceDifficulty:()=>selected,setSelectedRaceDifficulty:id=>{selected=id;selectionWrites++;}},
         '../backend/PlayerData':{PlayerData:{offChange(){}}},
     });
     const parent=new Node('页面'),flow=new PrepareRaceFlow(parent,parent,1280,720,{});
-    return {flow,parent,LobbyUiMotion,cc,advance(seconds){now+=seconds;for(const t of [...running])t.tick();},get running(){return running.size;},get created(){return created;},get writes(){return selectionWrites;}};
+    return {flow,parent,LobbyUiMotion,cc,advance(seconds){now+=seconds;for(const t of [...running])t.tick();},get running(){return running.size;},get created(){return created;}};
 }
 function near(a,b){assert.ok(Math.abs(a-b)<1e-7,`${a} != ${b}`);}
 function size(n){return 1+n.components.length+n.children.reduce((sum,c)=>sum+size(c),0);}
 
-test('模式快速往返：从当前值接续，最终只有一个选中框，不重建角色或节点',()=>{
-    const s=setup(),f=s.flow;
-    f._raceModeCards=['beginner','standard','championship'].map(id=>{
+test('选中框快速往返：中断旧淡出后仅保留最终选中，不重建节点',()=>{
+    const s=setup(),motion=new s.LobbyUiMotion();
+    const cards=['first','second','third'].map(id=>{
         const root=new Node(id);root.setParent(s.parent);const frame=new Node('选中框');frame.setParent(root);
-        const card={id,root,selectedFrame:frame,selected:id==='standard'};
-        f.applyRaceModeCardSelection(card);return card;
+        motion.selectFrame(frame,false,false);return {id,root,frame};
     });
-    f.layoutRaceModeCards();
-    f.presentCharacter=()=>assert.fail('模式切换不应重载角色');
-    f.replaceContent=()=>assert.fail('模式切换不应重建页面');
-    const count=size(s.parent),old=f._raceModeCards[0].root;
-    f.selectRaceDifficulty('beginner');s.advance(.07);
-    const midway=old.position.x;assert.ok(midway>408&&midway<447);
-    f.selectRaceDifficulty('championship');near(old.position.x,midway);
-    for(let i=0;i<60;i++){f.selectRaceDifficulty(i%2?'standard':'beginner');s.advance(.01);}
-    f.selectRaceDifficulty('championship');s.advance(1);
+    const count=size(s.parent);
+    for(let i=0;i<60;i++) {
+        for(const [index,card] of cards.entries()) motion.selectFrame(card.frame,index===i%3,true);
+        s.advance(.01);
+    }
+    for(const card of cards) motion.selectFrame(card.frame,card.id==='third',true);
+    s.advance(1);
     assert.equal(size(s.parent),count);
-    assert.deepEqual(f._raceModeCards.filter(c=>c.selectedFrame.active).map(c=>c.id),['championship']);
-    for(const c of f._raceModeCards){near(c.root.scale.x,c.selected?1:.8);near(c.root.position.x,c.selected?408:447);}
-    const writes=s.writes,animations=s.created;
-    f.selectRaceDifficulty('championship');assert.equal(s.writes,writes);assert.equal(s.created,animations);
+    assert.deepEqual(cards.filter(c=>c.frame.active).map(c=>c.id),['third']);
+    near(cards[2].frame.getComponent(UIOpacity).opacity,255);
     assert.equal(s.running,0);
 });
 
@@ -123,7 +117,6 @@ test('重复开始和联机点击只执行一次；外部邀请销毁页面后�
         let calls=0;
         f.leaveCurrentScreen(()=>calls++);f.leaveCurrentScreen(()=>calls+=10);
         assert.equal(button.getComponent(Button).interactable,false);
-        f.selectRaceDifficulty('beginner');assert.equal(s.writes,0);
         if(disposed)f.dispose();
         s.advance(1);assert.equal(calls,disposed?0:1);assert.equal(s.running,0);
     }
@@ -163,18 +156,21 @@ test('引擎先销毁子按钮后再清理大厅，解绑不得访问已销毁�
     s.advance(1);assert.equal(s.running,0);
 });
 
-test('大厅AI开赛在runScene前释放预览与动效，加载失败仍保留大厅，重复点击不重复换场',()=>{
+test('大厅AI开赛前释放预览与动效，加载失败恢复可操作大厅，重复点击不重复换场',()=>{
     const source=ts.createSourceFile('LoginManager.ts',fs.readFileSync('assets/scripts/app/LoginManager.ts','utf8'),ts.ScriptTarget.Latest,true);
     const cls=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='LoginManager');
-    const methods=cls.members.filter(n=>['startAiDebug','launchMainGame','onDestroy'].includes(n.name?.getText(source)));
+    const methods=cls.members.filter(n=>['startAiDebug','launchMainGame','recoverPrepareAfterLoadFailure','onDestroy'].includes(n.name?.getText(source)));
     for(const failure of ['none','bundle','scene']){
-        const s=setup(),f=s.flow,button=new Node('AI测试');button.setParent(s.parent);button.addComponent(Button);
-        f._root=s.parent;f._content=s.parent;
+        const s=setup(),f=s.flow,button=new Node('AI测试');
+        f._root=new Node('大厅');f._root.setParent(s.parent);f._content=f._root;
+        button.setParent(f._root);button.addComponent(Button);
         f._motion.bindButton(button);button.emit('start');
         const preview=new Node('角色预览');f._previewRoot=preview;
         let loads=0,runs=0,pendingBundle,pendingScene,mode,owner;
         const Login=vm.runInNewContext(ts.transpileModule(`class Login { ${methods.map(n=>n.getText(source)).join('\n')} };Login`,
             {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,{
+            DEBUG_UI_ENABLED:true,
+            setSoloRaceTicket(){},setSoloRaceDistance(){},setSoloAiEvent(){},
             setAiDebugDifficulty(){},setRaceDifficulty(){},getAiDebugSetup:()=>({mode:'competitive'}),setMainGameLaunchMode:value=>mode=value,
             LoadingOverlay:{show(){},hide(){}},console:{error(){}},
             loadRaceBundle:cb=>{loads++;pendingBundle=cb;},
@@ -185,6 +181,13 @@ test('大厅AI开赛在runScene前释放预览与动效，加载失败仍保留�
             }},
         });
         owner=new Login();owner._prepareRaceFlow=f;
+        owner.toast=()=>{};
+        owner.openPrepareRace=()=>{
+            const next=new f.constructor(s.parent,s.parent,1280,720,{});
+            next._root=new Node('恢复大厅');next._root.setParent(s.parent);next._content=next._root;
+            next._previewRoot=new Node('恢复预览');
+            owner._prepareRaceFlow=next;
+        };
         owner.startAiDebug(.95);owner.startAiDebug(.95);assert.equal(loads,1);
         if(failure==='bundle')pendingBundle(new Error('加载失败'),null);
         else {
@@ -192,7 +195,8 @@ test('大厅AI开赛在runScene前释放预览与动效，加载失败仍保留�
             if(failure==='scene')pendingScene(new Error('场景失败'),null);
         }
         if(failure!=='none'){
-            assert.equal(owner._prepareRaceFlow,f);assert.equal(preview.isValid,true);assert.equal(s.parent.isValid,true);
+            assert.notEqual(owner._prepareRaceFlow,f);assert.equal(preview.isValid,false);assert.equal(s.parent.isValid,true);
+            assert.equal(owner._prepareRaceFlow._root.isValid,true);
             assert.equal(owner._loadingRace,false);assert.equal(runs,0);
             owner.startAiDebug(.95);assert.equal(loads,2);
             pendingBundle(null,{loadScene(_name,cb){pendingScene=cb;}});

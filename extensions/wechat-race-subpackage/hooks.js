@@ -6,6 +6,8 @@ const { assertTextureCompressionPolicy } = require('./texture-compression-policy
 const { assertBuildMipmaps } = require('./texture-mipmap-policy');
 const { assertUiFontPolicy } = require('../../scripts/ui-font-policy');
 const { applyWechatProjectConfig, assertWechatProjectOutput } = require('./wechat-project-config');
+const { compactBuiltMotions, assertBuiltMotionRuntime } = require('./sampled-motion-storage');
+const { auditWechatPackageOutput } = require('./wechat-package-budget');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -18,8 +20,6 @@ const SUBPACKAGE_BUNDLES = [
     { name: 'race', root: 'db://assets/race', priority: 7 },
     { name: 'music', root: 'db://assets/music', priority: 6 },
 ];
-const MAX_WECHAT_MAIN_SOURCE_BYTES = 4 * 1024 * 1024;
-const FORBIDDEN_TEXTURE_EXTENSIONS = new Set(['.pvr', '.pkm']);
 
 // WeChat lock-step (帧同步) options for wx.getGameServerManager(). gameTick is the
 // logical frame interval in ms (33ms ≈ 30 logical frames/sec). Matches the official
@@ -188,54 +188,13 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
         }
     }
     assertWechatProjectOutput(result.dest);
+    assertBuiltMotionRuntime(result.dest);
+    const motionAudit = compactBuiltMotions(PROJECT_ROOT, result.dest);
+    console.log(`[motion-storage] 无损压缩 ${motionAudit.motions} 个动作，节省 ${(motionAudit.savedBytes / 1024).toFixed(1)} KiB。`);
     const packageAudit = auditWechatPackageOutput(result.dest);
     console.log(
         `[wechat-race-subpackage] generated and verified race/music subpackages; `
-        + `main package ${(packageAudit.mainBytes / 1024).toFixed(1)} KiB.`,
+        + `main package ${(packageAudit.mainBytes / 1024).toFixed(1)} KiB; `
+        + `total ${(packageAudit.totalBytes / 1024).toFixed(1)} / 30720 KiB.`,
     );
 };
-
-function auditWechatPackageOutput(outputRoot) {
-    const resolvedRoot = path.resolve(outputRoot);
-    const files = [];
-    visitOutputFiles(resolvedRoot, files);
-
-    const forbidden = files.filter((filePath) => FORBIDDEN_TEXTURE_EXTENSIONS.has(path.extname(filePath).toLowerCase()));
-    if (forbidden.length > 0) {
-        const examples = forbidden.slice(0, 8)
-            .map((filePath) => path.relative(resolvedRoot, filePath).replace(/\\/g, '/'))
-            .join(', ');
-        throw new Error(
-            `[texture-policy] Build emitted ${forbidden.length} unexpected PVR/PKM textures (${examples}). `
-            + 'Creator is using stale/default compression presets. Close and reopen the Creator project, '
-            + 'run npm run textures:check, then rebuild. Do not upload this oversized package.',
-        );
-    }
-
-    let mainBytes = 0;
-    for (const filePath of files) {
-        const relative = path.relative(resolvedRoot, filePath).replace(/\\/g, '/');
-        if (!relative.startsWith('subpackages/')) {
-            mainBytes += fs.statSync(filePath).size;
-        }
-    }
-    if (mainBytes > MAX_WECHAT_MAIN_SOURCE_BYTES) {
-        throw new Error(
-            `[wechat-package] Main package is ${(mainBytes / 1024).toFixed(1)} KiB, `
-            + `exceeding the 4096 KiB limit. Move new race-only assets into a subpackage `
-            + 'or remove duplicated main-package variants before upload.',
-        );
-    }
-    return { mainBytes };
-}
-
-function visitOutputFiles(directory, files) {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-        const target = path.join(directory, entry.name);
-        if (entry.isDirectory()) {
-            visitOutputFiles(target, files);
-        } else if (entry.isFile()) {
-            files.push(target);
-        }
-    }
-}

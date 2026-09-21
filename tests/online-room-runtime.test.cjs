@@ -173,7 +173,7 @@ test('双侧与单侧安全区均不叠加视觉边距，窗口变化后重新�
     visibleSize.width = 1280; safeLeft = 0; safeRight = 0;
 });
 
-test('真实大厅及角色页面组装：两侧均增加灵动岛间距，横屏翻转不改变留白', () => {
+test('真实大厅保持贴边布局，角色页保留横屏间距且翻转不改变留白', () => {
     const { makeScreenEdgeGroup } = load(path.join(root, 'assets/scripts/ui/RuntimeUiFactory.ts'));
     const file = path.join(root, 'assets/scripts/ui/PrepareRaceFlow.ts');
     const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
@@ -185,6 +185,7 @@ test('真实大厅及角色页面组装：两侧均增加灵动岛间距，横�
         { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
     let careerParent;
     const Harness = vm.runInNewContext(`${code}; LayoutHarness`, { makeScreenEdgeGroup,
+        getUILayer: canvas => canvas, UILayer: { Popup: 1 },
         CareerPrototypePanel: class { constructor(parent) { careerParent = parent; } } });
     const safeApi = cc.sys.getSafeAreaRect;
     cc.sys.getSafeAreaRect = () => { throw new Error('页面整栏布局不应读取设备安全区'); };
@@ -195,7 +196,7 @@ test('真实大厅及角色页面组装：两侧均增加灵动岛间距，横�
             canvas.addComponent(UITransform).setContentSize(1280, 720);
             const flow = new Harness(); flow._width = 1280; flow._height = 720;
             const owners = {};
-            for (const name of ['buildReadyCharacterPanel', 'buildPreviewPresentation', 'buildRaceModeList', 'buildReadyActions',
+            for (const name of ['buildReadyCharacterPanel', 'buildPreviewPresentation', 'buildReadyActions',
                 'buildCharacterHeader', 'buildCharacterRoster', 'buildCharacterInspector']) {
                 flow[name] = parent => { owners[name] = parent; };
             }
@@ -205,8 +206,8 @@ test('真实大厅及角色页面组装：两侧均增加灵动岛间距，横�
             const leftMargin = node => node.position.x - 640 + width / 2;
             const rightMargin = node => width / 2 - node.position.x - 640;
             const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `${actual} != ${expected}`);
-            near(leftMargin(owners.buildReadyCharacterPanel), width === 1280 ? 0 : 48);
-            near(rightMargin(careerParent), width === 1280 ? 0 : 48);
+            near(leftMargin(owners.buildReadyCharacterPanel), 0);
+            near(rightMargin(careerParent), 0);
             near(leftMargin(owners.buildCharacterRoster), width === 1280 ? 0 : 48);
             near(rightMargin(owners.buildCharacterInspector), width === 1280 ? 0 : 60);
             near(leftMargin(owners.buildCharacterHeader), 0);
@@ -641,14 +642,15 @@ test('主界面和角色页整个属性区域绑定同一说明卡，点击不�
         node.getComponent(UITransform).setContentSize(w, height); return node.getComponent(Label);
     };
     const Harness = vm.runInNewContext(ts.transpileModule(`class Harness { ${methods.map(n => n.getText(source)).join('\n')} }`, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText + '; Harness', {
-        ...cc, ...h.factory, ...h.resources, CharacterAttributeTips: h.CharacterAttributeTips,
+        ...cc, ...h.factory, ...h.resources, DEBUG_UI_ENABLED: true, CharacterAttributeTips: h.CharacterAttributeTips,
         Rect: class {}, WHITE: new Color(), DARK_TEXT: new Color(),
-        stylePsdTitleLabel() {}, stylePsdRuntimeLabel() {}, makeBoundLabel,
+        stylePsdTitleLabel() {}, stylePsdRuntimeLabel() {}, styleCurrencyNumberLabel() {}, makeBoundLabel,
+        CharacterSkillIcon: class {},
         makeRaceTextureSprite: makeArt, makeRaceTextureRegionSprite: makeArt,
         makeRaceTextureButton: (name, parent) => h.factory.makeTouchArea(name, parent, 100, 50),
     });
     const f = new Harness();
-    Object.assign(f, { _callbacks: {}, _motion: { group: p => p, bindButton() {} }, _readyStats: [], _inspectorCurrentStats: [], _inspectorNextStats: [], _canvasNode: new Node('canvas') });
+    Object.assign(f, { _callbacks: {}, _motion: { group: p => p, bindButton() {} }, _readyStats: [], _inspectorCurrentStats: [], _inspectorNextStats: [], _canvasNode: new Node('canvas'), _content: new Node('Content') });
     const ready = new Node('Ready'), attributes = new Node('Attributes');
     ready.addComponent(Canvas).cameraComponent = h.identityCamera;
     attributes.addComponent(Canvas).cameraComponent = h.identityCamera;
@@ -657,7 +659,7 @@ test('主界面和角色页整个属性区域绑定同一说明卡，点击不�
         const count = nodes(parent).length;
         for (let i = 0; i < 3; i++) {
             const hit = find(parent, 'AttributeTipHit');
-            assert.ok(hit.getComponent(UITransform).contentSize.width >= 284);
+            assert.equal(hit.getComponent(UITransform).contentSize.width, parent === ready ? 150 : 284);
             assert.equal(hit.handlers.click.length, 1);
             hit.click(); assert.equal(find(f._attributeTips.root, 'AttributeTipsTitle').getComponent(Label).string, '属性说明');
             f._attributeTips.hide(); assert.equal(nodes(parent).length, count);

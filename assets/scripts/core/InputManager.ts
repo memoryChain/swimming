@@ -1,5 +1,6 @@
 import { _decorator, Camera, Component, EventKeyboard, EventMouse, EventTouch, input, Input, KeyCode, Node, UITransform, Vec2, Vec3, view } from 'cc';
 import { StrokeType } from './GameConstants';
+import { DEBUG_UI_ENABLED } from './DebugUiPolicy';
 
 const { ccclass, property } = _decorator;
 
@@ -89,6 +90,9 @@ export class InputManager extends Component {
             this.strokeTarget?.emit('space-action');
         } else if (event.keyCode === KeyCode.ENTER) {
             this.strokeTarget?.emit('primary-action');
+        } else if (!DEBUG_UI_ENABLED) {
+            // 正常划水和开始操作保留；微信不响应后续的调试快捷键。
+            return;
         } else if (event.keyCode === KeyCode.F3 || event.keyCode === KeyCode.BACK_QUOTE) {
             this.strokeTarget?.emit('toggle-debug');
         } else if (event.keyCode === KeyCode.KEY_C) {
