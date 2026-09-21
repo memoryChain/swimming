@@ -12,7 +12,7 @@ import { StandingSoleContact } from '../character/StandingSoleContact';
 import type { CharacterSupportPlane } from '../character/CharacterSupportPlane';
 import { applyCharacterSkin, CharacterSkinOutfit } from '../character/CharacterSkinApplier';
 import { DiveChargeGatherEffect } from '../character/DiveChargeGatherEffect';
-import { collectComponentsRecursive, configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
+import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
 import type { DivePrepBoneName, DivePrepPoseSample } from '../character/DivePrepPoseCurve';
 import { FreestylePoseController, ProceduralPoseSnapshot } from '../character/FreestylePoseController';
 import { FLIP_TURN_KEYFRAME_1, FLIP_TURN_KEYFRAME_2 } from '../character/FlipTurnPoseCurve';
@@ -194,6 +194,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _castsShadow = false;
     private _outlineRoot: Node = null;
     private _outlineVisible = true;
+    private _recoveryBlinkVisible = true;
     private _loaded = false;
     private _armAction = 0;
     private _kickAction = 0;
@@ -938,6 +939,21 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     // 模型尚未加载时也保存状态，新壳通过 setOutlineRoot 继承它。
     setOutlineVisible(visible: boolean): void {
         this._outlineVisible = visible;
+        this.applyOutlineVisibility();
+    }
+
+    /** 只切换角色渲染层；骨架、动作、比赛状态和网络更新继续运行。 */
+    setRecoveryBlinkVisible(visible: boolean): void {
+        if (this._recoveryBlinkVisible === visible) return;
+        this._recoveryBlinkVisible = visible;
+        if (this._rendererRevealFramesRemaining <= 0) {
+            this.setSkinnedRenderersEnabled(visible);
+        }
+        this.applyOutlineVisibility();
+    }
+
+    private applyOutlineVisibility(): void {
+        const visible = this._outlineVisible && this._recoveryBlinkVisible;
         if (this._outlineRoot?.isValid && this._outlineRoot.active !== visible) {
             this._outlineRoot.active = visible;
         }
@@ -1531,7 +1547,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._rendererRevealFramesRemaining--;
         if (this._rendererRevealFramesRemaining <= 0) {
-            this.setSkinnedRenderersEnabled(true);
+            this.setSkinnedRenderersEnabled(this._recoveryBlinkVisible);
         }
     }
 
@@ -1855,7 +1871,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             outlineRoot: this._outlineRoot,
             setOutlineRoot: (root) => {
                 this._outlineRoot = root;
-                this.setOutlineVisible(this._outlineVisible);
+                this.applyOutlineVisibility();
             },
         });
         // Dynamic colour assets can finish loading while the swimmer is charging
@@ -2519,13 +2535,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     private setSkinnedRenderersEnabled(enabled: boolean) {
-        if (!this._model?.isValid) {
-            return;
-        }
-        const renderers: SkinnedMeshRenderer[] = [];
-        collectComponentsRecursive(this._model, SkinnedMeshRenderer, renderers);
-        for (const renderer of renderers) {
-            if (renderer?.isValid) {
+        for (const renderer of this._skinnedRenderers) {
+            if (renderer?.isValid && renderer.enabled !== enabled) {
                 renderer.enabled = enabled;
             }
         }

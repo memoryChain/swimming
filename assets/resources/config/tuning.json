@@ -274,6 +274,8 @@
     "recovery.knockedSeconds": 3.5,
     "recovery.invulnerableSeconds": 2,
     "recovery.respawnSpeed": 0,
+    "recovery.disappearBlinkSeconds": 0.55,
+    "recovery.appearBlinkSeconds": 0.65,
     "mineRelay.transferBodyAlongRadius": 0.8,
     "mineRelay.transferBodyLateralRadius": 0.65,
     "mineRelay.transferMaxSweepDistance": 3,

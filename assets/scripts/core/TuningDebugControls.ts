@@ -395,6 +395,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('recovery.knockedSeconds', '急救等待时间', '鲨鱼、炮弹核心或定时炸弹命中后，画面压暗并显示“急救中……”到重新入水的时间。', () => ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds, v => ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds = v, 0.1, 0.5, 4, 1, ' s'),
             control('recovery.invulnerableSeconds', '重生无敌时间', '重新入水后不会再次被鲨鱼、炮弹核心或定时炸弹击倒的时间。', () => ENTERTAINMENT_RECOVERY_TUNING.invulnerableSeconds, v => ENTERTAINMENT_RECOVERY_TUNING.invulnerableSeconds = v, 0.1, 0.5, 5, 1, ' s'),
             control('recovery.respawnSpeed', '重生初速度', '重新入水时保留的速度；设为零会完整损失原有速度。', () => ENTERTAINMENT_RECOVERY_TUNING.respawnSpeed, v => ENTERTAINMENT_RECOVERY_TUNING.respawnSpeed = v, 0.1, 0, 4, 1, ' m/s'),
+            control('recovery.disappearBlinkSeconds', '旧位置闪退时间', '急救结束前在倒地位置闪烁三次并完全隐藏的时间。', () => ENTERTAINMENT_RECOVERY_TUNING.disappearBlinkSeconds, v => ENTERTAINMENT_RECOVERY_TUNING.disappearBlinkSeconds = v, 0.05, 0, 1.2, 2, ' s'),
+            control('recovery.appearBlinkSeconds', '新位置闪入时间', '重新入水后在新位置闪烁三次并稳定出现的时间；不延迟操作恢复。', () => ENTERTAINMENT_RECOVERY_TUNING.appearBlinkSeconds, v => ENTERTAINMENT_RECOVERY_TUNING.appearBlinkSeconds = v, 0.05, 0, 1.2, 2, ' s'),
         ],
     },
     {

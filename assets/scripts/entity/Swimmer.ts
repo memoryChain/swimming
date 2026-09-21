@@ -476,6 +476,7 @@ export class Swimmer extends Component {
         if (this._entertainmentKnocked) return;
         this._entertainmentKnocked = true;
         this._entertainmentInvulnerable = false;
+        this.cartoonRig?.setRecoveryBlinkVisible(true);
         this._movementSpeed = 0;
         Tween.stopAllByTarget(this.node);
         this.prepareEntertainmentKnockoutLanding();
@@ -623,6 +624,8 @@ export class Swimmer extends Component {
     }
 
     respawnAfterEntertainmentHit(distance: number, worldZ: number, initialSpeed: number): void {
+        // 先隐藏再复位，避免旧位置到新位置在同一渲染帧中硬跳。
+        this.cartoonRig?.setRecoveryBlinkVisible(false);
         Tween.stopAllByTarget(this.node);
         this._movementSpeed = 0;
         this._entertainmentKnocked = false;
@@ -644,7 +647,12 @@ export class Swimmer extends Component {
     endEntertainmentInvulnerability(): void {
         this._entertainmentKnocked = false;
         this._entertainmentInvulnerable = false;
+        this.cartoonRig?.setRecoveryBlinkVisible(true);
         this.updatePerfectZoneGlow();
+    }
+
+    syncEntertainmentRecoveryBodyVisibility(visible: boolean): void {
+        this.cartoonRig?.setRecoveryBlinkVisible(visible);
     }
 
     get isEntertainmentKnocked(): boolean { return this._entertainmentKnocked; }
@@ -686,6 +694,7 @@ export class Swimmer extends Component {
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {
         this._entertainmentKnocked = false;
         this._entertainmentInvulnerable = false;
+        this.cartoonRig?.setRecoveryBlinkVisible(true);
         this._movementSpeed = 0;
         this.captureStartPosition();
         this._ultimate.reset();
@@ -1156,6 +1165,7 @@ export class Swimmer extends Component {
     reset() {
         this._entertainmentKnocked = false;
         this._entertainmentInvulnerable = false;
+        this.cartoonRig?.setRecoveryBlinkVisible(true);
         this._movementSpeed = 0;
         this.cartoonRig?.setStandingSurface(null);
         this.captureStartPosition();

@@ -132,6 +132,7 @@ import {
     EntertainmentRecoveryController,
     EntertainmentRecoveryPhase,
     EntertainmentRecoveryReason,
+    entertainmentRecoveryBodyVisible,
 } from './EntertainmentRecoveryController';
 import { MINE_RELAY_ROUNDS, MINE_RELAY_TUNING, MineRelayArm, MineRelayBrawlController, MineRelayRacerState, MineRelayResolution, MineRelayTransfer } from './MineRelayBrawlController';
 import { MineRelayBrawlPresentation } from './MineRelayBrawlPresentation';
@@ -2082,9 +2083,15 @@ export class GameManager extends Component {
         if (this._state === GameState.RACING) controller.update(dt);
         for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
             const state = controller.stateForLane(lane);
-            if (state?.phase !== EntertainmentRecoveryPhase.KNOCKED) continue;
-            this.swimmerForLane(lane)?.syncEntertainmentKnockoutPresentation(
-                Math.max(0, ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds - state.remainingSeconds),
+            const swimmer = this.swimmerForLane(lane);
+            if (!state || !swimmer) continue;
+            if (state.phase === EntertainmentRecoveryPhase.KNOCKED) {
+                swimmer.syncEntertainmentKnockoutPresentation(
+                    Math.max(0, ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds - state.remainingSeconds),
+                );
+            }
+            swimmer.syncEntertainmentRecoveryBodyVisibility(
+                entertainmentRecoveryBodyVisible(state.phase, state.remainingSeconds),
             );
         }
         const playerState = controller.stateForLane(this._playerLaneIndex);

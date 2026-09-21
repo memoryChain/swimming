@@ -16,7 +16,46 @@ export const ENTERTAINMENT_RECOVERY_TUNING = {
     knockedSeconds: 3.5,
     invulnerableSeconds: 2,
     respawnSpeed: 0,
+    disappearBlinkSeconds: 0.55,
+    appearBlinkSeconds: 0.65,
 };
+
+const RECOVERY_BLINK_TOGGLE_COUNT = 6;
+
+/**
+ * 纯表现：急救结束前在旧位置闪退，重生后在新位置闪入。
+ * 只读取现有权威阶段和剩余时间，不增加联机字段，也不改变无敌判定。
+ */
+export function entertainmentRecoveryBodyVisible(
+    phase: EntertainmentRecoveryPhase,
+    remainingSeconds: number,
+): boolean {
+    const remaining = Number.isFinite(remainingSeconds) ? Math.max(0, remainingSeconds) : 0;
+    if (phase === EntertainmentRecoveryPhase.KNOCKED) {
+        const blinkSeconds = Math.min(
+            Math.max(0, ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds),
+            Math.max(0, ENTERTAINMENT_RECOVERY_TUNING.disappearBlinkSeconds),
+        );
+        if (blinkSeconds <= 0 || remaining > blinkSeconds) return true;
+        if (remaining <= 0) return false;
+        const elapsedRatio = Math.min(0.999999, Math.max(0, (blinkSeconds - remaining) / blinkSeconds));
+        return Math.floor(elapsedRatio * RECOVERY_BLINK_TOGGLE_COUNT) % 2 === 0;
+    }
+    if (phase === EntertainmentRecoveryPhase.INVULNERABLE) {
+        const invulnerableSeconds = Math.max(0, ENTERTAINMENT_RECOVERY_TUNING.invulnerableSeconds);
+        const blinkSeconds = Math.min(
+            invulnerableSeconds,
+            Math.max(0, ENTERTAINMENT_RECOVERY_TUNING.appearBlinkSeconds),
+        );
+        if (blinkSeconds <= 0) return true;
+        const elapsed = Math.max(0, invulnerableSeconds - remaining);
+        if (elapsed >= blinkSeconds) return true;
+        const elapsedRatio = Math.min(0.999999, elapsed / blinkSeconds);
+        // 重生交界先保持隐藏，确保位置和姿态复位不会在屏幕上硬跳。
+        return Math.floor(elapsedRatio * RECOVERY_BLINK_TOGGLE_COUNT) % 2 === 1;
+    }
+    return true;
+}
 
 export type EntertainmentRecoveryEvent = {
     lane: number;

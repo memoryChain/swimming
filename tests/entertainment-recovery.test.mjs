@@ -5,7 +5,11 @@ import { readFileSync, statSync } from 'node:fs';
 import RecoveryModule from '../assets/scripts/core/EntertainmentRecoveryController.ts';
 import RecoveryCopyModule from '../assets/scripts/ui/EntertainmentRecoveryCopy.ts';
 
-const { EntertainmentRecoveryController, ENTERTAINMENT_RECOVERY_TUNING } = RecoveryModule;
+const {
+    EntertainmentRecoveryController,
+    ENTERTAINMENT_RECOVERY_TUNING,
+    entertainmentRecoveryBodyVisible,
+} = RecoveryModule;
 const {
     ENTERTAINMENT_RECOVERY_COPY_POOLS,
     recoveryCopyTierForText,
@@ -80,6 +84,31 @@ test('击倒后按等待、无敌、恢复三个阶段推进并保留权威距�
     assert.equal(f.controller.stateForLane(2).phase, ACTIVE);
     assert.equal(f.controller.isDamageable(2), true);
     assert.deepEqual(f.events.at(-1), ['recovered', 2]);
+});
+
+test('重生表现按权威剩余时间在旧位置三闪退出、新位置三闪进入', () => {
+    assert.equal(ENTERTAINMENT_RECOVERY_TUNING.disappearBlinkSeconds, 0.55);
+    assert.equal(ENTERTAINMENT_RECOVERY_TUNING.appearBlinkSeconds, 0.65);
+    assert.equal(entertainmentRecoveryBodyVisible(ACTIVE, 0), true);
+    assert.equal(entertainmentRecoveryBodyVisible(KNOCKED, 0.56), true);
+
+    const disappearing = [0.504, 0.413, 0.321, 0.229, 0.138, 0.046]
+        .map(remaining => entertainmentRecoveryBodyVisible(KNOCKED, remaining));
+    assert.deepEqual(disappearing, [true, false, true, false, true, false]);
+    assert.equal(entertainmentRecoveryBodyVisible(KNOCKED, 0), false);
+
+    const invulnerableSeconds = ENTERTAINMENT_RECOVERY_TUNING.invulnerableSeconds;
+    const appearingElapsed = [0.054, 0.163, 0.271, 0.379, 0.488, 0.596];
+    const appearing = appearingElapsed.map(elapsed => entertainmentRecoveryBodyVisible(
+        INVULNERABLE,
+        invulnerableSeconds - elapsed,
+    ));
+    assert.deepEqual(appearing, [false, true, false, true, false, true]);
+    assert.equal(entertainmentRecoveryBodyVisible(INVULNERABLE, invulnerableSeconds - 0.65), true);
+
+    const savedTuning = JSON.parse(readFileSync(new URL('../assets/resources/config/tuning.json', import.meta.url), 'utf8'));
+    assert.equal(savedTuning.values['recovery.disappearBlinkSeconds'], 0.55);
+    assert.equal(savedTuning.values['recovery.appearBlinkSeconds'], 0.65);
 });
 
 test('恢复快照可补回丢失事件，且同版本旧阶段不能倒退本地状态', () => {
@@ -166,7 +195,22 @@ test('鲨鱼、炮火、定时炸弹和独立／六合一水雷接入复用泳�
     assert.match(swimmer, /configureEntertainmentKnockoutLaunch/);
     assert.match(swimmer, /const impactArc = 4 \* t \* \(1 - t\)/);
     assert.match(swimmer, /syncEntertainmentKnockoutElapsed\(Math\.max\(0, elapsed - duration\)\)/);
+    assert.match(swimmer, /respawnAfterEntertainmentHit[\s\S]*?setRecoveryBlinkVisible\(false\)[\s\S]*?applyCoursePosition/);
+    assert.match(swimmer, /syncEntertainmentRecoveryBodyVisibility\(visible: boolean\)/);
+    assert.match(swimmer, /endEntertainmentInvulnerability[\s\S]*?setRecoveryBlinkVisible\(true\)/);
     assert.doesNotMatch(swimmer.match(/respawnAfterEntertainmentHit[\s\S]*?\n    }/)?.[0] ?? '', /\.startRace\(/);
+    const rig = readFileSync(new URL('../assets/scripts/entity/CartoonSwimmerRig.ts', import.meta.url), 'utf8');
+    const recoveryBlink = rig.match(/setRecoveryBlinkVisible[\s\S]*?\n    }/)?.[0] ?? '';
+    assert.match(recoveryBlink, /_recoveryBlinkVisible === visible/);
+    assert.match(recoveryBlink, /setSkinnedRenderersEnabled\(visible\)/);
+    assert.doesNotMatch(recoveryBlink, /node\.active/);
+    assert.match(rig, /const visible = this\._outlineVisible && this\._recoveryBlinkVisible/);
+    assert.match(rig, /setSkinnedRenderersEnabled\(this\._recoveryBlinkVisible\)/);
+    const rendererVisibility = rig.match(/private setSkinnedRenderersEnabled[\s\S]*?\n    }/)?.[0] ?? '';
+    assert.match(rendererVisibility, /for \(const renderer of this\._skinnedRenderers\)/);
+    assert.match(rendererVisibility, /renderer\.enabled !== enabled/);
+    assert.doesNotMatch(rendererVisibility, /collectComponentsRecursive|const renderers/);
+    assert.match(source, /entertainmentRecoveryBodyVisible\(state\.phase, state\.remainingSeconds\)/);
     const cannonKnockdown = source.match(/private knockDownCannonHitLane[\s\S]*?\n    }/)?.[0] ?? '';
     assert.doesNotMatch(cannonKnockdown, /tween\(swimmer\.node\)|position\.y \+ 0\.55/);
 });
@@ -334,9 +378,11 @@ test('旁观击倒使用独立漂浮姿态和低频头顶眩晕星，不新增�
 
     const manager = readFileSync(new URL('../assets/scripts/core/GameManager.ts', import.meta.url), 'utf8');
     const recoveryUpdate = manager.match(/private updateEntertainmentRecovery[\s\S]*?const playerState/)?.[0] ?? '';
-    assert.match(recoveryUpdate, /state\?\.phase !== EntertainmentRecoveryPhase\.KNOCKED/);
+    assert.match(recoveryUpdate, /state\.phase === EntertainmentRecoveryPhase\.KNOCKED/);
     assert.match(recoveryUpdate, /knockedSeconds - state\.remainingSeconds/);
     assert.match(recoveryUpdate, /syncEntertainmentKnockoutPresentation/);
+    assert.match(recoveryUpdate, /syncEntertainmentRecoveryBodyVisibility/);
+    assert.match(recoveryUpdate, /entertainmentRecoveryBodyVisible\(state\.phase, state\.remainingSeconds\)/);
 });
 
 test('离开比赛状态时立即清理急救遮罩、无敌表现和娱乐画中画', () => {
