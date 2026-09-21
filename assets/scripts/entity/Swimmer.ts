@@ -672,7 +672,7 @@ export class Swimmer extends Component {
     // position keeps advancing. Cancels any half-finished dive tween and skips the
     // (already-missed) dive animation; the position correction then keeps it in sync.
     forceEnterRaceAt(distance: number): void {
-        if (this._motor.isRacing) {
+        if (this._motor.isRacing || this._entertainmentKnocked) {
             return;
         }
         Tween.stopAllByTarget(this.node);

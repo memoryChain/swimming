@@ -69,3 +69,25 @@ export function segmentHitsExpandedEllipse(
 function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
 }
+
+/** 瞬时接触效果独立去重；世界快照不能推进此窗口。固定窗口也限制迟到事件的保留量。 */
+export class ContactEventWindow {
+    private newest = 0;
+    private readonly seen = new Set<number>();
+
+    accept(revision: number): boolean {
+        if (!Number.isSafeInteger(revision) || revision <= 0
+            || revision <= this.newest - 128 || this.seen.has(revision)) return false;
+        this.newest = Math.max(this.newest, revision);
+        for (const old of this.seen) {
+            if (old <= this.newest - 128) this.seen.delete(old);
+        }
+        this.seen.add(revision);
+        return true;
+    }
+
+    reset(): void {
+        this.newest = 0;
+        this.seen.clear();
+    }
+}

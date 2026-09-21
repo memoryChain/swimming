@@ -117,6 +117,12 @@ export class RaceEventPictureInPictureCamera {
         this.hide();
     }
 
+    /** 画中画可见目标参与姿态保活；不能使用间歇关闭的 camera.enabled 判断。 */
+    keepsSwimmerAnimated(node: Node): boolean {
+        return this.active && this.mode === 'timed-bomb'
+            && this.timedBombCarrier === node && node.isValid;
+    }
+
     updateShark(shark: SharkController | null, dt: number): void {
         const safeDt = safeStep(dt);
         const dangerous = shark?.state === SharkState.WARNING

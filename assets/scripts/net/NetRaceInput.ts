@@ -61,6 +61,10 @@ export const enum NetInputKind {
 }
 
 export interface NetInputEvent {
+    /** 返场子玩法的激活代次；普通输入不携带。 */
+    eventEpoch?: number;
+    /** 接触发生时的玩法时钟，超过补偿窗口的冲量不补播。 */
+    effectTime?: number;
     /** 实际输入发生时的心率，百分之一 bpm，避免同包快照比动作更晚。 */
     heartRate?: number;
     kind: NetInputKind;
@@ -125,6 +129,20 @@ const POWER_SCALE = 1000;
 const SPEED_SCALE = 100;
 
 function encodeEvent(event: NetInputEvent): string {
+    const token = encodeEventBody(event);
+    if (!token || (event.eventEpoch === undefined && event.effectTime === undefined)) return token;
+    return `${token}~${Math.max(0, Math.floor(event.eventEpoch ?? 0))}~${event.effectTime === undefined ? '' : Math.max(0, Math.round(event.effectTime * 1000))}`;
+}
+
+/** 只会在返场时重置的三类控制器；驻留物和全局急救不使用这些代次。 */
+export function gameplayEpochSlot(kind: NetInputKind): number {
+    if (kind === NetInputKind.CannonLaunch || kind === NetInputKind.CannonImpact) return 0;
+    if (kind === NetInputKind.MineRelayArm || kind === NetInputKind.MineRelayTransfer
+        || kind === NetInputKind.MineRelayResolution) return 1;
+    return kind === NetInputKind.SharkKnockdown ? 2 : -1;
+}
+
+function encodeEventBody(event: NetInputEvent): string {
     switch (event.kind) {
         case NetInputKind.Stroke:
             return Number.isFinite(event.heartRate)
@@ -382,8 +400,19 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
     const events: NetInputEvent[] = [];
     if (body.length > 0) {
         for (const token of body.split(TOKEN_SEP)) {
-            const event = decodeToken(token);
+            const metadata = token.split('~');
+            const event = decodeToken(metadata[0]);
             if (event) {
+                if (metadata.length > 1) {
+                    if (!/^\d+$/.test(metadata[1])) continue;
+                    const epoch = Number(metadata[1]);
+                    if (!Number.isSafeInteger(epoch)) continue;
+                    event.eventEpoch = epoch;
+                    if (metadata[2]) {
+                        if (!/^\d+$/.test(metadata[2]) || !Number.isSafeInteger(Number(metadata[2]))) continue;
+                        event.effectTime = Number(metadata[2]) / 1000;
+                    }
+                }
                 events.push(event);
             }
         }

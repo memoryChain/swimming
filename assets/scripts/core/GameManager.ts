@@ -870,8 +870,8 @@ export class GameManager extends Component {
                 continue;
             }
             let culled: boolean;
-            if (swimmer === sharkFeedTarget) {
-                // 鲨鱼画中画正在观察该选手时，不能按主镜头视锥清掉其动作和水花。
+            if (swimmer === sharkFeedTarget || this._eventPictureInPicture?.keepsSwimmerAnimated(node)) {
+                // 鲨鱼或炸弹画中画正在观察该选手时，保留动作和水花。
                 culled = false;
             } else if (frustum) {
                 const pos = node.position;
@@ -1526,10 +1526,18 @@ export class GameManager extends Component {
         }
         this._netRaceController?.setEntertainmentDirectorStateListener(state => {
             const director = this._entertainmentDirector;
-            if (!director) return;
+            if (!director) return true;
             const transition = director.applySnapshot(state as import('./EntertainmentModeDirector').EntertainmentDirectorState);
+            if (!transition.snapshotAccepted) return false;
             this.handleEntertainmentDirectorTransition(transition);
             this.reconcileEntertainmentResidents();
+            return true;
+        });
+        this._netRaceController?.setGameplayEventEpochListener((slot, epoch) => {
+            // 访客可能漏掉某个完整返场；按同包代次重置遗漏的子控制器，再灌入状态。
+            const event = slot === 0 ? EntertainmentEventId.CANNON
+                : slot === 1 ? EntertainmentEventId.TIMED_BOMB : EntertainmentEventId.SHARK;
+            this.activateEntertainmentEvent(event, false, epoch);
         });
     }
 
@@ -1653,8 +1661,15 @@ export class GameManager extends Component {
         }
     }
 
-    private activateEntertainmentEvent(event: EntertainmentEventId, playActivationEntrance = false) {
+    private activateEntertainmentEvent(event: EntertainmentEventId, playActivationEntrance = false, epochOverride?: number) {
         const anchorDistance = this.entertainmentAnchorDistance(event);
+        const epochSlot = event === EntertainmentEventId.CANNON ? 0
+            : event === EntertainmentEventId.TIMED_BOMB ? 1 : event === EntertainmentEventId.SHARK ? 2 : -1;
+        if (epochSlot >= 0 && this._netRaceController) {
+            this._netRaceController.setGameplayEventEpoch(
+                epochSlot, epochOverride ?? this._entertainmentDirector?.snapshot().activationSerial ?? 0,
+            );
+        }
         switch (event) {
             case EntertainmentEventId.STIMULANT:
                 // 控制器在本帧后续 update 中创建，沿用独立玩法的全部美术与拾取反馈。
@@ -2669,8 +2684,8 @@ export class GameManager extends Component {
                 this.entertainmentWaterSplashes(),
             );
         }
-        this._netRaceController?.setMinefieldImpactListener((mineId, hitLane, courseX, lateral, hitMask, revision) => {
-            const impact = { mineId, hitLane, courseX, lateral, hitMask, revision };
+        this._netRaceController?.setMinefieldImpactListener((mineId, hitLane, courseX, lateral, hitMask, revision, elapsedSeconds) => {
+            const impact = { mineId, hitLane, courseX, lateral, hitMask, revision, elapsedSeconds };
             if (this._minefieldBrawl?.applyImpact(impact)) this.handleMinefieldImpact(impact, false);
         });
         this._netRaceController?.setMinefieldStateListener(state => {
@@ -2738,7 +2753,7 @@ export class GameManager extends Component {
         }
         if (broadcast && this._netRaceController?.isHost) {
             this._netRaceController.enqueueMinefieldImpact(
-                impact.mineId, impact.hitLane, impact.courseX, impact.lateral, impact.hitMask, impact.revision,
+                impact.mineId, impact.hitLane, impact.courseX, impact.lateral, impact.hitMask, impact.revision, impact.elapsedSeconds,
             );
         }
     }
@@ -4116,7 +4131,8 @@ export class GameManager extends Component {
             // regardless of whether the position came from the frame channel or S|. (Only
             // when clearly not a normal in-progress dive: never dived, or dived long enough
             // ago that the ~1.5s dive tween should already be done.)
-            if (isHuman && targetDist > NET_DIVE_STUCK_M && !swimmer.isNetRacing) {
+            if (isHuman && targetDist > NET_DIVE_STUCK_M && !swimmer.isNetRacing
+                && !swimmer.isEntertainmentKnocked) {
                 const remote = swimmer.getComponent(RemoteSwimmerController);
                 if (remote && (!remote.hasDived || remote.diveElapsed() > NET_DIVE_STUCK_TIMEOUT_MS)) {
                     remote.forceEnterRace(targetDist);

@@ -2540,6 +2540,16 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 renderer.enabled = enabled;
             }
         }
+        // 描边壳创建时继承身体显隐，但不在身体缓存中；预热结束和重生亮灯时须一同恢复。
+        // 壳由 CharacterSkinApplier 直接挂在描边根节点下，只在状态边沿访问，不遍历骨架或分配数组。
+        if (this._outlineRoot?.isValid) {
+            for (const child of this._outlineRoot.children) {
+                const renderer = child.getComponent(SkinnedMeshRenderer);
+                if (renderer?.isValid && renderer.enabled !== enabled) {
+                    renderer.enabled = enabled;
+                }
+            }
+        }
     }
 
     private updatePerfectGlowMaterial() {

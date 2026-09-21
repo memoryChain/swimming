@@ -1,5 +1,5 @@
 import { GameState } from './GameConstants';
-import { expandedEllipseContains, segmentHitsExpandedEllipse } from './RaceContactGeometry';
+import { ContactEventWindow, expandedEllipseContains, segmentHitsExpandedEllipse } from './RaceContactGeometry';
 
 export const LITTER_BRAWL_TUNING = {
     poolSize: 10,
@@ -112,6 +112,7 @@ export type LitterRigidImpact = {
 };
 
 export type LitterContact = LitterRigidImpact & {
+    elapsedSeconds?: number;
     kind: LitterKind;
     bounceAlongVelocity: number;
     bounceLateralVelocity: number;
@@ -214,6 +215,8 @@ export class LitterBrawlController {
     private blockedWaveSeconds = 0;
     private cancelledWaveCount = 0;
     private revision = 0;
+    private readonly contactEvents = new ContactEventWindow();
+    private readonly pendingContacts: LitterContact[] = [];
     private elapsedSeconds = 0;
     private lastSnapshotRevision = -1;
     private lastSnapshotElapsed = -1;
@@ -273,6 +276,8 @@ export class LitterBrawlController {
         this.blockedWaveSeconds = 0;
         this.cancelledWaveCount = 0;
         this.revision = 0;
+        this.contactEvents.reset();
+        this.pendingContacts.length = 0;
         this.elapsedSeconds = 0;
         this.lastSnapshotRevision = -1;
         this.lastSnapshotElapsed = -1;
@@ -406,6 +411,7 @@ export class LitterBrawlController {
         for (const source of state.slots) this.applySnapshotSlot(this.slots[source.id], source);
         this.previousRacerCourseX.fill(Number.NaN);
         this.previousRacerLateral.fill(0);
+        this.flushPendingContacts();
         return { applied: true, activeChanged: previousActiveMask !== activeMask };
     }
 
@@ -419,9 +425,21 @@ export class LitterBrawlController {
             || !Number.isFinite(contact.courseX) || !Number.isFinite(contact.lateral)
             || !Number.isFinite(contact.bounceAlongVelocity)
             || !Number.isFinite(contact.bounceLateralVelocity)
-            || !Number.isSafeInteger(contact.revision) || contact.revision <= this.revision) return false;
+            || !Number.isSafeInteger(contact.revision) || contact.revision <= 0) return false;
         const slot = this.slots[contact.slotId];
-        if (!slot.active || slot.generation !== contact.generation || slot.kind !== contact.kind) return false;
+        if (contact.elapsedSeconds !== undefined
+            && (!Number.isFinite(contact.elapsedSeconds) || this.elapsedSeconds - contact.elapsedSeconds > 3)) return false;
+        if (contact.generation > slot.generation) {
+            if (this.pendingContacts.length < 128
+                && !this.pendingContacts.some(pending => pending.revision === contact.revision)) {
+                this.pendingContacts.push(contact);
+            }
+            return false;
+        }
+        if (slot.generation !== contact.generation || slot.kind !== contact.kind) return false;
+        if (!this.contactEvents.accept(contact.revision)) return false;
+        // 快照已经包含更新的轨迹，只补选手效果，不能回拨漂浮物位置。
+        if (!slot.active || contact.revision <= this.revision) return true;
         this.revision = contact.revision;
         slot.courseX = contact.courseX;
         slot.lateral = contact.lateral;
@@ -432,6 +450,19 @@ export class LitterBrawlController {
         slot.impactRevision++;
         slot.insideMask |= 1 << contact.lane;
         return true;
+    }
+
+    private flushPendingContacts(): void {
+        for (let i = 0; i < this.pendingContacts.length;) {
+            const contact = this.pendingContacts[i];
+            const expired = contact.elapsedSeconds !== undefined && this.elapsedSeconds - contact.elapsedSeconds > 3;
+            if (!expired && contact.generation > this.slots[contact.slotId].generation) {
+                i++;
+                continue;
+            }
+            this.pendingContacts.splice(i, 1);
+            if (!expired && this.applyContact(contact) && contact.kind === 'rigid') this.onRigidImpact?.(contact);
+        }
     }
 
     update(dt: number, state: GameState, authoritative = true): void {
@@ -671,6 +702,7 @@ export class LitterBrawlController {
                     : racer.lateral > slot.lateral ? 1 : -1;
                 slot.impactRevision++;
                 this.revision++;
+                this.contactEvents.accept(this.revision);
                 if (rigid) {
                     slot.bounceAlongVelocity = courseDirection(racer.distance) * LITTER_BRAWL_TUNING.rigidDebrisBounceSpeed;
                     slot.bounceLateralVelocity = -away * LITTER_BRAWL_TUNING.rigidDebrisBounceSpeed * 0.72;
@@ -697,6 +729,7 @@ export class LitterBrawlController {
                     );
                 }
                 this.onContact?.({
+                    elapsedSeconds: this.elapsedSeconds,
                     slotId: slot.id,
                     generation: slot.generation,
                     lane,

@@ -81,6 +81,9 @@ export interface DecodedRaceSnapshot {
     entries: NetSnapshotEntry[];
     stimulantRevision: number;
     stimulantMask: number;
+    stimulantCollectors: readonly number[];
+    stimulantPickupRevisions: readonly number[];
+    eventEpochs: readonly number[];
     cannonRevision: number;
     cannonCompletedMask: number;
     cannonActiveStrikeId: number;
@@ -94,7 +97,11 @@ export interface DecodedRaceSnapshot {
     shark?: NetSharkState;
 }
 
-export type NetStimulantState = { revision: number; collectedMask: number };
+export type NetStimulantState = {
+    revision: number; collectedMask: number;
+    collectorLanes?: readonly number[];
+    pickupRevisions?: readonly number[];
+};
 export type NetCannonState = {
     revision: number;
     completedStrikeMask: number;
@@ -174,6 +181,52 @@ export interface NetSharkState {
 
 const TAG = 'S|';
 
+const LEDGER_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+// 每个领取序号占一个字节：道具编号×8＋泳道，255 为尚未恢复的序号。
+// 21 字节编码为 28 字符，保留空洞与次序，不依赖浏览器或 Node 的 Base64 API。
+function encodeStimulantLedger(state?: NetStimulantState | null): string {
+    if (!state?.collectorLanes?.length || !state.pickupRevisions) return '';
+    const bytes = new Uint8Array(21).fill(255);
+    for (let item = 0; item < Math.min(21, state.collectorLanes.length); item++) {
+        const lane = state.collectorLanes[item];
+        const revision = state.pickupRevisions[item];
+        if (Number.isInteger(lane) && lane >= 0 && lane < 8
+            && Number.isInteger(revision) && revision > 0 && revision <= 21) {
+            bytes[revision - 1] = item * 8 + lane;
+        }
+    }
+    let body = '!';
+    for (let i = 0; i < 21; i += 3) {
+        const word = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+        body += LEDGER_ALPHABET[(word >>> 18) & 63] + LEDGER_ALPHABET[(word >>> 12) & 63]
+            + LEDGER_ALPHABET[(word >>> 6) & 63] + LEDGER_ALPHABET[word & 63];
+    }
+    return body;
+}
+
+function decodeStimulantLedger(body: string): { collectors: number[]; revisions: number[] } {
+    const empty = { collectors: [], revisions: [] };
+    if (!/^![A-Za-z0-9_-]{28}$/.test(body)) return empty;
+    const collectors = new Array<number>(21).fill(-1);
+    const revisions = new Array<number>(21).fill(0);
+    let revision = 0;
+    for (let i = 1; i < body.length; i += 4) {
+        const word = (LEDGER_ALPHABET.indexOf(body[i]) << 18) | (LEDGER_ALPHABET.indexOf(body[i + 1]) << 12)
+            | (LEDGER_ALPHABET.indexOf(body[i + 2]) << 6) | LEDGER_ALPHABET.indexOf(body[i + 3]);
+        for (let shift = 16; shift >= 0; shift -= 8) {
+            const value = (word >>> shift) & 255;
+            revision++;
+            if (value === 255) continue;
+            const item = value >>> 3;
+            if (item >= 21 || revisions[item] !== 0) return empty;
+            collectors[item] = value & 7;
+            revisions[item] = revision;
+        }
+    }
+    return { collectors, revisions };
+}
+
 export function encodeRaceSnapshot(
     hostPos: number,
     entries: NetSnapshotEntry[],
@@ -184,12 +237,15 @@ export function encodeRaceSnapshot(
     recovery?: NetEntertainmentRecoveryState | null,
     minefield?: NetMinefieldState | null,
     entertainmentDirector?: NetEntertainmentDirectorState | null,
+    eventEpochs?: readonly number[],
 ): string {
     const body = entries
         .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)},${encodeConditionCooldown(e.calmSlushRemaining ?? -1)}`)
         .join(';');
     const revision = Math.max(0, Math.floor(stimulant?.revision ?? 0));
     const mask = Math.max(0, Math.floor(stimulant?.collectedMask ?? 0)).toString(16);
+    const collectors = encodeStimulantLedger(stimulant);
+    const epochs = eventEpochs?.slice(0, 3).map(value => safeNonNegativeInteger(value)).join('.') ?? '';
     const cannonRevision = Math.max(0, Math.floor(cannon?.revision ?? 0));
     // Header slot 4 remains reserved to keep the rest of the compact layout stable.
     const cannonReservedMask = '0';
@@ -211,9 +267,10 @@ export function encodeRaceSnapshot(
     const mineReturnProtectionMs = Math.max(0, Math.round((mineRelay?.returnProtectionSeconds ?? 0) * 1000));
     const mineRecoveryMs = Math.max(0, Math.round((mineRelay?.recoverySeconds ?? 0) * 1000));
     const recoveryRevision = Math.max(0, Math.floor(recovery?.revision ?? 0));
-    const recoveryBody = recovery?.lanes
-        .map((lane) => `${Math.max(0, Math.floor(lane.phase))}.${Math.max(0, Math.floor(lane.reason))}.${Math.max(0, Math.round(lane.remainingSeconds * 1000))}.${Math.max(0, Math.round(lane.distance * 100))}.${Math.max(0, Math.floor(lane.revision))}`)
-        .join(':') ?? '';
+    // 整数使用 36 进制，抵消领取账本和返场代次的新增字节；不降低量化精度。
+    const recoveryBody = recovery ? '!' + recovery.lanes
+        .map((lane) => `${Math.max(0, Math.floor(lane.phase)).toString(36)}.${Math.max(0, Math.floor(lane.reason)).toString(36)}.${Math.max(0, Math.round(lane.remainingSeconds * 1000)).toString(36)}.${Math.max(0, Math.round(lane.distance * 100)).toString(36)}.${Math.max(0, Math.floor(lane.revision)).toString(36)}`)
+        .join(':') : '';
     const minefieldRevision = Math.max(0, Math.floor(minefield?.revision ?? 0));
     const minefieldElapsedMs = Math.max(0, Math.round((minefield?.elapsedSeconds ?? 0) * 1000));
     const minefieldActiveMask = Math.max(0, Math.floor(minefield?.activeMask ?? 0)).toString(16);
@@ -241,7 +298,7 @@ export function encodeRaceSnapshot(
     const sharkBody = shark
         ? `~${Math.max(0, Math.floor(shark.sequence))},${Math.max(0, Math.floor(shark.state))},${Math.max(0, Math.round(shark.raceElapsed * 1000))},${Math.max(0, Math.round(shark.remainingSeconds * 1000))},${Math.max(0, Math.round(shark.huntOpeningGraceSeconds * 1000))},${Math.round(shark.x * 100)},${Math.round(shark.z * 100)},${Math.round(shark.facingX * 1000)},${Math.round(shark.facingZ * 1000)},${Math.round(shark.targetLane)},${Math.round(shark.knockedLane)},${Math.max(0, Math.floor(shark.huntIndex))}`
         : '';
-    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonReservedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs},${recoveryRevision},${recoveryBody},${minefieldRevision},${minefieldElapsedMs},${minefieldActiveMask},${minefieldArmedMask},${directorRevision},${directorPhase},${directorEventIndex},${directorRemainingMs},${directorPackedEvents},${directorActivatedMask},${directorResidentMask},${directorAnchorCm},${directorEventAnchors},${directorEventCount},${directorSpecialMask},${directorActivationSerial},${directorEncoreRound},${directorEncoreEvent},${directorLastActivatedEvent},${minefieldWaveIndex},${minefieldSlotWavesPacked}#${body}${sharkBody}`;
+    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonReservedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs},${recoveryRevision},${recoveryBody},${minefieldRevision},${minefieldElapsedMs},${minefieldActiveMask},${minefieldArmedMask},${directorRevision},${directorPhase},${directorEventIndex},${directorRemainingMs},${directorPackedEvents},${directorActivatedMask},${directorResidentMask},${directorAnchorCm},${directorEventAnchors},${directorEventCount},${directorSpecialMask},${directorActivationSerial},${directorEncoreRound},${directorEncoreEvent},${directorLastActivatedEvent},${minefieldWaveIndex},${minefieldSlotWavesPacked},${collectors},${epochs}#${body}${sharkBody}`;
 }
 
 // Returns null if the payload is not a race snapshot (so other broadcast messages
@@ -373,11 +430,16 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             }
         }
     }
+    const ledger = decodeStimulantLedger(header[45] ?? '');
     return {
         hostPos: Number.isFinite(hostPos) ? hostPos : 0,
         entries,
         stimulantRevision: Number.isSafeInteger(stimulantRevision) && stimulantRevision >= 0 ? stimulantRevision : 0,
         stimulantMask: Number.isSafeInteger(stimulantMask) && stimulantMask >= 0 ? stimulantMask : 0,
+        stimulantCollectors: ledger.collectors,
+        stimulantPickupRevisions: ledger.revisions,
+        eventEpochs: /^\d+\.\d+\.\d+$/.test(header[46] ?? '')
+            ? header[46].split('.').map(value => safeNonNegativeInteger(Number(value))) : [0, 0, 0],
         cannonRevision: Number.isSafeInteger(cannonRevision) && cannonRevision >= 0 ? cannonRevision : 0,
         cannonCompletedMask: Number.isSafeInteger(cannonCompletedMask) && cannonCompletedMask >= 0 ? cannonCompletedMask : 0,
         cannonActiveStrikeId: Number.isSafeInteger(cannonActiveStrike) && cannonActiveStrike > 0 ? cannonActiveStrike - 1 : -1,
@@ -446,9 +508,11 @@ function decodeCentimeterList(body: string): number[] {
 
 function decodeRecoveryState(revision: number, body: string): NetEntertainmentRecoveryState {
     const lanes: NetEntertainmentRecoveryLaneState[] = [];
+    const radix = body.startsWith('!') ? 36 : 10;
+    if (radix === 36) body = body.slice(1);
     if (body.length > 0) {
         for (const token of body.split(':')) {
-            const values = token.split('.').map(value => parseInt(value, 10));
+            const values = token.split('.').map(value => parseInt(value, radix));
             if (values.length !== 5 || !values.every(value => Number.isSafeInteger(value) && value >= 0)) continue;
             lanes.push({
                 phase: values[0],

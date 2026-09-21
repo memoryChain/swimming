@@ -97,6 +97,10 @@ const CALM_SLUSH_CUBE_COLOR = new Color(82, 218, 255, 255);
 export class StimulantBrawlController {
     private readonly items: ItemState[];
     private revision = 0;
+    // 世界回收位图与本端效果结算独立，快照抢先不能吞掉领取收益。
+    private readonly collectorLanes: number[] = [];
+    private readonly pickupRevisions: number[] = [];
+    private settledPickupRevision = 0;
     private disposed = false;
     private announcedWaveMask = 0;
     private presentationElapsed = PRESENTATION_INTERVAL;
@@ -155,6 +159,10 @@ export class StimulantBrawlController {
                 throwElapsed: 0,
             };
         });
+        this.collectorLanes.length = this.items.length;
+        this.collectorLanes.fill(-1);
+        this.pickupRevisions.length = this.items.length;
+        this.pickupRevisions.fill(0);
         // 先同步生成单个大方块，保证模型资源尚未就绪时仍能看到和拾取道具。
         this.createProgramVisuals();
         this.createBeaconVisuals();
@@ -297,21 +305,43 @@ export class StimulantBrawlController {
 
     applyPickup(pickup: StimulantPickup): boolean {
         if (
-            !Number.isSafeInteger(pickup.revision)
-            || pickup.revision <= this.revision && this.items[pickup.itemId]?.collected
+            !Number.isSafeInteger(pickup.revision) || pickup.revision <= 0 || pickup.revision > this.items.length
+            || !Number.isSafeInteger(pickup.itemId) || pickup.itemId < 0 || pickup.itemId >= this.items.length
+            || !Number.isSafeInteger(pickup.collectorLane)
+            || pickup.collectorLane < 0 || pickup.collectorLane >= this.laneLayout.laneCount
         ) {
             return false;
         }
         const item = this.items[pickup.itemId];
-        if (!item || item.collected) return false;
+        if (!item || this.pickupRevisions[pickup.itemId] !== 0
+            || this.pickupRevisions.indexOf(pickup.revision) >= 0) return false;
+        this.collectorLanes[pickup.itemId] = pickup.collectorLane;
+        this.pickupRevisions[pickup.itemId] = pickup.revision;
         this.revision = Math.max(this.revision, pickup.revision);
         item.collected = true;
         if (item.node?.isValid && item.node.active) item.node.active = false;
         if (item.beaconNode?.isValid && item.beaconNode.active) {
             item.pickupEffectRemaining = BEACON_PICKUP_COLLAPSE_SECONDS;
         }
+        this.settlePendingPickups();
+        return true;
+    }
+
+    private settlePendingPickups(): void {
+        // 苏打与冰沙效果不可交换；缺序时等待可靠事件或下一份完整账本。
+        while (this.settledPickupRevision < this.revision) {
+            const next = this.settledPickupRevision + 1;
+            const itemId = this.pickupRevisions.indexOf(next);
+            if (itemId < 0) return;
+            this.settledPickupRevision = next;
+            this.applyPickupEffects({ itemId, collectorLane: this.collectorLanes[itemId], revision: next });
+        }
+    }
+
+    private applyPickupEffects(pickup: StimulantPickup): void {
+        const item = this.items[pickup.itemId];
         const racer = this.pickupRacers[pickup.collectorLane] ?? null;
-        if (!racer) return true;
+        if (!racer) return;
         const energyRatioBefore = racer.condition.energyRatio;
         const heartRateBefore = racer.swimmer.heartRate;
         let restored = 0;
@@ -345,22 +375,27 @@ export class StimulantBrawlController {
             heartRateBefore,
             heartRate: racer.swimmer.heartRate,
         });
-        return true;
     }
 
-    snapshotState(): { revision: number; collectedMask: number } {
+    snapshotState(): { revision: number; collectedMask: number; collectorLanes: readonly number[]; pickupRevisions: readonly number[] } {
         let collectedMask = 0;
         for (const item of this.items) {
             if (item.collected) collectedMask |= 1 << item.id;
         }
-        return { revision: this.revision, collectedMask: collectedMask >>> 0 };
+        return { revision: this.revision, collectedMask: collectedMask >>> 0,
+            collectorLanes: this.collectorLanes, pickupRevisions: this.pickupRevisions };
     }
 
-    applySnapshotState(state: { revision: number; collectedMask: number }): void {
+    applySnapshotState(state: { revision: number; collectedMask: number; collectorLanes?: readonly number[]; pickupRevisions?: readonly number[] }): void {
         if (!Number.isSafeInteger(state.revision) || state.revision < this.revision) return;
         this.revision = state.revision;
         for (const item of this.items) {
             const collected = (state.collectedMask & (1 << item.id)) !== 0;
+            const collectorLane = state.collectorLanes?.[item.id] ?? -1;
+            const pickupRevision = state.pickupRevisions?.[item.id] ?? 0;
+            if (collected && collectorLane >= 0 && pickupRevision > 0 && this.pickupRevisions[item.id] === 0) {
+                this.applyPickup({ itemId: item.id, collectorLane, revision: pickupRevision });
+            }
             if (!collected || item.collected) continue;
             item.collected = true;
             if (item.node?.isValid && item.node.active) item.node.active = false;

@@ -75,7 +75,9 @@
 // 版本87：垃圾漂流加入房主权威接触事件与独立周期 L| 状态恢复包。
 // 版本88：心跳苏打赛程加入冷静冰沙，并同步三条泳者状态通道中的冰沙剩余时间。
 // 版本89：已落水补给改为世界公共物品，移除拾取趟数门槛并按物理位置显示与争抢。
-export const NET_RACE_PROTOCOL_VERSION = 89;
+// 版本90：领取者恢复账本、返场事件代次、接触效果独立去重与迟到时限。
+// 版本91：补给账本保留领取顺序；迟到帧与尚未建立的玩法入口保留独立权威效果。
+export const NET_RACE_PROTOCOL_VERSION = 91;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

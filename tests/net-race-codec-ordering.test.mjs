@@ -299,7 +299,7 @@ test('八泳道满状态快照保持在项目的一点五千字节回归预算�
     const payload = encodeRaceSnapshot(
         7,
         entries,
-        { revision: 999999, collectedMask: 0x7fffffff },
+        { revision: 999999, collectedMask: 0x7fffffff, collectorLanes: Array(21).fill(7), pickupRevisions: Array.from({ length: 21 }, (_, i) => 21 - i) },
         {
             sequence: 999999, state: 4, raceElapsed: 999.999, remainingSeconds: 99.999,
             huntOpeningGraceSeconds: 9.999, x: 400, z: -10, facingX: -1, facingZ: 1,
@@ -328,6 +328,7 @@ test('八泳道满状态快照保持在项目的一点五千字节回归预算�
             encoreRound: 999999, encoreEvent: 5, anchorDistance: 400,
             eventAnchorDistances: [32, 96, 160, 224, 288, 360],
         },
+        [999999, 999999, 999999],
     );
     assert.ok(Buffer.byteLength(payload, 'utf8') <= 1536, `snapshot bytes=${Buffer.byteLength(payload, 'utf8')}`);
     const litterPayload = encodeLitterSnapshot(7, litterState(6));
@@ -461,7 +462,7 @@ test('an attributed P| or frame self cannot update another registered lane', () 
 });
 
 test('lobby protocol hello rejects missing or mixed versions', () => {
-    assert.equal(NET_RACE_PROTOCOL_VERSION, 89);
+    assert.equal(NET_RACE_PROTOCOL_VERSION, 91);
     const hello = decodeProtocolHello(encodeProtocolHello(4));
     assert.deepEqual(hello, { pos: 4, version: NET_RACE_PROTOCOL_VERSION });
     assert.equal(decodeProtocolHello('PV|4|bad'), null);

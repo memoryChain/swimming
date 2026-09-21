@@ -248,7 +248,8 @@ function normalizeCareer(raw: Partial<CareerState> | undefined): CareerState {
                     : raw.quick?.rule === 'timed-bomb' || raw.quick?.rule === 'mine-relay' ? 'timed-bomb'
                         : raw.quick?.rule === 'minefield' ? 'minefield'
                         : raw.quick?.rule === 'wild' ? 'wild' : 'standard';
-    c.quick = { distance: quickRule === 'standard' || quickRule === 'wild' ? (raw.quick?.distance === 400 ? 400 : 200) : 200, rule: quickRule };
+    const allowsLongRace = quickRule === 'standard' || quickRule === 'wild' || quickRule === 'entertainment';
+    c.quick = { distance: allowsLongRace && raw.quick?.distance === 400 ? 400 : 200, rule: quickRule };
     // 中断后从杯赛当前轮重新开赛；已结算回执仍保留，不能因重启重复发放。
     c.receipts = Array.isArray(raw.receipts) ? raw.receipts
         .filter(r => r && typeof r.id === 'string' && Number.isFinite(r.coinsGained))

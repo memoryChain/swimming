@@ -1,5 +1,5 @@
 import { GameState } from './GameConstants';
-import { expandedEllipseContains, segmentHitsExpandedEllipse } from './RaceContactGeometry';
+import { ContactEventWindow, expandedEllipseContains, segmentHitsExpandedEllipse } from './RaceContactGeometry';
 import { SeededRandom } from './SharedRNG';
 
 export type MinefieldRacerState = {
@@ -19,6 +19,7 @@ export type MinefieldMineState = {
 };
 
 export type MinefieldImpact = {
+    elapsedSeconds?: number;
     mineId: number;
     hitLane: number;
     courseX: number;
@@ -77,6 +78,7 @@ type MinefieldWaveLayout = {
 /** 房主使用水雷与人物身体的扩张椭圆负责命中；访客只同步确定性视觉和可靠命中事件。 */
 export class MinefieldBrawlController {
     private revision = 0;
+    private readonly impactEvents = new ContactEventWindow();
     private elapsed = 0;
     private waveIndex = 0;
     private activeMineCount = 0;
@@ -163,6 +165,7 @@ export class MinefieldBrawlController {
 
     reset(): void {
         this.revision = 0;
+        this.impactEvents.reset();
         this.elapsed = 0;
         this.waveIndex = 0;
         this.activeMineCount = this.mineStates.length;
@@ -267,9 +270,14 @@ export class MinefieldBrawlController {
         if (!Number.isSafeInteger(impact.mineId) || impact.mineId < 0 || impact.mineId >= this.mineStates.length
             || !Number.isSafeInteger(impact.hitLane) || impact.hitLane < 0 || impact.hitLane >= this.laneCount
             || !Number.isSafeInteger(impact.hitMask) || impact.hitMask < 0
-            || !Number.isSafeInteger(impact.revision) || impact.revision <= this.revision
+            || !Number.isSafeInteger(impact.revision) || impact.revision <= 0
             || !Number.isFinite(impact.courseX) || !Number.isFinite(impact.lateral)) return false;
-        this.revision = impact.revision;
+        if (impact.elapsedSeconds !== undefined
+            && (!Number.isFinite(impact.elapsedSeconds) || this.elapsed - impact.elapsedSeconds > 3)) return false;
+        if (!this.impactEvents.accept(impact.revision)) return false;
+        // 迟到效果仍需结算，但不能让旧波次的爆炸销毁已经补充的新雷。
+        if (impact.revision < this.revision) return true;
+        this.revision = Math.max(this.revision, impact.revision);
         const mine = this.mineStates[impact.mineId];
         if (mine.active) this.activeMineCount = Math.max(0, this.activeMineCount - 1);
         mine.active = false;
@@ -327,6 +335,7 @@ export class MinefieldBrawlController {
                 lateral: mine.lateral,
                 hitMask: this.blastHitMask(mine.courseX, mine.lateral, lane),
                 revision: this.revision + 1,
+                elapsedSeconds: this.elapsed,
             };
             if (this.applyImpact(impact)) this.onImpact(impact);
             return;

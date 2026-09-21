@@ -16,7 +16,7 @@ import { INetRoom, NetSyncFrame, NetRoomInfo } from './INetRoom';
 import { netRoom } from './NetManager';
 import { NetRaceSessionData } from './NetRaceSession';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
-import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind } from './NetRaceInput';
+import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind, gameplayEpochSlot } from './NetRaceInput';
 import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetCannonState, NetEntertainmentDirectorState, NetEntertainmentRecoveryState, NetMinefieldState, NetMineRelayState, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
 import { decodeLitterSnapshot, encodeLitterSnapshot } from './NetLitterSnapshot';
 import type { LitterContact, LitterSnapshotState } from '../core/LitterBrawlController';
@@ -149,6 +149,11 @@ export class NetRaceController {
     private _lastNeedBroadcastAt = 0;
     private _needBroadcastCount = 0;
     private readonly _authoritativeEvents: NetInputEvent[] = [];
+    private readonly _contactRecoveryEvents: Array<{ event: NetInputEvent; expiresAt: number }> = [];
+    private _contactRecoveryCursor = 0;
+    private readonly _eventEpochs = [0, 0, 0];
+    private readonly _deferredGameplayEvents: Array<{ sender: number; event: NetInputEvent }> = [];
+    private _eventEpochListener: ((slot: number, epoch: number) => void) | null = null;
     private _stimulantPickupListener: ((itemId: number, collectorLane: number, revision: number) => void) | null = null;
     private _stimulantStateListener: ((state: NetStimulantState) => void) | null = null;
     private _sharkKnockdownListener: ((sequence: number, targetLane: number, distance: number) => void) | null = null;
@@ -162,9 +167,9 @@ export class NetRaceController {
     private _mineRelayTransferListener: ((roundId: number, fromLane: number, toLane: number, remainingSeconds: number, revision: number) => void) | null = null;
     private _mineRelayResolutionListener: ((roundId: number, carrierLane: number, exploded: boolean, distance: number, lateral: number, hitMask: number, revision: number) => void) | null = null;
     private _mineRelayStateListener: ((state: NetMineRelayState) => void) | null = null;
-    private _minefieldImpactListener: ((mineId: number, hitLane: number, courseX: number, lateral: number, hitMask: number, revision: number) => void) | null = null;
+    private _minefieldImpactListener: ((mineId: number, hitLane: number, courseX: number, lateral: number, hitMask: number, revision: number, elapsedSeconds?: number) => void) | null = null;
     private _minefieldStateListener: ((state: NetMinefieldState) => void) | null = null;
-    private _entertainmentDirectorStateListener: ((state: NetEntertainmentDirectorState) => void) | null = null;
+    private _entertainmentDirectorStateListener: ((state: NetEntertainmentDirectorState) => boolean | void) | null = null;
     private _litterStateListener: ((state: LitterSnapshotState) => void) | null = null;
     private _litterContactListener: ((contact: LitterContact) => void) | null = null;
 
@@ -192,6 +197,49 @@ export class NetRaceController {
         return this._isHost;
     }
 
+    setGameplayEventEpoch(slot: number, epoch: number): void {
+        if (Number.isInteger(slot) && slot >= 0 && slot < 3
+            && Number.isSafeInteger(epoch) && epoch >= this._eventEpochs[slot]) {
+            this._eventEpochs[slot] = epoch;
+        }
+    }
+
+    setGameplayEventEpochListener(listener: ((slot: number, epoch: number) => void) | null): void {
+        this._eventEpochListener = listener;
+    }
+
+    private flushDeferredGameplayEvents(): void {
+        // 快照或监听就绪时处理；无待收事件时不分配临时数组。
+        for (let i = 0; i < this._deferredGameplayEvents.length;) {
+            const pending = this._deferredGameplayEvents[i];
+            const slot = gameplayEpochSlot(pending.event.kind);
+            if (pending.sender === this._activeHostPos
+                && ((slot >= 0 && (pending.event.eventEpoch ?? 0) > this._eventEpochs[slot])
+                    || !this.hasGameplayEventListener(pending.event.kind))) {
+                i++;
+                continue;
+            }
+            this._deferredGameplayEvents.splice(i, 1);
+            this.processAuthoritativeEvents(pending.sender, [pending.event]);
+        }
+    }
+
+    private hasGameplayEventListener(kind: NetInputKind): boolean {
+        switch (kind) {
+            case NetInputKind.StimulantPickup: return !!this._stimulantPickupListener;
+            case NetInputKind.SharkKnockdown: return !!this._sharkKnockdownListener;
+            case NetInputKind.CannonLaunch: return !!this._cannonLaunchListener;
+            case NetInputKind.CannonImpact: return !!this._cannonImpactListener;
+            case NetInputKind.MineRelayArm: return !!this._mineRelayArmListener;
+            case NetInputKind.MineRelayTransfer: return !!this._mineRelayTransferListener;
+            case NetInputKind.MineRelayResolution: return !!this._mineRelayResolutionListener;
+            case NetInputKind.MinefieldImpact: return !!this._minefieldImpactListener;
+            case NetInputKind.LitterContact: return !!this._litterContactListener;
+            case NetInputKind.EntertainmentKnockdown: return !!this._entertainmentKnockdownListener;
+            default: return true;
+        }
+    }
+
     enqueueStimulantPickup(itemId: number, collectorLane: number, revision: number): void {
         if (!this._isHost || this._disposed) return;
         this._authoritativeEvents.push({ kind: NetInputKind.StimulantPickup, itemId, collectorLane, revision });
@@ -199,6 +247,7 @@ export class NetRaceController {
 
     setStimulantPickupListener(listener: ((itemId: number, collectorLane: number, revision: number) => void) | null): void {
         this._stimulantPickupListener = listener;
+        if (listener) this.flushDeferredGameplayEvents();
     }
 
     setStimulantStateListener(listener: ((state: NetStimulantState) => void) | null): void {
@@ -209,6 +258,7 @@ export class NetRaceController {
         if (!this._isHost || this._disposed) return;
         this._authoritativeEvents.push({
             kind: NetInputKind.SharkKnockdown,
+            eventEpoch: this._eventEpochs[2],
             sharkSequence: sequence,
             targetLane,
             knockedDistance: distance,
@@ -217,6 +267,7 @@ export class NetRaceController {
 
     setSharkKnockdownListener(listener: ((sequence: number, targetLane: number, distance: number) => void) | null): void {
         this._sharkKnockdownListener = listener;
+        if (listener) this.flushDeferredGameplayEvents();
     }
 
     setSharkStateListener(listener: ((state: NetSharkState) => void) | null): void {
@@ -227,6 +278,7 @@ export class NetRaceController {
         if (!this._isHost || this._disposed) return;
         this._authoritativeEvents.push({
             kind: NetInputKind.CannonLaunch,
+            eventEpoch: this._eventEpochs[0],
             cannonStrikeId: strikeId,
             targetDistance,
             targetZ,
@@ -239,6 +291,7 @@ export class NetRaceController {
         if (!this._isHost || this._disposed) return;
         this._authoritativeEvents.push({
             kind: NetInputKind.CannonImpact,
+            eventEpoch: this._eventEpochs[0],
             cannonStrikeId: strikeId,
             hitMask,
             knockedLane,
@@ -249,10 +302,12 @@ export class NetRaceController {
 
     setCannonLaunchListener(listener: ((strikeId: number, targetDistance: number, targetZ: number, warningSeconds: number, revision: number) => void) | null): void {
         this._cannonLaunchListener = listener;
+        if (listener) this.flushDeferredGameplayEvents();
     }
 
     setCannonImpactListener(listener: ((strikeId: number, hitMask: number, knockedLane: number, knockedDistance: number, revision: number) => void) | null): void {
         this._cannonImpactListener = listener;
+        if (listener) this.flushDeferredGameplayEvents();
     }
 
     setCannonStateListener(listener: ((state: NetCannonState) => void) | null): void {
@@ -274,6 +329,7 @@ export class NetRaceController {
         listener: ((lane: number, reason: number, distance: number, revision: number) => void) | null,
     ): void {
         this._entertainmentKnockdownListener = listener;
+        if (listener) this.flushDeferredGameplayEvents();
     }
 
     setRecoveryStateListener(listener: ((state: NetEntertainmentRecoveryState) => void) | null): void {
@@ -284,6 +340,7 @@ export class NetRaceController {
         if (!this._isHost || this._disposed) return;
         this._authoritativeEvents.push({
             kind: NetInputKind.MineRelayArm,
+            eventEpoch: this._eventEpochs[1],
             mineRoundId: roundId,
             mineCarrierLane: carrierLane,
             fuseSeconds,
@@ -295,6 +352,7 @@ export class NetRaceController {
         if (!this._isHost || this._disposed) return;
         this._authoritativeEvents.push({
             kind: NetInputKind.MineRelayTransfer,
+            eventEpoch: this._eventEpochs[1],
             mineRoundId: roundId,
             mineFromLane: fromLane,
             mineToLane: toLane,
@@ -307,6 +365,7 @@ export class NetRaceController {
         if (!this._isHost || this._disposed) return;
         this._authoritativeEvents.push({
             kind: NetInputKind.MineRelayResolution,
+            eventEpoch: this._eventEpochs[1],
             mineRoundId: roundId,
             mineCarrierLane: carrierLane,
             exploded,
@@ -319,24 +378,28 @@ export class NetRaceController {
 
     setMineRelayArmListener(listener: ((roundId: number, carrierLane: number, fuseSeconds: number, revision: number) => void) | null): void {
         this._mineRelayArmListener = listener;
+        if (listener) this.flushDeferredGameplayEvents();
     }
 
     setMineRelayTransferListener(listener: ((roundId: number, fromLane: number, toLane: number, remainingSeconds: number, revision: number) => void) | null): void {
         this._mineRelayTransferListener = listener;
+        if (listener) this.flushDeferredGameplayEvents();
     }
 
     setMineRelayResolutionListener(listener: ((roundId: number, carrierLane: number, exploded: boolean, distance: number, lateral: number, hitMask: number, revision: number) => void) | null): void {
         this._mineRelayResolutionListener = listener;
+        if (listener) this.flushDeferredGameplayEvents();
     }
 
     setMineRelayStateListener(listener: ((state: NetMineRelayState) => void) | null): void {
         this._mineRelayStateListener = listener;
     }
 
-    enqueueMinefieldImpact(mineId: number, hitLane: number, courseX: number, lateral: number, hitMask: number, revision: number): void {
+    enqueueMinefieldImpact(mineId: number, hitLane: number, courseX: number, lateral: number, hitMask: number, revision: number, elapsedSeconds?: number): void {
         if (!this._isHost || this._disposed) return;
         this._authoritativeEvents.push({
             kind: NetInputKind.MinefieldImpact,
+            effectTime: elapsedSeconds,
             mineId,
             mineHitLane: hitLane,
             mineDistance: courseX,
@@ -344,17 +407,19 @@ export class NetRaceController {
             hitMask,
             revision,
         });
+        this.rememberContactEvent(this._authoritativeEvents[this._authoritativeEvents.length - 1]);
     }
 
-    setMinefieldImpactListener(listener: ((mineId: number, hitLane: number, courseX: number, lateral: number, hitMask: number, revision: number) => void) | null): void {
+    setMinefieldImpactListener(listener: ((mineId: number, hitLane: number, courseX: number, lateral: number, hitMask: number, revision: number, elapsedSeconds?: number) => void) | null): void {
         this._minefieldImpactListener = listener;
+        if (listener) this.flushDeferredGameplayEvents();
     }
 
     setMinefieldStateListener(listener: ((state: NetMinefieldState) => void) | null): void {
         this._minefieldStateListener = listener;
     }
 
-    setEntertainmentDirectorStateListener(listener: ((state: NetEntertainmentDirectorState) => void) | null): void {
+    setEntertainmentDirectorStateListener(listener: ((state: NetEntertainmentDirectorState) => boolean | void) | null): void {
         this._entertainmentDirectorStateListener = listener;
     }
 
@@ -366,6 +431,7 @@ export class NetRaceController {
         if (!this._isHost || this._disposed) return;
         this._authoritativeEvents.push({
             kind: NetInputKind.LitterContact,
+            effectTime: contact.elapsedSeconds,
             litterSlotId: contact.slotId,
             litterGeneration: contact.generation,
             litterKind: contact.kind === 'soft' ? 1 : 0,
@@ -377,10 +443,37 @@ export class NetRaceController {
             litterBounceLateral: contact.bounceLateralVelocity,
             revision: contact.revision,
         });
+        if (contact.kind === 'rigid') {
+            this.rememberContactEvent(this._authoritativeEvents[this._authoritativeEvents.length - 1]);
+        }
+    }
+
+    private rememberContactEvent(event: NetInputEvent): void {
+        if (this._contactRecoveryEvents.length >= 32) this._contactRecoveryEvents.shift();
+        this._contactRecoveryEvents.push({ event, expiresAt: Date.now() + 3000 });
+    }
+
+    private resendContactEvents(): void {
+        const pending = this._contactRecoveryEvents;
+        if (pending.length === 0) return;
+        const now = Date.now();
+        for (let i = pending.length - 1; i >= 0; i--) {
+            if (pending[i].expiresAt <= now) pending.splice(i, 1);
+        }
+        if (!this._isHost || !this.broadcastSyncRequired || pending.length === 0) return;
+        // 仅在降级同步时补发短期冲击；普通输入不重放，接收端按命中序号去重。
+        const events: NetInputEvent[] = [];
+        const count = Math.min(4, pending.length);
+        for (let i = 0; i < count; i++) {
+            this._contactRecoveryCursor %= pending.length;
+            events.push(pending[this._contactRecoveryCursor++].event);
+        }
+        this._net.broadcast(BROADCAST_INPUT_TAG + encodeInputFrame(this._session.localPos, events));
     }
 
     setLitterContactListener(listener: ((contact: LitterContact) => void) | null): void {
         this._litterContactListener = listener;
+        if (listener) this.flushDeferredGameplayEvents();
     }
 
     // Whether the reliable lock-step frame channel works. When false (e.g. iOS
@@ -564,8 +657,10 @@ export class NetRaceController {
             recovery,
             minefield,
             entertainmentDirector,
+            this._eventEpochs,
         ));
         if (litter) this._net.broadcast(encodeLitterSnapshot(this._session.localPos, litter));
+        this.resendContactEvents();
     }
 
     // Client: the most recent authoritative snapshot (empty until one arrives).
@@ -686,6 +781,15 @@ export class NetRaceController {
             // condition targets; otherwise packet arrival order would make AI jump
             // between two authorities during migration.
             if (!this._isHost && snapshot.hostPos === this._activeHostPos) {
+                for (let slot = 0; slot < this._eventEpochs.length; slot++) {
+                    if (snapshot.eventEpochs[slot] < this._eventEpochs[slot]) return;
+                }
+                // 导演拒绝旧轮或非法状态时，同包子玩法也必须全部拒绝。
+                if (this._entertainmentDirectorStateListener?.(snapshot.entertainmentDirector) === false) return;
+                for (let slot = 0; slot < this._eventEpochs.length; slot++) {
+                    const epoch = snapshot.eventEpochs[slot];
+                    if (epoch > this._eventEpochs[slot]) this._eventEpochListener?.(slot, epoch);
+                }
                 this._prevSnapshot = this._snapshotTargets;
                 this._prevSnapshotTime = this._snapshotTime;
                 this._snapshotTargets = snapshot.entries;
@@ -693,10 +797,11 @@ export class NetRaceController {
                 this._snapshotRevision++;
                 // 先创建／启用本快照所需的玩法控制器，再把各玩法状态灌入；
                 // 否则访客首次收到激活快照时会白白丢掉一轮子状态。
-                this._entertainmentDirectorStateListener?.(snapshot.entertainmentDirector);
                 this._stimulantStateListener?.({
                     revision: snapshot.stimulantRevision,
                     collectedMask: snapshot.stimulantMask,
+                    collectorLanes: snapshot.stimulantCollectors,
+                    pickupRevisions: snapshot.stimulantPickupRevisions,
                 });
                 if (snapshot.shark) {
                     this._sharkStateListener?.(snapshot.shark);
@@ -712,6 +817,7 @@ export class NetRaceController {
                 this._recoveryStateListener?.(snapshot.recovery);
                 this._mineRelayStateListener?.(snapshot.mineRelay);
                 this._minefieldStateListener?.(snapshot.minefield);
+                this.flushDeferredGameplayEvents();
             }
             this.refreshHud();
             return;
@@ -924,6 +1030,10 @@ export class NetRaceController {
             if (decoded.senderPos < 0) {
                 continue;
             }
+            // 权威效果各自去重，不能被普通输入的旧帧过滤吞掉。
+            if (decoded.senderPos !== this._session.localPos) {
+                this.processAuthoritativeEvents(decoded.senderPos, decoded.events);
+            }
             // We cannot roll a predicted swimmer backward. Drop duplicate or delayed
             // old service frames permanently instead of replaying an unseen old input
             // after a newer HeldOn/HeldOff pair.
@@ -932,7 +1042,6 @@ export class NetRaceController {
             }
             this._peerLatest[decoded.senderPos] = frame.frameId;
             if (decoded.senderPos !== this._session.localPos) {
-                this.processAuthoritativeEvents(decoded.senderPos, decoded.events);
                 this.processRemotePacket(decoded.senderPos, decoded.inputSeq, decoded.events, decoded.self);
             }
             if (decoded.events.length > 0) {
@@ -1044,6 +1153,19 @@ export class NetRaceController {
     private processAuthoritativeEvents(senderPos: number, events: readonly NetInputEvent[]): void {
         if (senderPos !== this._activeHostPos) return;
         for (const event of events) {
+            const slot = gameplayEpochSlot(event.kind);
+            const epoch = event.eventEpoch ?? 0;
+            if (slot >= 0 && epoch < this._eventEpochs[slot]) continue;
+            if ((slot >= 0 && epoch > this._eventEpochs[slot]) || !this.hasGameplayEventListener(event.kind)) {
+                // 先到的可靠事件等对应快照创建/重置控制器后再回放，队列有界。
+                if (this._deferredGameplayEvents.length < 128
+                    && !this._deferredGameplayEvents.some(p => p.sender === senderPos
+                        && p.event.kind === event.kind && (p.event.eventEpoch ?? 0) === epoch
+                        && p.event.revision === event.revision && p.event.sharkSequence === event.sharkSequence)) {
+                    this._deferredGameplayEvents.push({ sender: senderPos, event });
+                }
+                continue;
+            }
             if (event.kind === NetInputKind.StimulantPickup) {
                 if (event.itemId === undefined || event.collectorLane === undefined || event.revision === undefined) continue;
                 this._stimulantPickupListener?.(event.itemId, event.collectorLane, event.revision);
@@ -1099,7 +1221,7 @@ export class NetRaceController {
                     || event.hitMask === undefined || event.revision === undefined) continue;
                 this._minefieldImpactListener?.(
                     event.mineId, event.mineHitLane, event.mineDistance, event.mineLateral,
-                    event.hitMask, event.revision,
+                    event.hitMask, event.revision, event.effectTime,
                 );
             } else if (event.kind === NetInputKind.LitterContact) {
                 if (event.litterSlotId === undefined || event.litterGeneration === undefined
@@ -1108,6 +1230,7 @@ export class NetRaceController {
                     || event.litterLateral === undefined || event.litterBounceAlong === undefined
                     || event.litterBounceLateral === undefined || event.revision === undefined) continue;
                 this._litterContactListener?.({
+                    elapsedSeconds: event.effectTime,
                     slotId: event.litterSlotId,
                     generation: event.litterGeneration,
                     kind: event.litterKind === 1 ? 'soft' : 'rigid',
@@ -1179,6 +1302,9 @@ export class NetRaceController {
             return;
         }
         this._disposed = true;
+        this._contactRecoveryEvents.length = 0;
+        this._deferredGameplayEvents.length = 0;
+        this._eventEpochListener = null;
         // Stop capturing local input once the networked race ends.
         setNetInputCaptureActive(false);
         if (this._hudRoot?.isValid) {

@@ -42,6 +42,7 @@ export type EntertainmentDirectorState = {
 };
 
 export type EntertainmentDirectorTransition = {
+    snapshotAccepted?: boolean;
     cancelledPreview: boolean;
     previewEvent: EntertainmentEventId | null;
     activatedEvent: EntertainmentEventId | null;
@@ -559,6 +560,7 @@ export class EntertainmentModeDirector {
         if (!validDirectorState(state) || !validEventOrder(authoritativeEvents)
             || (state.specialMask !== 0 && authoritativeEvents.indexOf(EntertainmentEventId.WHIRLPOOL) < 0)
             || state.revision < this.revision) return transition;
+        transition.snapshotAccepted = true;
         const previousPhase = this.phase;
         const previousIndex = this.eventIndex;
         const previousEvent = this.currentEvent();
@@ -641,6 +643,7 @@ export class EntertainmentModeDirector {
     }
 
     private clearTransition(): EntertainmentDirectorTransition {
+        this.transition.snapshotAccepted = false;
         this.transition.cancelledPreview = false;
         this.transition.previewEvent = null;
         this.transition.activatedEvent = null;

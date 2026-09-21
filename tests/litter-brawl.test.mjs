@@ -218,7 +218,10 @@ test('可靠垃圾接触按全局修订去重并把权威受推轨迹应用到�
     assert.equal(guest.controller.applySnapshotState(beforeContact).applied, true);
     assert.equal(guest.controller.applyContact(contact), true);
     assert.equal(guest.controller.applyContact(contact), false, '重复可靠事件不能重复结算');
-    assert.equal(guest.controller.applyContact({ ...contact, revision: contact.revision - 1 }), false,
+    const newerTrajectory = JSON.stringify(guest.controller.snapshotState());
+    assert.equal(guest.controller.applyContact({ ...contact, revision: contact.revision - 1 }), true,
+        '未结算的乱序接触独立补效果，快照版本不能吞掉它');
+    assert.equal(JSON.stringify(guest.controller.snapshotState()), newerTrajectory,
         '迟到事件不能回拨垃圾轨迹');
     const guestSlot = guest.controller.snapshotState().slots.find(slot => slot.id === contact.slotId);
     assert.equal(guestSlot.bounceAlongVelocity, contact.bounceAlongVelocity);
@@ -514,5 +517,5 @@ test('阶段 I 正式启用七合一轮换但公开独立垃圾入口仍保持�
     assert.match(input, /LitterContact\s*=\s*'g'/);
     assert.match(litterSnapshot, /const TAG = 'L\|'/);
     assert.doesNotMatch(room, /litter-brawl/);
-    assert.match(protocol, /NET_RACE_PROTOCOL_VERSION\s*=\s*89/);
+    assert.match(protocol, /NET_RACE_PROTOCOL_VERSION\s*=\s*91/);
 });
