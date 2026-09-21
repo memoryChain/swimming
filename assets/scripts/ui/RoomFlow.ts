@@ -16,7 +16,7 @@ import { PlayerData } from '../backend/PlayerData';
 import { netRoom } from '../net/NetManager';
 import { NetRoomInfo } from '../net/INetRoom';
 import { NetRaceMember, setNetRaceSession } from '../net/NetRaceSession';
-import { NetRaceStartDelivery, acknowledgeRaceStart } from '../net/NetRaceStartDelivery';
+import { NetRaceStartDelivery, acknowledgeRaceStart, decodeStartRoster, startMessageFitsBudget } from '../net/NetRaceStartDelivery';
 import { SeededRandom } from '../core/SharedRNG';
 import { platform } from '../platform/PlatformManager';
 import { resolveLocalModifierDigest } from '../progression/RaceModifiers';
@@ -84,6 +84,7 @@ export class RoomFlow {
     private _pendingStartMessage = '';
     private _startDelivery: NetRaceStartDelivery | null = null;
     private _pendingModifiers: Readonly<Record<number, string>> | null = null;
+    private _pendingMembers: NetRaceMember[] | null = null;
     // 同一房主和赛制内保留已接收的最新尝试；超时只清待开赛状态，不清防旧记录。
     private _latestStartKey = '';
     private _latestStartStamp = -1;
@@ -767,19 +768,32 @@ export class RoomFlow {
         // a swimmer can never slip in with the wrong balance. Host-authoritative + consistent.
         this.storeSelfModifiers();
         this._pendingModifiers = { ...this._memberModifiers };
+        const roster = this._members.map(m => [m.pos, m.avatarId, m.nickName]);
+        this._pendingMembers = decodeStartRoster(roster, this._pendingModifiers, this._localPos, this._localPos);
         this._pendingStartMessage = JSON.stringify({
             t: 'start',
             pv: NET_RACE_PROTOCOL_VERSION,
             seed: this._pendingSeed,
             raceId: this._pendingRaceId,
             mods: this._pendingModifiers,
+            roster,
             mode: this._mode,
             distance: this._distance,
             rules: this.ruleKey(),
         });
+        if (!this._pendingMembers || !startMessageFitsBudget(this._pendingStartMessage)) {
+            this._startRequested = false;
+            this._pendingSeed = 0;
+            this._pendingRaceId = '';
+            this._pendingStartMessage = '';
+            this._pendingMembers = null;
+            this._pendingModifiers = null;
+            this.setHint('开始失败，请确认好友已回到房间并准备后重试');
+            return;
+        }
         this._startDelivery?.dispose();
         this._startDelivery = new NetRaceStartDelivery(netRoom(), this._pendingRaceId,
-            this._pendingStartMessage, this._localPos, this._members);
+            this._pendingStartMessage, this._localPos, this._pendingMembers);
         this._startDelivery.start();
         this._startDelivery.send();
         if (this._reconnect) {
@@ -820,6 +834,7 @@ export class RoomFlow {
             this._startDelivery?.dispose();
             this._startDelivery = null;
             this._pendingModifiers = null;
+            this._pendingMembers = null;
             this._gameStartConfirmed = false;
             this.setHint('开始失败，请确认好友已回到房间并准备后重试');
             this.render();
@@ -910,6 +925,10 @@ export class RoomFlow {
                     this.setHint('赛制或准备状态未确认，请重新准备'); return;
                 }
                 if (!isRoomModeSelection(data.mode, data.distance)) return;
+                if (!startMessageFitsBudget(msg)) return;
+                const members = decodeStartRoster(data.roster, data.mods, owner.pos, this._localPos);
+                if (!members) return;
+                this._pendingMembers = members;
                 this._latestStartKey = startKey;
                 this._latestStartStamp = stamp;
                 this._mode = data.mode;
@@ -973,7 +992,7 @@ export class RoomFlow {
     // Lock-step has begun on every client: hand the agreed seed + roster to the race.
     private enterNetRace() {
         if (!this._root?.isValid || this._roomUnavailable || this._leaving
-            || this._raceEntered || !isNetRaceId(this._pendingRaceId)) {
+            || this._raceEntered || !isNetRaceId(this._pendingRaceId) || !this._pendingMembers) {
             return;
         }
         this._raceEntered = true;
@@ -989,21 +1008,13 @@ export class RoomFlow {
         // (may be rejected mid-game); returning to the lobby also resets it.
         this._localReady = false;
         netRoom().updateReady(false).catch(() => undefined);
-        const members: NetRaceMember[] = this._members.map((m) => ({
-            avatarId: m.avatarId,
-            nickName: m.nickName,
-            self: m.self,
-            pos: typeof m.pos === 'number' ? m.pos : -1,
-            // 养成 digest collected from the lobby broadcasts (empty if it never arrived,
-            // e.g. an old client or a dropped broadcast -> that swimmer stays neutral).
-            modifiersBlob: this._pendingModifiers?.[typeof m.pos === 'number' ? m.pos : -1] ?? '',
-        }));
+        const members: NetRaceMember[] = this._pendingMembers.map(m => ({ ...m }));
         setNetRaceSession({
             raceId: this._pendingRaceId,
             startMessage: this._pendingStartMessage,
             seed: (this._pendingSeed >>> 0) || SeededRandom.entropySeed(),
             members,
-            localIsHost: this._isHost,
+            localIsHost: this._pendingRaceId.startsWith(`${this._localPos}.`),
             localPos: this._localPos >= 0 ? this._localPos : (this._isHost ? 0 : 0),
             distance: this._distance,
         });

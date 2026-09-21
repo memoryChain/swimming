@@ -118,6 +118,10 @@ export class NetRaceController {
     private _prevSnapshotTime = 0;
     // Authoritative final placement from the host (null until the race ends).
     private _authResult: NetResultEntry[] | null = null;
+    private readonly _resultSequences = new Map<number, number>();
+    private _outboundResultSequence = 0;
+    private _lastResultBody = '';
+    private _lastResultMessage = '';
     // Diagnostics: how many snapshots / results this client has sent + received, plus a
     // per-lane local-vs-host distance line fed by GameManager, shown on the debug HUD.
     private _snapSent = 0;
@@ -132,6 +136,7 @@ export class NetRaceController {
     private readonly _readyPoses = new Set<number>();
     private _raceReadyReported = false;
     private _countdownStarted = false;
+    private _countdownDelivered = false;
     private _countdownStartListener: (() => void) | null = null;
     private _goTimeoutHandle: any = null;
     // Notified when a member quits mid-race (Q| broadcast) so its swimmer is retired.
@@ -564,6 +569,7 @@ export class NetRaceController {
     // local simulation is already a full, valid race view, so it can start broadcasting
     // snapshots + own the final result immediately (both gate on isHost).
     private promoteToHost(): void {
+        this.invalidateAuthorityResult();
         this._isHost = true;
         this._activeHostPos = this._session.localPos;
         this._lastSnapshotAt = Date.now();
@@ -585,6 +591,8 @@ export class NetRaceController {
     // self-promoted host steps back down if a lower-pos host is (still) alive.
     private adoptHostFromSnapshot(hostPos: number): void {
         if (this._departedPositions.has(hostPos)) return;
+        const previousHost = this._activeHostPos === Number.MAX_SAFE_INTEGER
+            ? Number(this._session.raceId.charAt(0)) : this._activeHostPos;
         const now = Date.now();
         if (hostPos < this._activeHostPos) {
             this._activeHostPos = hostPos;
@@ -602,6 +610,13 @@ export class NetRaceController {
                 this._isHost = false;
             }
         }
+        if (previousHost !== this._activeHostPos) this.invalidateAuthorityResult();
+    }
+
+    private invalidateAuthorityResult(): void {
+        this._authResult = null;
+        this._lastResultBody = '';
+        this._lastResultMessage = '';
     }
 
     // SECOND host-drop signal (belt-and-braces alongside snapshot-silence). The room
@@ -632,9 +647,9 @@ export class NetRaceController {
         }
         this._startDelivery?.retainMembers(present);
         if (this._isHost) return;
-        // Haven't locked onto a host yet (no snapshot received) — nothing to migrate from.
+        // 首个快照前仍以开赛身份中的原房主为基准，名单可立即确认它已离开。
         if (this._activeHostPos === Number.MAX_SAFE_INTEGER) {
-            return;
+            this._activeHostPos = Number(this._session.raceId.charAt(0));
         }
         // Host still present? Then nothing to do.
         if (present.indexOf(this._activeHostPos) >= 0) {
@@ -650,6 +665,7 @@ export class NetRaceController {
             }
         }
         const previousHost = this._activeHostPos;
+        this.invalidateAuthorityResult();
         this._activeHostPos = lowest;
         this._lastSnapshotAt = Date.now();
         if (this._session.localPos === lowest) {
@@ -755,11 +771,16 @@ export class NetRaceController {
 
     // Host: broadcast the authoritative final placement (once, at race end).
     sendResult(entries: NetResultEntry[]): void {
-        if (this._disposed || !this._net.isSupported()) {
+        if (this._disposed || !this._isHost || !this._net.isSupported()) {
             return;
         }
         this._resultSent++;
-        this.broadcastRaceMessage(encodeRaceResult(entries));
+        const body = encodeRaceResult(entries, this._session.localPos, 0);
+        if (body !== this._lastResultBody) {
+            this._lastResultBody = body;
+            this._lastResultMessage = encodeRaceResult(entries, this._session.localPos, ++this._outboundResultSequence);
+        }
+        this.broadcastRaceMessage(this._lastResultMessage);
     }
 
     // Announce that THIS client is leaving the race mid-way, so the others retire our
@@ -901,9 +922,15 @@ export class NetRaceController {
         }
         const result = decodeRaceResult(msg);
         if (result) {
+            const hostPos = this._activeHostPos === Number.MAX_SAFE_INTEGER
+                ? Number(this._session.raceId.charAt(0)) : this._activeHostPos;
+            if (this._isHost || result.hostPos !== hostPos || this._departedPositions.has(result.hostPos)
+                || !this._session.members.some(m => m.pos === result.hostPos)
+                || result.sequence <= (this._resultSequences.get(result.hostPos) ?? -1)) return;
+            this._resultSequences.set(result.hostPos, result.sequence);
             this._resultRecv++;
-            this._authResult = result;
-            this._authResultListener?.(result);
+            this._authResult = result.entries;
+            this._authResultListener?.(result.entries);
             this.refreshHud();
             return;
         }
@@ -932,15 +959,27 @@ export class NetRaceController {
     // Set once by GameManager: starts the local countdown when GO fires.
     setCountdownStartListener(listener: (() => void) | null): void {
         this._countdownStartListener = listener;
+        this.deliverCountdown();
+    }
+
+    private deliverCountdown(): void {
+        if (this._disposed || !this._countdownStarted || this._countdownDelivered
+            || !this._raceReadyReported || !this._countdownStartListener) return;
+        this._countdownDelivered = true;
+        this._countdownStartListener();
     }
 
     // Called when this client's pre-race showcase is ready. The host tracks all-ready
     // and issues GO; a client just reports itself ready and waits for GO. Idempotent.
     reportRaceReady(): void {
-        if (this._raceReadyReported) {
+        if (this._disposed || this._raceReadyReported) {
             return;
         }
         this._raceReadyReported = true;
+        if (this._countdownStarted) {
+            this.deliverCountdown();
+            return;
+        }
         if (this.isHost) {
             this._readyPoses.add(this._session.localPos);
             // Fallback: don't wait forever for a stuck member — GO after a few seconds.
@@ -979,7 +1018,7 @@ export class NetRaceController {
             this._goTimeoutHandle = null;
         }
         this.broadcastRaceMessage('GO|');
-        this._countdownStartListener?.();
+        this.deliverCountdown();
     }
 
     private triggerCountdownFromGo(): void {
@@ -991,7 +1030,7 @@ export class NetRaceController {
             clearTimeout(this._goTimeoutHandle);
             this._goTimeoutHandle = null;
         }
-        this._countdownStartListener?.();
+        this.deliverCountdown();
     }
 
     // Called once per rendered frame. Emits at most one logical frame per tick window

@@ -191,7 +191,18 @@ test('authoritative results preserve shark and cannon elimination separately fro
         { lane: 2, placement: 7, finished: false, time: 0, eliminated: true, sharkEliminated: true, cannonEliminated: false },
         { lane: 3, placement: 6, finished: false, time: 0, eliminated: true, sharkEliminated: false, cannonEliminated: true },
     ];
-    assert.deepEqual(decodeRaceResult(encodeRaceResult(entries)), entries);
+    assert.deepEqual(decodeRaceResult(encodeRaceResult(entries, 0, 1)), { hostPos: 0, sequence: 1, entries });
+});
+
+test('成绩来源与序号严格校验，非法或重复泳道不能生成部分有效结果', () => {
+    for (const payload of ['R|0,1,1,100,0,0,0', 'R|0,0|0,1,1,100,0,0,0',
+        'R|8,1|0,1,1,100,0,0,0', 'R|0,1|0,1,1,-1,0,0,0',
+        'R|0,1|0,1,1,100,0,0,0;0,2,1,100,0,0,0',
+        'R|0,1|0,1,1,100,0,0,0;1,1,1,100,0,0,0']) assert.equal(decodeRaceResult(payload), null);
+    const rows = Array.from({ length: 8 }, (_, lane) => ({ lane, placement: lane + 1, finished: true, time: 999.99 }));
+    const payload = encodeRaceResult(rows, 7, 999999);
+    assert.equal(decodeRaceResult(payload).entries.length, 8);
+    assert.ok(Buffer.byteLength(payload) < 512);
 });
 
 test('cannon launch, impact and active strike round-trip across reliable events and snapshot fallback', () => {
@@ -481,7 +492,7 @@ test('an attributed P| or frame self cannot update another registered lane', () 
 });
 
 test('lobby protocol hello rejects missing or mixed versions', () => {
-    assert.equal(NET_RACE_PROTOCOL_VERSION, 95);
+    assert.equal(NET_RACE_PROTOCOL_VERSION, 96);
     const hello = decodeProtocolHello(encodeProtocolHello(4));
     assert.deepEqual(hello, { pos: 4, version: NET_RACE_PROTOCOL_VERSION });
     assert.equal(decodeProtocolHello('PV|4|bad'), null);

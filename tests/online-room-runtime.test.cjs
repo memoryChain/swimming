@@ -295,6 +295,67 @@ function takeStartTimeout(f) {
     return callback;
 }
 
+test('开赛固化名单：迟到离房名单和开赛后的名单变化不改变双方泳道与身份', () => {
+    const f = startRetryFixture();
+    try {
+        f.g._members.splice(1, 0, { ...guest, pos: 1, self: false, ready: true });
+        f.h.startRace(); f.send(f.messages[0]);
+        f.h._members.push({ ...guest, pos: 3, self: false });
+        f.g._members[0].nickName = 'late';
+        f.g._isHost = true; // 迟到的平台房主变更不能改写本次开赛的初始权威。
+        f.h.onNetGameStart(); f.g.onNetGameStart();
+        const { buildNetLanePlan } = load(path.join(root, 'assets/scripts/net/NetLanePlan.ts'));
+        const [hs, gs] = f.sessions;
+        assert.deepEqual(hs.members.map(m => m.pos), [0, 2]);
+        assert.deepEqual(gs.members.map(m => m.pos), [0, 2]);
+        assert.equal(gs.members[0].nickName, hs.members[0].nickName);
+        assert.equal(buildNetLanePlan(hs, 8).remotes.find(m => m.pos === 2).lane, buildNetLanePlan(gs, 8).playerLane);
+        assert.equal(gs.members.find(m => m.self).pos, 2);
+        assert.equal(hs.localIsHost, true); assert.equal(gs.localIsHost, false);
+    } finally { f.dispose(); }
+});
+
+test('缺失、重复、越界或不含本人及房主的开赛名单全部拒绝，合法补发仍可进入', () => {
+    const f = startRetryFixture();
+    try {
+        f.h.startRace(); f.g._reconnect = true;
+        const start = f.messages[0];
+        for (const roster of [undefined, [], [start.roster[0], start.roster[0]],
+            [[0, 'coral', 'a'], [8, 'lime', 'b']], [[0, 'coral', 'a'], [1, 'lime', 'b']],
+            [[1, 'coral', 'a'], [2, 'lime', 'b']]]) {
+            f.send({ ...start, roster });
+            assert.equal(f.g._raceEntered, false); assert.equal(f.g._pendingMembers, null);
+        }
+        f.send(start); assert.equal(f.g._raceEntered, true);
+    } finally { f.dispose(); }
+});
+
+test('八人开赛含身份和养成不超过预算，超长名单在发送及入场前拒绝', () => {
+    for (const oversized of [false, true]) {
+        const f = startRetryFixture();
+        try {
+            f.h._members = Array.from({ length: 8 }, (_, pos) => ({ ...guest, pos, self: pos === 0,
+                owner: pos === 0, ready: true, nickName: '泳'.repeat(oversized ? 64 : 8) }));
+            for (let pos = 0; pos < 8; pos++) {
+                f.h._memberProtocolVersions[pos] = NET_RACE_PROTOCOL_VERSION;
+                f.h._ruleReady[pos] = f.h.ruleKey(); f.h._memberModifiers[pos] = 'muscleMan,30';
+            }
+            f.h.startRace();
+            if (oversized) {
+                assert.equal(f.messages.length, 0); assert.equal(f.h._startRequested, false);
+                assert.equal(f.h._pendingMembers, null); assert.equal(f.calls(), 0);
+            } else {
+                const bytes = Buffer.byteLength(JSON.stringify(f.messages[0]));
+                assert.ok(bytes <= 1536, String(bytes));
+                f.send(f.messages[0]);
+                f.h.onNetGameStart(); f.g.onNetGameStart();
+                assert.deepEqual(f.sessions[0].members.map(m => m.pos), f.sessions[1].members.map(m => m.pos));
+                assert.equal(f.sessions[1].members.length, 8);
+            }
+        } finally { f.dispose(); }
+    }
+});
+
 test('首条重赛开赛消息丢失后，补发可入场且重复消息只回确认，不重复进入', () => {
     const f = startRetryFixture();
     const { NetRaceStartDelivery } = load(path.join(root, 'assets/scripts/net/NetRaceStartDelivery.ts'));

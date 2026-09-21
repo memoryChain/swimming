@@ -88,6 +88,84 @@ function net(raceId = RACE_ID) {
     return instance;
 }
 
+test('发令、场景回调和本地准备任意顺序到达，都只在就绪后启动一次', () => {
+    for (const order of ['glr', 'grl', 'lgr', 'lrg', 'rgl', 'rlg']) {
+        const receiver = net(); let starts = 0;
+        try {
+            for (const action of order) {
+                if (action === 'g') receiver.onBroadcast(wire('GO|'));
+                if (action === 'l') receiver.setCountdownStartListener(() => starts++);
+                if (action === 'r') receiver.reportRaceReady();
+                if (!receiver._raceReadyReported) assert.equal(starts, 0);
+            }
+            assert.equal(starts, 1, order);
+            receiver.onBroadcast(wire('GO|')); receiver.triggerCountdownFromGo();
+            receiver.setCountdownStartListener(() => starts++); receiver.reportRaceReady();
+            assert.equal(starts, 1);
+        } finally { receiver.dispose(); }
+    }
+});
+
+test('新房主成绩覆盖旧缓存，离房旧房主成绩和同源乱序成绩不能回拨', () => {
+    const receiver = new NetRaceController({ raceId: RACE_ID, localIsHost: false, localPos: 2,
+        seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
+    const { encodeRaceResult } = load('assets/scripts/net/NetRaceResult.ts');
+    const rows = placement => [{ lane: 2, placement, finished: true, time: 90 }];
+    try {
+        receiver._activeHostPos = 0;
+        receiver.onBroadcast(wire(encodeRaceResult(rows(2), 0, 1)));
+        assert.equal(receiver.authResult[0].placement, 2);
+        receiver.onRoomInfoChange({ members: [{ pos: 1 }, { pos: 2 }] });
+        assert.equal(receiver.authResult, null);
+        receiver.onBroadcast(wire(encodeRaceResult(rows(1), 1, 2)));
+        receiver.onBroadcast(wire(encodeRaceResult(rows(2), 0, 99)));
+        receiver.onBroadcast(wire(encodeRaceResult(rows(3), 1, 1)));
+        assert.equal(receiver.authResult[0].placement, 1);
+    } finally { receiver.dispose(); }
+});
+
+test('成绩先于首个快照到达仍能保留，重复及无来源成绩不重复通知', () => {
+    const receiver = net(); receiver._activeHostPos = Number.MAX_SAFE_INTEGER;
+    const { encodeRaceResult } = load('assets/scripts/net/NetRaceResult.ts');
+    const rows = [{ lane: 1, placement: 1, finished: true, time: 81 }];
+    let calls = 0;
+    receiver.setAuthResultListener(() => calls++);
+    try {
+        const message = wire(encodeRaceResult(rows, 0, 1));
+        receiver.onBroadcast(message);
+        receiver.onBroadcast(wire(encodeRaceSnapshot(0, [])));
+        receiver.onBroadcast(message);
+        receiver.onBroadcast(wire('R|1,2,1,8100,0,0,0'));
+        receiver.onBroadcast(wire(encodeRaceResult(rows, 7, 999)));
+        assert.equal(calls, 1);
+        assert.equal(receiver.authResult[0].placement, 1);
+    } finally { receiver.dispose(); }
+});
+
+test('房主成绩补发保持序号，退位后禁止发送，重新接任产生更新序号', () => {
+    const controller = net(); controller.promoteToHost();
+    const { decodeRaceResult } = load('assets/scripts/net/NetRaceResult.ts');
+    const rows = [{ lane: 1, placement: 1, finished: true, time: 82 }];
+    try {
+        broadcasts.length = 0;
+        controller.sendResult(rows); controller.sendResult(rows);
+        assert.equal(broadcasts[0], broadcasts[1]);
+        const first = decodeRaceResult(body(broadcasts[0]));
+        assert.equal(first.hostPos, 1);
+        controller.adoptHostFromSnapshot(0); controller.sendResult(rows);
+        assert.equal(broadcasts.length, 2);
+        controller.promoteToHost(); controller.sendResult(rows);
+        assert.ok(decodeRaceResult(body(broadcasts[2])).sequence > first.sequence);
+    } finally { controller.dispose(); }
+});
+
+test('发令锁存后销毁，不再向迟到场景回调交付，也不创建兜底计时器', () => {
+    const receiver = net(); let calls = 0;
+    receiver.onBroadcast(wire('GO|')); receiver.dispose();
+    receiver.setCountdownStartListener(() => calls++); receiver.reportRaceReady();
+    assert.equal(calls, 0); assert.equal(receiver._goTimeoutHandle, null);
+});
+
 test('名单确认旧房主离开后，迟到的本局 S 与 L 快照不能夺回权威', () => {
     const receiver = net();
     let litterApplied = 0;
@@ -220,8 +298,9 @@ test('旧局退赛、成绩、倒计时及降级通知不影响新局，接管�
     receiver.setPlayerQuitListener(() => quits++);
     receiver.setAuthResultListener(() => results++);
     receiver.setCountdownStartListener(() => starts++);
+    receiver.reportRaceReady();
     const { encodeRaceResult } = load('assets/scripts/net/NetRaceResult.ts');
-    for (const payload of ['Q|0', 'GO|', 'NB|0', encodeRaceResult([])]) receiver.onBroadcast(wire(payload, '0.previous'));
+    for (const payload of ['Q|0', 'GO|', 'NB|0', encodeRaceResult([], 0, 1)]) receiver.onBroadcast(wire(payload, '0.previous'));
     assert.equal(quits + results + starts, 0); assert.equal(receiver.broadcastSyncRequired, false);
     receiver.onBroadcast(wire('Q|0')); receiver.onBroadcast(wire('GO|')); receiver.onBroadcast(wire('NB|0'));
     assert.equal(quits, 1); assert.equal(starts, 1); assert.equal(receiver.broadcastSyncRequired, true);

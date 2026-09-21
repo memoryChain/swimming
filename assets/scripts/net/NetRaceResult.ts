@@ -8,7 +8,7 @@
 // Pure codec (no engine deps). NetRaceController sends/receives it.
 //
 // Wire format (broadcast message body):
-//   "R|<lane>,<placement>,<fin>,<timeCs>;<lane>,<placement>,<fin>,<timeCs>;..."
+//   "R|<hostPos>,<sequence>|<lane>,<placement>,<fin>,<timeCs>,<elim>,<shark>,<cannon>;..."
 // timeCs = finish time in centiseconds (round(time*100)); clients adopt it so the
 //          displayed result matches the host (local finish times drift a little
 //          because each client integrates on its own frame clock).
@@ -26,35 +26,45 @@ export interface NetResultEntry {
 
 const TAG = 'R|';
 
-export function encodeRaceResult(entries: NetResultEntry[]): string {
+export interface NetRaceResultPacket {
+    hostPos: number;
+    sequence: number;
+    entries: NetResultEntry[];
+}
+
+export function encodeRaceResult(entries: NetResultEntry[], hostPos: number, sequence: number): string {
     const body = entries
         .map((e) => `${e.lane},${e.placement},${e.finished ? 1 : 0},${Math.round(e.time * 100)},${e.eliminated ? 1 : 0},${e.sharkEliminated ? 1 : 0},${e.cannonEliminated ? 1 : 0}`)
         .join(';');
-    return `${TAG}${body}`;
+    return `${TAG}${hostPos},${sequence}|${body}`;
 }
 
 // Returns null if the payload is not a race result (so other broadcasts are ignored).
-export function decodeRaceResult(payload: string): NetResultEntry[] | null {
+export function decodeRaceResult(payload: string): NetRaceResultPacket | null {
     if (typeof payload !== 'string' || payload.slice(0, TAG.length) !== TAG) {
         return null;
     }
-    const body = payload.slice(TAG.length);
-    if (body.length === 0) {
-        return [];
-    }
+    const separator = payload.indexOf('|', TAG.length);
+    if (separator < 0) return null;
+    const header = payload.slice(TAG.length, separator).split(',');
+    if (header.length !== 2 || !/^\d$/.test(header[0]) || !/^\d+$/.test(header[1])) return null;
+    const hostPos = Number(header[0]), sequence = Number(header[1]);
+    if (hostPos > 7 || !Number.isSafeInteger(sequence) || sequence < 1) return null;
+    const body = payload.slice(separator + 1);
+    if (!body) return null;
     const entries: NetResultEntry[] = [];
+    const lanes = new Set<number>();
+    const placements = new Set<number>();
     for (const token of body.split(';')) {
         const parts = token.split(',');
-        if (parts.length < 3) {
-            continue;
-        }
-        const lane = parseInt(parts[0], 10);
-        const placement = parseInt(parts[1], 10);
+        if (parts.length !== 7 || !parts.every(p => /^\d+$/.test(p))) return null;
+        const lane = Number(parts[0]);
+        const placement = Number(parts[1]);
         const fin = parts[2] === '1';
-        const timeCs = parts.length > 3 ? parseInt(parts[3], 10) : 0;
-        if (!Number.isFinite(lane) || !Number.isFinite(placement)) {
-            continue;
-        }
+        const timeCs = Number(parts[3]);
+        if (lane > 7 || placement < 1 || placement > 8 || lanes.has(lane) || placements.has(placement)
+            || !Number.isSafeInteger(timeCs) || ![2, 4, 5, 6].every(i => parts[i] === '0' || parts[i] === '1')) return null;
+        lanes.add(lane); placements.add(placement);
         entries.push({
             lane,
             placement,
@@ -65,5 +75,5 @@ export function decodeRaceResult(payload: string): NetResultEntry[] | null {
             cannonEliminated: parts[6] === '1',
         });
     }
-    return entries;
+    return { hostPos, sequence, entries };
 }
