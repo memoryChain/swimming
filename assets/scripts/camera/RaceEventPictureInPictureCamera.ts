@@ -405,6 +405,9 @@ export class RaceEventPictureInPictureCamera {
             return;
         }
 
+        // 其他事件正在占用唯一镜头时，不遍历垃圾槽位或计算垃圾取景。
+        if (this.mode !== 'none' && this.mode !== 'litter') return;
+
         let fallingWave = -1;
         for (let index = 0; index < clusters.length; index++) {
             const cluster = clusters[index];
@@ -426,7 +429,6 @@ export class RaceEventPictureInPictureCamera {
         }
 
         // 垃圾镜头只承担事件建立感；鲨鱼、炮火、漩涡和定时炸弹等已有镜头均可优先占用共享画面。
-        if (this.mode !== 'none' && this.mode !== 'litter') return;
         if (this.mode !== 'litter') {
             this.mode = 'litter';
             this.setCeilingVisible(false);

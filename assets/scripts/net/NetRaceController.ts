@@ -15,6 +15,7 @@ import { Label, Node, UITransform } from 'cc';
 import { INetRoom, NetSyncFrame, NetRoomInfo } from './INetRoom';
 import { netRoom } from './NetManager';
 import { NetRaceSessionData } from './NetRaceSession';
+import { raceMessagePrefix } from './NetRaceProtocol';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
 import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind, gameplayEpochSlot } from './NetRaceInput';
 import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetCannonState, NetEntertainmentDirectorState, NetEntertainmentRecoveryState, NetMinefieldState, NetMineRelayState, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
@@ -67,6 +68,7 @@ const HUD_REPAINT_INTERVAL_MS = 160;
 
 export class NetRaceController {
     private readonly _net: INetRoom;
+    private readonly _racePrefix: string;
     private _accum = 0;
     private _sentFrames = 0;
     private _ownerStateSeq = 0;
@@ -174,6 +176,7 @@ export class NetRaceController {
     private _litterContactListener: ((contact: LitterContact) => void) | null = null;
 
     constructor(private readonly _session: NetRaceSessionData) {
+        this._racePrefix = raceMessagePrefix(_session.raceId);
         this._net = netRoom();
         this._isHost = _session.localIsHost;
         // The host trusts itself; a client trusts nobody until a snapshot arrives.
@@ -473,7 +476,7 @@ export class NetRaceController {
             this._contactRecoveryCursor %= pending.length;
             events.push(pending[this._contactRecoveryCursor++].event);
         }
-        this._net.broadcast(BROADCAST_INPUT_TAG + encodeInputFrame(this._session.localPos, events));
+        this.broadcastRaceMessage(BROADCAST_INPUT_TAG + encodeInputFrame(this._session.localPos, events));
     }
 
     setLitterContactListener(listener: ((contact: LitterContact) => void) | null): void {
@@ -519,7 +522,7 @@ export class NetRaceController {
         if (now - this._lastNeedBroadcastAt >= interval) {
             this._lastNeedBroadcastAt = now;
             this._needBroadcastCount++;
-            this._net.broadcast(`${NEED_BROADCAST_TAG}${this._session.localPos}`);
+            this.broadcastRaceMessage(`${NEED_BROADCAST_TAG}${this._session.localPos}`);
         }
     }
 
@@ -652,7 +655,7 @@ export class NetRaceController {
             return;
         }
         this._snapSent++;
-        this._net.broadcast(encodeRaceSnapshot(
+        this.broadcastRaceMessage(encodeRaceSnapshot(
             this._session.localPos,
             entries,
             stimulant,
@@ -664,7 +667,7 @@ export class NetRaceController {
             entertainmentDirector,
             this._eventEpochs,
         ));
-        if (litter) this._net.broadcast(encodeLitterSnapshot(this._session.localPos, litter));
+        if (litter) this.broadcastRaceMessage(encodeLitterSnapshot(this._session.localPos, litter));
         this.resendContactEvents();
     }
 
@@ -683,7 +686,7 @@ export class NetRaceController {
         if (this._disposed || !this._net.isSupported()) {
             return;
         }
-        this._net.broadcast(encodeSelfSnapshot(entry, ++this._ownerStateSeq, this._session.localPos));
+        this.broadcastRaceMessage(encodeSelfSnapshot(entry, ++this._ownerStateSeq, this._session.localPos));
     }
 
     // The latest own-authoritative self-position for a lane (from that human's client),
@@ -737,7 +740,7 @@ export class NetRaceController {
             return;
         }
         this._resultSent++;
-        this._net.broadcast(encodeRaceResult(entries));
+        this.broadcastRaceMessage(encodeRaceResult(entries));
     }
 
     // Announce that THIS client is leaving the race mid-way, so the others retire our
@@ -749,9 +752,9 @@ export class NetRaceController {
             return;
         }
         const msg = `Q|${this._session.localPos}`;
-        this._net.broadcast(msg);
-        this._net.broadcast(msg);
-        this._net.broadcast(msg);
+        this.broadcastRaceMessage(msg);
+        this.broadcastRaceMessage(msg);
+        this.broadcastRaceMessage(msg);
     }
 
     // Be notified when a member quits mid-race (its seat pos). Set once by GameManager.
@@ -773,7 +776,17 @@ export class NetRaceController {
         }
     }
 
+    private broadcastRaceMessage(msg: string): void {
+        if (!this._disposed) this._net.broadcast(this._racePrefix + msg);
+    }
+
+    private uploadRaceFrame(msg: string): void {
+        if (!this._disposed) this._net.uploadFrame(this._racePrefix + msg);
+    }
+
     private onBroadcast(msg: string): void {
+        if (this._disposed || !msg.startsWith(this._racePrefix)) return;
+        msg = msg.slice(this._racePrefix.length);
         const snapshot = decodeRaceSnapshot(msg);
         if (snapshot) {
             this._snapRecv++;
@@ -909,7 +922,7 @@ export class NetRaceController {
             }
             this.maybeStartCountdown();
         } else {
-            this._net.broadcast(`CR|${this._session.localPos}`);
+            this.broadcastRaceMessage(`CR|${this._session.localPos}`);
             // Fallback: GO is only issued by the host. If the host drops (or its GO /
             // our CR is dropped) before GO arrives, a client would otherwise wait
             // forever and hang at the pre-race screen. Start the countdown locally
@@ -930,7 +943,7 @@ export class NetRaceController {
     }
 
     private broadcastGo(): void {
-        if (this._countdownStarted) {
+        if (this._disposed || this._countdownStarted) {
             return;
         }
         this._countdownStarted = true;
@@ -938,12 +951,12 @@ export class NetRaceController {
             clearTimeout(this._goTimeoutHandle);
             this._goTimeoutHandle = null;
         }
-        this._net.broadcast('GO|');
+        this.broadcastRaceMessage('GO|');
         this._countdownStartListener?.();
     }
 
     private triggerCountdownFromGo(): void {
-        if (this._countdownStarted) {
+        if (this._disposed || this._countdownStarted) {
             return;
         }
         this._countdownStarted = true;
@@ -983,7 +996,7 @@ export class NetRaceController {
                 // Fully frame-synced room: input + self-position ride the reliable
                 // lock-step frame channel (zero extra broadcast traffic).
                 const ownerStateSeq = selfPos ? ++this._ownerStateSeq : -1;
-                this._net.uploadFrame(encodeInputFrame(
+                this.uploadRaceFrame(encodeInputFrame(
                     this._session.localPos,
                     events,
                     selfPos,
@@ -1000,7 +1013,7 @@ export class NetRaceController {
                 // too so the receiver applies the exact pre-event owner condition
                 // before replaying this event frame.
                 const ownerStateSeq = selfPos ? ++this._ownerStateSeq : -1;
-                this._net.broadcast(BROADCAST_INPUT_TAG + encodeInputFrame(
+                this.broadcastRaceMessage(BROADCAST_INPUT_TAG + encodeInputFrame(
                     this._session.localPos,
                     events,
                     selfPos,
@@ -1027,11 +1040,17 @@ export class NetRaceController {
     }
 
     private onSyncFrame(frame: NetSyncFrame): void {
-        this._recvFrames++;
-        this._lastFrameId = frame.frameId;
-        this._lastItems = frame.items;
+        if (this._disposed) return;
+        let received = false;
         for (const item of frame.items) {
-            const decoded = decodeInputFrame(item);
+            if (!item.startsWith(this._racePrefix)) continue;
+            if (!received) {
+                received = true;
+                this._recvFrames++;
+                this._lastFrameId = frame.frameId;
+                this._lastItems = frame.items;
+            }
+            const decoded = decodeInputFrame(item.slice(this._racePrefix.length));
             if (decoded.senderPos < 0) {
                 continue;
             }
@@ -1062,7 +1081,7 @@ export class NetRaceController {
                 }
             }
         }
-        this.refreshHud();
+        if (received) this.refreshHud();
     }
 
     private remoteForOwnedEntry(entry: NetSnapshotEntry, senderPos: number): RemoteSwimmerController | undefined {
@@ -1309,6 +1328,11 @@ export class NetRaceController {
             return;
         }
         this._disposed = true;
+        if (this._goTimeoutHandle) {
+            clearTimeout(this._goTimeoutHandle);
+            this._goTimeoutHandle = null;
+        }
+        this._countdownStartListener = null;
         this._contactRecoveryEvents.length = 0;
         this._deferredGameplayEvents.length = 0;
         this._eventEpochListener = null;

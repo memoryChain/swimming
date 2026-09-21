@@ -383,6 +383,7 @@ export class GameManager extends Component {
     private _litterBrawl: LitterBrawlController | null = null;
     private _litterPresentation: LitterBrawlPresentation | null = null;
     private _playerLitterSlowed = false;
+    private _litterInfluenceActive = false;
     private readonly _litterRacerStates: LitterRacerState[] = Array.from(
         { length: LANE_LAYOUT.laneCount },
         () => ({ active: false, finished: false, distance: 0, lateral: 0 }),
@@ -2921,20 +2922,27 @@ export class GameManager extends Component {
         const controller = this._litterBrawl;
         if (!controller) return;
         if (this._modelDebugFlow?.active) {
+            this._litterPresentation?.update(dt, controller.clusters(), false);
             this._eventPictureInPicture?.updateLitter(controller.clusters(), false, dt);
-            this.clearLitterInfluence();
+            if (this._litterInfluenceActive) this.clearLitterInfluence();
             return;
         }
         controller.update(dt, this._state, !this._netRaceController || this._netRaceController.isHost);
         const visible = this._state === GameState.COUNTDOWN || this._state === GameState.DIVING
             || this._state === GameState.GLIDING || this._state === GameState.RACING;
         const clusters = controller.clusters();
-        this._litterPresentation?.update(dt, clusters, visible);
+        const hasActiveLitter = controller.activeCount() > 0;
+        this._litterPresentation?.update(dt, clusters, visible && hasActiveLitter);
         this._eventPictureInPicture?.updateLitter(
             clusters,
-            isLitterBrawlMode() && this._state === GameState.RACING,
+            hasActiveLitter && isLitterBrawlMode() && this._state === GameState.RACING,
             dt,
         );
+        if (!hasActiveLitter || this._state !== GameState.RACING) {
+            if (this._litterInfluenceActive) this.clearLitterInfluence();
+            return;
+        }
+        this._litterInfluenceActive = true;
         for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
             const swimmer = this.swimmerForLane(lane);
             if (!swimmer) continue;
@@ -2969,6 +2977,7 @@ export class GameManager extends Component {
     }
 
     private clearLitterInfluence() {
+        this._litterInfluenceActive = false;
         this._playerSwimmer?.applyEnvironmentDrag(0);
         for (const swimmer of this._aiSwimmers) swimmer?.applyEnvironmentDrag(0);
         for (const ai of this._aiControllers) ai?.setLitterTargetZ(null);

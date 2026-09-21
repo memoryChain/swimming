@@ -59,7 +59,8 @@ export function decodeLitterSnapshot(payload: string): DecodedLitterSnapshot | n
 }
 
 function encodeSlot(slot: LitterSnapshotSlot): string {
-    return [
+    // v94：沿用原量化精度，以36进制缩短18槽文本包；避免逐槽再创建字符串数组。
+    const values = [
         Math.max(0, Math.floor(slot.id)),
         Math.max(0, Math.floor(slot.generation)),
         Math.max(0, Math.floor(slot.wave)),
@@ -76,18 +77,21 @@ function encodeSlot(slot: LitterSnapshotSlot): string {
         Math.max(0, Math.floor(slot.impactRevision)),
         Math.round(slot.driftPhase * 1000),
         Math.max(0, Math.floor(slot.spawnOrder)),
-        Math.max(0, Math.floor(slot.insideMask)).toString(16),
+        Math.max(0, Math.floor(slot.insideMask)),
         Math.round(slot.bounceAlongVelocity * 1000),
         Math.round(slot.bounceLateralVelocity * 1000),
         Math.round(slot.retireStartCourseX * 100),
         Math.round(slot.retireStartLateral * 1000),
-    ].join('.');
+    ];
+    let token = values[0].toString(36);
+    for (let index = 1; index < values.length; index++) token += '.' + values[index].toString(36);
+    return token;
 }
 
 function decodeSlot(token: string): LitterSnapshotSlot | null {
     const parts = token.split('.');
     if (parts.length !== 21) return null;
-    const values = parts.map((value, index) => parseInt(value, index === 16 ? 16 : 10));
+    const values = parts.map(value => /^-?[0-9a-z]+$/.test(value) ? parseInt(value, 36) : NaN);
     if (!values.every(Number.isSafeInteger)) return null;
     const [id, generation, wave, kind, phase, ageMs, courseXCm, lateralMm,
         anchorCourseXCm, anchorLateralMm, safeCenterMm, throwSide, visualVariant,

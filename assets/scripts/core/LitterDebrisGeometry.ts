@@ -1,16 +1,33 @@
 import { primitives, Vec3 } from 'cc';
 
 type ColorTuple = readonly [number, number, number, number];
+type ProfileRing = readonly [
+    x: number,
+    radiusY: number,
+    radiusZ: number,
+    centerY: number,
+    centerZ: number,
+    color: ColorTuple,
+];
 
 const COLA_DARK: ColorTuple = [0.24, 0.09, 0.035, 1];
 const COLA_LIGHT: ColorTuple = [0.48, 0.22, 0.075, 1];
 const COLA_LABEL: ColorTuple = [0.88, 0.055, 0.035, 1];
 const COLA_LABEL_LIGHT: ColorTuple = [1, 0.82, 0.42, 1];
 const COLA_CAP: ColorTuple = [0.72, 0.035, 0.025, 1];
-const SNACK_ORANGE: ColorTuple = [0.96, 0.43, 0.055, 1];
-const SNACK_YELLOW: ColorTuple = [1, 0.78, 0.12, 1];
-const SNACK_RED: ColorTuple = [0.78, 0.045, 0.035, 1];
-const SNACK_DARK: ColorTuple = [0.30, 0.075, 0.035, 1];
+const WATER_CLEAR: ColorTuple = [0.54, 0.83, 0.9, 1];
+const WATER_SHADOW: ColorTuple = [0.28, 0.62, 0.74, 1];
+const WATER_LABEL: ColorTuple = [0.08, 0.43, 0.78, 1];
+const WATER_LABEL_LIGHT: ColorTuple = [0.88, 0.96, 0.94, 1];
+const SPORT_TEAL: ColorTuple = [0.05, 0.48, 0.49, 1];
+const SPORT_DARK: ColorTuple = [0.025, 0.19, 0.25, 1];
+const SPORT_ORANGE: ColorTuple = [1, 0.38, 0.045, 1];
+const SPORT_LIGHT: ColorTuple = [0.9, 0.9, 0.68, 1];
+const FOAM_BASE: ColorTuple = [0.68, 0.65, 0.54, 1];
+const FOAM_LIGHT: ColorTuple = [0.93, 0.9, 0.76, 1];
+const FOAM_RIM: ColorTuple = [0.82, 0.79, 0.67, 1];
+const FOAM_SHADOW: ColorTuple = [0.49, 0.47, 0.4, 1];
+const FOOD_STAIN: ColorTuple = [0.68, 0.31, 0.055, 1];
 
 class GeometryBuilder {
     readonly positions: number[] = [];
@@ -54,74 +71,128 @@ class GeometryBuilder {
         this.append(vertices, faces, color);
     }
 
-    ringsX(rings: ReadonlyArray<readonly [number, number, ColorTuple]>, centerY: number, centerZ: number, segments = 10): void {
-        for (let ringIndex = 0; ringIndex < rings.length - 1; ringIndex++) {
-            const [x0, r0, color] = rings[ringIndex];
-            const [x1, r1] = rings[ringIndex + 1];
-            const vertices: Array<readonly [number, number, number]> = [];
+    /** 用一组相连的椭圆截面生成低面数瓶身，截面偏移用来表现压瘪和不对称。 */
+    profileRingsX(rings: readonly ProfileRing[], segments = 10): void {
+        const offset = this.positions.length / 3;
+        for (const [x, radiusY, radiusZ, centerY, centerZ, color] of rings) {
             for (let side = 0; side < segments; side++) {
                 const angle = side / segments * Math.PI * 2;
-                vertices.push([x0, centerY + Math.cos(angle) * r0, centerZ + Math.sin(angle) * r0]);
+                this.positions.push(
+                    x,
+                    centerY + Math.cos(angle) * radiusY,
+                    centerZ + Math.sin(angle) * radiusZ,
+                );
+                this.colors.push(...color);
             }
-            for (let side = 0; side < segments; side++) {
-                const angle = side / segments * Math.PI * 2;
-                vertices.push([x1, centerY + Math.cos(angle) * r1, centerZ + Math.sin(angle) * r1]);
-            }
-            const faces: number[][] = [];
-            if (ringIndex === 0) faces.push(Array.from({ length: segments }, (_, index) => segments - 1 - index));
-            if (ringIndex === rings.length - 2) faces.push(Array.from({ length: segments }, (_, index) => segments + index));
+        }
+        for (let ring = 0; ring < rings.length - 1; ring++) {
+            const ringStart = offset + ring * segments;
+            const nextStart = ringStart + segments;
             for (let side = 0; side < segments; side++) {
                 const next = (side + 1) % segments;
-                faces.push([side, next, segments + next, segments + side]);
+                this.indices.push(ringStart + side, ringStart + next, nextStart + next);
+                this.indices.push(ringStart + side, nextStart + next, nextStart + side);
             }
-            this.append(vertices, faces, color);
+        }
+        for (let side = 1; side < segments - 1; side++) {
+            this.indices.push(offset, offset + segments - side, offset + segments - side - 1);
+            const last = offset + (rings.length - 1) * segments;
+            this.indices.push(last, last + side, last + side + 1);
         }
     }
 }
 
-export function buildRigidLitterGeometry(): primitives.IGeometry {
-    const builder = new GeometryBuilder();
-    // 单只横卧可乐瓶：瓶盖、细颈、肩部、标签与收底均来自连续截面。
-    builder.ringsX([
-        [-0.46, 0.080, COLA_CAP], [-0.405, 0.080, COLA_CAP],
-        [-0.385, 0.066, COLA_DARK], [-0.315, 0.075, COLA_LIGHT],
-        [-0.235, 0.135, COLA_LIGHT], [-0.145, 0.155, COLA_DARK],
-        [-0.105, 0.158, COLA_LABEL], [0.145, 0.158, COLA_LABEL],
-        [0.185, 0.158, COLA_LABEL_LIGHT], [0.315, 0.153, COLA_DARK],
-        [0.415, 0.142, COLA_DARK], [0.455, 0.118, COLA_DARK],
-    ], 0.055, 0, 10);
-    return {
-        positions: builder.positions,
-        colors: builder.colors,
-        indices: builder.indices,
-        minPos: new Vec3(-0.46, -0.103, -0.158),
-        maxPos: new Vec3(0.455, 0.213, 0.158),
-    };
+export function buildBottleLitterGeometry(variant: number): primitives.IGeometry {
+    const normalized = ((Math.floor(variant) % 3) + 3) % 3;
+    if (normalized === 1) return buildCrushedWaterBottleGeometry();
+    if (normalized === 2) return buildSportDrinkBottleGeometry();
+    return buildClassicColaBottleGeometry();
 }
 
-export function buildSoftLitterGeometry(): primitives.IGeometry {
+function buildClassicColaBottleGeometry(): primitives.IGeometry {
     const builder = new GeometryBuilder();
-    // 扁薄零食袋：锯齿状封边和轻微鼓包保持清晰的包装袋轮廓。
+    builder.profileRingsX([
+        [-0.39, 0.064, 0.064, 0.035, 0, COLA_CAP],
+        [-0.345, 0.064, 0.064, 0.035, 0, COLA_CAP],
+        [-0.325, 0.054, 0.054, 0.035, 0, COLA_DARK],
+        [-0.265, 0.064, 0.064, 0.035, 0, COLA_LIGHT],
+        [-0.195, 0.108, 0.108, 0.035, 0, COLA_LIGHT],
+        [-0.125, 0.128, 0.128, 0.035, 0, COLA_DARK],
+        [-0.09, 0.13, 0.13, 0.035, 0, COLA_LABEL],
+        [0.12, 0.13, 0.13, 0.035, 0, COLA_LABEL],
+        [0.155, 0.13, 0.13, 0.035, 0, COLA_LABEL_LIGHT],
+        [0.275, 0.126, 0.126, 0.035, 0, COLA_DARK],
+        [0.355, 0.112, 0.112, 0.035, 0, COLA_DARK],
+        [0.39, 0.092, 0.092, 0.035, 0, COLA_DARK],
+    ]);
+    return geometry(builder, new Vec3(-0.39, -0.095, -0.13), new Vec3(0.39, 0.165, 0.13));
+}
+
+function buildCrushedWaterBottleGeometry(): primitives.IGeometry {
+    const builder = new GeometryBuilder();
+    builder.profileRingsX([
+        [-0.37, 0.052, 0.048, 0.015, 0.002, WATER_LABEL],
+        [-0.325, 0.052, 0.048, 0.015, 0.002, WATER_LABEL],
+        [-0.30, 0.045, 0.042, 0.014, 0.002, WATER_SHADOW],
+        [-0.245, 0.074, 0.064, 0.012, 0.008, WATER_CLEAR],
+        [-0.17, 0.112, 0.078, 0.004, 0.014, WATER_CLEAR],
+        [-0.08, 0.095, 0.062, -0.012, 0.02, WATER_SHADOW],
+        [-0.02, 0.116, 0.074, -0.018, 0.012, WATER_LABEL],
+        [0.12, 0.102, 0.065, -0.006, -0.008, WATER_LABEL_LIGHT],
+        [0.21, 0.116, 0.076, 0.012, -0.015, WATER_CLEAR],
+        [0.29, 0.09, 0.062, 0.018, -0.008, WATER_SHADOW],
+        [0.37, 0.074, 0.055, 0.012, 0, WATER_CLEAR],
+    ], 8);
+    return geometry(builder, new Vec3(-0.37, -0.134, -0.092), new Vec3(0.37, 0.135, 0.092));
+}
+
+function buildSportDrinkBottleGeometry(): primitives.IGeometry {
+    const builder = new GeometryBuilder();
+    builder.profileRingsX([
+        [-0.33, 0.082, 0.082, 0.025, 0, SPORT_ORANGE],
+        [-0.275, 0.082, 0.082, 0.025, 0, SPORT_ORANGE],
+        [-0.255, 0.066, 0.066, 0.025, 0, SPORT_DARK],
+        [-0.205, 0.102, 0.102, 0.025, 0, SPORT_TEAL],
+        [-0.145, 0.144, 0.13, 0.025, 0, SPORT_TEAL],
+        [-0.09, 0.15, 0.135, 0.025, 0, SPORT_DARK],
+        [0.08, 0.15, 0.135, 0.025, 0, SPORT_LIGHT],
+        [0.14, 0.15, 0.135, 0.025, 0, SPORT_ORANGE],
+        [0.26, 0.142, 0.128, 0.025, 0, SPORT_TEAL],
+        [0.33, 0.12, 0.108, 0.025, 0, SPORT_DARK],
+    ]);
+    return geometry(builder, new Vec3(-0.33, -0.125, -0.135), new Vec3(0.33, 0.175, 0.135));
+}
+
+export function buildMealTrayLitterGeometry(): primitives.IGeometry {
+    const builder = new GeometryBuilder();
+    const outer: ReadonlyArray<readonly [number, number]> = [
+        [-0.38, -0.205], [-0.32, -0.255], [0.31, -0.255], [0.39, -0.185],
+        [0.39, 0.185], [0.31, 0.255], [-0.32, 0.255], [-0.39, 0.19],
+    ];
+    const lid: ReadonlyArray<readonly [number, number]> = [
+        [-0.32, -0.16], [-0.27, -0.205], [0.25, -0.205], [0.32, -0.15],
+        [0.32, 0.145], [0.25, 0.2], [-0.27, 0.2], [-0.32, 0.15],
+    ];
+    builder.prism(outer, -0.07, 0.005, FOAM_BASE);
+    builder.prism(lid, 0.006, 0.075, FOAM_LIGHT);
+    builder.box(-0.34, -0.23, 0.012, 0.34, -0.19, 0.09, FOAM_RIM);
+    builder.box(-0.34, 0.19, 0.012, 0.34, 0.23, 0.09, FOAM_RIM);
+    builder.box(-0.375, -0.17, 0.012, -0.325, 0.17, 0.09, FOAM_RIM);
+    builder.box(0.325, -0.17, 0.012, 0.375, 0.17, 0.09, FOAM_RIM);
+    builder.box(-0.31, 0.225, -0.045, 0.31, 0.262, 0.035, FOAM_SHADOW);
     builder.prism([
-        [-0.42, -0.16], [-0.39, -0.235], [-0.27, -0.21], [-0.12, -0.245],
-        [0.03, -0.215], [0.19, -0.24], [0.37, -0.20], [0.42, -0.10],
-        [0.39, 0.19], [0.25, 0.235], [0.08, 0.215], [-0.08, 0.245],
-        [-0.25, 0.215], [-0.39, 0.185],
-    ], -0.060, 0.060, SNACK_ORANGE);
-    // 上下压封边、正面徽标和两条折痕使用实体薄层，避免透明贴片。
-    builder.box(-0.37, 0.175, -0.064, 0.37, 0.225, 0.064, SNACK_YELLOW);
-    builder.box(-0.35, -0.225, -0.064, 0.35, -0.175, 0.064, SNACK_YELLOW);
-    builder.prism([[-0.21, -0.09], [0.18, -0.10], [0.25, 0.02], [0.17, 0.13], [-0.18, 0.12], [-0.25, 0.01]],
-        0.061, 0.078, SNACK_RED);
-    builder.prism([[-0.31, 0.13], [-0.27, 0.15], [-0.08, -0.13], [-0.13, -0.15]],
-        0.061, 0.079, SNACK_DARK);
-    builder.prism([[0.16, 0.16], [0.20, 0.14], [0.32, -0.12], [0.27, -0.14]],
-        0.061, 0.079, SNACK_YELLOW);
+        [-0.19, -0.08], [0.11, -0.1], [0.2, -0.015], [0.13, 0.08], [-0.16, 0.07],
+    ], 0.076, 0.086, FOOD_STAIN);
+    builder.box(-0.025, -0.17, 0.076, 0.015, 0.14, 0.087, FOAM_RIM);
+    return geometry(builder, new Vec3(-0.39, -0.255, -0.07), new Vec3(0.39, 0.262, 0.09));
+}
+
+function geometry(builder: GeometryBuilder, minPos: Vec3, maxPos: Vec3): primitives.IGeometry {
     return {
         positions: builder.positions,
         colors: builder.colors,
         indices: builder.indices,
-        minPos: new Vec3(-0.42, -0.245, -0.064),
-        maxPos: new Vec3(0.42, 0.245, 0.079),
+        minPos,
+        maxPos,
     };
 }

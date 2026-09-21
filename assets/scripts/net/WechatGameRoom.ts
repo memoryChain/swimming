@@ -194,7 +194,7 @@ export class WechatGameRoom implements INetRoom {
             // (S| ~6.7/s) and self-position (P|) flood the console, and each vConsole
             // log is expensive (DOM append + reflow). Room-control messages still log.
             const c = msg.charCodeAt(0);
-            if (c !== 83 /* 'S' */ && c !== 80 /* 'P' */ && !msg.startsWith('{"t":"rules')) {
+            if (c !== 83 /* 'S' */ && c !== 80 /* 'P' */ && !msg.startsWith('G|') && !msg.startsWith('{"t":"rules')) {
                 netLog('onBroadcast', res);
             }
             this._callbacks.onBroadcast?.(msg);

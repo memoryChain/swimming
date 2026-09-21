@@ -1,7 +1,7 @@
 import { Material, Mesh, MeshRenderer, Node, utils, Vec3 } from 'cc';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { LitterClusterState } from './LitterBrawlController';
-import { buildRigidLitterGeometry, buildSoftLitterGeometry } from './LitterDebrisGeometry';
+import { buildBottleLitterGeometry, buildMealTrayLitterGeometry } from './LitterDebrisGeometry';
 import { sampleWaterFloatOffset, WATER_FLOAT_PROFILES } from './WaterFloatMotion';
 import {
     makeMineVertexMaterial,
@@ -15,6 +15,12 @@ import {
 const PRESENTATION_INTERVAL = 1 / 20;
 const SOFT_SPLASH_SECONDS = 0.38;
 const RIGID_SPLASH_SECONDS = 0.48;
+const BOTTLE_SPLASH_INTENSITY = 0.4;
+const BOTTLE_SPLASH_RADIAL_SCALE = 0.5;
+const BOTTLE_SPLASH_VERTICAL_SCALE = 0.62;
+const TRAY_SPLASH_INTENSITY = 0.36;
+const TRAY_SPLASH_RADIAL_SCALE = 0.82;
+const TRAY_SPLASH_VERTICAL_SCALE = 0.44;
 const RIGID_IMPACT_PULSE_SECONDS = 0.65;
 const SOFT_PUSH_PULSE_SECONDS = 0.52;
 
@@ -26,8 +32,8 @@ export class LitterBrawlPresentation {
     private readonly phases: Array<LitterClusterState['phase'] | null> = [];
     private readonly impactRevisions: number[] = [];
     private readonly impactPulses: number[] = [];
-    private rigidMesh: Mesh | null = null;
-    private softMesh: Mesh | null = null;
+    private readonly bottleMeshes: Mesh[] = [];
+    private trayMesh: Mesh | null = null;
     private clusterMaterial: Material | null = null;
     private elapsed = PRESENTATION_INTERVAL;
     private clock = 0;
@@ -42,13 +48,14 @@ export class LitterBrawlPresentation {
         private readonly waterSplashes: EntertainmentWaterSplashPool | null,
     ) {
         if (!worldRoot?.isValid) return;
-        const rigidMesh = utils.createMesh(buildRigidLitterGeometry());
-        const softMesh = utils.createMesh(buildSoftLitterGeometry());
-        this.rigidMesh = rigidMesh;
-        this.softMesh = softMesh;
+        for (let variant = 0; variant < 3; variant++) {
+            this.bottleMeshes.push(utils.createMesh(buildBottleLitterGeometry(variant)));
+        }
+        const trayMesh = utils.createMesh(buildMealTrayLitterGeometry());
+        this.trayMesh = trayMesh;
         this.clusterMaterial = makeMineVertexMaterial('LitterClusterMaterial', true);
         for (let id = 0; id < clusterCount; id++) {
-            const node = this.makeMeshNode(`LitterCluster${id}`, id % 2 === 0 ? rigidMesh : softMesh, this.clusterMaterial);
+            const node = this.makeMeshNode(`LitterCluster${id}`, this.bottleMeshes[id % 3], this.clusterMaterial);
             node.active = false;
             this.clusterNodes.push(node);
             this.clusterRenderers.push(node.getComponent(MeshRenderer)!);
@@ -90,7 +97,7 @@ export class LitterBrawlPresentation {
         for (let id = 0; id < this.clusterNodes.length; id++) {
             const node = this.clusterNodes[id];
             const cluster = clusters[id];
-            const active = !!cluster?.active;
+            const active = !!cluster?.active && !(cluster.phase === 'falling' && cluster.phaseProgress < 0);
             this.setActive(node, active);
             if (!active) {
                 this.phases[id] = null;
@@ -100,9 +107,11 @@ export class LitterBrawlPresentation {
             if (generationChanged) {
                 this.generations[id] = cluster.generation;
                 this.phases[id] = cluster.phase;
-                const nextMesh = cluster.kind === 'rigid' ? this.rigidMesh : this.softMesh;
+                const nextMesh = cluster.kind === 'rigid'
+                    ? this.bottleMeshes[cluster.visualVariant % this.bottleMeshes.length]
+                    : this.trayMesh;
                 if (nextMesh && this.clusterRenderers[id].mesh !== nextMesh) this.clusterRenderers[id].mesh = nextMesh;
-                node.name = cluster.kind === 'rigid' ? `RigidLitter${id}` : `SoftLitter${id}`;
+                node.name = cluster.kind === 'rigid' ? `BottleLitter${id}` : `MealTrayLitter${id}`;
             } else if (this.phases[id] !== cluster.phase) {
                 if (this.phases[id] === 'falling' && cluster.phase === 'floating') {
                     this.showLandingSplash(cluster);
@@ -128,10 +137,10 @@ export class LitterBrawlPresentation {
                 );
                 if (cluster.kind === 'rigid') {
                     node.setRotationFromEuler(35 + t * 230, cluster.id * 53 + t * 330, 20 + t * 165);
-                    node.setScale(0.76, 0.76, 0.76);
+                    this.setUniformScale(node, 0.7);
                 } else {
-                    node.setRotationFromEuler(18 + Math.sin(t * Math.PI * 3) * 28, cluster.id * 41 + t * 95, 8 + t * 70);
-                    node.setScale(0.94 + Math.sin(t * Math.PI * 4) * 0.06, 0.88, 1);
+                    node.setRotationFromEuler(32 + Math.sin(t * Math.PI * 2) * 16, cluster.id * 41 + t * 120, 10 + t * 55);
+                    this.setUniformScale(node, 0.86);
                 }
             } else {
                 const phase = this.clock * 2.1 + cluster.id * 0.83;
@@ -164,9 +173,9 @@ export class LitterBrawlPresentation {
                         cluster.visualVariant * 63 + Math.sin(phase * 0.31) * 14 + bounce * 1.45,
                         Math.cos(phase * 0.43) * 7,
                     );
-                    node.setScale(0.72 * retireScale, 0.72 * retireScale, 0.72 * retireScale);
+                    this.setUniformScale(node, 0.68 * retireScale);
                 } else {
-                    const billow = 1 + Math.sin(phase * 0.79) * 0.045;
+                    const trayRock = Math.sin(phase * 0.79) * 2.8;
                     const pushProgress = this.impactPulses[id] > 0
                         ? 1 - this.impactPulses[id] / SOFT_PUSH_PULSE_SECONDS
                         : 1;
@@ -185,15 +194,11 @@ export class LitterBrawlPresentation {
                         cluster.lateral,
                     );
                     node.setRotationFromEuler(
-                        58 + Math.sin(phase * 0.61) * 12 + pushSway * 0.45,
-                        cluster.visualVariant * 51 + Math.sin(phase * 0.29) * 24 + pushSway,
-                        Math.cos(phase * 0.47) * 14 - pushSway * 0.7,
+                        67 + Math.sin(phase * 0.61) * 6 + pushSway * 0.28,
+                        cluster.id * 29 + Math.sin(phase * 0.29) * 16 + pushSway,
+                        trayRock - pushSway * 0.55,
                     );
-                    node.setScale(
-                        0.93 * billow * retireScale,
-                        (0.90 + (billow - 1) * 0.5) * retireScale,
-                        0.96 * retireScale,
-                    );
+                    this.setUniformScale(node, 0.88 * retireScale);
                 }
             }
         }
@@ -206,16 +211,17 @@ export class LitterBrawlPresentation {
         for (const node of this.clusterNodes) if (node.isValid) node.destroy();
         this.clusterNodes.length = 0;
         this.clusterRenderers.length = 0;
-        this.rigidMesh?.destroy();
-        this.softMesh?.destroy();
+        for (const mesh of this.bottleMeshes) mesh.destroy();
+        this.bottleMeshes.length = 0;
+        this.trayMesh?.destroy();
         this.clusterMaterial?.destroy();
     }
 
     private showLandingSplash(cluster: LitterClusterState): void {
         this.splashWorldPosition.set(
-            this.course.distanceToWorldX(cluster.courseX),
+            this.course.distanceToWorldX(cluster.anchorCourseX),
             this.course.waterY + 0.035,
-            cluster.lateral,
+            cluster.anchorLateral,
         );
         this.waterSplashes?.play({
             owner: ENTERTAINMENT_SPLASH_OWNER.LITTER,
@@ -224,10 +230,10 @@ export class LitterBrawlPresentation {
                 : ENTERTAINMENT_SPLASH_PROFILE.LIGHT_ENTRY,
             position: this.splashWorldPosition,
             yawDegrees: cluster.throwSide > 0 ? 180 : 0,
-            intensity: cluster.kind === 'rigid' ? 0.48 : 0.42,
+            intensity: cluster.kind === 'rigid' ? BOTTLE_SPLASH_INTENSITY : TRAY_SPLASH_INTENSITY,
             duration: cluster.kind === 'rigid' ? RIGID_SPLASH_SECONDS : SOFT_SPLASH_SECONDS,
-            radialScale: cluster.kind === 'rigid' ? 0.75 : 1.08,
-            verticalScale: cluster.kind === 'rigid' ? 0.78 : 0.62,
+            radialScale: cluster.kind === 'rigid' ? BOTTLE_SPLASH_RADIAL_SCALE : TRAY_SPLASH_RADIAL_SCALE,
+            verticalScale: cluster.kind === 'rigid' ? BOTTLE_SPLASH_VERTICAL_SCALE : TRAY_SPLASH_VERTICAL_SCALE,
             layer: this.worldRoot.layer,
         });
     }
@@ -249,6 +255,12 @@ export class LitterBrawlPresentation {
 
     private setActive(node: Node, active: boolean): void {
         if (node.isValid && node.active !== active) node.active = active;
+    }
+
+    private setUniformScale(node: Node, scale: number): void {
+        if (node.scale.x !== scale || node.scale.y !== scale || node.scale.z !== scale) {
+            node.setScale(scale, scale, scale);
+        }
     }
 }
 

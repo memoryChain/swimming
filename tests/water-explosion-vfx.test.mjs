@@ -57,6 +57,17 @@ test('轻落水用于苏打和软垃圾，重落水用于水雷入场、硬垃�
     assert.match(shark, /layer: this\.splashLayer/);
 });
 
+test('垃圾水花锁定抛物线落点并按瓶子与餐盒尺寸收紧', () => {
+    assert.match(litter, /distanceToWorldX\(cluster\.anchorCourseX\)/);
+    assert.match(litter, /cluster\.anchorLateral/);
+    assert.match(litter, /BOTTLE_SPLASH_INTENSITY = 0\.4/);
+    assert.match(litter, /BOTTLE_SPLASH_RADIAL_SCALE = 0\.5/);
+    assert.match(litter, /BOTTLE_SPLASH_VERTICAL_SCALE = 0\.62/);
+    assert.match(litter, /TRAY_SPLASH_INTENSITY = 0\.36/);
+    assert.match(litter, /TRAY_SPLASH_RADIAL_SCALE = 0\.82/);
+    assert.match(litter, /TRAY_SPLASH_VERTICAL_SCALE = 0\.44/);
+});
+
 test('炮火、水雷和定时炸弹使用爆炸档并保留各自强度', () => {
     assert.match(cannon, /CANNON_EXPLOSION_INTENSITY = 1\.08/);
     assert.match(minefield, /MINEFIELD_EXPLOSION_INTENSITY = 1/);

@@ -24,9 +24,10 @@ test('iOS 帧通道失败会锁存并通知全房切到广播降级', () => {
 
     assert.match(room, /markFrameSyncUnavailable\('onSyncFrame-bind'\)/);
     assert.match(room, /markFrameSyncUnavailable\('uploadFrame', error\)/);
+    assert.match(room, /!msg\.startsWith\('G\|'\)/, '带比赛身份的高频广播不能进入 vConsole 日志');
     assert.match(controller, /const NEED_BROADCAST_TAG = 'NB\|';/);
     assert.match(controller, /const BROADCAST_INPUT_TAG = 'IN\|';/);
-    assert.match(controller, /this\._net\.broadcast\(`\$\{NEED_BROADCAST_TAG\}\$\{this\._session\.localPos\}`\)/);
+    assert.match(controller, /this\.broadcastRaceMessage\(`\$\{NEED_BROADCAST_TAG\}\$\{this\._session\.localPos\}`\)/);
     assert.match(controller, /this\.processAuthoritativeEvents\(decoded\.senderPos, decoded\.events\);/);
     assert.match(controller, /this\.processRemotePacket\(decoded\.senderPos, decoded\.inputSeq, decoded\.events, decoded\.self\);/);
     assert.match(manager, /this\._netRaceController\.maybeAnnounceBroadcastNeed\(\);/);

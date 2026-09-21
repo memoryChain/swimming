@@ -128,7 +128,7 @@ test('调试入口的独立垃圾模式会创建并驱动共享画中画', () =>
     assert.match(creation, /isLitterBrawlMode\(\)/);
     assert.match(
         gameManager,
-        /updateLitter\(\s*clusters,\s*isLitterBrawlMode\(\) && this\._state === GameState\.RACING,\s*dt,\s*\)/,
+        /updateLitter\(\s*clusters,\s*hasActiveLitter && isLitterBrawlMode\(\) && this\._state === GameState\.RACING,\s*dt,\s*\)/,
     );
 });
 

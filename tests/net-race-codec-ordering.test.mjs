@@ -54,7 +54,7 @@ function entry(overrides = {}) {
     };
 }
 
-function litterState(slotCount = 6) {
+function litterState(slotCount = 18) {
     return {
         revision: 999999,
         elapsedSeconds: 999.999,
@@ -67,8 +67,8 @@ function litterState(slotCount = 6) {
         slots: Array.from({ length: slotCount }, (_, id) => ({
             id,
             generation: 3,
-            wave: Math.floor(id / 2),
-            kind: id % 2 === 0 ? 'rigid' : 'soft',
+            wave: Math.floor(id / 6),
+            kind: id % 6 === 1 || id % 6 === 4 ? 'soft' : 'rigid',
             phase: id < 2 ? 'floating' : 'retiring',
             age: 18.999,
             courseX: 48.8,
@@ -260,10 +260,24 @@ test('minefield lifecycle state round-trips in S|', () => {
 });
 
 test('garbage lifecycle and active slot state round-trips in the periodic L| fallback', () => {
-    const litter = litterState(6);
+    const litter = litterState(18);
     const snapshot = decodeLitterSnapshot(encodeLitterSnapshot(3, litter));
     assert.equal(snapshot.hostPos, 3);
     assert.deepEqual(snapshot.state, litter);
+});
+
+test('18槽负坐标和高接触修订含房间前缀仍有载荷余量，量化精度不变', () => {
+    const state = litterState(18);
+    for (const slot of state.slots) {
+        slot.lateral = slot.anchorLateral = slot.retireStartLateral = -9.999;
+        slot.safeCenter = -7.777;
+        slot.impactRevision = 999999;
+        slot.bounceAlongVelocity = -2.45;
+    }
+    const payload = encodeLitterSnapshot(7, state);
+    const bytes = Buffer.byteLength(Protocol.raceMessagePrefix('7.zzzzzzzzzzz') + payload);
+    assert.ok(bytes <= 1450, `18槽须在1536字节内保留余量，实际${bytes}`);
+    assert.deepEqual(decodeLitterSnapshot(payload), { hostPos: 7, state });
 });
 
 test('八泳道满状态快照保持在项目的一点五千字节回归预算内', () => {
@@ -330,10 +344,15 @@ test('八泳道满状态快照保持在项目的一点五千字节回归预算�
         },
         [999999, 999999, 999999],
     );
-    assert.ok(Buffer.byteLength(payload, 'utf8') <= 1536, `snapshot bytes=${Buffer.byteLength(payload, 'utf8')}`);
-    const litterPayload = encodeLitterSnapshot(7, litterState(6));
-    assert.ok(Buffer.byteLength(litterPayload, 'utf8') <= 1536,
-        `litter snapshot bytes=${Buffer.byteLength(litterPayload, 'utf8')}`);
+    const prefix = Protocol.raceMessagePrefix('7.zzzzzzzzzzz');
+    const snapshotBytes = Buffer.byteLength(prefix + payload, 'utf8');
+    assert.ok(snapshotBytes <= 1536, `snapshot bytes=${snapshotBytes}`);
+    const decoded = decodeRaceSnapshot(payload);
+    assert.deepEqual(decoded.eventEpochs, [999999, 999999, 999999]);
+    assert.deepEqual(decoded.entertainmentDirector.eventAnchorDistances, [32, 96, 160, 224, 288, 360]);
+    const litterPayload = encodeLitterSnapshot(7, litterState(18));
+    const litterBytes = Buffer.byteLength(prefix + litterPayload, 'utf8');
+    assert.ok(litterBytes <= 1536, `litter snapshot bytes=${litterBytes}`);
 });
 
 test('timed bomb arm, transfer, resolution and active state round-trip across both sync paths', () => {
@@ -462,7 +481,7 @@ test('an attributed P| or frame self cannot update another registered lane', () 
 });
 
 test('lobby protocol hello rejects missing or mixed versions', () => {
-    assert.equal(NET_RACE_PROTOCOL_VERSION, 92);
+    assert.equal(NET_RACE_PROTOCOL_VERSION, 94);
     const hello = decodeProtocolHello(encodeProtocolHello(4));
     assert.deepEqual(hello, { pos: 4, version: NET_RACE_PROTOCOL_VERSION });
     assert.equal(decodeProtocolHello('PV|4|bad'), null);

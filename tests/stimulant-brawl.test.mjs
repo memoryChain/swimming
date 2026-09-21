@@ -324,7 +324,7 @@ test('心跳苏打增加四十心率并在四秒内只许上升不许自然回�
         new URL('../assets/resources/config/tuning.json', import.meta.url),
         'utf8',
     ));
-    assert.equal(savedTuning.version, 59);
+    assert.equal(savedTuning.version, 61);
     assert.equal(savedTuning.values['stimulant.energyRestoreRatio'], 0.3);
     assert.equal(savedTuning.values['stimulant.heartRateBurden'], 40);
     assert.equal(savedTuning.values['stimulant.heartRateRecoveryHoldSeconds'], 4);

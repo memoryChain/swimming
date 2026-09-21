@@ -270,6 +270,47 @@ function flow(isHost = false) {
     f._memberProtocolVersions[0] = NET_RACE_PROTOCOL_VERSION; f._memberProtocolVersions[2] = NET_RACE_PROTOCOL_VERSION;
     return f;
 }
+
+test('房主 start 将独立比赛身份交给双方，保活重赛生成新身份', () => {
+    const messages = [], sessions = [];
+    const previousBroadcast = net.broadcast;
+    const sessionStub = stubs['net/NetRaceSession'];
+    const previousSet = sessionStub.setNetRaceSession;
+    net.broadcast = message => messages.push(message);
+    sessionStub.setNetRaceSession = session => sessions.push(session);
+    const h = flow(true), g = flow(), next = flow(true);
+    try {
+        h._reconnect = true; h._members[1].ready = true;
+        h._ruleReady[2] = h.ruleKey(); h.startRace();
+        const start = messages.map(message => { try { return JSON.parse(message); } catch { return null; } }).find(message => message?.t === 'start');
+        assert.ok(start?.raceId); assert.equal(sessions[0].raceId, start.raceId);
+        g._reconnect = true; g._localReady = true;
+        g.handleBroadcast(JSON.stringify(start));
+        assert.equal(sessions.length, 2); assert.equal(sessions[1].raceId, start.raceId);
+        assert.equal(sessions[1].seed, sessions[0].seed);
+        g.handleBroadcast(JSON.stringify({ ...start, raceId: '0.duplicate' }));
+        assert.equal(sessions.length, 2); assert.equal(g._pendingRaceId, start.raceId);
+        next._reconnect = true; next._members[1].ready = true;
+        next._ruleReady[2] = next.ruleKey(); next.startRace();
+        assert.equal(sessions.length, 3); assert.notEqual(sessions[2].raceId, start.raceId);
+    } finally {
+        h.dispose(); g.dispose(); next.dispose();
+        net.broadcast = previousBroadcast; sessionStub.setNetRaceSession = previousSet;
+    }
+});
+
+test('访客拒绝无身份、错误房主身份、旧赛制的 start，非法身份不能绕过入场', () => {
+    const g = flow(); g._reconnect = true; g._localReady = true;
+    try {
+        const start = { t: 'start', pv: NET_RACE_PROTOCOL_VERSION, seed: 7,
+            mode: g._mode, distance: g._distance, rules: g.ruleKey() };
+        for (const patch of [{}, { raceId: '0.bad|S|' }, { raceId: '2.wronghost' }, { raceId: '0.valid', rules: 'old:1' }]) {
+            g.handleBroadcast(JSON.stringify({ ...start, ...patch }));
+            assert.equal(g._raceEntered, false); assert.equal(g._pendingRaceId, '');
+        }
+        g.enterNetRace(); assert.equal(g._raceEntered, false);
+    } finally { g.dispose(); }
+});
 test('八个座位稳定，空座位不挤占，重复准备切换不新增节点和监听', () => {
     const v = new OnlineRoomView(new Node('root'), { exit() {}, primary() {}, invite() {}, mode() {}, kick() {} });
     v.update(state()); const count = nodes(v.root).length;

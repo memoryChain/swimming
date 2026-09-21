@@ -54,7 +54,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 59;
+const TUNING_FILE_VERSION = 61;
 
 type TuningFileData = {
     version: number;
@@ -448,6 +448,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
         name: '垃圾漂流大乱斗',
         controls: [
             control('litter.fallingSeconds', '垃圾飞行时间', '从看台侧抛出到落水的时长，越长留给玩家的预警越充足。', () => LITTER_BRAWL_TUNING.fallingSeconds, v => LITTER_BRAWL_TUNING.fallingSeconds = v, 0.05, 0.6, 3, 2, ' s'),
+            control('litter.burstGroupIntervalSeconds', '分批投放间隔', '每波六件垃圾按两件一组投放，相邻两组之间的时间间隔。', () => LITTER_BRAWL_TUNING.burstGroupIntervalSeconds, v => LITTER_BRAWL_TUNING.burstGroupIntervalSeconds = v, 0.02, 0.16, 0.7, 2, ' s'),
             control('litter.contactAlongRadius', '前后减速范围', '垃圾沿赛道方向的柔性接触半径。', () => LITTER_BRAWL_TUNING.contactAlongRadius, v => LITTER_BRAWL_TUNING.contactAlongRadius = v, 0.05, 0.5, 3, 2, ' m'),
             control('litter.contactLateralRadius', '横向减速范围', '垃圾跨泳道方向的柔性接触半径。', () => LITTER_BRAWL_TUNING.contactLateralRadius, v => LITTER_BRAWL_TUNING.contactLateralRadius = v, 0.05, 0.4, 2.5, 2, ' m'),
             control('litter.maxEnvironmentDrag', '中心最大阻力', '从垃圾中心穿过时叠加到前进速度的最大水阻系数；不影响方向。', () => LITTER_BRAWL_TUNING.maxEnvironmentDrag, v => LITTER_BRAWL_TUNING.maxEnvironmentDrag = v, 0.05, 0, 1.5, 2),
@@ -455,17 +456,18 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('litter.swimmerContactLateralRadius', '身体横向接触半径', '人物身体跨泳道方向参与垃圾实体接触的简化半径。', () => LITTER_BRAWL_TUNING.swimmerContactLateralRadius, v => LITTER_BRAWL_TUNING.swimmerContactLateralRadius = v, 0.02, 0.2, 0.8, 2, ' m'),
             control('litter.rigidItemAlongRadius', '瓶子前后接触半径', '可乐瓶自身沿赛道方向的接触半径，结算时会与人物身体半径相加。', () => LITTER_BRAWL_TUNING.rigidItemAlongRadius, v => LITTER_BRAWL_TUNING.rigidItemAlongRadius = v, 0.02, 0.15, 1, 2, ' m'),
             control('litter.rigidItemLateralRadius', '瓶子横向接触半径', '可乐瓶自身跨泳道方向的接触半径，结算时会与人物身体半径相加。', () => LITTER_BRAWL_TUNING.rigidItemLateralRadius, v => LITTER_BRAWL_TUNING.rigidItemLateralRadius = v, 0.02, 0.08, 0.6, 2, ' m'),
-            control('litter.softPushContactAlongRadius', '袋子前后推挤半径', '零食袋自身沿赛道方向触发漂移的接触半径，和持续减速范围分开。', () => LITTER_BRAWL_TUNING.softPushContactAlongRadius, v => LITTER_BRAWL_TUNING.softPushContactAlongRadius = v, 0.02, 0.15, 1.2, 2, ' m'),
-            control('litter.softPushContactLateralRadius', '袋子横向推挤半径', '零食袋自身跨泳道方向触发漂移的接触半径，结算时会与人物身体半径相加。', () => LITTER_BRAWL_TUNING.softPushContactLateralRadius, v => LITTER_BRAWL_TUNING.softPushContactLateralRadius = v, 0.02, 0.08, 0.8, 2, ' m'),
+            control('litter.softPushContactAlongRadius', '餐盒前后推挤半径', '泡沫餐盒自身沿赛道方向触发漂移的接触半径，和持续减速范围分开。', () => LITTER_BRAWL_TUNING.softPushContactAlongRadius, v => LITTER_BRAWL_TUNING.softPushContactAlongRadius = v, 0.02, 0.15, 1.2, 2, ' m'),
+            control('litter.softPushContactLateralRadius', '餐盒横向推挤半径', '泡沫餐盒自身跨泳道方向触发漂移的接触半径，结算时会与人物身体半径相加。', () => LITTER_BRAWL_TUNING.softPushContactLateralRadius, v => LITTER_BRAWL_TUNING.softPushContactLateralRadius = v, 0.02, 0.08, 0.8, 2, ' m'),
             control('litter.rigidSpeedRetain', '硬碰后速度保留', '撞上硬垃圾后立即保留的当前前进速度比例；越低瞬时掉速越明显。', () => LITTER_BRAWL_TUNING.rigidSpeedRetain, v => LITTER_BRAWL_TUNING.rigidSpeedRetain = v, 0.05, 0.2, 1, 2),
             control('litter.rigidBackwardImpulse', '硬碰后退冲量', '硬垃圾碰撞给选手的短促后退冲量，不触发击倒。', () => LITTER_BRAWL_TUNING.rigidBackwardImpulse, v => LITTER_BRAWL_TUNING.rigidBackwardImpulse = v, 0.05, 0, 2, 2),
             control('litter.rigidLateralImpulse', '硬碰侧弹冲量', '硬垃圾碰撞把选手向接触点外侧弹开的冲量。', () => LITTER_BRAWL_TUNING.rigidLateralImpulse, v => LITTER_BRAWL_TUNING.rigidLateralImpulse = v, 0.05, 0, 3, 2),
             control('litter.rigidDebrisBounceSpeed', '塑料瓶被撞速度', '碰撞后可乐瓶被拨开的初速度；越高越有轻塑料瓶的感觉。', () => LITTER_BRAWL_TUNING.rigidDebrisBounceSpeed, v => LITTER_BRAWL_TUNING.rigidDebrisBounceSpeed = v, 0.05, 0.5, 4, 2, ' m/s'),
-            control('litter.softDebrisPushSpeed', '零食袋被带走速度', '身体首次穿入零食袋时，袋子沿前进和接触外侧滑开的初速度。', () => LITTER_BRAWL_TUNING.softDebrisPushSpeed, v => LITTER_BRAWL_TUNING.softDebrisPushSpeed = v, 0.05, 0.2, 2, 2, ' m/s'),
-            control('litter.softDebrisPushDamping', '零食袋滑动衰减', '零食袋受推后速度消退的快慢；数值越低，随水流滑行越久。', () => LITTER_BRAWL_TUNING.softDebrisPushDamping, v => LITTER_BRAWL_TUNING.softDebrisPushDamping = v, 0.05, 0.5, 4, 2),
+            control('litter.softDebrisPushSpeed', '餐盒被带走速度', '身体首次穿入泡沫餐盒时，餐盒沿前进和接触外侧滑开的初速度。', () => LITTER_BRAWL_TUNING.softDebrisPushSpeed, v => LITTER_BRAWL_TUNING.softDebrisPushSpeed = v, 0.05, 0.2, 2, 2, ' m/s'),
+            control('litter.softDebrisPushDamping', '餐盒滑动衰减', '泡沫餐盒受推后速度消退的快慢；数值越低，随水流滑行越久。', () => LITTER_BRAWL_TUNING.softDebrisPushDamping, v => LITTER_BRAWL_TUNING.softDebrisPushDamping = v, 0.05, 0.5, 4, 2),
             control('litter.driftAlongRadius', '垃圾前后漂动幅度', '水流漂移沿赛道方向的最大活动范围。', () => LITTER_BRAWL_TUNING.driftAlongRadius, v => LITTER_BRAWL_TUNING.driftAlongRadius = v, 0.05, 0.1, 0.8, 2, ' m'),
             control('litter.driftLateralRadius', '垃圾横向漂动幅度', '水流漂移跨泳道方向的最大活动范围。', () => LITTER_BRAWL_TUNING.driftLateralRadius, v => LITTER_BRAWL_TUNING.driftLateralRadius = v, 0.05, 0.1, 0.7, 2, ' m'),
             control('litter.driftSpeed', '垃圾漂动速度', '两组缓慢水流摆动的基础速度。', () => LITTER_BRAWL_TUNING.driftSpeed, v => LITTER_BRAWL_TUNING.driftSpeed = v, 0.02, 0.1, 1, 2),
+            control('litter.driftEntryBlendSeconds', '落水漂动渐入', '垃圾落水后从真实落点逐渐过渡到自然漂动的时长，避免入水瞬间横跳。', () => LITTER_BRAWL_TUNING.driftEntryBlendSeconds, v => LITTER_BRAWL_TUNING.driftEntryBlendSeconds = v, 0.05, 0.2, 2, 2, ' s'),
             control('litter.floatingLifetime', '正常漂浮时长', '垃圾落水后保持可碰撞状态的时间，结束后在原地附近开始下沉。', () => LITTER_BRAWL_TUNING.floatingLifetime, v => LITTER_BRAWL_TUNING.floatingLifetime = v, 0.5, 6, 24, 1, ' s'),
             control('litter.retireSeconds', '缓慢下沉时长', '垃圾停止影响比赛后，在原位置附近缓慢下沉直至回收的时间。', () => LITTER_BRAWL_TUNING.retireSeconds, v => LITTER_BRAWL_TUNING.retireSeconds = v, 0.2, 1.5, 8, 1, ' s'),
             control('litter.safeHalfWidth', '安全空隙半宽', '每波保留的主要无垃圾通道半宽。', () => LITTER_BRAWL_TUNING.safeHalfWidth, v => LITTER_BRAWL_TUNING.safeHalfWidth = v, 0.05, 0.8, 3, 2, ' m'),

@@ -2,9 +2,10 @@ import { GameState } from './GameConstants';
 import { ContactEventWindow, expandedEllipseContains, segmentHitsExpandedEllipse } from './RaceContactGeometry';
 
 export const LITTER_BRAWL_TUNING = {
-    poolSize: 10,
+    poolSize: 18,
     waveDistances: [18, 48, 82, 118, 154] as readonly number[],
-    waveCount: 2,
+    waveCount: 6,
+    burstGroupIntervalSeconds: 0.34,
     landingLeadDistance: 7,
     fallingSeconds: 1.35,
     contactAlongRadius: 1.25,
@@ -35,8 +36,9 @@ export const LITTER_BRAWL_TUNING = {
     driftAlongRadius: 0.42,
     driftLateralRadius: 0.34,
     driftSpeed: 0.46,
-    floatingLifetime: 13.5,
-    retireSeconds: 4.2,
+    driftEntryBlendSeconds: 0.8,
+    floatingLifetime: 16,
+    retireSeconds: 5.5,
 };
 
 /** 统一娱乐模式只覆盖投放数量和赛程锚点，垃圾本体规则继续共用。 */
@@ -95,6 +97,8 @@ export type LitterClusterState = {
     kind: LitterKind;
     courseX: number;
     lateral: number;
+    anchorCourseX: number;
+    anchorLateral: number;
     safeCenter: number;
     throwSide: -1 | 1;
     visualVariant: number;
@@ -189,8 +193,6 @@ export type LitterRacerState = {
 
 type LitterSlot = LitterClusterState & {
     age: number;
-    anchorCourseX: number;
-    anchorLateral: number;
     driftPhase: number;
     spawnOrder: number;
     insideMask: number;
@@ -470,19 +472,26 @@ export class LitterBrawlController {
         if (this.nextWave >= this.waveDistances.length && this.activeCount() === 0) return;
         const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
         this.elapsedSeconds += step;
-        const leaderDistance = this.leaderDistance();
-        if (authoritative) this.updatePendingWaves(step, leaderDistance);
+        if (authoritative) this.updatePendingWaves(step, this.leaderDistance());
         for (const slot of this.slots) {
             if (!slot.active) continue;
             slot.age += step;
-            if (slot.age < LITTER_BRAWL_TUNING.fallingSeconds) {
+            const activeAge = slot.age - this.burstDelayForSpawnOrder(slot.spawnOrder);
+            if (activeAge < 0) {
                 slot.phase = 'falling';
-                slot.phaseProgress = clamp01(slot.age / LITTER_BRAWL_TUNING.fallingSeconds);
+                slot.phaseProgress = -1;
                 slot.courseX = slot.anchorCourseX;
                 slot.lateral = slot.anchorLateral;
                 continue;
             }
-            const driftTime = slot.age - LITTER_BRAWL_TUNING.fallingSeconds;
+            if (activeAge < LITTER_BRAWL_TUNING.fallingSeconds) {
+                slot.phase = 'falling';
+                slot.phaseProgress = clamp01(activeAge / LITTER_BRAWL_TUNING.fallingSeconds);
+                slot.courseX = slot.anchorCourseX;
+                slot.lateral = slot.anchorLateral;
+                continue;
+            }
+            const driftTime = activeAge - LITTER_BRAWL_TUNING.fallingSeconds;
             if (driftTime >= LITTER_BRAWL_TUNING.floatingLifetime) {
                 if (slot.phase !== 'retiring') this.beginRetirement(slot);
                 const retireProgress = clamp01(
@@ -512,36 +521,42 @@ export class LitterBrawlController {
             slot.anchorCourseX = clamp(slot.anchorCourseX + slot.bounceAlongVelocity * step, 1.2, 48.8);
             slot.anchorLateral = clamp(slot.anchorLateral + slot.bounceLateralVelocity * step,
                 -this.usableHalfWidth(), this.usableHalfWidth());
-            // 轻塑料瓶快速滚开；零食袋初速度更低，但会被水流带得更久。
+            // 轻塑料瓶快速滚开；泡沫餐盒初速度更低，但会被水流带得更久。
             const bounceDamping = slot.kind === 'soft' ? LITTER_BRAWL_TUNING.softDebrisPushDamping : 2.8;
             const bounceDecay = Math.exp(-bounceDamping * step);
             slot.bounceAlongVelocity *= bounceDecay;
             slot.bounceLateralVelocity *= bounceDecay;
+            const driftEntryBlend = smoothstep(clamp01(
+                driftTime / Math.max(0.01, LITTER_BRAWL_TUNING.driftEntryBlendSeconds),
+            ));
             slot.courseX = clamp(
                 slot.anchorCourseX
-                    + Math.sin(driftTime * LITTER_BRAWL_TUNING.driftSpeed + slot.driftPhase)
-                        * LITTER_BRAWL_TUNING.driftAlongRadius * 0.72
-                    + Math.sin(driftTime * LITTER_BRAWL_TUNING.driftSpeed * 0.37 + slot.driftPhase * 1.83)
-                        * LITTER_BRAWL_TUNING.driftAlongRadius * 0.28,
+                    + (
+                        Math.sin(driftTime * LITTER_BRAWL_TUNING.driftSpeed + slot.driftPhase) * 0.72
+                        + Math.sin(driftTime * LITTER_BRAWL_TUNING.driftSpeed * 0.37 + slot.driftPhase * 1.83) * 0.28
+                    ) * LITTER_BRAWL_TUNING.driftAlongRadius * driftEntryBlend,
                 1.2,
                 48.8,
             );
             const halfWidth = this.usableHalfWidth();
             slot.lateral = clamp(
                 slot.anchorLateral
-                    + Math.cos(driftTime * LITTER_BRAWL_TUNING.driftSpeed * 0.81 + slot.driftPhase * 1.17)
-                        * LITTER_BRAWL_TUNING.driftLateralRadius * 0.68
-                    + Math.sin(driftTime * LITTER_BRAWL_TUNING.driftSpeed * 0.29 + slot.driftPhase * 2.11)
-                        * LITTER_BRAWL_TUNING.driftLateralRadius * 0.32,
+                    + (
+                        Math.cos(driftTime * LITTER_BRAWL_TUNING.driftSpeed * 0.81 + slot.driftPhase * 1.17) * 0.68
+                        + Math.sin(driftTime * LITTER_BRAWL_TUNING.driftSpeed * 0.29 + slot.driftPhase * 2.11) * 0.32
+                    ) * LITTER_BRAWL_TUNING.driftLateralRadius * driftEntryBlend,
                 -halfWidth,
                 halfWidth,
             );
         }
-        if (authoritative) this.resolveLitterContacts();
-        this.rememberRacerPositions();
+        if (authoritative) {
+            this.resolveLitterContacts();
+            this.rememberRacerPositions();
+        }
     }
 
     environmentDragForLane(lane: number): number {
+        if (this.activeSlotCount === 0) return 0;
         const racer = this.racerForLane(lane);
         if (!racer?.active || racer.finished) return 0;
         const courseX = courseOffset(racer.distance);
@@ -560,6 +575,7 @@ export class LitterBrawlController {
     }
 
     targetZForAi(lane: number): number | null {
+        if (this.activeSlotCount === 0) return null;
         const racer = this.racerForLane(lane);
         if (!racer?.active || racer.finished) return null;
         const courseX = courseOffset(racer.distance);
@@ -588,6 +604,11 @@ export class LitterBrawlController {
     private updatePendingWaves(step: number, leaderDistance: number): void {
         if (this.nextWave >= this.waveDistances.length
             || leaderDistance < this.waveDistances[this.nextWave]) return;
+        // 对象池暂满只意味着旧垃圾尚未完成下沉，不应把后续正式波次误判为安全取消。
+        if (this.freeSlotCount() < LITTER_BRAWL_TUNING.waveCount) {
+            this.spawnRetryRemaining = LITTER_BRAWL_TUNING.spawnSafetyRetrySeconds;
+            return;
+        }
         this.blockedWaveSeconds += step;
         this.spawnRetryRemaining = Math.max(0, this.spawnRetryRemaining - step);
         if (this.spawnRetryRemaining > 0) return;
@@ -614,6 +635,7 @@ export class LitterBrawlController {
     }
 
     private spawnWave(wave: number): boolean {
+        if (this.freeSlotCount() < LITTER_BRAWL_TUNING.waveCount) return false;
         const halfWidth = this.usableHalfWidth();
         const randomStateBeforePlan = this.randomState;
         const safeCenter = lerp(-halfWidth + LITTER_BRAWL_TUNING.safeHalfWidth,
@@ -626,29 +648,43 @@ export class LitterBrawlController {
             return false;
         }
         const candidates = this.lateralCandidates(safeCenter, halfWidth);
+        if (candidates.length < LITTER_BRAWL_TUNING.waveCount) {
+            this.randomState = randomStateBeforePlan;
+            return false;
+        }
+        const bottleVariantOffset = Math.floor(this.nextRandom() * 3);
+        const formationVariant = Math.floor(this.nextRandom() * 3);
+        let bottleOrdinal = 0;
         for (let index = 0; index < LITTER_BRAWL_TUNING.waveCount; index++) {
             const slot = this.nextSlot();
-            if (!slot) break;
+            // 波次必须完整生成；前面的容量检查保证这里不会出现半波垃圾。
+            if (!slot) return false;
             const candidateIndex = Math.min(candidates.length - 1, Math.floor(this.nextRandom() * candidates.length));
-            const lateral = candidates.splice(candidateIndex, 1)[0] ?? (index === 0 ? -halfWidth * 0.7 : halfWidth * 0.7);
+            const lateral = candidates.splice(candidateIndex, 1)[0];
+            const kind: LitterKind = index === 1 || index === 4 ? 'soft' : 'rigid';
+            const localSpawnOrder = this.spawnOrder++;
             slot.active = true;
             this.activeSlotCount++;
             slot.generation++;
             slot.wave = wave;
             slot.phase = 'falling';
-            slot.phaseProgress = 0;
-            slot.kind = index % 2 === 0 ? 'rigid' : 'soft';
+            slot.phaseProgress = this.burstDelayForSpawnOrder(localSpawnOrder) > 0 ? -1 : 0;
+            slot.kind = kind;
             slot.age = 0;
-            slot.anchorCourseX = clamp(courseX + (this.nextRandom() - 0.5) * 2.2, 1.2, 48.8);
+            slot.anchorCourseX = clamp(
+                courseX + this.formationAlongOffset(formationVariant, index) + (this.nextRandom() - 0.5) * 0.24,
+                1.2,
+                48.8,
+            );
             slot.anchorLateral = lateral;
             slot.courseX = slot.anchorCourseX;
             slot.lateral = lateral;
             slot.safeCenter = safeCenter;
             slot.throwSide = lateral >= 0 ? 1 : -1;
-            slot.visualVariant = Math.floor(this.nextRandom() * 3);
+            slot.visualVariant = kind === 'rigid' ? (bottleVariantOffset + bottleOrdinal++) % 3 : 0;
             slot.impactRevision = 0;
             slot.driftPhase = this.nextRandom() * Math.PI * 2;
-            slot.spawnOrder = this.spawnOrder++;
+            slot.spawnOrder = localSpawnOrder;
             slot.insideMask = 0;
             slot.bounceAlongVelocity = 0;
             slot.bounceLateralVelocity = 0;
@@ -756,14 +792,33 @@ export class LitterBrawlController {
 
     private lateralCandidates(safeCenter: number, halfWidth: number): number[] {
         const result: number[] = [];
-        const step = Math.max(1.5, this.poolWidth / Math.max(4, this.laneCount));
-        for (let z = -halfWidth + 0.5; z <= halfWidth - 0.5; z += step) {
-            if (Math.abs(z - safeCenter) >= LITTER_BRAWL_TUNING.safeHalfWidth + 0.45) result.push(z);
-        }
-        if (result.length < LITTER_BRAWL_TUNING.waveCount) {
-            result.push(-halfWidth * 0.75, halfWidth * 0.75);
+        const step = 1.15;
+        const corridorClearance = LITTER_BRAWL_TUNING.safeHalfWidth
+            + Math.max(
+                LITTER_BRAWL_TUNING.rigidItemLateralRadius + LITTER_BRAWL_TUNING.swimmerContactLateralRadius,
+                LITTER_BRAWL_TUNING.softPushContactLateralRadius + LITTER_BRAWL_TUNING.swimmerContactLateralRadius,
+                LITTER_BRAWL_TUNING.contactLateralRadius,
+            )
+            + LITTER_BRAWL_TUNING.driftLateralRadius;
+        for (let z = -halfWidth + 0.45; z <= halfWidth - 0.45; z += step) {
+            if (Math.abs(z - safeCenter) >= corridorClearance) result.push(z);
         }
         return result;
+    }
+
+    private freeSlotCount(): number {
+        return this.slots.length - this.activeSlotCount;
+    }
+
+    private burstDelayForSpawnOrder(spawnOrder: number): number {
+        const indexInWave = Math.max(0, spawnOrder) % LITTER_BRAWL_TUNING.waveCount;
+        return Math.floor(indexInWave / 2) * LITTER_BRAWL_TUNING.burstGroupIntervalSeconds;
+    }
+
+    private formationAlongOffset(variant: number, index: number): number {
+        if (variant === 0) return (index - 2.5) * 0.34;
+        if (variant === 1) return (Math.floor(index / 2) - 1) * 0.72 + (index % 2 === 0 ? -0.14 : 0.14);
+        return (index % 2 === 0 ? -0.65 : 0.65) + (Math.floor(index / 2) - 1) * 0.18;
     }
 
     private beginRetirement(slot: LitterSlot): void {
@@ -837,10 +892,11 @@ export class LitterBrawlController {
         slot.wave = source.wave;
         slot.kind = source.kind;
         slot.phase = source.phase;
+        const activeAge = source.age - this.burstDelayForSpawnOrder(source.spawnOrder);
         slot.phaseProgress = source.phase === 'falling'
-            ? clamp01(source.age / LITTER_BRAWL_TUNING.fallingSeconds)
+            ? activeAge < 0 ? -1 : clamp01(activeAge / LITTER_BRAWL_TUNING.fallingSeconds)
             : source.phase === 'retiring'
-                ? clamp01((source.age - LITTER_BRAWL_TUNING.fallingSeconds
+                ? clamp01((activeAge - LITTER_BRAWL_TUNING.fallingSeconds
                     - LITTER_BRAWL_TUNING.floatingLifetime) / LITTER_BRAWL_TUNING.retireSeconds)
                 : 1;
         slot.age = source.age;
@@ -871,10 +927,9 @@ export class LitterBrawlController {
     }
 
     private applySchedule(schedule: LitterBrawlSchedule): void {
-        const maxWaves = Math.floor(LITTER_BRAWL_TUNING.poolSize / LITTER_BRAWL_TUNING.waveCount);
         const distances: number[] = [];
         const source = Array.isArray(schedule?.waveDistances) ? schedule.waveDistances : [];
-        for (let index = 0; index < source.length && distances.length < maxWaves; index++) {
+        for (let index = 0; index < source.length; index++) {
             const distance = source[index];
             if (!Number.isFinite(distance) || distance < 0) continue;
             if (distances.length > 0 && distance <= distances[distances.length - 1]) continue;

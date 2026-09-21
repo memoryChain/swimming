@@ -8,7 +8,17 @@ const ts = require('typescript');
 const root = path.resolve(__dirname, '..');
 const cache = new Map();
 const broadcasts = [];
-const room = { setCallbacks() {}, isSupported: () => true, broadcast: msg => broadcasts.push(msg) };
+const frames = [];
+const room = { setCallbacks() {}, isSupported: () => true, broadcast: msg => broadcasts.push(msg), uploadFrame: msg => frames.push(msg) };
+const RACE_ID = '0.review1';
+const wire = (payload, raceId = RACE_ID) => `G|${raceId}|${payload}`;
+function body(message) {
+    assert.ok(message.startsWith(`G|${RACE_ID}|`));
+    return message.slice(`G|${RACE_ID}|`.length);
+}
+function receiveFrame(receiver, frame) {
+    receiver.onSyncFrame({ ...frame, items: frame.items.map(item => wire(item)) });
+}
 const overrides = {
     './NetManager': { netRoom: () => room },
     './NetInputCapture': { setNetInputCaptureActive() {}, drainNetInput: () => [] },
@@ -72,8 +82,8 @@ function pickups(kind = 'stimulant', kinds = [kind]) {
         kinds.map((kind, id) => ({ id, wave: 1, laneIndex: 0, distance: 10, lateralOffset: 0, kind })));
     return { controller, result };
 }
-function net() {
-    const instance = new NetRaceController({ localIsHost: false, localPos: 1, seed: 7, members: [{ pos: 0 }, { pos: 1 }] });
+function net(raceId = RACE_ID) {
+    const instance = new NetRaceController({ raceId, localIsHost: false, localPos: 1, seed: 7, members: [{ pos: 0 }, { pos: 1 }] });
     instance._activeHostPos = 0;
     return instance;
 }
@@ -84,6 +94,73 @@ function bombFixture() {
     const controller = new MineRelayBrawlController(2, 7, 20, lane => racers[lane], () => {}, () => {}, event => events.push(event));
     return { racers, controller, events };
 }
+
+test('保活重赛拒绝上一局完成快照及高代次，本局低修订仍能恢复', () => {
+    const old = new EntertainmentModeDirector(7, 200);
+    old.update(100, 40, true); old.update(100, 60, true);
+    old.lockAfterFirstFinish(); old.update(100, 200, true);
+    const current = new EntertainmentModeDirector(7, 200); // 相同 seed 也必须隔离。
+    const fresh = current.snapshot();
+    const receiver = net(); const accepted = [];
+    receiver.setEntertainmentDirectorStateListener(state => {
+        const result = current.applySnapshot(state).snapshotAccepted;
+        accepted.push(result); return result;
+    });
+    receiver.setGameplayEventEpochListener((slot, epoch) => receiver.setGameplayEventEpoch(slot, epoch));
+    const snapshot = (state, epochs) => encodeRaceSnapshot(0, [], null, null, null, null, null, null, state, epochs);
+    receiver.onBroadcast(wire(snapshot(old.snapshot(), [90, 90, 90]), '0.previous'));
+    receiver.onBroadcast(snapshot(old.snapshot(), [90, 90, 90])); // 无身份的旧协议同样拒绝。
+    assert.equal(receiver._snapRecv, 0);
+    assert.deepEqual(receiver._eventEpochs, [0, 0, 0]);
+    receiver.onBroadcast(wire(snapshot(fresh, [0, 0, 0])));
+    assert.deepEqual(accepted, [true]);
+    assert.equal(current.snapshot().phase, fresh.phase);
+    assert.equal(current.snapshot().revision, fresh.revision);
+    receiver.dispose();
+});
+
+test('旧可靠帧和降级广播不能触发命中、输入或污染本局序号', () => {
+    const receiver = net(); let hits = 0; const inputs = [];
+    receiver.setMinefieldImpactListener(() => hits++);
+    receiver.processRemotePacket = (sender, seq) => inputs.push(seq);
+    const payload = seq => encodeInputFrame(0, [
+        { kind: 'H', side: 0 },
+        { kind: 'i', mineId: 0, mineHitLane: 0, mineDistance: 20, mineLateral: 0, hitMask: 1, revision: 1 },
+    ], undefined, undefined, seq);
+    receiver.onSyncFrame({ frameId: 999, items: [wire(payload(999), '0.previous'), payload(999)] });
+    receiver.onBroadcast(wire('IN|' + payload(999), '0.previous'));
+    assert.equal(receiver._recvFrames, 0); assert.equal(hits, 0); assert.deepEqual(inputs, []);
+    // 同一服务帧可能混有两局的 action，逐项过滤后仍处理本局。
+    receiver.onSyncFrame({ frameId: 1, items: [wire(payload(999), '0.previous'), wire(payload(1))] });
+    assert.equal(hits, 1); assert.deepEqual(inputs, [1]);
+    receiver.dispose();
+});
+
+test('旧局退赛、成绩、倒计时及降级通知不影响新局，接管房主保持比赛身份', () => {
+    const receiver = net(); let quits = 0, results = 0, starts = 0;
+    receiver.setPlayerQuitListener(() => quits++);
+    receiver.setAuthResultListener(() => results++);
+    receiver.setCountdownStartListener(() => starts++);
+    const { encodeRaceResult } = load('assets/scripts/net/NetRaceResult.ts');
+    for (const payload of ['Q|0', 'GO|', 'NB|0', encodeRaceResult([])]) receiver.onBroadcast(wire(payload, '0.previous'));
+    assert.equal(quits + results + starts, 0); assert.equal(receiver.broadcastSyncRequired, false);
+    receiver.onBroadcast(wire('Q|0')); receiver.onBroadcast(wire('GO|')); receiver.onBroadcast(wire('NB|0'));
+    assert.equal(quits, 1); assert.equal(starts, 1); assert.equal(receiver.broadcastSyncRequired, true);
+    receiver.promoteToHost(); broadcasts.length = 0; receiver.sendSnapshot([]);
+    assert.ok(broadcasts.length); for (const payload of broadcasts) body(payload);
+    receiver.dispose();
+});
+
+test('可靠帧实际发送携带比赛身份，销毁取消旧倒计时且拒绝排队回调', () => {
+    const sender = net(); frames.length = 0; sender.tick(.04);
+    assert.equal(frames.length, 1); assert.equal(decodeInputFrame(body(frames[0])).senderPos, 1);
+    let starts = 0; sender.setCountdownStartListener(() => starts++); sender.reportRaceReady();
+    assert.ok(sender._goTimeoutHandle);
+    sender.dispose(); assert.equal(sender._goTimeoutHandle, null);
+    broadcasts.length = 0;
+    sender.triggerCountdownFromGo(); sender.broadcastGo(); sender.onBroadcast(wire('GO|'));
+    assert.equal(starts, 0); assert.equal(broadcasts.length, 0);
+});
 
 test('炸弹爆炸快照与事件交换到达顺序，携带者和外围各执行一次', () => {
     const host = bombFixture();
@@ -223,7 +300,7 @@ test('炮火和炸弹广播首包丢失后有界补发，爆心及时钟穿过�
     host.enqueueMineRelayResolution(0, 0, true, 30, 1, 3, 2, 20);
     host._authoritativeEvents.length = 0;
     broadcasts.length = 0; host.sendSnapshot([]);
-    const retry = broadcasts.find(message => message.startsWith('IN|'));
+    const retry = broadcasts.find(message => body(message).startsWith('IN|'));
     assert.ok(retry); assert.ok(Buffer.byteLength(retry) < 1536);
     const guest = net(); let cannonHits = 0, bombHits = 0;
     const cannon = new CannonBrawlController(2, 7, 20, () => null, () => {}, () => {});
@@ -240,7 +317,7 @@ test('炮火和炸弹广播首包丢失后有界补发，爆心及时钟穿过�
     assert.equal(cannonHits, 1); assert.equal(bombHits, 1);
     for (const entry of host._contactRecoveryEvents) entry.expiresAt = 0;
     broadcasts.length = 0; host.sendSnapshot([]);
-    assert.equal(broadcasts.some(message => message.startsWith('IN|')), false);
+    assert.equal(broadcasts.some(message => body(message).startsWith('IN|')), false);
     host.dispose(); guest.dispose();
 });
 
@@ -361,8 +438,8 @@ for (const kind of ['stimulant', 'calm-slush']) {
         const guest = pickups(kind);
         const receiver = net();
         receiver.setStimulantStateListener(state => guest.controller.applySnapshotState(state));
-        receiver.onBroadcast(payload);
-        receiver.onBroadcast(payload);
+        receiver.onBroadcast(wire(payload));
+        receiver.onBroadcast(wire(payload));
         assert.equal(guest.result.effects, 1);
         assert.equal(guest.controller.snapshotState().collectorLanes[0], 7);
         const restored = decodeRaceSnapshot(encodeRaceSnapshot(1, [], guest.controller.snapshotState()));
@@ -471,13 +548,13 @@ test('旧轮整包和旧轮事件不能覆盖返场炮火，新轮先到事件�
     const director = new EntertainmentModeDirector(123, 200).snapshot();
     const fresh = { revision: 0, completedStrikeMask: 0, activeStrikeId: -1, targetDistance: 0, targetZ: 0, remainingSeconds: 0 };
     const snapshot = (rev, epoch, state) => encodeRaceSnapshot(0, [], null, null, state, null, null, null, { ...director, revision: rev }, [epoch, 0, 0]);
-    receiver.onBroadcast(snapshot(1, 1, { ...fresh, revision: 4, completedStrikeMask: 3 }));
+    receiver.onBroadcast(wire(snapshot(1, 1, { ...fresh, revision: 4, completedStrikeMask: 3 })));
     const launch = { kind: 'l', cannonStrikeId: 0, targetDistance: 105, targetZ: 0, warningSeconds: 2, revision: 1, eventEpoch: 2 };
     receiver.processAuthoritativeEvents(0, [launch, launch]);
     assert.equal(receiver._deferredGameplayEvents.length, 1);
-    receiver.onBroadcast(snapshot(2, 2, fresh));
+    receiver.onBroadcast(wire(snapshot(2, 2, fresh)));
     assert.equal(cannon.currentLaunch().targetDistance, 105);
-    receiver.onBroadcast(snapshot(1, 1, { ...fresh, revision: 4, completedStrikeMask: 3 }));
+    receiver.onBroadcast(wire(snapshot(1, 1, { ...fresh, revision: 4, completedStrikeMask: 3 })));
     receiver.processAuthoritativeEvents(0, [{ ...launch, eventEpoch: 1, targetDistance: 999, revision: 99 }]);
     assert.equal(cannon.currentLaunch().targetDistance, 105);
     assert.equal(cannon.remainingStrikeCount(), 2);
@@ -516,7 +593,7 @@ test('炸弹和鲨鱼按各自代次隔离，驻留水雷及全局急救不因�
 test('迁移后的新房主沿用三类代次发送事件与快照，旧房主待收事件不回放', () => {
     const receiver = net();
     receiver.setGameplayEventEpochListener((slot, epoch) => receiver.setGameplayEventEpoch(slot, epoch));
-    receiver.onBroadcast(encodeRaceSnapshot(0, [], null, null, null, null, null, null, null, [7, 8, 9]));
+    receiver.onBroadcast(wire(encodeRaceSnapshot(0, [], null, null, null, null, null, null, null, [7, 8, 9])));
     receiver.processAuthoritativeEvents(0, [{ kind: 'e', sharkSequence: 1, targetLane: 0, knockedDistance: 20, eventEpoch: 10 }]);
     receiver.promoteToHost();
     receiver.flushDeferredGameplayEvents();
@@ -526,7 +603,7 @@ test('迁移后的新房主沿用三类代次发送事件与快照，旧房主�
     receiver.enqueueSharkKnockdown(1, 2, 20);
     assert.deepEqual(decodeInputFrame(encodeInputFrame(1, receiver._authoritativeEvents)).events.map(event => event.eventEpoch), [7, 8, 9]);
     broadcasts.length = 0; receiver.sendSnapshot([]);
-    assert.deepEqual(decodeRaceSnapshot(broadcasts[0]).eventEpochs, [7, 8, 9]);
+    assert.deepEqual(decodeRaceSnapshot(body(broadcasts[0])).eventEpochs, [7, 8, 9]);
     receiver.dispose();
 });
 
@@ -553,7 +630,7 @@ test('多次补给快照补账按实际领取顺序，乱序可靠事件也不�
         if (eventFirst) guest.controller.applyPickup(second);
         const receiver = net();
         receiver.setStimulantStateListener(state => guest.controller.applySnapshotState(state));
-        receiver.onBroadcast(encodeRaceSnapshot(0, [], host.controller.snapshotState()));
+        receiver.onBroadcast(wire(encodeRaceSnapshot(0, [], host.controller.snapshotState())));
         guest.controller.applyPickup(first); guest.controller.applyPickup(second);
         assert.deepEqual(guest.result.order, host.result.order);
         assert.equal(guest.result.heartRate, 120);
@@ -570,12 +647,12 @@ test('迟到可靠帧仍结算独立命中事件，但不重放旧普通输入',
     const inputs = [];
     receiver.setMinefieldImpactListener((id, lane, x, z, mask, revision) => { if (effects.accept(revision)) hitCount++; });
     receiver.processRemotePacket = (sender, seq) => inputs.push(seq);
-    receiver.onSyncFrame({ frameId: 20, items: [encodeInputFrame(0, [{ kind: 'H', side: 0 }], undefined, undefined, 20)] });
+    receiveFrame(receiver, { frameId: 20, items: [encodeInputFrame(0, [{ kind: 'H', side: 0 }], undefined, undefined, 20)] });
     const late = { frameId: 19, items: [encodeInputFrame(0, [
         { kind: 'h', side: 0 },
         { kind: 'i', mineId: 0, mineHitLane: 0, mineDistance: 20, mineLateral: 0, hitMask: 1, revision: 1 },
     ], undefined, undefined, 19)] };
-    receiver.onSyncFrame(late); receiver.onSyncFrame(late);
+    receiveFrame(receiver, late); receiveFrame(receiver, late);
     assert.equal(hitCount, 1);
     assert.deepEqual(inputs, [20]);
     receiver.dispose();
@@ -618,7 +695,7 @@ test('广播降级丢失首次接触事件后有限重发，重复包不重复�
     host.enqueueMinefieldImpact(0, 0, 20, 0, 1, 1, 0);
     host._authoritativeEvents.length = 0; // 首次帧与广播均未抵达。
     broadcasts.length = 0; host.sendSnapshot([]);
-    const retry = broadcasts.find(message => message.startsWith('IN|'));
+    const retry = broadcasts.find(message => body(message).startsWith('IN|'));
     assert.ok(retry, '周期发送应保留短期接触恢复副本');
     const guest = net();
     const { ContactEventWindow } = load('assets/scripts/core/RaceContactGeometry.ts');
@@ -634,13 +711,13 @@ test('冲击重发限制缓存、单包与期限，正常可靠模式不增加�
     for (let revision = 1; revision <= 100; revision++) host.enqueueMinefieldImpact(0, 0, 20, 0, 1, revision, 0);
     assert.equal(host._contactRecoveryEvents.length, 32);
     broadcasts.length = 0; host.sendSnapshot([]);
-    assert.equal(broadcasts.filter(message => message.startsWith('IN|')).length, 0);
+    assert.equal(broadcasts.filter(message => body(message).startsWith('IN|')).length, 0);
     host._peerNeedsBroadcast = true;
     const seen = new Set();
     for (let i = 0; i < 8; i++) {
         broadcasts.length = 0; host.sendSnapshot([]);
-        const retry = broadcasts.find(message => message.startsWith('IN|'));
-        const frame = decodeInputFrame(retry.slice(3));
+        const retry = broadcasts.find(message => body(message).startsWith('IN|'));
+        const frame = decodeInputFrame(body(retry).slice(3));
         assert.equal(frame.events.length, 4);
         assert.ok(Buffer.byteLength(retry) < 1536);
         for (const event of frame.events) seen.add(event.revision);
@@ -649,7 +726,7 @@ test('冲击重发限制缓存、单包与期限，正常可靠模式不增加�
     for (const pending of host._contactRecoveryEvents) pending.expiresAt = 0;
     broadcasts.length = 0; host.sendSnapshot([]);
     assert.equal(host._contactRecoveryEvents.length, 0);
-    assert.equal(broadcasts.filter(message => message.startsWith('IN|')).length, 0);
+    assert.equal(broadcasts.filter(message => body(message).startsWith('IN|')).length, 0);
     host.enqueueMinefieldImpact(0, 0, 20, 0, 1, 101, 0);
     host.dispose(); assert.equal(host._contactRecoveryEvents.length, 0);
 });

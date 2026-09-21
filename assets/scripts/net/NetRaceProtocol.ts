@@ -78,7 +78,27 @@
 // 版本90：领取者恢复账本、返场事件代次、接触效果独立去重与迟到时限。
 // 版本91：补给账本保留领取顺序；迟到帧与尚未建立的玩法入口保留独立权威效果。
 // v92：爆炸结果独立去重、炮击携带本发爆心、按场景折返坐标判定范围。
-export const NET_RACE_PROTOCOL_VERSION = 92;
+// v93：广播与可靠帧统一携带比赛身份，隔离保活房间中上一局的迟到消息。
+// 版本94：垃圾升级为三种瓶型与餐盒、六件分组入水及18槽；L|槽位整数改36进制，保留93的房间与可靠事件隔离。
+export const NET_RACE_PROTOCOL_VERSION = 94;
+
+let lastRaceStamp = 0;
+
+/** 房主每次开赛生成一次；不占用玩法随机数，重试和同毫秒开赛也不复用。 */
+export function createNetRaceId(hostPos: number): string {
+    lastRaceStamp = Math.max(Date.now(), lastRaceStamp + 1);
+    return `${hostPos}.${lastRaceStamp.toString(36)}`;
+}
+
+export function isNetRaceId(value: unknown): value is string {
+    return typeof value === 'string' && /^[0-7]\.[0-9a-z]{1,11}$/.test(value);
+}
+
+/** 每局只构建一次；接收端先验证此前缀，再解码内部消息。 */
+export function raceMessagePrefix(raceId: string): string {
+    if (!isNetRaceId(raceId)) throw new Error('Invalid net race id');
+    return `G|${raceId}|`;
+}
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

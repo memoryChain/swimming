@@ -245,7 +245,7 @@ export function encodeRaceSnapshot(
     const revision = Math.max(0, Math.floor(stimulant?.revision ?? 0));
     const mask = Math.max(0, Math.floor(stimulant?.collectedMask ?? 0)).toString(16);
     const collectors = encodeStimulantLedger(stimulant);
-    const epochs = eventEpochs?.slice(0, 3).map(value => safeNonNegativeInteger(value)).join('.') ?? '';
+    const epochs = eventEpochs ? '!' + eventEpochs.slice(0, 3).map(value => safeNonNegativeInteger(value).toString(36)).join('.') : '';
     const cannonRevision = Math.max(0, Math.floor(cannon?.revision ?? 0));
     // Header slot 4 remains reserved to keep the rest of the compact layout stable.
     const cannonReservedMask = '0';
@@ -287,9 +287,10 @@ export function encodeRaceSnapshot(
     const directorActivatedMask = Math.max(0, Math.floor(entertainmentDirector?.activatedMask ?? 0)).toString(16);
     const directorResidentMask = Math.max(0, Math.floor(entertainmentDirector?.residentMask ?? 0)).toString(16);
     const directorAnchorCm = Math.max(0, Math.round((entertainmentDirector?.anchorDistance ?? 0) * 100));
-    const directorEventAnchors = entertainmentDirector?.eventAnchorDistances
-        .map(distance => Math.max(0, Math.round(distance * 100)))
-        .join('.') ?? '';
+    // v93 用带标记的 36 进制保留厘米精度，为比赛身份外壳留出字节预算。
+    const directorEventAnchors = entertainmentDirector ? '!' + entertainmentDirector.eventAnchorDistances
+        .map(distance => Math.max(0, Math.round(distance * 100)).toString(36))
+        .join('.') : '';
     const directorSpecialMask = Math.max(0, Math.floor(entertainmentDirector?.specialMask ?? 0)).toString(16);
     const directorActivationSerial = Math.max(0, Math.floor(entertainmentDirector?.activationSerial ?? 0));
     const directorEncoreRound = Math.max(0, Math.floor(entertainmentDirector?.encoreRound ?? 0));
@@ -438,8 +439,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
         stimulantMask: Number.isSafeInteger(stimulantMask) && stimulantMask >= 0 ? stimulantMask : 0,
         stimulantCollectors: ledger.collectors,
         stimulantPickupRevisions: ledger.revisions,
-        eventEpochs: /^\d+\.\d+\.\d+$/.test(header[46] ?? '')
-            ? header[46].split('.').map(value => safeNonNegativeInteger(Number(value))) : [0, 0, 0],
+        eventEpochs: decodeEventEpochs(header[46] ?? ''),
         cannonRevision: Number.isSafeInteger(cannonRevision) && cannonRevision >= 0 ? cannonRevision : 0,
         cannonCompletedMask: Number.isSafeInteger(cannonCompletedMask) && cannonCompletedMask >= 0 ? cannonCompletedMask : 0,
         cannonActiveStrikeId: Number.isSafeInteger(cannonActiveStrike) && cannonActiveStrike > 0 ? cannonActiveStrike - 1 : -1,
@@ -496,14 +496,24 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
 }
 
 function decodeCentimeterList(body: string): number[] {
+    const radix = body.startsWith('!') ? 36 : 10;
+    if (radix === 36) body = body.slice(1);
     if (body.length === 0) return [];
     const values: number[] = [];
     for (const token of body.split('.')) {
-        const value = parseInt(token, 10);
+        if (!(radix === 36 ? /^[0-9a-z]+$/ : /^\d+$/).test(token)) return [];
+        const value = parseInt(token, radix);
         if (!Number.isSafeInteger(value) || value < 0) return [];
         values.push(value / 100);
     }
     return values;
+}
+
+function decodeEventEpochs(body: string): number[] {
+    const compact = body.startsWith('!');
+    if (compact) body = body.slice(1);
+    if (!(compact ? /^[0-9a-z]+\.[0-9a-z]+\.[0-9a-z]+$/ : /^\d+\.\d+\.\d+$/).test(body)) return [0, 0, 0];
+    return body.split('.').map(value => safeNonNegativeInteger(parseInt(value, compact ? 36 : 10)));
 }
 
 function decodeRecoveryState(revision: number, body: string): NetEntertainmentRecoveryState {

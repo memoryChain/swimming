@@ -22,6 +22,8 @@ import { resolveLocalModifierDigest } from '../progression/RaceModifiers';
 import { decodeModifierDigest, encodeModifierDigest } from '../net/NetRaceModifierCodec';
 import {
     NET_RACE_PROTOCOL_VERSION,
+    createNetRaceId,
+    isNetRaceId,
     decodeProtocolHello,
     decodeProtocolRequest,
     encodeProtocolHello,
@@ -77,6 +79,7 @@ export class RoomFlow {
     private _roomId = '';
     private _isHost = true;
     private _pendingSeed = 0;
+    private _pendingRaceId = '';
     // Peers' 养成 digests collected from the lobby broadcast channel, keyed by seat
     // (posNum). memberExtInfo is only 32 bytes (too small for a modifier blob), so each
     // client broadcasts its tiny digest instead; consumed into the session at start.
@@ -746,6 +749,7 @@ export class RoomFlow {
         // guest started and timed out into becoming host. onGameStart / roomState / the
         // startGame-success fallback (WechatGameRoom) then delivers the start signal.
         this._pendingSeed = SeededRandom.entropySeed();
+        this._pendingRaceId = createNetRaceId(this._localPos);
         this.setHint('开始中…');
         // Consolidated start: carry the shared seed AND the full 养成 digest map (collected
         // from lobby broadcasts, plus our own) in ONE message. This removes the seed-vs-
@@ -757,6 +761,7 @@ export class RoomFlow {
             t: 'start',
             pv: NET_RACE_PROTOCOL_VERSION,
             seed: this._pendingSeed,
+            raceId: this._pendingRaceId,
             mods: this._memberModifiers,
             mode: this._mode,
             distance: this._distance,
@@ -790,6 +795,7 @@ export class RoomFlow {
             this._startRequested = false;
             this._gameStartCalled = false;
             this._pendingSeed = 0;
+            this._pendingRaceId = '';
             this._gameStartConfirmed = false;
             this.setHint('开始失败，请确认好友已回到房间并准备后重试');
             this.render();
@@ -851,6 +857,10 @@ export class RoomFlow {
             const data = JSON.parse(msg);
             if (this.handleRules(data)) return;
             if (data && data.t === 'start' && typeof data.seed === 'number') {
+                // 房主已在本地建立本局参数；重复 start 不得覆盖待进入的比赛。
+                if (this._isHost || this._startRequested || !isNetRaceId(data.raceId)) return;
+                const owner = this._members.find(m => m.owner);
+                if (!owner || !data.raceId.startsWith(`${owner.pos}.`)) return;
                 if (!isCompatibleProtocolVersion(data.pv)) {
                     if (this._localReady && !this._isHost) {
                         this._localReady = false;
@@ -868,6 +878,7 @@ export class RoomFlow {
                 this._distance = data.distance;
                 setRaceDifficulty(this._mode);
                 this._pendingSeed = data.seed >>> 0;
+                this._pendingRaceId = data.raceId;
                 this._startRequested = true;
                 this.setHint('开始中…');
                 // Adopt the host's consolidated 养成 digest map (authoritative + identical on
@@ -918,7 +929,7 @@ export class RoomFlow {
 
     // Lock-step has begun on every client: hand the agreed seed + roster to the race.
     private enterNetRace() {
-        if (this._raceEntered) {
+        if (this._raceEntered || !isNetRaceId(this._pendingRaceId)) {
             return;
         }
         this._raceEntered = true;
@@ -942,6 +953,7 @@ export class RoomFlow {
             modifiersBlob: this._memberModifiers[typeof m.pos === 'number' ? m.pos : -1] ?? '',
         }));
         setNetRaceSession({
+            raceId: this._pendingRaceId,
             seed: (this._pendingSeed >>> 0) || SeededRandom.entropySeed(),
             members,
             localIsHost: this._isHost,
