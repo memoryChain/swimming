@@ -19,6 +19,8 @@ export const PERFORMANCE_CONFIG = {
     },
 
     water: {
+        // 水下反射相机和对应角色裁切参数一起降频；不影响主相机和玩法模拟。
+        reflectionFramesPerSecond: 30,
         // World-space fake ceiling-light reflections on the pool water. This is
         // shader-only: no reflection camera, RenderTexture, texture, geometry,
         // or extra draw call. Disable it for a lowest-tier visual preset.
@@ -33,6 +35,12 @@ export const PERFORMANCE_CONFIG = {
     // 场馆大屏转播画面开关。关掉则完全不启用大屏(不建馈送相机/RT/大屏水池),屏幕保持静态材质。
     scoreboardFeed: {
         enabled: false,
+    },
+
+    // 启动比赛前设置。低性能档可设为 20 Hz，或关闭以免创建相机、RT 和 HUD。
+    eventPictureInPicture: {
+        enabled: true,
+        framesPerSecond: 30,
     },
 
     splash: {

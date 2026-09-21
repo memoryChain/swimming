@@ -47,6 +47,8 @@ export class CannonBrawlPresentation {
     private disposed = false;
     private deploymentPhase = CannonDeploymentPhase.DEPLOYED;
     private deploymentElapsed = 0;
+    private deploymentTravelProgress = 0;
+    private exitStartTravelProgress = 0;
     private standWorldX = 0;
     private readonly impactWorldPosition = new Vec3();
 
@@ -54,11 +56,14 @@ export class CannonBrawlPresentation {
         private readonly parent: Node,
         private readonly course: RaceCourseLayout,
         private readonly waterSplashes: EntertainmentWaterSplashPool | null,
+        private readonly startStowed = false,
     ) {
+        if (startStowed) this.deploymentPhase = CannonDeploymentPhase.STOWED;
         this.build();
     }
 
     reset(): void {
+        if (this.disposed) return;
         this.activeStrikeId = -1;
         this.lastStrikeId = -1;
         this.elapsed = PRESENTATION_INTERVAL;
@@ -66,6 +71,14 @@ export class CannonBrawlPresentation {
         this.setActive(this.marker, false);
         this.setActive(this.projectile, false);
         this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.CANNON);
+        if (this.startStowed) {
+            this.deploymentPhase = CannonDeploymentPhase.STOWED;
+            this.deploymentElapsed = 0;
+            this.applyDeploymentProgress(0, false);
+            for (const cannon of this.cannons) this.setActive(cannon, false);
+        } else {
+            this.snapDeployed();
+        }
     }
 
     /** 娱乐事件预告开始时，把两侧礼炮从观众席深处推到池边。 */
@@ -90,6 +103,7 @@ export class CannonBrawlPresentation {
     beginExit(): void {
         if (this.disposed || this.deploymentPhase === CannonDeploymentPhase.STOWED
             || this.deploymentPhase === CannonDeploymentPhase.EXITING) return;
+        this.exitStartTravelProgress = this.deploymentTravelProgress;
         this.deploymentPhase = CannonDeploymentPhase.EXITING;
         this.deploymentElapsed = 0;
     }
@@ -217,6 +231,7 @@ export class CannonBrawlPresentation {
         for (let i = 0; i < 2; i++) {
             const side = i === 0 ? -1 : 1;
             const cannon = this.makeMeshNode(`PoolsideCannon_${i + 1}`, this.cannonMesh, this.cannonMaterial);
+            this.setActive(cannon, !this.startStowed);
             cannon.setWorldPosition(midpoint, this.course.waterY + 0.12, side * (this.course.poolWidth * 0.5 + CANNON_EDGE_OFFSET));
             cannon.setRotationFromEuler(0, side > 0 ? 180 : 0, 0);
             this.cannons.push(cannon);
@@ -264,10 +279,14 @@ export class CannonBrawlPresentation {
     }
 
     private applyDeploymentProgress(progress: number, exiting: boolean): void {
+        // 预告可能在进场途中取消，退场必须从最后显示的位置开始。
+        const travelProgress = exiting
+            ? this.exitStartTravelProgress + (1 - this.exitStartTravelProgress) * progress
+            : 1 - progress;
+        this.deploymentTravelProgress = travelProgress;
         for (let i = 0; i < this.cannons.length; i++) {
             const side = i === 0 ? -1 : 1;
             const edgeZ = side * (this.course.poolWidth * 0.5 + CANNON_EDGE_OFFSET);
-            const travelProgress = exiting ? progress : 1 - progress;
             const z = edgeZ + side * CANNON_STAND_TRAVEL * travelProgress;
             const cannon = this.cannons[i];
             if (cannon?.isValid) cannon.setWorldPosition(this.standWorldX, this.course.waterY + 0.12, z);

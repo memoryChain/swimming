@@ -9,6 +9,7 @@ import { setCameraVenueCeilingVisible, VENUE_CEILING_LAYER } from '../venue/TopV
 import { styleProjectUiLabel } from '../ui/ProjectUiFonts';
 import { makeLabel, makeRoundedRect, makeUiNode, UI_DESIGN_HEIGHT, UI_DESIGN_WIDTH, uiColor } from '../ui/RuntimeUiFactory';
 import { platform } from '../platform/PlatformManager';
+import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 
 const FEED_WIDTH = 256;
 const FEED_HEIGHT = 144;
@@ -59,6 +60,8 @@ export class RaceEventPictureInPictureCamera {
     private mode: FeedMode = 'none';
     private active = false;
     private renderElapsed = RENDER_INTERVAL_SECONDS;
+    private readonly renderInterval = 1 / Math.max(1, Math.min(30,
+        PERFORMANCE_CONFIG.eventPictureInPicture.framesPerSecond));
     private holdSeconds = 0;
     private warningPush = 0;
     private biteHoldSeconds = 0;
@@ -108,6 +111,7 @@ export class RaceEventPictureInPictureCamera {
     private readonly timedBombBlastPosition = new Vec3();
 
     constructor(private readonly options: RaceEventPictureInPictureOptions) {
+        if (!PERFORMANCE_CONFIG.eventPictureInPicture.enabled) return;
         this.buildCamera();
         this.buildHud();
     }
@@ -716,11 +720,11 @@ export class RaceEventPictureInPictureCamera {
 
     private shouldRender(dt: number): boolean {
         this.renderElapsed += dt;
-        if (this.renderElapsed < RENDER_INTERVAL_SECONDS) {
+        if (this.renderElapsed + 1e-8 < this.renderInterval) {
             if (this.camera?.isValid && this.camera.enabled) this.camera.enabled = false;
             return false;
         }
-        this.renderElapsed %= RENDER_INTERVAL_SECONDS;
+        this.renderElapsed = Math.max(0, this.renderElapsed - this.renderInterval) % this.renderInterval;
         return true;
     }
 
@@ -746,7 +750,7 @@ export class RaceEventPictureInPictureCamera {
     private setVisible(active: boolean): void {
         if (this.active === active) return;
         this.active = active;
-        this.renderElapsed = RENDER_INTERVAL_SECONDS;
+        this.renderElapsed = this.renderInterval;
         if (this.root?.isValid && this.root.active !== active) this.root.active = active;
         if (!active && this.camera?.isValid && this.camera.enabled) this.camera.enabled = false;
     }

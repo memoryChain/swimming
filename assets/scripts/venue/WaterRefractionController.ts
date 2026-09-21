@@ -6,6 +6,7 @@ import { WATER_COLOR_TUNING, registerFloorTintApplier, setSwimmerReflectClip } f
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { PoolsideWaterline } from './PoolsideWaterline';
+import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 
 const REFRACTION_CAMERA_NAME = 'WaterRefractionCamera';
 const SWIMMER_CAMERA_NAME = 'SwimmerOverlayCamera';
@@ -143,6 +144,7 @@ export class WaterRefractionController {
     private _reflWidth = 0;
     private _reflHeight = 0;
     private _reflectionActive = false;
+    private _reflectionElapsed = 0;
     private _waterY = 0.055;
     private _poolEdgeActiveBeforeUnderwater = true;
     // x = mirror strength, y = flip U (mirror is horizontally reversed by the
@@ -346,7 +348,7 @@ export class WaterRefractionController {
         return true;
     }
 
-    update() {
+    update(dt = 1 / 60) {
         if (!this._refractionCamera || !this._mainCamera) {
             return;
         }
@@ -354,7 +356,7 @@ export class WaterRefractionController {
         // The reflection (underside mirror) and the water material binding must
         // run in BOTH above-water and underwater shots: the surface stays visible
         // underwater now so its underside can show the mirror.
-        this.updateReflection();
+        this.updateReflection(dt);
         if (!this._underwaterViewActive) {
             this.resizeIfNeeded();
         }
@@ -717,7 +719,7 @@ export class WaterRefractionController {
     // Reflect the main camera across the water plane and render the underwater
     // scene into the reflection RT. Gated on the camera being near/below the
     // surface: normal above-water shots disable the whole pass.
-    private updateReflection() {
+    private updateReflection(dt: number) {
         const refl = this._reflectionCamera;
         const main = this._mainCamera;
         if (!refl?.isValid || !main?.isValid) {
@@ -726,14 +728,24 @@ export class WaterRefractionController {
         main.node.getWorldPosition(this._tmpCamPos);
         const below = this._underwaterViewActive
             && this._tmpCamPos.y < this._waterY + REFLECTION_ACTIVE_MARGIN;
-        if (below !== this._reflectionActive) {
-            this._reflectionActive = below;
-            refl.enabled = below;
-        }
+        const enteringReflection = below && !this._reflectionActive;
+        this._reflectionActive = below;
         if (!below) {
+            this._reflectionElapsed = 0;
+            if (refl.enabled) refl.enabled = false;
             setSwimmerReflectClip(false);
             return;
         }
+        const interval = 1 / Math.max(1, PERFORMANCE_CONFIG.water.reflectionFramesPerSecond);
+        this._reflectionElapsed = enteringReflection ? interval
+            : this._reflectionElapsed + (Number.isFinite(dt) ? Math.max(0, dt) : 0);
+        if (this._reflectionElapsed + 1e-8 < interval) {
+            if (refl.enabled) refl.enabled = false;
+            return;
+        }
+        this._reflectionElapsed = Math.max(0, this._reflectionElapsed - interval) % interval;
+        // 保持反射相机位置与裁切参数同帧更新，跳帧时继续使用上一次 RT。
+        if (!refl.enabled) refl.enabled = true;
         const h = this._waterY;
         // Main camera forward / up in world space.
         Vec3.transformQuat(this._tmpFwd, Vec3.FORWARD, main.node.worldRotation);

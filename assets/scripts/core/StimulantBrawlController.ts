@@ -90,8 +90,33 @@ const BEACON_REVEAL_START = 0.72;
 const LANDING_SPLASH_SECONDS = 0.42;
 const LANDING_SPLASH_INTENSITY = 0.30;
 const MAX_PICKUP_SWEEP_DISTANCE = 3;
+const VISUAL_ITEMS_PER_FRAME = 2;
+const MODEL_INSTANCES_PER_FRAME = 1;
 const STIMULANT_CUBE_COLOR = new Color(92, 255, 48, 255);
 const CALM_SLUSH_CUBE_COLOR = new Color(82, 218, 255, 255);
+
+/** 赛前只加载资源；实例化由控制器按帧预算执行，不触发玩法状态。 */
+export function preloadStimulantBrawlModels(): void {
+    preloadCandidate(RESOURCE_PATHS.stimulantBottlePrefabCandidates, 0);
+    preloadCandidate(RESOURCE_PATHS.calmSlushPrefabCandidates, 0);
+}
+
+function preloadCandidate(candidates: readonly string[], index: number): void {
+    if (index >= candidates.length) return;
+    loadRaceAsset(candidates[index], Prefab, (error, prefab) => {
+        if (error || !prefab) preloadCandidate(candidates, index + 1);
+    });
+}
+
+type ModelBuildJob = {
+    kind: StimulantItemKind;
+    candidates: readonly string[];
+    candidateIndex: number;
+    failures: string[];
+    prefab: Prefab;
+    itemIndex: number;
+    validated: boolean;
+};
 
 /** 心跳苏打玩法的独立规则控制器；GameManager 只负责传入泳者和网络事件。 */
 export class StimulantBrawlController {
@@ -109,6 +134,8 @@ export class StimulantBrawlController {
     private readonly visualMaterials: Material[] = [];
     private readonly beaconMeshes: Mesh[] = [];
     private beaconMaterial: Material | null = null;
+    private visualBuildIndex = 0;
+    private readonly modelBuildJobs: ModelBuildJob[] = [];
     private readonly pickupRacers: Array<Racer | null>;
     private readonly pickupCurrentX: Float64Array;
     private readonly pickupCurrentZ: Float64Array;
@@ -163,7 +190,7 @@ export class StimulantBrawlController {
         this.collectorLanes.fill(-1);
         this.pickupRevisions.length = this.items.length;
         this.pickupRevisions.fill(0);
-        // 先同步生成单个大方块，保证模型资源尚未就绪时仍能看到和拾取道具。
+        // 共享网格只创建一次；节点与正式模型按帧预算准备，玩法状态独立推进。
         this.createProgramVisuals();
         this.createBeaconVisuals();
         this.loadModelVisuals();
@@ -226,6 +253,8 @@ export class StimulantBrawlController {
     }
 
     updatePresentation(referenceDistance: number, dt: number, allowAnnouncements: boolean): void {
+        if (this.disposed) return;
+        this.buildPendingVisuals();
         const distance = Number.isFinite(referenceDistance) ? referenceDistance : 0;
         if (allowAnnouncements) {
             for (const item of this.items) {
@@ -426,6 +455,7 @@ export class StimulantBrawlController {
         this.beaconMeshes.length = 0;
         this.visualMesh = null;
         this.beaconMaterial = null;
+        this.modelBuildJobs.length = 0;
     }
 
     private createProgramVisuals(): void {
@@ -435,14 +465,77 @@ export class StimulantBrawlController {
         const calmMaterial = this.createFallbackMaterial('CalmSlushCubeMaterial', CALM_SLUSH_CUBE_COLOR);
         this.visualMesh = mesh;
         this.visualMaterials.push(sodaMaterial, calmMaterial);
+    }
 
-        for (const item of this.items) {
-            const material = item.kind === 'calm-slush' ? calmMaterial : sodaMaterial;
-            const node = this.createProgramCube(`StimulantCube_${item.id}`, mesh, material);
+    private buildPendingVisuals(): void {
+        if (this.disposed || !this.root.isValid || !this.visualMesh || !this.beaconMaterial) return;
+        const end = Math.min(this.items.length, this.visualBuildIndex + VISUAL_ITEMS_PER_FRAME);
+        for (; this.visualBuildIndex < end; this.visualBuildIndex++) {
+            const item = this.items[this.visualBuildIndex];
+            if (item.collected) continue;
+            const kindIndex = item.kind === 'calm-slush' ? 1 : 0;
+            const node = this.createProgramCube(`StimulantCube_${item.id}`, this.visualMesh, this.visualMaterials[kindIndex]);
             node.setWorldPosition(item.x, item.baseY, item.z);
             node.setScale(ITEM_SCALE, ITEM_SCALE, ITEM_SCALE);
             node.active = false;
             item.node = node;
+            const beacon = new Node(`StimulantBeacon_${item.id}`);
+            beacon.active = false;
+            beacon.setParent(this.root);
+            beacon.layer = this.root.layer;
+            const renderer = beacon.addComponent(MeshRenderer);
+            renderer.mesh = this.beaconMeshes[kindIndex];
+            renderer.setMaterial(this.beaconMaterial, 0);
+            beacon.setWorldPosition(item.x, this.course.waterY + BEACON_BASE_Y_OFFSET, item.z);
+            item.beaconNode = beacon;
+        }
+        this.buildPendingModels();
+    }
+
+    private buildPendingModels(): void {
+        let budget = MODEL_INSTANCES_PER_FRAME;
+        while (budget > 0 && this.modelBuildJobs.length > 0) {
+            // 按道具排期交错准备两种模型，避免先返回的资源阻塞另一种首波道具。
+            let job: ModelBuildJob | null = null;
+            for (let index = this.modelBuildJobs.length - 1; index >= 0; index--) {
+                const candidate = this.modelBuildJobs[index];
+                while (candidate.itemIndex < this.items.length) {
+                    const pending = this.items[candidate.itemIndex];
+                    if (pending.kind === candidate.kind && !pending.collected) break;
+                    candidate.itemIndex++;
+                }
+                if (candidate.itemIndex >= this.items.length) {
+                    this.modelBuildJobs.splice(index, 1);
+                } else if (this.items[candidate.itemIndex].node && (!job || candidate.itemIndex < job.itemIndex)) {
+                    job = candidate;
+                }
+            }
+            if (!job) return;
+            const item = this.items[job.itemIndex];
+            budget--;
+            const node = instantiate(job.prefab);
+            if (!job.validated && !this.hasMeshRenderer(node)) {
+                node.destroy();
+                this.modelBuildJobs.splice(this.modelBuildJobs.indexOf(job), 1);
+                job.failures.push(`${job.candidates[job.candidateIndex]}: loaded prefab has no MeshRenderer`);
+                this.loadModelVisualsForKind(job.kind, job.candidates, job.candidateIndex + 1, job.failures);
+                continue;
+            }
+            job.validated = true;
+            job.itemIndex++;
+            const fallback = item.node;
+            node.name = `${job.kind === 'calm-slush' ? 'CalmSlush' : 'StimulantPotion'}_${item.id}`;
+            node.active = !item.collected && fallback.active;
+            node.setParent(this.root);
+            this.applyLayerRecursively(node, this.root.layer);
+            node.setWorldPosition(item.x, item.baseY, item.z);
+            node.setScale(ITEM_MODEL_SCALE, ITEM_MODEL_SCALE, ITEM_MODEL_SCALE);
+            item.node = node;
+            if (node.active) {
+                if (item.visualLanded) this.applyFloatingPresentation(item);
+                else this.applyThrowPresentation(item);
+            }
+            if (fallback.isValid) fallback.destroy();
         }
     }
 
@@ -472,32 +565,7 @@ export class StimulantBrawlController {
                 return;
             }
 
-            const probe = instantiate(prefab);
-            if (!this.hasMeshRenderer(probe)) {
-                probe.destroy();
-                failures.push(`${path}: loaded prefab has no MeshRenderer`);
-                this.loadModelVisualsForKind(kind, candidates, candidateIndex + 1, failures);
-                return;
-            }
-            probe.destroy();
-
-            for (const item of this.items) {
-                if (item.kind !== kind) continue;
-                const fallback = item.node;
-                const node = instantiate(prefab);
-                node.name = `${kind === 'calm-slush' ? 'CalmSlush' : 'StimulantPotion'}_${item.id}`;
-                node.setParent(this.root);
-                this.applyLayerRecursively(node, this.root.layer);
-                node.setWorldPosition(item.x, item.baseY, item.z);
-                node.setScale(ITEM_MODEL_SCALE, ITEM_MODEL_SCALE, ITEM_MODEL_SCALE);
-                node.active = !item.collected && (fallback?.active ?? false);
-                item.node = node;
-                if (node.active) {
-                    if (item.visualLanded) this.applyFloatingPresentation(item);
-                    else this.applyThrowPresentation(item);
-                }
-                if (fallback?.isValid) fallback.destroy();
-            }
+            this.modelBuildJobs.push({ kind, candidates, candidateIndex, failures, prefab, itemIndex: 0, validated: false });
         });
     }
 
@@ -569,18 +637,6 @@ export class StimulantBrawlController {
         material.setProperty('mainColor', Color.WHITE);
         this.beaconMeshes.push(sodaMesh, calmMesh);
         this.beaconMaterial = material;
-
-        for (const item of this.items) {
-            const beacon = new Node(`StimulantBeacon_${item.id}`);
-            beacon.setParent(this.root);
-            beacon.layer = this.root.layer;
-            const renderer = beacon.addComponent(MeshRenderer);
-            renderer.mesh = item.kind === 'calm-slush' ? calmMesh : sodaMesh;
-            renderer.setMaterial(material, 0);
-            beacon.setWorldPosition(item.x, this.course.waterY + BEACON_BASE_Y_OFFSET, item.z);
-            beacon.active = false;
-            item.beaconNode = beacon;
-        }
     }
 
     private getLaunchReferenceDistance(item: ItemState, fallbackDistance: number): number {

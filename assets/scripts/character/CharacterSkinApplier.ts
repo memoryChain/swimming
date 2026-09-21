@@ -1,7 +1,7 @@
 import { Color, EffectAsset, Material, MeshRenderer, Node, Quat, SkinnedMeshRenderer, Texture2D, Vec3, Vec4 } from 'cc';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
-import { registerSwimmerBodyMaterial } from '../venue/WaterColorTuning';
+import { detachSwimmerBodyMaterials, registerSwimmerBodyMaterial } from '../venue/WaterColorTuning';
 
 const SWIMMER_TEXTURE_SIZE = 128;
 const OUTLINE_SHELL_WIDTH = 4;
@@ -32,6 +32,21 @@ export type CharacterSkinOptions = {
 };
 
 export function applyCharacterSkin(options: CharacterSkinOptions) {
+    const previous = detachSwimmerBodyMaterials(options.model);
+    try {
+        applyCharacterSkinMaterials(options);
+    } catch (error) {
+        for (const material of previous) {
+            if (material.isValid) registerSwimmerBodyMaterial(material, options.model, typeof options.waterLine === 'number');
+        }
+        throw error;
+    }
+    for (const material of previous) {
+        if (material.isValid) material.destroy();
+    }
+}
+
+function applyCharacterSkinMaterials(options: CharacterSkinOptions) {
     if (options.preserveOriginalMaterial) {
         applyBrightenedOriginalMaterials(options);
         configureOutlineShells(options);
@@ -93,8 +108,9 @@ function applyBrightenedOriginalMaterials(options: CharacterSkinOptions) {
                     options.suitColor,
                     options.capColor,
                     options.waterLine,
+                    options.model,
                 )
-                : makeBrightenedOriginalMaterial(original, options.dynamicColorEffect ?? null, options.waterLine);
+                : makeBrightenedOriginalMaterial(original, options.dynamicColorEffect ?? null, options.waterLine, options.model);
             renderer.setMaterial(material, i);
             applied++;
         }
@@ -115,10 +131,11 @@ function makeDynamicColorMaterial(
     suitColor: Color,
     capColor: Color,
     waterLine?: number,
+    owner?: Node,
 ): Material {
     const texture = findMaterialTexture(original);
     if (!texture) {
-        return makeBrightenedOriginalMaterial(original, effect, waterLine);
+        return makeBrightenedOriginalMaterial(original, effect, waterLine, owner);
     }
     const material = new Material();
     material.initialize({ effectAsset: effect });
@@ -133,7 +150,7 @@ function makeDynamicColorMaterial(
     material.setProperty('suitColor', suitColor);
     material.setProperty('capColor', capColor);
     applyWaterLine(material, waterLine);
-    registerSwimmerBodyMaterial(material);
+    registerSwimmerBodyMaterial(material, owner, typeof waterLine === 'number');
     return material;
 }
 
@@ -157,7 +174,7 @@ function applyWaterLine(material: Material, waterLine?: number) {
     }
 }
 
-function makeBrightenedOriginalMaterial(original: Material, waterlineEffect: EffectAsset | null = null, waterLine?: number): Material {
+function makeBrightenedOriginalMaterial(original: Material, waterlineEffect: EffectAsset | null = null, waterLine?: number, owner?: Node): Material {
     const texture = findMaterialTexture(original);
     const color = boostColor(findMaterialColor(original), 1.12, 1.14);
     // Prefer the custom swimmer body effect (with the world-space waterline tint)
@@ -171,7 +188,7 @@ function makeBrightenedOriginalMaterial(original: Material, waterlineEffect: Eff
         material.setProperty('mainTexture', texture);
         material.setProperty('mainColor', color);
         applyWaterLine(material, waterLine);
-        registerSwimmerBodyMaterial(material);
+        registerSwimmerBodyMaterial(material, owner, typeof waterLine === 'number');
         return material;
     }
     const material = new Material();

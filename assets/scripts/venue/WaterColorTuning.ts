@@ -1,4 +1,4 @@
-import { Color, Material, Vec3, Vec4 } from 'cc';
+import { Color, Material, Node, Vec3, Vec4 } from 'cc';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 
 // Runtime-tunable water/underwater colours. The debug tuning panel writes these
@@ -95,16 +95,19 @@ export function registerFloorTintApplier(fn: () => void) {
 
 const _waterMaterials: Material[] = [];
 const _swimmerMaterials: Material[] = [];
+const _swimmerMaterialOwners = new Map<Material, Node>();
+// 每个身体材质对应一个渲染槽位；实例由渲染器持有，只缓存更新目标。
+const _swimmerMaterialInstances = new Map<Material, Material>();
+const _drySwimmerMaterials = new Set<Material>();
 // Identify the one mirrored camera that is allowed to clip above-water swimmer
 // fragments. Auxiliary above-water cameras (event PIP, venue feed, previews) use
 // the same materials, so a shared boolean would incorrectly clip all of them.
 const _swimmerReflectClipParams = new Vec4(0, 0, 0, 0);
+const _disabledReflectClipParams = new Vec4(0, 0, 0, 0);
 const REFLECTION_CAMERA_POSITION_STEPS_PER_METRE = 20;
 
-// Toggle the reflection clip flag on every registered swimmer material. Called by
-// WaterRefractionController while its mirrored camera is active. The quantized
-// world position lets the shader distinguish that pass from other cameras while
-// keeping material writes below render frequency. No-op when unchanged.
+// 只在反射相机采样帧调用；位置量化用于区分相机，不承担更新限频。
+// 换肤、换模型和离场主动注销，无水预览不参与反射参数更新。
 export function setSwimmerReflectClip(on: boolean, cameraPosition?: Readonly<Vec3>) {
     const enabled = on && !!cameraPosition;
     const x = enabled ? quantizeReflectionPosition(cameraPosition.x) : 0;
@@ -117,8 +120,16 @@ export function setSwimmerReflectClip(on: boolean, cameraPosition?: Readonly<Vec
         return;
     }
     _swimmerReflectClipParams.set(enabled ? 1 : 0, x, y, z);
-    for (const material of _swimmerMaterials) {
-        applySwimmerReflectClip(material);
+    for (let index = _swimmerMaterials.length - 1; index >= 0; index--) {
+        const material = _swimmerMaterials[index];
+        const owner = _swimmerMaterialOwners.get(material);
+        if (!material.isValid || (owner && !owner.isValid)) {
+            unregisterSwimmerBodyMaterial(material);
+            if (material.isValid) material.destroy();
+            continue;
+        }
+        if (_drySwimmerMaterials.has(material)) continue;
+        applySwimmerReflectClip(swimmerRenderMaterial(material));
     }
 }
 
@@ -147,12 +158,57 @@ export function registerWaterMaterial(material: Material | null | undefined) {
 
 // Register a swimmer body material (the SwimmerDynamicColor effect instance) so
 // underwater tint changes reach it. Applies the current tuning immediately.
-export function registerSwimmerBodyMaterial(material: Material | null | undefined) {
+export function registerSwimmerBodyMaterial(material: Material | null | undefined, owner?: Node, reflect = true) {
     if (!material || _swimmerMaterials.indexOf(material) >= 0) {
         return;
     }
     _swimmerMaterials.push(material);
-    applySwimmerMaterial(material);
+    if (owner) _swimmerMaterialOwners.set(material, owner);
+    if (!reflect) _drySwimmerMaterials.add(material);
+    applySwimmerMaterial(material, reflect);
+}
+
+/** 发光首次取得实例时绑定；镜头静止也立即补齐当前水色和裁切参数。 */
+export function bindSwimmerBodyMaterialInstance(shared: Material, instance: Material): void {
+    if (!shared.isValid || !instance.isValid || _swimmerMaterials.indexOf(shared) < 0) return;
+    if (_swimmerMaterialInstances.get(shared) === instance) return;
+    _swimmerMaterialInstances.set(shared, instance);
+    applySwimmerMaterial(instance, !_drySwimmerMaterials.has(shared));
+}
+
+function swimmerRenderMaterial(shared: Material): Material {
+    const instance = _swimmerMaterialInstances.get(shared);
+    // Cocos 的实例销毁直接清空 passes，isValid 仍可能为 true。
+    if (instance?.isValid && instance.passes.length > 0) return instance;
+    if (instance) _swimmerMaterialInstances.delete(shared);
+    return shared;
+}
+
+function unregisterSwimmerBodyMaterial(material: Material): void {
+    const index = _swimmerMaterials.indexOf(material);
+    if (index >= 0) _swimmerMaterials.splice(index, 1);
+    _swimmerMaterialOwners.delete(material);
+    _swimmerMaterialInstances.delete(material);
+    _drySwimmerMaterials.delete(material);
+}
+
+/** 换肤先退出登记，旧材质仍供新材质读取纹理，替换完成后再销毁。 */
+export function detachSwimmerBodyMaterials(owner: Node): Material[] {
+    const detached: Material[] = [];
+    for (let index = _swimmerMaterials.length - 1; index >= 0; index--) {
+        const material = _swimmerMaterials[index];
+        if (_swimmerMaterialOwners.get(material) !== owner) continue;
+        detached.push(material);
+        unregisterSwimmerBodyMaterial(material);
+    }
+    return detached;
+}
+
+export function disposeSwimmerBodyMaterials(owner: Node | null): void {
+    if (!owner) return;
+    for (const material of detachSwimmerBodyMaterials(owner)) {
+        if (material.isValid) material.destroy();
+    }
 }
 
 // Push the current WATER_COLOR_TUNING values onto every registered material.
@@ -161,7 +217,10 @@ export function applyWaterColorTuning() {
         applyWaterMaterial(material);
     }
     for (const material of _swimmerMaterials) {
-        applySwimmerMaterial(material);
+        const reflect = !_drySwimmerMaterials.has(material);
+        applySwimmerMaterial(material, reflect);
+        const renderMaterial = swimmerRenderMaterial(material);
+        if (renderMaterial !== material) applySwimmerMaterial(renderMaterial, reflect);
     }
     _floorTintApply?.();
 }
@@ -213,7 +272,7 @@ function applyWaterMaterial(material: Material) {
     }
 }
 
-function applySwimmerMaterial(material: Material) {
+function applySwimmerMaterial(material: Material, reflect: boolean) {
     try {
         material.setProperty('underwaterColor', new Color(
             WATER_COLOR_TUNING.bodyR,
@@ -257,7 +316,7 @@ function applySwimmerMaterial(material: Material) {
             WATER_COLOR_TUNING.aboveB,
             Math.max(0, Math.min(255, Math.round(WATER_COLOR_TUNING.aboveStrength * 255))),
         ));
-        material.setProperty('reflectClipParams', _swimmerReflectClipParams);
+        material.setProperty('reflectClipParams', reflect ? _swimmerReflectClipParams : _disabledReflectClipParams);
     } catch {
         // Not a swimmer body material; ignore.
     }

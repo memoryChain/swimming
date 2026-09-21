@@ -11,6 +11,7 @@ import { CharacterRig } from '../character/CharacterRig';
 import { StandingSoleContact } from '../character/StandingSoleContact';
 import type { CharacterSupportPlane } from '../character/CharacterSupportPlane';
 import { applyCharacterSkin, CharacterSkinOutfit } from '../character/CharacterSkinApplier';
+import { bindSwimmerBodyMaterialInstance, disposeSwimmerBodyMaterials } from '../venue/WaterColorTuning';
 import { DiveChargeGatherEffect } from '../character/DiveChargeGatherEffect';
 import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
 import type { DivePrepBoneName, DivePrepPoseSample } from '../character/DivePrepPoseCurve';
@@ -733,6 +734,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._headBounds.clear();
         this._handContact.clear();
         this.clearBodyMaterialGlow();
+        disposeSwimmerBodyMaterials(this._model);
         this._diveChargeBodyMaterials.length = 0;
         this._bodyMaterialGlowActive = false;
         this._modelLoadToken++;
@@ -1563,6 +1565,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._diveChargeGatherEffect?.destroy();
         this._diveChargeGatherEffect = null;
         this.clearBodyMaterialGlow();
+        disposeSwimmerBodyMaterials(this._model);
     }
 
     resetPose() {
@@ -1976,6 +1979,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 if (!material?.isValid) {
                     continue;
                 }
+                bindSwimmerBodyMaterialInstance(shared, material);
                 material.setProperty('chargeBlue', DIVE_CHARGE_BLUE);
                 material.setProperty('chargeYellow', DIVE_CHARGE_YELLOW);
                 material.setProperty('chargeRed', DIVE_CHARGE_RED);

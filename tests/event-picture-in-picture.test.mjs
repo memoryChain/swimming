@@ -123,7 +123,8 @@ test('垃圾画中画只观察当前飞行槽位并在最后一组落水后短�
 });
 
 test('调试入口的独立垃圾模式会创建并驱动共享画中画', () => {
-    const creation = gameManager.match(/if \(\(isEntertainmentBrawlMode\(\)[\s\S]*?new RaceEventPictureInPictureCamera/)?.[0] ?? '';
+    const creation = gameManager.match(/if \(PERFORMANCE_CONFIG\.eventPictureInPicture\.enabled[\s\S]*?new RaceEventPictureInPictureCamera/)?.[0] ?? '';
+    assert.match(creation, /isEntertainmentBrawlMode\(\)/);
     assert.match(creation, /isLitterBrawlMode\(\)/);
     assert.match(
         gameManager,

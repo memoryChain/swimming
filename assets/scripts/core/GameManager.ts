@@ -105,7 +105,7 @@ import { InputRouter } from './InputRouter';
 import { RaceFinishResult, RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
 import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isCannonBrawlMode, isEntertainmentBrawlMode, isLitterBrawlMode, isMinefieldBrawlMode, isSharkBrawlMode, isStimulantBrawlMode, isTimedBombBrawlMode, isWhirlpoolBrawlMode, raceDistanceToCourseX, SWIMMER_BALANCE } from './GameBalance';
-import { StimulantBrawlController } from './StimulantBrawlController';
+import { preloadStimulantBrawlModels, StimulantBrawlController } from './StimulantBrawlController';
 import { EntertainmentWaterSplashPool } from './EntertainmentWaterSplash';
 import { buildEntertainmentStimulantSchedule } from './StimulantBrawlRules';
 import {
@@ -648,7 +648,7 @@ export class GameManager extends Component {
         // directly and skip the entire race/net/HUD update path.
         if (this._underwaterDebugActive) {
             this.updateUnderwaterDebug(dt);
-            this._waterRefraction?.update();
+            this._waterRefraction?.update(dt);
             return;
         }
         const netDt = dt;
@@ -785,7 +785,7 @@ export class GameManager extends Component {
             this._modelDebugFlow.update(dt);
             this._modelDebugFlow.updateCamera();
             this._waterRefraction?.setSwimmerDisturbanceActive(false);
-            this._waterRefraction?.update();
+            this._waterRefraction?.update(netDt);
             return;
         }
         this.updateSpectatorCameraTarget();
@@ -815,7 +815,7 @@ export class GameManager extends Component {
         // Update after the race camera so the refraction camera uses this frame's
         // final transform. Underwater shots keep the swimmer overlay camera synced
         // while the water surface and refraction RenderTexture camera stay off.
-        this._waterRefraction?.update();
+        this._waterRefraction?.update(netDt);
     }
 
     lateUpdate() {
@@ -1518,6 +1518,18 @@ export class GameManager extends Component {
         this._entertainmentDirector = isEntertainmentBrawlMode()
             ? new EntertainmentModeDirector(getSharedRandomSeed(), getRaceDistance())
             : null;
+        // 赛前预热共用水花，首次事件不再集中创建六份网格和十个槽位。
+        if (this._entertainmentDirector || isStimulantBrawlMode() || isSharkBrawlMode()
+            || isCannonBrawlMode() || isTimedBombBrawlMode() || isMinefieldBrawlMode() || isLitterBrawlMode()) {
+            this.entertainmentWaterSplashes();
+        }
+        if (isStimulantBrawlMode()
+            || (this._entertainmentDirector?.selectedEvents().indexOf(EntertainmentEventId.STIMULANT) ?? -1) >= 0) {
+            preloadStimulantBrawlModels();
+        }
+        if ((this._entertainmentDirector?.selectedEvents().indexOf(EntertainmentEventId.CANNON) ?? -1) >= 0) {
+            this.ensureCannonBrawlPresentation();
+        }
         disposeWhirlpoolVisualResources(this._whirlpoolVisualResources);
         this._whirlpoolVisualResources = null;
         if (isWhirlpoolBrawlMode()
@@ -1591,19 +1603,19 @@ export class GameManager extends Component {
 
     private handleEntertainmentDirectorTransition(transition: EntertainmentDirectorTransition) {
         const director = this._entertainmentDirector;
+        // 断流恢复可能直接跳到其他事件，旧炮火预告也必须结束。
+        if (this._cannonPreviewPending && (transition.cancelledPreview
+            || transition.activatedEvent !== null || transition.recoveredEvent !== null
+            || (transition.previewEvent !== null && transition.previewEvent !== EntertainmentEventId.CANNON))) {
+            this._cannonBrawlPresentation?.beginExit();
+            this._cannonPreviewPending = false;
+        }
         if (transition.cancelledPreview) {
             this._entertainmentEventBanner.hideEvent();
-            if (this._cannonPreviewPending) {
-                this._cannonBrawlPresentation?.beginExit();
-                this._cannonPreviewPending = false;
-            }
         }
         if (transition.recoveredEvent !== null) {
             // 客机可能错过整段返场；先静默重置该子玩法，再由同一份 S| 快照
             // 灌入最终权威状态，避免旧一轮的 revision／追猎序号拒绝新状态。
-            if (transition.recoveredEvent === EntertainmentEventId.CANNON) {
-                this._cannonPreviewPending = false;
-            }
             this.activateEntertainmentEvent(transition.recoveredEvent);
         }
         if (transition.previewEvent !== null) {
@@ -1627,9 +1639,6 @@ export class GameManager extends Component {
             );
         }
         if (transition.activatedEvent !== null) {
-            if (transition.activatedEvent === EntertainmentEventId.CANNON) {
-                this._cannonPreviewPending = false;
-            }
             this.activateEntertainmentEvent(transition.activatedEvent, true);
             const special = transition.activatedEvent === EntertainmentEventId.WHIRLPOOL
                 ? isSuperWhirlpool(this.entertainmentWhirlpoolSpawns(
@@ -1650,7 +1659,10 @@ export class GameManager extends Component {
                 entertainmentActiveBannerCategory(transition.activatedEvent),
             );
         }
-        if (transition.finishedEvent === EntertainmentEventId.CANNON) {
+        // 跨轮快照可能同时结束旧炮火并恢复新炮火／预告，不能让旧通知覆盖当前阶段。
+        if (transition.finishedEvent === EntertainmentEventId.CANNON
+            && !isEntertainmentEventBurstActive(EntertainmentEventId.CANNON)
+            && !this._cannonPreviewPending) {
             this._cannonBrawlHud?.hide();
             this._cannonBrawlPresentation?.beginExit();
             this._cannonPreviewPending = false;
@@ -1704,12 +1716,17 @@ export class GameManager extends Component {
             case EntertainmentEventId.CANNON:
                 if (this._cannonBrawl) {
                     this._cannonBrawl.restart(this.entertainmentCannonStrikeTriggers());
-                    this._cannonBrawlPresentation?.reset();
                     this._cannonBrawlHud?.reset();
                 } else {
                     this.setupCannonBrawl();
                 }
-                this._cannonBrawlPresentation?.snapDeployed();
+                // 恢复旧轮控制器不代表炮火仍在进行；显隐只消费当前权威阶段。
+                this._cannonBrawlPresentation?.reset();
+                if (isEntertainmentEventBurstActive(EntertainmentEventId.CANNON)) {
+                    this._cannonBrawlPresentation?.snapDeployed();
+                } else if (this._cannonPreviewPending) {
+                    this._cannonBrawlPresentation?.beginEntrance();
+                }
                 break;
             case EntertainmentEventId.LITTER:
                 this.setupLitterBrawl();
@@ -2254,6 +2271,7 @@ export class GameManager extends Component {
                 this._worldRoot,
                 COURSE_LAYOUT,
                 this.entertainmentWaterSplashes(),
+                isEntertainmentBrawlMode(),
             );
         }
         return this._cannonBrawlPresentation;
@@ -4429,7 +4447,8 @@ export class GameManager extends Component {
             this.applyRoomModeHud(this._raceHud);
             this.buildLaneLockdownStatus(this._raceHud, w, h);
             this.buildEliminationSpectatorUi(this._raceHud, w, h);
-            if ((isEntertainmentBrawlMode() || isSharkBrawlMode() || isCannonBrawlMode()
+            if (PERFORMANCE_CONFIG.eventPictureInPicture.enabled
+                && (isEntertainmentBrawlMode() || isSharkBrawlMode() || isCannonBrawlMode()
                 || isWhirlpoolBrawlMode() || isTimedBombBrawlMode() || isLitterBrawlMode())
                 && this._worldRoot?.isValid) {
                 this._eventPictureInPicture = new RaceEventPictureInPictureCamera({
