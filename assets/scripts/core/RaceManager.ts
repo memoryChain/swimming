@@ -52,6 +52,8 @@ export class RaceManager extends Component {
     private _state = GameState.READY;
     private _countdownTimer = 0;
     private _raceTimer = 0;
+    /** 各端从比赛开始累计的模拟时钟，用于限制迟到冲击的补偿窗口。 */
+    get elapsedSeconds(): number { return this._raceTimer; }
     private _playerFinished = false;
     private _playerFinishTime = 0;
     private _aiFinishTime = 0;

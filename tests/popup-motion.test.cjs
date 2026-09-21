@@ -112,6 +112,18 @@ test('两个弹窗快速开关：原位续接、遮罩最后释放、重复 show
         p.hide();p.dispose();s.advance(1);assert.equal(s.running,0);assert.equal(root.isValid,false);
     }
 });
+
+test('外部导航立即隐藏弹窗后可复用重开，旧退场回调不执行',()=>{
+    const s=setup(),p=new s.SettingsPanel(),root=p.build(s.parent,1280,720);
+    const count=size(root),events=listeners(root);
+    p.show();s.advance(.05);
+    p._motion.hide(()=>assert.fail('外部导航后不能执行旧关闭回调'));
+    p._motion.hideImmediately();s.advance(1);
+    assert.equal(root.active,false);assert.equal(s.running,0);
+    p.show();s.advance(1);assert.equal(root.active,true);assert.equal(p._motion.interactive,true);
+    assert.equal(size(root),count);assert.equal(listeners(root),events);
+    p.dispose();assert.equal(s.running,0);
+});
 test('音量草稿：重复打开保留修改；取消和销毁恢复；确认一次保存且退场中拒绝滑动',()=>{
     const s=setup(),presented=[],p=new s.SettingsPanel(value=>presented.push(value));p.build(s.parent,1280,720);p.show();
     assert.deepEqual(presented,[true]);

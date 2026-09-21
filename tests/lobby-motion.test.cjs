@@ -153,6 +153,29 @@ test('补给站覆盖往返复用当前大厅层级，按钮状态与分组位�
     assert.equal(size(s.parent),count);assert.equal(s.running,0);
 });
 
+test('隐藏取消导航和按压后重开，按钮监听保留且触摸可再次响应',()=>{
+    const s=setup(),motion=new s.LobbyUiMotion(),button=new Node('补给返回');
+    button.setParent(s.parent);button.addComponent(Button);motion.bindButton(button);
+    motion.group(s.parent,'补给内容',24);const count=size(s.parent);
+    button.emit('start');s.advance(.03);
+    motion.exit(()=>assert.fail('隐藏后的旧导航不能执行'));
+    motion.cancel();s.advance(1);
+    near(button.scale.x,1);assert.equal(s.running,0);
+    motion.enter(true);s.advance(1);
+    button.emit('start');s.advance(.1);near(button.scale.x,.96);
+    button.emit('end');s.advance(1);near(button.scale.x,1);
+    assert.equal(size(s.parent),count);assert.equal(button.events.get('start').size,1);
+    motion.dispose();assert.equal(s.running,0);
+});
+
+test('隐藏时尚未结束的选项位移落到已选位置，重开不保留半途状态',()=>{
+    const s=setup(),motion=new s.LobbyUiMotion(),card=new Node('模式卡');card.setParent(s.parent);
+    motion.moveCard(card,120,0,1.1,true);s.advance(.05);
+    motion.cancel();near(card.position.x,120);near(card.scale.x,1.1);
+    motion.enter(true);s.advance(1);near(card.position.x,120);near(card.scale.x,1.1);
+    motion.dispose();assert.equal(s.running,0);
+});
+
 test('引擎先销毁子按钮后再清理大厅，解绑不得访问已销毁的事件处理器',()=>{
     const s=setup(),f=s.flow,button=new Node('AI测试');button.setParent(s.parent);button.addComponent(Button);
     f._root=s.parent;f._content=s.parent;

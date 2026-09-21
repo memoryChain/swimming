@@ -9,6 +9,7 @@ export class LobbyUiMotion {
     private readonly _nodeTweens = new Map<Node, Tween<Node>>();
     private readonly _alphaTweens = new Map<UIOpacity, Tween<UIOpacity>>();
     private readonly _unbind: (() => void)[] = [];
+    private readonly _resetButtons: (() => void)[] = [];
     private readonly _popButtons: Node[] = [];
     private readonly _cardTargets = new Map<Node, { x: number; y: number; scale: number }>();
     private _completion: Tween<object> | null = null;
@@ -23,6 +24,7 @@ export class LobbyUiMotion {
     }
 
     enter(short: boolean): void {
+        this.cancel();
         // Overlay pages reuse the existing hierarchy when returning. Re-enable the
         // controller after its previous exit instead of rebuilding the whole screen.
         this._enabled = true;
@@ -100,6 +102,12 @@ export class LobbyUiMotion {
         button.transition = Button.Transition.NONE;
         const base = node.scale.clone();
         let touchId: number | null = null;
+        this._resetButtons.push(() => {
+            touchId = null;
+            if (node.isValid && (node.scale.x !== base.x || node.scale.y !== base.y || node.scale.z !== base.z)) {
+                node.setScale(base.x, base.y, base.z);
+            }
+        });
         const press = (event: EventTouch) => {
             if (!this._enabled || !button.interactable || touchId !== null) return;
             touchId = event.getID();
@@ -132,7 +140,8 @@ export class LobbyUiMotion {
         });
     }
 
-    dispose(): void {
+    /** 隐藏或被外部导航打断时只取消自有动画，保留节点与按钮绑定供重开。 */
+    cancel(): void {
         this._enabled = false;
         this._completion?.stop();
         this._completion = null;
@@ -140,8 +149,21 @@ export class LobbyUiMotion {
         for (const animation of this._alphaTweens.values()) animation.stop();
         this._nodeTweens.clear();
         this._alphaTweens.clear();
+        // 选择位移可能还差几帧完成；隐藏后重开应落在已选位置，不停在半途。
+        for (const [node, target] of this._cardTargets) {
+            if (!node.isValid) continue;
+            if (node.position.x !== target.x || node.position.y !== target.y) node.setPosition(target.x, target.y, node.position.z);
+            if (node.scale.x !== target.scale || node.scale.y !== target.scale) node.setScale(target.scale, target.scale, node.scale.z);
+        }
+        this._cardTargets.clear();
+        for (const reset of this._resetButtons) reset();
+    }
+
+    dispose(): void {
+        this.cancel();
         for (const unbind of this._unbind) unbind();
         this._unbind.length = 0;
+        this._resetButtons.length = 0;
         this._entrances.length = 0;
         this._popButtons.length = 0;
         this._cardTargets.clear();

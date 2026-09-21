@@ -163,7 +163,7 @@ function encodeEventBody(event: NetInputEvent): string {
         case NetInputKind.CannonLaunch:
             return `${NetInputKind.CannonLaunch}${Math.max(0, Math.floor(event.cannonStrikeId ?? 0))},${Math.max(0, Math.round((event.targetDistance ?? 0) * 100))},${Math.round((event.targetZ ?? 0) * 1000)},${Math.max(0, Math.round((event.warningSeconds ?? 0) * 1000))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.CannonImpact:
-            return `${NetInputKind.CannonImpact}${Math.max(0, Math.floor(event.cannonStrikeId ?? 0))},${Math.max(0, Math.floor(event.hitMask ?? 0)).toString(16)},${Math.max(0, Math.floor((event.knockedLane ?? -1) + 1))},${Math.max(0, Math.round((event.knockedDistance ?? 0) * 100))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
+            return `${NetInputKind.CannonImpact}${Math.max(0, Math.floor(event.cannonStrikeId ?? 0))},${Math.max(0, Math.floor(event.hitMask ?? 0)).toString(16)},${Math.max(0, Math.floor((event.knockedLane ?? -1) + 1))},${Math.max(0, Math.round((event.knockedDistance ?? 0) * 100))},${Math.max(0, Math.floor(event.revision ?? 0))}${event.targetZ === undefined ? '' : `,${Math.round(event.targetZ * 1000)}`}`;
         case NetInputKind.MineRelayArm:
             return `${NetInputKind.MineRelayArm}${Math.max(0, Math.floor(event.mineRoundId ?? 0))},${Math.max(0, Math.floor(event.mineCarrierLane ?? 0))},${Math.max(0, Math.round((event.fuseSeconds ?? 0) * 1000))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.MineRelayTransfer:
@@ -243,7 +243,9 @@ function decodeToken(token: string): NetInputEvent | null {
             const knockedLanePlusOne = parseInt(parts[2], 10);
             const knockedDistanceCm = parseInt(parts[3], 10);
             const revision = parseInt(parts[4], 10);
-            return parts.length === 5
+            const targetZ = parts.length === 6 ? Number(parts[5]) : undefined;
+            return (parts.length === 5 || parts.length === 6)
+                && (targetZ === undefined || Number.isSafeInteger(targetZ))
                 && [strikeId, hitMask, knockedLanePlusOne, knockedDistanceCm, revision]
                     .every(value => Number.isSafeInteger(value) && value >= 0)
                 ? {
@@ -253,6 +255,7 @@ function decodeToken(token: string): NetInputEvent | null {
                     knockedLane: knockedLanePlusOne - 1,
                     knockedDistance: knockedDistanceCm / 100,
                     revision,
+                    ...(targetZ === undefined ? {} : { targetZ: targetZ / 1000 }),
                 }
                 : null;
         }

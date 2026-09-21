@@ -517,5 +517,5 @@ test('阶段 I 正式启用七合一轮换但公开独立垃圾入口仍保持�
     assert.match(input, /LitterContact\s*=\s*'g'/);
     assert.match(litterSnapshot, /const TAG = 'L\|'/);
     assert.doesNotMatch(room, /litter-brawl/);
-    assert.match(protocol, /NET_RACE_PROTOCOL_VERSION\s*=\s*91/);
+    assert.match(protocol, /NET_RACE_PROTOCOL_VERSION\s*=\s*92/);
 });

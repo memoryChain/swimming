@@ -45,6 +45,7 @@ export class LoginManager extends Component {
     private _shopPanel: ShopDailySupplyPanel | null = null;
     private _shopIdentityWasVisible = true;
     private _shopTransitioning = false;
+    private _shopNavigationVersion = 0;
     private _roomFlow: RoomFlow | null = null;
     private _pendingOpenRoom = false;
     private _pendingOpenLobby = false;
@@ -175,6 +176,8 @@ export class LoginManager extends Component {
     }
 
     onDestroy() {
+        this._shopNavigationVersion++;
+        this._shopTransitioning = false;
         this._offAppShow?.();
         this._offAppShow = null;
         this._prepareRaceFlow?.dispose();
@@ -256,7 +259,9 @@ export class LoginManager extends Component {
         this._headBar?.setSupplyEntryVisible(false);
         this._headBar?.setBack(null);
         this._shopTransitioning = true;
+        const navigationVersion = ++this._shopNavigationVersion;
         const revealShop = () => {
+            if (navigationVersion !== this._shopNavigationVersion || this._roomFlow || !this._canvasNode?.isValid) return;
             this._shopPanel?.show();
             this._shopTransitioning = false;
         };
@@ -271,6 +276,9 @@ export class LoginManager extends Component {
     }
 
     private closeShop() {
+        if (this._roomFlow) return;
+        this._shopNavigationVersion++;
+        this._shopTransitioning = false;
         this._shopPanel?.hide();
         this._headBar?.setSupplyEntryVisible(true);
         this._headBar?.setIdentityVisible(this._shopIdentityWasVisible);
@@ -331,7 +339,11 @@ export class LoginManager extends Component {
         if (this._roomFlow) {
             return;
         }
+        // 邀请可打断补给站的入场、展示或退场；作废旧导航并恢复共享入口。
+        this._shopNavigationVersion++;
+        this._shopTransitioning = false;
         this._shopPanel?.hide();
+        this._headBar?.setSupplyEntryVisible(true);
         this._prepareRaceFlow?.dispose();
         this._prepareRaceFlow = null;
         // NOTE: do NOT gate on _loginUiRoot here. When launched from a friend's share

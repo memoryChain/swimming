@@ -159,13 +159,13 @@ export class NetRaceController {
     private _sharkKnockdownListener: ((sequence: number, targetLane: number, distance: number) => void) | null = null;
     private _sharkStateListener: ((state: NetSharkState) => void) | null = null;
     private _cannonLaunchListener: ((strikeId: number, targetDistance: number, targetZ: number, warningSeconds: number, revision: number) => void) | null = null;
-    private _cannonImpactListener: ((strikeId: number, hitMask: number, knockedLane: number, knockedDistance: number, revision: number) => void) | null = null;
+    private _cannonImpactListener: ((strikeId: number, hitMask: number, knockedLane: number, knockedDistance: number, revision: number, targetZ?: number, elapsedSeconds?: number) => void) | null = null;
     private _cannonStateListener: ((state: NetCannonState) => void) | null = null;
     private _entertainmentKnockdownListener: ((lane: number, reason: number, distance: number, revision: number) => void) | null = null;
     private _recoveryStateListener: ((state: NetEntertainmentRecoveryState) => void) | null = null;
     private _mineRelayArmListener: ((roundId: number, carrierLane: number, fuseSeconds: number, revision: number) => void) | null = null;
     private _mineRelayTransferListener: ((roundId: number, fromLane: number, toLane: number, remainingSeconds: number, revision: number) => void) | null = null;
-    private _mineRelayResolutionListener: ((roundId: number, carrierLane: number, exploded: boolean, distance: number, lateral: number, hitMask: number, revision: number) => void) | null = null;
+    private _mineRelayResolutionListener: ((roundId: number, carrierLane: number, exploded: boolean, distance: number, lateral: number, hitMask: number, revision: number, elapsedSeconds?: number) => void) | null = null;
     private _mineRelayStateListener: ((state: NetMineRelayState) => void) | null = null;
     private _minefieldImpactListener: ((mineId: number, hitLane: number, courseX: number, lateral: number, hitMask: number, revision: number, elapsedSeconds?: number) => void) | null = null;
     private _minefieldStateListener: ((state: NetMinefieldState) => void) | null = null;
@@ -287,17 +287,20 @@ export class NetRaceController {
         });
     }
 
-    enqueueCannonImpact(strikeId: number, hitMask: number, knockedLane: number, knockedDistance: number, revision: number): void {
+    enqueueCannonImpact(strikeId: number, hitMask: number, knockedLane: number, knockedDistance: number, revision: number, targetZ?: number, elapsedSeconds?: number): void {
         if (!this._isHost || this._disposed) return;
         this._authoritativeEvents.push({
             kind: NetInputKind.CannonImpact,
+            effectTime: elapsedSeconds,
             eventEpoch: this._eventEpochs[0],
             cannonStrikeId: strikeId,
             hitMask,
             knockedLane,
             knockedDistance,
             revision,
+            targetZ,
         });
+        this.rememberContactEvent(this._authoritativeEvents[this._authoritativeEvents.length - 1]);
     }
 
     setCannonLaunchListener(listener: ((strikeId: number, targetDistance: number, targetZ: number, warningSeconds: number, revision: number) => void) | null): void {
@@ -305,7 +308,7 @@ export class NetRaceController {
         if (listener) this.flushDeferredGameplayEvents();
     }
 
-    setCannonImpactListener(listener: ((strikeId: number, hitMask: number, knockedLane: number, knockedDistance: number, revision: number) => void) | null): void {
+    setCannonImpactListener(listener: ((strikeId: number, hitMask: number, knockedLane: number, knockedDistance: number, revision: number, targetZ?: number, elapsedSeconds?: number) => void) | null): void {
         this._cannonImpactListener = listener;
         if (listener) this.flushDeferredGameplayEvents();
     }
@@ -361,10 +364,11 @@ export class NetRaceController {
         });
     }
 
-    enqueueMineRelayResolution(roundId: number, carrierLane: number, exploded: boolean, distance: number, lateral: number, hitMask: number, revision: number): void {
+    enqueueMineRelayResolution(roundId: number, carrierLane: number, exploded: boolean, distance: number, lateral: number, hitMask: number, revision: number, elapsedSeconds?: number): void {
         if (!this._isHost || this._disposed) return;
         this._authoritativeEvents.push({
             kind: NetInputKind.MineRelayResolution,
+            effectTime: elapsedSeconds,
             eventEpoch: this._eventEpochs[1],
             mineRoundId: roundId,
             mineCarrierLane: carrierLane,
@@ -374,6 +378,7 @@ export class NetRaceController {
             hitMask,
             revision,
         });
+        this.rememberContactEvent(this._authoritativeEvents[this._authoritativeEvents.length - 1]);
     }
 
     setMineRelayArmListener(listener: ((roundId: number, carrierLane: number, fuseSeconds: number, revision: number) => void) | null): void {
@@ -386,7 +391,7 @@ export class NetRaceController {
         if (listener) this.flushDeferredGameplayEvents();
     }
 
-    setMineRelayResolutionListener(listener: ((roundId: number, carrierLane: number, exploded: boolean, distance: number, lateral: number, hitMask: number, revision: number) => void) | null): void {
+    setMineRelayResolutionListener(listener: ((roundId: number, carrierLane: number, exploded: boolean, distance: number, lateral: number, hitMask: number, revision: number, elapsedSeconds?: number) => void) | null): void {
         this._mineRelayResolutionListener = listener;
         if (listener) this.flushDeferredGameplayEvents();
     }
@@ -1186,6 +1191,7 @@ export class NetRaceController {
                     || event.revision === undefined) continue;
                 this._cannonImpactListener?.(
                     event.cannonStrikeId, event.hitMask, event.knockedLane, event.knockedDistance, event.revision,
+                    event.targetZ, event.effectTime,
                 );
             } else if (event.kind === NetInputKind.EntertainmentKnockdown) {
                 if (event.recoveryLane === undefined || event.recoveryReason === undefined
@@ -1214,6 +1220,7 @@ export class NetRaceController {
                 this._mineRelayResolutionListener?.(
                     event.mineRoundId, event.mineCarrierLane, event.exploded, event.mineDistance,
                     event.mineLateral, event.hitMask, event.revision,
+                    event.effectTime,
                 );
             } else if (event.kind === NetInputKind.MinefieldImpact) {
                 if (event.mineId === undefined || event.mineHitLane === undefined

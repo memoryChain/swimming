@@ -2160,14 +2160,15 @@ export class GameManager extends Component {
             impact => this.handleCannonImpact(impact, true),
             isEntertainmentBrawlMode() ? this.entertainmentCannonStrikeTriggers() : undefined,
             Math.max(0, getRaceDistance() - 20),
+            distance => COURSE_LAYOUT.distanceToWorldX(distance),
         );
         this._netRaceController?.setCannonLaunchListener((strikeId, targetDistance, targetZ, warningSeconds, revision) => {
             const launch = { strikeId, targetDistance, targetZ, warningSeconds, revision };
             if (this._cannonBrawl?.applyLaunch(launch)) this.handleCannonLaunch(launch, false);
         });
-        this._netRaceController?.setCannonImpactListener((strikeId, hitMask, knockedLane, knockedDistance, revision) => {
-            const impact = { strikeId, hitMask, knockedLane, knockedDistance, revision };
-            if (this._cannonBrawl?.applyImpact(impact)) this.handleCannonImpact(impact, false);
+        this._netRaceController?.setCannonImpactListener((strikeId, hitMask, knockedLane, knockedDistance, revision, targetZ, elapsedSeconds) => {
+            const impact = { strikeId, hitMask, knockedLane, knockedDistance, revision, targetZ, elapsedSeconds };
+            if (this._cannonBrawl?.applyImpact(impact, this._raceManager?.elapsedSeconds)) this.handleCannonImpact(impact, false);
         });
         this._netRaceController?.setCannonStateListener(state => {
             const applied = this._cannonBrawl?.applySnapshotState(state);
@@ -2282,12 +2283,14 @@ export class GameManager extends Component {
     }
 
     private handleCannonImpact(impact: CannonImpact, broadcast: boolean) {
-        this._cannonBrawlPresentation?.showImpact(impact);
-        this._eventPictureInPicture?.showCannonImpact(impact);
+        if (this._cannonBrawl?.isLatestImpact(impact)) {
+            this._cannonBrawlPresentation?.showImpact(impact);
+            this._eventPictureInPicture?.showCannonImpact(impact);
+        }
         for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
             if ((impact.hitMask & (1 << lane)) === 0) continue;
             if (lane === impact.knockedLane) this.knockDownCannonHitLane(lane, impact.knockedDistance, impact.revision);
-            else this.applyExplosionShockwaveHit(lane, this._lastCannonTargetZ);
+            else this.applyExplosionShockwaveHit(lane, impact.targetZ ?? this._lastCannonTargetZ);
         }
         if (impact.knockedLane >= 0 && (impact.hitMask & (1 << impact.knockedLane)) === 0) {
             this.knockDownCannonHitLane(impact.knockedLane, impact.knockedDistance, impact.revision);
@@ -2295,6 +2298,8 @@ export class GameManager extends Component {
         if (broadcast && this._netRaceController?.isHost) {
             this._netRaceController.enqueueCannonImpact(
                 impact.strikeId, impact.hitMask, impact.knockedLane, impact.knockedDistance, impact.revision,
+                impact.targetZ,
+                this._raceManager?.elapsedSeconds,
             );
         }
     }
@@ -2370,6 +2375,7 @@ export class GameManager extends Component {
                 this.swimmerForLane(laneA),
                 this.swimmerForLane(laneB),
             ),
+            distance => COURSE_LAYOUT.distanceToWorldX(distance),
         );
         this._netRaceController?.setMineRelayArmListener((roundId, carrierLane, fuseSeconds, revision) => {
             const event = { roundId, carrierLane, fuseSeconds, revision };
@@ -2379,9 +2385,9 @@ export class GameManager extends Component {
             const event = { roundId, fromLane, toLane, remainingSeconds, revision };
             if (this._mineRelayBrawl?.applyTransfer(event)) this.handleMineRelayTransfer(event, false);
         });
-        this._netRaceController?.setMineRelayResolutionListener((roundId, carrierLane, exploded, distance, lateral, hitMask, revision) => {
-            const event = { roundId, carrierLane, exploded, distance, lateral, hitMask, revision };
-            if (this._mineRelayBrawl?.applyResolution(event)) this.handleMineRelayResolution(event, false);
+        this._netRaceController?.setMineRelayResolutionListener((roundId, carrierLane, exploded, distance, lateral, hitMask, revision, elapsedSeconds) => {
+            const event = { roundId, carrierLane, exploded, distance, lateral, hitMask, revision, elapsedSeconds };
+            if (this._mineRelayBrawl?.applyResolution(event, this._raceManager?.elapsedSeconds)) this.handleMineRelayResolution(event, false);
         });
         this._netRaceController?.setMineRelayStateListener(state => {
             const controller = this._mineRelayBrawl;
@@ -2412,8 +2418,9 @@ export class GameManager extends Component {
                 const recovery = this._entertainmentRecovery?.stateForLane(lane);
                 if (lane >= 0
                     && recovery?.phase === EntertainmentRecoveryPhase.KNOCKED
-                    && recovery.reason === EntertainmentRecoveryReason.TIMED_BOMB) {
-                    this.applyMineRelayExplosion(lane);
+                    && recovery.reason === EntertainmentRecoveryReason.TIMED_BOMB
+                    && controller.claimCarrierExplosion(roundId)) {
+                    this.applyMineRelayExplosion(lane, undefined, undefined, undefined, !controller.currentArm());
                 }
             }
         });
@@ -2544,18 +2551,20 @@ export class GameManager extends Component {
     }
 
     private handleMineRelayResolution(event: MineRelayResolution, broadcast: boolean) {
+        const currentResolution = this._mineRelayBrawl?.isLatestResolution(event) ?? false;
         if (event.exploded) {
-            this.applyMineRelayExplosion(
+            if (this._mineRelayBrawl?.claimCarrierExplosion(event.roundId)) this.applyMineRelayExplosion(
                 event.carrierLane,
                 event.distance,
                 event.lateral,
                 event.revision,
+                currentResolution,
             );
             for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
                 if (lane === event.carrierLane || (event.hitMask & (1 << lane)) === 0) continue;
                 this.applyExplosionShockwaveHit(lane, event.lateral);
             }
-        } else {
+        } else if (currentResolution) {
             this._mineRelayPresentation?.showResolution(false, null);
             this._eventPictureInPicture?.showTimedBombResolution(
                 this.swimmerForLane(event.carrierLane)?.node ?? null,
@@ -2579,6 +2588,7 @@ export class GameManager extends Component {
             this._netRaceController.enqueueMineRelayResolution(
                 event.roundId, event.carrierLane, event.exploded, event.distance,
                 event.lateral, event.hitMask, event.revision,
+                this._raceManager?.elapsedSeconds,
             );
         }
     }
@@ -2588,6 +2598,7 @@ export class GameManager extends Component {
         distance?: number,
         lateral?: number,
         recoveryRevision?: number,
+        showPresentation = true,
     ) {
         const swimmer = this.swimmerForLane(lane);
         if (!swimmer?.node?.active) return;
@@ -2600,14 +2611,14 @@ export class GameManager extends Component {
         } else {
             swimmer.node.getWorldPosition(this._mineExplosionWorldPosition);
         }
-        this._eventPictureInPicture?.showTimedBombResolution(
+        if (showPresentation) this._eventPictureInPicture?.showTimedBombResolution(
             swimmer.node,
             lane,
             true,
             lane === this._playerLaneIndex,
             this._mineExplosionWorldPosition,
         );
-        this._mineRelayPresentation?.showResolution(true, this._mineExplosionWorldPosition);
+        if (showPresentation) this._mineRelayPresentation?.showResolution(true, this._mineExplosionWorldPosition);
         const swimmerLateral = swimmer.node.position.z;
         const away = swimmerLateral === 0 ? (lane & 1 ? 1 : -1) : Math.sign(swimmerLateral);
         swimmer.applyCollisionImpulse(-MINE_RELAY_TUNING.explosionBackwardImpulse, away * MINE_RELAY_TUNING.explosionLateralImpulse);
@@ -2628,7 +2639,7 @@ export class GameManager extends Component {
                 recoveryRevision,
             );
         }
-        this._entertainmentEventBanner.showEvent(
+        if (showPresentation) this._entertainmentEventBanner.showEvent(
             `${swimmer.swimmerName}被定时炸弹炸倒 · 等待重生`,
             'danger',
             1250,

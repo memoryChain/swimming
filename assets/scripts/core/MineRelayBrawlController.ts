@@ -36,6 +36,7 @@ export type MineRelayResolution = {
     lateral: number;
     hitMask: number;
     revision: number;
+    elapsedSeconds?: number;
 };
 
 export type MineRelayState = {
@@ -107,6 +108,8 @@ export class MineRelayBrawlController {
     private completedRoundMask = 0;
     private explodedRoundMask = 0;
     private appliedExplosionMask = 0;
+    private appliedResolutionMask = 0;
+    private appliedCarrierExplosionMask = 0;
     private resolvedCarrierLanesPacked = 0;
     private activeArm: MineRelayArm | null = null;
     private remainingSeconds = 0;
@@ -130,6 +133,7 @@ export class MineRelayBrawlController {
         private readonly onResolution: (event: MineRelayResolution) => void,
         private rounds: ReadonlyArray<{ triggerDistance: number; fuseSeconds: number }> = MINE_RELAY_ROUNDS,
         private readonly hasPhysicalContact: ((laneA: number, laneB: number) => boolean) | null = null,
+        private readonly distanceToWorldX: (distance: number) => number = distance => distance,
     ) {
         this.previousRacerDistance = new Array(laneCount).fill(Number.NaN);
         this.previousRacerLateral = new Array(laneCount).fill(Number.NaN);
@@ -140,6 +144,8 @@ export class MineRelayBrawlController {
         this.completedRoundMask = 0;
         this.explodedRoundMask = 0;
         this.appliedExplosionMask = 0;
+        this.appliedResolutionMask = 0;
+        this.appliedCarrierExplosionMask = 0;
         this.resolvedCarrierLanesPacked = 0;
         this.activeArm = null;
         this.remainingSeconds = 0;
@@ -273,14 +279,18 @@ export class MineRelayBrawlController {
         return true;
     }
 
-    applyResolution(event: MineRelayResolution): boolean {
+    applyResolution(event: MineRelayResolution, raceElapsedSeconds?: number): boolean {
         const bit = 1 << event.roundId;
         if (!isValidResolution(event) || event.roundId >= this.rounds.length
-            || event.carrierLane >= this.laneCount || event.revision < this.revision
-            || (event.exploded
-                ? (this.appliedExplosionMask & bit) !== 0
-                : (this.completedRoundMask & bit) !== 0)) return false;
-        if (this.activeArm && this.activeArm.roundId !== event.roundId) return false;
+            || event.carrierLane >= this.laneCount
+            || (this.appliedResolutionMask & bit) !== 0) return false;
+        if (event.elapsedSeconds !== undefined
+            && (!Number.isFinite(event.elapsedSeconds) || event.elapsedSeconds < 0
+                || (raceElapsedSeconds !== undefined && raceElapsedSeconds - event.elapsedSeconds > 3))) return false;
+        const updateCurrent = event.revision >= this.revision
+            && (this.completedRoundMask & bit) === 0
+            && (!this.activeArm || this.activeArm.roundId === event.roundId);
+        this.appliedResolutionMask |= bit;
         this.revision = Math.max(this.revision, event.revision);
         this.completedRoundMask |= bit;
         this.resolvedCarrierLanesPacked = writePackedLane(
@@ -290,6 +300,8 @@ export class MineRelayBrawlController {
             this.explodedRoundMask |= bit;
             this.appliedExplosionMask |= bit;
         }
+        // 快照的完成账本与实际冲击分开去重；旧轮命中只补效果，不清新轮或重置冷却。
+        if (!updateCurrent) return true;
         this.activeArm = null;
         this.remainingSeconds = 0;
         this.transferCooldownSeconds = 0;
@@ -298,6 +310,18 @@ export class MineRelayBrawlController {
         this.recoverySeconds = MINE_RELAY_TUNING.recoverySeconds;
         this.resetAssistedPass();
         return true;
+    }
+
+    claimCarrierExplosion(roundId: number): boolean {
+        if (roundId < 0 || roundId >= this.rounds.length) return false;
+        const bit = 1 << roundId;
+        if ((this.appliedCarrierExplosionMask & bit) !== 0) return false;
+        this.appliedCarrierExplosionMask |= bit;
+        return true;
+    }
+
+    isLatestResolution(event: MineRelayResolution): boolean {
+        return event.revision === this.revision && this.activeArm === null;
     }
 
     applySnapshotState(state: MineRelayState): MineRelaySnapshotApplyResult {
@@ -449,7 +473,7 @@ export class MineRelayBrawlController {
             if (!this.isEligibleLane(lane)) continue;
             const racer = this.racerForLane(lane)!;
             if (ellipseDistanceSquared(
-                racer.distance - carrier.distance,
+                this.distanceToWorldX(racer.distance) - this.distanceToWorldX(carrier.distance),
                 racer.lateral - carrier.lateral,
                 MINE_RELAY_TUNING.blastAlongRadius,
                 MINE_RELAY_TUNING.blastLateralRadius,

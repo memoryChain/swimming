@@ -116,10 +116,16 @@ export class PopupUiMotion {
             .to(0.08, { scale: new Vec3(1, 1, 1) }, { easing: 'quadInOut' }));
     }
 
-    dispose(): void {
+    /** 外部导航立即隐藏，保留已有层级和按钮绑定供下次打开。 */
+    hideImmediately(): void {
         this.stopTransition();
         this.resetFeedback();
         this._phase = 'hidden';
+        if (this._root.isValid && this._root.active) this._root.active = false;
+    }
+
+    dispose(): void {
+        this.hideImmediately();
         for (const unbind of this._unbind) unbind();
         this._unbind.length = 0;
         this._resetButtons.length = 0;

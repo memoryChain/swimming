@@ -77,7 +77,8 @@
 // 版本89：已落水补给改为世界公共物品，移除拾取趟数门槛并按物理位置显示与争抢。
 // 版本90：领取者恢复账本、返场事件代次、接触效果独立去重与迟到时限。
 // 版本91：补给账本保留领取顺序；迟到帧与尚未建立的玩法入口保留独立权威效果。
-export const NET_RACE_PROTOCOL_VERSION = 91;
+// v92：爆炸结果独立去重、炮击携带本发爆心、按场景折返坐标判定范围。
+export const NET_RACE_PROTOCOL_VERSION = 92;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

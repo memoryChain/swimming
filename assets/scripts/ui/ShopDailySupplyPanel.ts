@@ -153,6 +153,9 @@ export class ShopDailySupplyPanel {
     }
 
     hide(): void {
+        this._motion.cancel();
+        this._rewardPopup?.hideImmediately();
+        this._closing = false;
         if (this._root?.isValid && this._root.active) this._root.active = false;
         if (this._timer) {
             clearInterval(this._timer);
@@ -180,7 +183,7 @@ export class ShopDailySupplyPanel {
         this._closing = true;
         this.refresh(PlayerData.profile);
         this._motion.exit(() => {
-            if (!this._root?.isValid) return;
+            if (!this._root?.isValid || !this._root.active || !this._closing) return;
             this.hide();
             this._closing = false;
             this._onBack();
@@ -282,7 +285,7 @@ export class ShopDailySupplyPanel {
         } finally {
             this._busySlot = null;
             this.refresh(PlayerData.profile);
-            if (grantedReward) this._rewardPopup?.show(grantedReward);
+            if (grantedReward && this.isVisible()) this._rewardPopup?.show(grantedReward);
         }
     }
 
@@ -387,6 +390,11 @@ class RewardClaimPopup {
         this.setRewardIcon(reward.iconPath);
         this._motion?.show();
         this.playRewardPulse();
+    }
+
+    hideImmediately(): void {
+        this.stopRewardPulse();
+        this._motion?.hideImmediately();
     }
 
     dispose(): void {

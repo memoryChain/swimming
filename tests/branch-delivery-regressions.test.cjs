@@ -37,7 +37,7 @@ function method(file, className, methodName, globals = {}) {
     const js = ts.transpileModule(`class Fixture { ${member.getText(source)} }; Fixture`, {
         compilerOptions: { target: ts.ScriptTarget.ES2020 },
     }).outputText;
-    return vm.runInNewContext(js, globals).prototype[methodName];
+    return vm.runInNewContext(js, { ...globals }).prototype[methodName];
 }
 const { StimulantBrawlController } = load('assets/scripts/core/StimulantBrawlController.ts');
 for (const name of ['createProgramVisuals', 'createBeaconVisuals', 'loadModelVisuals']) {
@@ -47,6 +47,7 @@ const { NetRaceController } = load('assets/scripts/net/NetRaceController.ts');
 const { encodeRaceSnapshot, decodeRaceSnapshot } = load('assets/scripts/net/NetRaceSnapshot.ts');
 const { encodeInputFrame, decodeInputFrame } = load('assets/scripts/net/NetRaceInput.ts');
 const { CannonBrawlController } = load('assets/scripts/core/CannonBrawlController.ts');
+const { MineRelayBrawlController } = load('assets/scripts/core/MineRelayBrawlController.ts');
 const { EntertainmentModeDirector } = load('assets/scripts/core/EntertainmentModeDirector.ts');
 const { LitterBrawlController, LITTER_BRAWL_TUNING } = load('assets/scripts/core/LitterBrawlController.ts');
 const { MinefieldBrawlController } = load('assets/scripts/core/MinefieldBrawlController.ts');
@@ -76,6 +77,200 @@ function net() {
     instance._activeHostPos = 0;
     return instance;
 }
+
+function bombFixture() {
+    const racers = [30, 31].map((distance, lane) => ({ active: true, finished: false, distance, lateral: lane }));
+    const events = [];
+    const controller = new MineRelayBrawlController(2, 7, 20, lane => racers[lane], () => {}, () => {}, event => events.push(event));
+    return { racers, controller, events };
+}
+
+test('炸弹爆炸快照与事件交换到达顺序，携带者和外围各执行一次', () => {
+    const host = bombFixture();
+    host.controller.applyArm({ roundId: 0, carrierLane: 0, fuseSeconds: .1, revision: 1 });
+    host.controller.update(.2, GameState.RACING, true);
+    const event = host.events[0];
+    const file = 'assets/scripts/core/GameManager.ts';
+    for (const snapshotFirst of [true, false]) {
+        let resolutionListener, snapshotListener, carrierHits = 0, peripheralHits = 0;
+        const gm = {
+            _raceManager: {}, _cannonRacerStates: [], _mineRelayRacerStates: [{}, {}],
+            swimmerForLane: lane => ({ node: { active: true, position: { z: lane } }, distance: 30 + lane }),
+            _entertainmentRecovery: { stateForLane: () => ({ phase: 1, reason: 2 }) },
+            _netRaceController: {
+                setMineRelayArmListener() {}, setMineRelayTransferListener() {},
+                setMineRelayResolutionListener(fn) { resolutionListener = fn; },
+                setMineRelayStateListener(fn) { snapshotListener = fn; },
+            },
+            applyMineRelayExplosion() { carrierHits++; },
+            applyExplosionShockwaveHit() { peripheralHits++; },
+        };
+        const globals = {
+            MineRelayBrawlController, LANE_LAYOUT: { laneCount: 2, centerZ: lane => lane },
+            COURSE_LAYOUT: { poolWidth: 20, distanceToWorldX: d => d }, getSharedRandomSeed: () => 7,
+            isTimedBombBrawlMode: () => true, isEntertainmentBrawlMode: () => false,
+            MINE_RELAY_ROUNDS: [{}, {}, {}, {}, {}, {}],
+            EntertainmentRecoveryPhase: { KNOCKED: 1 }, EntertainmentRecoveryReason: { TIMED_BOMB: 2 },
+        };
+        gm.handleMineRelayResolution = method(file, 'GameManager', 'handleMineRelayResolution', globals);
+        method(file, 'GameManager', 'setupMineRelayBrawl', globals).call(gm);
+        const deliver = () => resolutionListener(event.roundId, event.carrierLane, event.exploded,
+            event.distance, event.lateral, event.hitMask, event.revision);
+        if (snapshotFirst) snapshotListener(host.controller.snapshotState());
+        deliver(); snapshotListener(host.controller.snapshotState()); deliver();
+        assert.equal(carrierHits, 1);
+        assert.equal(peripheralHits, 1);
+    }
+});
+
+test('下一轮快照先到时补收上一轮爆炸，不回拨新炸弹及倒计时', () => {
+    const f = bombFixture();
+    f.controller.applyArm({ roundId: 0, carrierLane: 0, fuseSeconds: .1, revision: 1 });
+    f.controller.update(.2, GameState.RACING, true);
+    const guest = bombFixture().controller;
+    guest.applySnapshotState({ ...f.controller.snapshotState(), revision: 3,
+        activeRoundId: 1, carrierLane: 1, remainingSeconds: 6, recoverySeconds: 0 });
+    const before = guest.snapshotState();
+    assert.equal(guest.applyResolution(f.events[0]), true);
+    assert.deepEqual(guest.snapshotState(), before);
+    assert.equal(guest.applyResolution(f.events[0]), false);
+});
+
+test('下一发炮火快照先到时上一发仍补命中，使用该发爆心且不覆盖当前预警', () => {
+    const c = new CannonBrawlController(2, 7, 20, () => null, () => {}, () => {});
+    c.applySnapshotState({ revision: 3, completedStrikeMask: 1, activeStrikeId: 1,
+        targetDistance: 35, targetZ: -5, remainingSeconds: .8 });
+    const impact = { strikeId: 0, hitMask: 2, knockedLane: -1, knockedDistance: 0,
+        revision: 2, targetDistance: 30, targetZ: 5 };
+    assert.equal(c.applyImpact(impact), true);
+    assert.equal(c.currentLaunch().strikeId, 1);
+    assert.equal(c.currentRemainingSeconds(), .8);
+    const hits = [], displays = [];
+    const gm = { _cannonBrawl: c, _lastCannonTargetZ: -5,
+        _cannonBrawlPresentation: { showImpact() { displays.push('world'); } },
+        _eventPictureInPicture: { showCannonImpact() { displays.push('pip'); } },
+        applyExplosionShockwaveHit: (lane, z) => hits.push([lane, z]) };
+    method('assets/scripts/core/GameManager.ts', 'GameManager', 'handleCannonImpact',
+        { LANE_LAYOUT: { laneCount: 2 } }).call(gm, impact, false);
+    assert.deepEqual(hits, [[1, 5]]);
+    assert.deepEqual(displays, []);
+    assert.equal(c.applyImpact(impact), false);
+});
+
+test('炮火和炸弹按场景折返坐标命中，预警与 AI 躲避一致', () => {
+    // 50 米赛程对应 45 米实际池内长度；30 米和70 米都位于池内同一点。
+    const worldX = distance => { const d = distance % 100; return 10 + (d <= 50 ? d : 100 - d) * .9; };
+    const racers = [30, 70, 90].map((distance, lane) => ({ active: true, finished: false,
+        damageable: true, speed: 0, distance, lateral: lane * .5 }));
+    const impacts = [], resolutions = [];
+    const cannon = new CannonBrawlController(3, 7, 20, lane => racers[lane], () => {}, e => impacts.push(e),
+        undefined, undefined, worldX);
+    cannon.applyLaunch({ strikeId: 0, targetDistance: 30, targetZ: 0, warningSeconds: 1, revision: 1 });
+    cannon.update(.4, GameState.RACING, false);
+    assert.equal(cannon.threatForRacer(70, .5), 'core');
+    assert.notEqual(cannon.targetZForAi(70, .5, 1), null);
+    cannon.update(1, GameState.RACING, true);
+    assert.equal(impacts[0].hitMask, 3);
+    const bomb = new MineRelayBrawlController(3, 7, 20, lane => racers[lane], () => {}, () => {},
+        e => resolutions.push(e), undefined, null, worldX);
+    bomb.applyArm({ roundId: 0, carrierLane: 0, fuseSeconds: .1, revision: 1 });
+    bomb.update(.2, GameState.RACING, true);
+    assert.equal(resolutions[0].hitMask, 3);
+});
+
+test('补给站已打开或正在入场时接受邀请，返回后入口恢复且旧回调无效', () => {
+    const file = 'assets/scripts/app/LoginManager.ts';
+    for (const interruptTransition of [true, false]) {
+        let reveal, visible = false, supply = true;
+        const gm = { _canvasNode: { isValid: true }, _shopTransitioning: false, _shopNavigationVersion: 0,
+            _shopPanel: { show() { visible = true; }, hide() { visible = false; }, isVisible: () => visible },
+            _headBar: { setVisible() {}, setBack() {}, setIdentityVisible() {}, isIdentityVisible: () => true,
+                setSupplyEntryVisible(value) { supply = value; } },
+            _prepareRaceFlow: { transitionOutForOverlay(fn) { reveal = fn; return true; }, dispose() {} },
+            openPrepareRace() {},
+        };
+        const globals = { RoomFlow: class { dispose() {} }, getUILayer() {}, UILayer: { Screen: 0 },
+            setRoomMode() {}, console: { log() {} } };
+        for (const name of ['openShop', 'closeShop', 'openRoom', 'exitRoom']) gm[name] = method(file, 'LoginManager', name, globals);
+        gm.openShop();
+        if (!interruptTransition) reveal();
+        gm.openRoom('friend');
+        reveal(); // 模拟在取消边界已经进入任务队列的回调。
+        assert.equal(visible, false);
+        assert.equal(gm._shopTransitioning, false);
+        gm.exitRoom();
+        assert.equal(supply, true);
+        gm.openShop();
+        assert.equal(visible, true);
+    }
+});
+
+test('炸弹已完成快照先到后补事件，不重新延长爆炸恢复冷却', () => {
+    const host = bombFixture();
+    host.controller.applyArm({ roundId: 0, carrierLane: 0, fuseSeconds: .1, revision: 1 });
+    host.controller.update(.2, GameState.RACING, true);
+    const guest = bombFixture().controller;
+    guest.applySnapshotState(host.controller.snapshotState());
+    guest.update(1, GameState.RACING, false);
+    const before = guest.snapshotState();
+    assert.equal(guest.applyResolution(host.events[0]), true);
+    assert.deepEqual(guest.snapshotState(), before);
+});
+
+test('炮火和炸弹广播首包丢失后有界补发，爆心及时钟穿过真实编解码与监听', () => {
+    const host = net(); host._session.localPos = 0; host.promoteToHost(); host._peerNeedsBroadcast = true;
+    host.enqueueCannonImpact(0, 3, 0, 30, 2, -4.625, 20);
+    host.enqueueMineRelayResolution(0, 0, true, 30, 1, 3, 2, 20);
+    host._authoritativeEvents.length = 0;
+    broadcasts.length = 0; host.sendSnapshot([]);
+    const retry = broadcasts.find(message => message.startsWith('IN|'));
+    assert.ok(retry); assert.ok(Buffer.byteLength(retry) < 1536);
+    const guest = net(); let cannonHits = 0, bombHits = 0;
+    const cannon = new CannonBrawlController(2, 7, 20, () => null, () => {}, () => {});
+    const bomb = bombFixture().controller;
+    guest.setCannonImpactListener((strikeId, hitMask, knockedLane, knockedDistance, revision, targetZ, elapsedSeconds) => {
+        assert.equal(targetZ, -4.625); assert.equal(elapsedSeconds, 20);
+        if (cannon.applyImpact({ strikeId, hitMask, knockedLane, knockedDistance, revision, targetZ, elapsedSeconds }, 21)) cannonHits++;
+    });
+    guest.setMineRelayResolutionListener((roundId, carrierLane, exploded, distance, lateral, hitMask, revision, elapsedSeconds) => {
+        assert.equal(elapsedSeconds, 20);
+        if (bomb.applyResolution({ roundId, carrierLane, exploded, distance, lateral, hitMask, revision, elapsedSeconds }, 21)) bombHits++;
+    });
+    guest.onBroadcast(retry); guest.onBroadcast(retry);
+    assert.equal(cannonHits, 1); assert.equal(bombHits, 1);
+    for (const entry of host._contactRecoveryEvents) entry.expiresAt = 0;
+    broadcasts.length = 0; host.sendSnapshot([]);
+    assert.equal(broadcasts.some(message => message.startsWith('IN|')), false);
+    host.dispose(); guest.dispose();
+});
+
+test('炮火和炸弹不补播超过三秒的旧冲击，三秒边界内仍能恢复', () => {
+    for (const age of [3, 3.01]) {
+        const cannon = new CannonBrawlController(2, 7, 20, () => null, () => {}, () => {});
+        const bomb = bombFixture().controller;
+        assert.equal(cannon.applyImpact({ strikeId: 0, hitMask: 3, knockedLane: 0,
+            knockedDistance: 30, revision: 2, targetZ: 2, elapsedSeconds: 20 }, 20 + age), age === 3);
+        assert.equal(bomb.applyResolution({ roundId: 0, carrierLane: 0, exploded: true,
+            distance: 30, lateral: 0, hitMask: 3, revision: 2, elapsedSeconds: 20 }, 20 + age), age === 3);
+    }
+});
+
+test('补给站退场被邀请隐藏时取消待导航和奖励弹窗，旧回调不返回大厅', () => {
+    const file = 'assets/scripts/ui/ShopDailySupplyPanel.ts';
+    let completion, backs = 0, cancelled = 0, popupHidden = 0;
+    const panel = { _root: { isValid: true, active: true }, _closing: false,
+        _motion: { exit(fn) { completion = fn; }, cancel() { cancelled++; } },
+        _rewardPopup: { hideImmediately() { popupHidden++; } },
+        refresh() {}, _onBack() { backs++; } };
+    const globals = { PlayerData: { profile: {} } };
+    panel.hide = method(file, 'ShopDailySupplyPanel', 'hide', globals);
+    panel.beginClose = method(file, 'ShopDailySupplyPanel', 'beginClose', globals);
+    panel.beginClose(); panel.hide(); completion();
+    assert.equal(backs, 0); assert.equal(cancelled, 1); assert.equal(popupHidden, 1);
+    assert.equal(panel._closing, false); assert.equal(panel._root.active, false);
+    panel._root.active = true; panel.beginClose(); completion();
+    assert.equal(backs, 1);
+});
 
 function outlineRig() {
     const file = 'assets/scripts/entity/CartoonSwimmerRig.ts';
