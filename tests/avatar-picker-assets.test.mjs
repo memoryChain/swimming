@@ -30,11 +30,11 @@ test('avatar picker keeps persisted ids stable and exposes ten art slots', () =>
     assert.equal(RESOURCE_PATHS.avatarPickerUi.avatars.length, AVATARS.length);
 });
 
-test('all avatar picker portraits are 100x100 RGBA PNG files', () => {
+test('all avatar picker portraits are 256x256 RGBA PNG files', () => {
     for (const path of RESOURCE_PATHS.avatarPickerUi.avatars) {
         const info = pngInfo(path);
-        assert.equal(info.width, 100, info.file);
-        assert.equal(info.height, 100, info.file);
+        assert.equal(info.width, 256, info.file);
+        assert.equal(info.height, 256, info.file);
         assert.equal(info.colorType, 6, `${info.file} must be RGBA`);
     }
 });

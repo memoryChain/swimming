@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { load, Vec3, Mat4, root, createRig } = require('./helpers/character-contact-harness.cjs');
+const { load, Vec3, Mat4, root, createRig, SWIMMER_MODEL_FILES } = require('./helpers/character-contact-harness.cjs');
 const { CharacterHeadBounds } = load(path.join(root, 'assets/scripts/character/CharacterHeadBounds.ts'));
 
 // 使用透视和斜俯视的投影，独立对全部头部蒙皮顶点验证，不能只检查缓存盒本身。
@@ -11,7 +11,7 @@ const camera = { worldToScreen(p, out) {
     return out.set(375 + p.x * 700 / depth, 400 + (p.y * 0.97 - p.z * 0.24) * 700 / depth, depth / 100);
 } };
 const actions = ['victory', 'joyful_jump', 'ymca_dance', 'dancing_twerk', 'defeated'];
-for (const file of fs.readdirSync(path.join(root, 'assets/race/models')).filter(f => f.endsWith('.glb'))) {
+for (const file of SWIMMER_MODEL_FILES) {
     test(`${file}：帽子和头发在标记下方，动作、缩放和再来一局不依赖固定头高`, () => {
         const rig = createRig(file), bounds = new CharacterHeadBounds();
         bounds.bind(rig.renderers);

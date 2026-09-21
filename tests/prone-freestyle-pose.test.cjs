@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { createRig: createCharacterRig, Node, Vec3, Quat, Mat4, load, root } = require('./helpers/character-contact-harness.cjs');
+const { createRig: createCharacterRig, Node, Vec3, Quat, Mat4, load, root, SWIMMER_MODEL_FILES } = require('./helpers/character-contact-harness.cjs');
 // 验证自由泳求解器对全部骨架的兼容性，独立于正式比赛的角色分配。
 function createRig(file) {
     const rig = createCharacterRig(file);
@@ -55,7 +55,7 @@ test('胸肩在回臂阶段侧转，同期双臂不产生虚假的左右摇摆',
     assert.ok(proneFreestyleRollSignal(0.22 * TAU, 0.72 * TAU) < -0.99, '右回臂侧肩膀升高');
 });
 
-for (const file of fs.readdirSync(path.join(root, 'assets/race/models')).filter(f => f.endsWith('.glb'))) {
+for (const file of SWIMMER_MODEL_FILES) {
     test(`${file}：回臂持续到周期末段，避免提前前伸停住`, () => {
         const r = createRig(file); r.wrapper.setRotationFromEuler(90, 90, 0);
         const arm = r.pose._leftArm, hand = r.pose._leftHand;

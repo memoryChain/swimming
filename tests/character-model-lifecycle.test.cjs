@@ -1,10 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const path = require('node:path');
-const { load, root, createRig, Vec3 } = require('./helpers/character-contact-harness.cjs');
+const { load, root, createRig, Vec3, SWIMMER_MODEL_FILES } = require('./helpers/character-contact-harness.cjs');
 const { CharacterPoseStateController } = load(path.join(root, 'assets/scripts/character/CharacterPoseStateController.ts'));
-const models = fs.readdirSync(path.join(root, 'assets/race/models')).filter(f => f.endsWith('.glb'));
+const models = SWIMMER_MODEL_FILES;
 
 function destroyTree(node) {
     for (const child of node.children) destroyTree(child);

@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { load, Node, Vec3, Quat, root, createRig } = require('./helpers/character-contact-harness.cjs');
+const { load, Node, Vec3, Quat, root, createRig, SWIMMER_MODEL_FILES } = require('./helpers/character-contact-harness.cjs');
 const { awardsPodiumSurface } = load(path.join(root, 'assets/scripts/venue/AwardsPodiumSurface.ts'));
 
 test('轻微离地跨过支撑阈值时骨盆与脚位连续，不突然吸附或弹起', () => {
@@ -33,7 +33,7 @@ test('台面取当前本体几何，忽略过期渲染包围盒与高出的描�
 });
 
 
-for (const file of fs.readdirSync(path.join(root, 'assets/race/models')).filter(f => f.endsWith('.glb'))) {
+for (const file of SWIMMER_MODEL_FILES) {
     test(`${file}：实际蒙皮鞋底对齐三种台高，重开解除接地，跳跃保留腾空`, () => {
         const { pose, soles, wrapper, exactY } = createRig(file);
         assert.ok(soles.ready, '必须识别两只鞋底');
@@ -73,7 +73,7 @@ for (const file of fs.readdirSync(path.join(root, 'assets/race/models')).filter(
     });
 }
 
-for (const file of fs.readdirSync(path.join(root, 'assets/race/models')).filter(f => f.endsWith('.glb'))) {
+for (const file of SWIMMER_MODEL_FILES) {
     test(`${file}：领奖按源足部运动适配，抬脚自由运动且不穿台`, () => {
         const { pose, soles, wrapper, exactY } = createRig(file);
         const surface = 0.982;

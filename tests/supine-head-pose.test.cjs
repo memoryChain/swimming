@@ -3,12 +3,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { createRig, Node, Vec3, load, root } = require('./helpers/character-contact-harness.cjs');
+const { createRig, Node, Vec3, load, root, SWIMMER_MODEL_FILES } = require('./helpers/character-contact-harness.cjs');
 const { MOTION_TUNING } = load(path.join(root, 'assets/scripts/core/InputTuning.ts'));
 const saved = JSON.parse(fs.readFileSync(path.join(root, 'assets/resources/config/tuning.json'), 'utf8')).values;
 MOTION_TUNING.swimBodyPitchDegrees = saved['motion.swimBodyPitchDegrees'];
 
-for (const file of fs.readdirSync(path.join(root, 'assets/race/models')).filter(f => f.endsWith('.glb'))) {
+for (const file of SWIMMER_MODEL_FILES) {
     test(`${file}：仰泳头部抬升、俯泳不变、翻身连续`, () => {
         const r = createRig(file);
         const swimmer = new Node();

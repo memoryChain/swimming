@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { load, Node, Vec3, Quat, root, createRig } = require('./helpers/character-contact-harness.cjs');
+const { load, Node, Vec3, Quat, root, createRig, SWIMMER_MODEL_FILES } = require('./helpers/character-contact-harness.cjs');
 const { readStartBlockSurface } = load(path.join(root, 'assets/scripts/venue/StartBlockSurface.ts'));
 const { CharacterPoseStateController } = load(path.join(root, 'assets/scripts/character/CharacterPoseStateController.ts'));
 const prep = JSON.parse(fs.readFileSync(path.join(root, 'assets/race/model-actions/tPose/Tpose_divePrep.json')));
@@ -50,7 +50,7 @@ test('真实起跳台识别约 11.2° 主踏面，排除更高的小边条，缩
     }
 });
 
-for (const file of fs.readdirSync(path.join(root, 'assets/race/models')).filter(f => f.endsWith('.glb'))) {
+for (const file of SWIMMER_MODEL_FILES) {
     test(`${file}：斜台展示→准备→离台，全程保留根节点轨迹`, () => {
         const { pose, soles, hands, wrapper, exactY, exactHandBounds } = createRig(file);
         const racer = new Node(); wrapper.parent = racer; racer.children.push(wrapper);

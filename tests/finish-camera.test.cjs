@@ -43,13 +43,15 @@ function flowSetup() {
     return { flow, finish, resolve: () => resolve([row]), awards: () => awards, rewards: () => rewards };
 }
 
-test('最后到达也保留两秒近景，只展示一次领奖，等待网络结果不重复计时', () => {
+test('最后到达也保留两秒近景，只展示一次领奖，等待网络结果不重复计时', async () => {
     const s = flowSetup(); s.finish(); s.resolve();
+    await Promise.resolve();
     assert.equal(s.rewards(), 1, '镜头停留不延迟奖励结算');
     s.flow.updateRaceCamera(1.9); assert.equal(s.awards(), 0);
     s.flow.updateRaceCamera(0.11); assert.equal(s.awards(), 1);
     s.flow.updateRaceCamera(3); assert.equal(s.awards(), 1);
     const late = flowSetup(); late.finish(); late.flow.updateRaceCamera(3); late.resolve();
+    await Promise.resolve();
     assert.equal(late.awards(), 1);
 });
 

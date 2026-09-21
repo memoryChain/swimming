@@ -8,6 +8,7 @@ const { StandingSoleContact } = load(path.join(root, 'assets/scripts/character/S
 const { CharacterHandContact } = load(path.join(root, 'assets/scripts/character/CharacterHandContact.ts'));
 const { FreestylePoseController } = load(path.join(root, 'assets/scripts/character/FreestylePoseController.ts'));
 const { SWIMMER_MODEL_VARIANTS } = load(path.join(root, 'assets/scripts/core/ResourcePaths.ts'));
+const SWIMMER_MODEL_FILES = SWIMMER_MODEL_VARIANTS.map(variant => `${path.basename(variant.candidates[0])}.glb`);
 
 function createRig(file, modelDirectory = process.env.CHARACTER_MODEL_DIRECTORY || path.join(root, 'assets/race/models')) {
     const data = fs.readFileSync(path.join(modelDirectory, file));
@@ -138,4 +139,4 @@ function createRig(file, modelDirectory = process.env.CHARACTER_MODEL_DIRECTORY 
     return { pose, soles, hands, wrapper, variant, exactY, renderers, fullHead, exactHandBounds, modelDirectory };
 }
 
-module.exports = { ...harness, createRig };
+module.exports = { ...harness, createRig, SWIMMER_MODEL_FILES };

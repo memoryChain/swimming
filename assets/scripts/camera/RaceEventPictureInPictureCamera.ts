@@ -432,8 +432,8 @@ export class RaceEventPictureInPictureCamera {
         for (let index = 0; index < clusters.length; index++) {
             const cluster = clusters[index];
             if (!cluster.active || cluster.wave !== fallingWave) continue;
-            focusWorldX += this.options.course.distanceToWorldX(cluster.anchorCourseX);
-            focusZ += cluster.anchorLateral;
+            focusWorldX += this.options.course.distanceToWorldX(cluster.courseX);
+            focusZ += cluster.lateral;
             focusCount++;
         }
         if (focusCount > 0) {

@@ -173,16 +173,24 @@ if(process.env.HUD_LAYOUT_OUTPUT){
 test('泳道隐藏本人姓名名次；对手排名为正圆且复用字库，重复排名不写文字',()=>{
  class Graphics extends Comp {circle(x,y,r){this.radius=r;}fill(){}}
  class Vec3{}
+ class SpriteFrame{}
  Node.prototype.destroyAllChildren=function(){this.children=[];};
- const cc={Color,Graphics,Label,Node,UITransform,Vec3,view:{}};
+ const cc={Color,Graphics,Label,Node,Sprite,SpriteFrame,UIOpacity,UITransform,Vec3,view:{}};
  function node(name,p){const n=new Node(name);n.setParent(p);n.addComponent(UITransform);return n;}
- const mod=load('assets/scripts/ui/SwimmerNameOverlay.ts',{'cc':cc,'./RuntimeUiFactory':{makeUiNode:node},'./ProjectUiFonts':{styleProjectUiLabel:(l)=>l.font='项目粗体',styleDynamicUiLabel:(l)=>l.font='动态姓名'}});
+ const mod=load('assets/scripts/ui/SwimmerNameOverlay.ts',{
+  'cc':cc,
+  '../core/ResourcePaths':{RESOURCE_PATHS:{entertainmentKnockoutUi:{dizzyStars:'dizzy-stars'},softSpeedStreak:'soft-speed-streak'}},
+  './AvatarUiAssets':{loadAvatarUiSpriteFrame:(path,done)=>done(null)},
+  './RuntimeUiFactory':{makeUiNode:node},
+  './ProjectUiFonts':{styleProjectUiLabel:(l)=>l.font='项目粗体',styleDynamicUiLabel:(l)=>l.font='动态姓名'}
+ });
  const root=new Node('hud'),self={node:new Node('self'),swimmerName:'本人'},other={node:new Node('other'),swimmerName:'其他选手'};
  const overlay=new mod.SwimmerNameOverlay();overlay.bind(root);overlay.setSwimmers([self,other],self);
- const tags=find(root,'SwimmerNameTags');assert.equal(tags.children.length,1);assert.equal(find(tags,'SwimmerName_self'),undefined);
- for(const tag of tags.children){const badge=find(tag,'Placement'),size=badge.getComponent(UITransform).contentSize;assert.equal(size.width,size.height);assert.equal(badge.getComponent(Graphics).radius,size.width/2);assert.equal(find(badge,'Label').getComponent(Label).font,'项目粗体');}
+ const tags=find(root,'SwimmerNameTags'),nameTags=tags.children.filter(child=>child.name.startsWith('SwimmerName_'));
+ assert.equal(nameTags.length,1);assert.equal(find(tags,'SwimmerName_self'),undefined);
+ for(const tag of nameTags){const badge=find(tag,'Placement'),size=badge.getComponent(UITransform).contentSize;assert.equal(size.width,size.height);assert.equal(badge.getComponent(Graphics).radius,size.width/2);assert.equal(find(badge,'Label').getComponent(Label).font,'项目粗体');}
 
- const ranks=[{swimmer:self,placement:2},{swimmer:other,placement:1}];overlay.setLivePlacements(ranks);const before=writes;overlay.setLivePlacements(ranks);assert.equal(writes,before);assert.equal(find(tags.children[0],'Label').getComponent(Label).string,'1');
+ const ranks=[{swimmer:self,placement:2},{swimmer:other,placement:1}];overlay.setLivePlacements(ranks);const before=writes;overlay.setLivePlacements(ranks);assert.equal(writes,before);assert.equal(find(nameTags[0],'Label').getComponent(Label).string,'1');
 });
 
 test('完赛倒计时重复秒数不重播，末三秒变色，到零隐藏且可开始下一轮',()=>{
