@@ -241,6 +241,53 @@ test('可靠帧实际发送携带比赛身份，销毁取消旧倒计时且拒�
     assert.equal(starts, 0); assert.equal(broadcasts.length, 0);
 });
 
+function foldedBomb(distances, lateral = 1, physicalContact = () => false) {
+    const racers = distances.map((distance, lane) => ({ active: true, finished: false, distance, lateral: lane * lateral }));
+    const world = distance => Math.floor(distance / 50) % 2 === 0 ? distance % 50 : 50 - distance % 50;
+    const direction = distance => Math.floor(distance / 50) % 2 === 0 ? 1 : -1;
+    const transfers = [];
+    const controller = new MineRelayBrawlController(racers.length, 7, 20, lane => racers[lane], () => {},
+        event => transfers.push(event), () => {}, undefined, physicalContact, world, direction);
+    controller.applyArm({ roundId: 0, carrierLane: 0, fuseSeconds: 8, revision: 1 });
+    return { racers, controller, transfers };
+}
+
+test('炸弹同向短传跨整圈保持一致，回程按身体前方判断且不短传给迎面者', () => {
+    for (const [distances, expected] of [[[25, 27], 1], [[25, 127], 1], [[75, 177], 1], [[75, 173], 0], [[25, 73], 0]]) {
+        const f = foldedBomb(distances);
+        for (const dt of [.6, .2, .2]) f.controller.update(dt, GameState.RACING, true);
+        assert.equal(f.controller.currentCarrierLane(), expected, String(distances));
+        assert.equal(f.transfers.length, expected);
+    }
+});
+
+test('炸弹迎面贴身与跨圈扫掠按世界位置交接，瞬移不产生穿越误判', () => {
+    const contact = foldedBomb([25, 74], .2);
+    contact.controller.update(.6, GameState.RACING, true);
+    assert.equal(contact.controller.currentCarrierLane(), 1);
+    const sweep = foldedBomb([25, 126], 1.2);
+    sweep.controller.update(.6, GameState.RACING, true);
+    assert.equal(sweep.controller.currentCarrierLane(), 0);
+    sweep.racers[1].distance = 124;
+    sweep.controller.update(.1, GameState.RACING, true);
+    assert.equal(sweep.controller.currentCarrierLane(), 1);
+    const teleport = foldedBomb([25, 130], 0);
+    teleport.controller.update(.6, GameState.RACING, true);
+    teleport.racers[1].distance = 120;
+    teleport.controller.update(.1, GameState.RACING, true);
+    assert.equal(teleport.controller.currentCarrierLane(), 0);
+});
+
+test('炸弹 AI 寻人、避让和开局邻近候选共用世界距离', () => {
+    const f = foldedBomb([25, 127, 40]);
+    assert.equal(f.controller.nearestPassTarget(0), 1);
+    assert.equal(f.controller.hasNearbyStarterTarget(0), true);
+    f.controller.update(.6, GameState.RACING, true);
+    assert.equal(f.controller.targetZForAi(0, 1), 1);
+    assert.ok(f.controller.targetZForAi(1, 1) > f.racers[1].lateral);
+    assert.equal(f.controller.targetZForAi(2, 1), null);
+});
+
 test('炸弹爆炸快照与事件交换到达顺序，携带者和外围各执行一次', () => {
     const host = bombFixture();
     host.controller.applyArm({ roundId: 0, carrierLane: 0, fuseSeconds: .1, revision: 1 });

@@ -2395,6 +2395,7 @@ export class GameManager extends Component {
                 this.swimmerForLane(laneB),
             ),
             distance => COURSE_LAYOUT.distanceToWorldX(distance),
+            distance => COURSE_LAYOUT.directionAtDistance(distance),
         );
         this._netRaceController?.setMineRelayArmListener((roundId, carrierLane, fuseSeconds, revision) => {
             const event = { roundId, carrierLane, fuseSeconds, revision };

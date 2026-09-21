@@ -101,7 +101,7 @@ export const MINE_RELAY_TUNING = {
 
 /**
  * 定时炸弹模式的单机／房主权威规则。访客只推进显示计时，并应用可靠事件和快照。
- * 传递优先消费房主已经确认的人物接触，再用赛道坐标中的身体扩张椭圆与相对路径扫掠兜底。
+ * 传递优先消费房主已经确认的人物接触，再用世界坐标中的身体扩张椭圆与相对路径扫掠兜底。
  */
 export class MineRelayBrawlController {
     private revision = 0;
@@ -120,7 +120,7 @@ export class MineRelayBrawlController {
     private lastStarterLane = -1;
     private assistedPassTargetLane = -1;
     private assistedPassSeconds = 0;
-    private readonly previousRacerDistance: number[];
+    private readonly previousRacerWorldX: number[];
     private readonly previousRacerLateral: number[];
 
     constructor(
@@ -134,8 +134,9 @@ export class MineRelayBrawlController {
         private rounds: ReadonlyArray<{ triggerDistance: number; fuseSeconds: number }> = MINE_RELAY_ROUNDS,
         private readonly hasPhysicalContact: ((laneA: number, laneB: number) => boolean) | null = null,
         private readonly distanceToWorldX: (distance: number) => number = distance => distance,
+        private readonly directionAtDistance: (distance: number) => number = () => 1,
     ) {
-        this.previousRacerDistance = new Array(laneCount).fill(Number.NaN);
+        this.previousRacerWorldX = new Array(laneCount).fill(Number.NaN);
         this.previousRacerLateral = new Array(laneCount).fill(Number.NaN);
     }
 
@@ -155,7 +156,7 @@ export class MineRelayBrawlController {
         this.previousCarrierLane = -1;
         this.lastStarterLane = -1;
         this.resetAssistedPass();
-        this.previousRacerDistance.fill(Number.NaN);
+        this.previousRacerWorldX.fill(Number.NaN);
         this.previousRacerLateral.fill(Number.NaN);
     }
 
@@ -179,7 +180,7 @@ export class MineRelayBrawlController {
 
     update(dt: number, state: GameState, authoritative: boolean): void {
         if (state !== GameState.RACING) {
-            this.previousRacerDistance.fill(Number.NaN);
+            this.previousRacerWorldX.fill(Number.NaN);
             this.previousRacerLateral.fill(Number.NaN);
             return;
         }
@@ -428,7 +429,7 @@ export class MineRelayBrawlController {
         }
         // 刚装雷或刚完成交接时给新携带者一个可读、可接近的窗口，避免附近 AI 立即同步散开。
         if (this.transferCooldownSeconds > 0) return null;
-        if (Math.abs(racer.distance - carrier.distance) > MINE_RELAY_TUNING.aiAvoidAlongDistance
+        if (Math.abs(this.distanceToWorldX(racer.distance) - this.distanceToWorldX(carrier.distance)) > MINE_RELAY_TUNING.aiAvoidAlongDistance
             || Math.abs(racer.lateral - carrier.lateral) > MINE_RELAY_TUNING.aiAvoidLateralDistance) return null;
         const direction = racer.lateral === carrier.lateral
             ? (lane & 1 ? 1 : -1)
@@ -485,7 +486,7 @@ export class MineRelayBrawlController {
     private pickTransferTarget(carrierLane: number): number {
         const carrier = this.racerForLane(carrierLane);
         if (!carrier) return -1;
-        const previousCarrierDistance = this.previousRacerDistance[carrierLane];
+        const previousCarrierWorldX = this.previousRacerWorldX[carrierLane];
         const previousCarrierLateral = this.previousRacerLateral[carrierLane];
         let bestLane = -1;
         let bestDistance = Number.POSITIVE_INFINITY;
@@ -493,7 +494,7 @@ export class MineRelayBrawlController {
             if (lane === carrierLane || !this.isEligibleLane(lane)) continue;
             if (lane === this.previousCarrierLane && this.returnProtectionSeconds > 0) continue;
             const racer = this.racerForLane(lane)!;
-            const along = racer.distance - carrier.distance;
+            const along = this.distanceToWorldX(racer.distance) - this.distanceToWorldX(carrier.distance);
             const lateral = racer.lateral - carrier.lateral;
             const inside = expandedEllipseContains(
                 along, lateral, 0, 0,
@@ -502,7 +503,7 @@ export class MineRelayBrawlController {
                 MINE_RELAY_TUNING.transferBodyAlongRadius,
                 MINE_RELAY_TUNING.transferBodyLateralRadius,
             );
-            const previousAlong = this.previousRacerDistance[lane] - previousCarrierDistance;
+            const previousAlong = this.previousRacerWorldX[lane] - previousCarrierWorldX;
             const previousLateral = this.previousRacerLateral[lane] - previousCarrierLateral;
             const relativeSweepAlong = along - previousAlong;
             const relativeSweepLateral = lateral - previousLateral;
@@ -544,7 +545,7 @@ export class MineRelayBrawlController {
             if (lane === this.previousCarrierLane && this.returnProtectionSeconds > 0) continue;
             if (!this.hasPhysicalContact(carrierLane, lane)) continue;
             const racer = this.racerForLane(lane)!;
-            const along = racer.distance - carrier.distance;
+            const along = this.distanceToWorldX(racer.distance) - this.distanceToWorldX(carrier.distance);
             const lateral = racer.lateral - carrier.lateral;
             const distanceSq = along * along + lateral * lateral;
             if (distanceSq < bestDistanceSq || (distanceSq === bestDistanceSq && lane < bestLane)) {
@@ -567,7 +568,10 @@ export class MineRelayBrawlController {
             if (lane === carrierLane || !this.isEligibleLane(lane)) continue;
             if (lane === this.previousCarrierLane && this.returnProtectionSeconds > 0) continue;
             const racer = this.racerForLane(lane)!;
-            const ahead = racer.distance - carrier.distance;
+            // 短传只交给同向且位于身体前方的人；贴身接触仍允许迎面交接。
+            const direction = this.directionAtDistance(carrier.distance);
+            if (this.directionAtDistance(racer.distance) !== direction) continue;
+            const ahead = (this.distanceToWorldX(racer.distance) - this.distanceToWorldX(carrier.distance)) * direction;
             const lateral = Math.abs(racer.lateral - carrier.lateral);
             if (ahead < minAhead
                 || ahead > maxAhead || lateral > maxLateral) continue;
@@ -590,8 +594,8 @@ export class MineRelayBrawlController {
     private rememberRacerPositions(): void {
         for (let lane = 0; lane < this.laneCount; lane++) {
             const racer = this.racerForLane(lane);
-            this.previousRacerDistance[lane] = racer?.active && !racer.finished
-                ? racer.distance
+            this.previousRacerWorldX[lane] = racer?.active && !racer.finished
+                ? this.distanceToWorldX(racer.distance)
                 : Number.NaN;
             this.previousRacerLateral[lane] = racer?.active && !racer.finished
                 ? racer.lateral
@@ -608,7 +612,7 @@ export class MineRelayBrawlController {
             if (lane === carrierLane || !this.isEligibleLane(lane)) continue;
             if (lane === this.previousCarrierLane && this.returnProtectionSeconds > 0) continue;
             const racer = this.racerForLane(lane)!;
-            const along = racer.distance - carrier.distance;
+            const along = this.distanceToWorldX(racer.distance) - this.distanceToWorldX(carrier.distance);
             const lateral = racer.lateral - carrier.lateral;
             const distance = along * along + lateral * lateral;
             if (distance < bestDistance || (distance === bestDistance && lane < bestLane)) {
@@ -652,7 +656,7 @@ export class MineRelayBrawlController {
         for (let lane = 0; lane < this.laneCount; lane++) {
             if (lane === carrierLane || !this.isEligibleLane(lane)) continue;
             const racer = this.racerForLane(lane)!;
-            if (Math.abs(racer.distance - carrier.distance) <= MINE_RELAY_TUNING.starterNearbyAlongDistance
+            if (Math.abs(this.distanceToWorldX(racer.distance) - this.distanceToWorldX(carrier.distance)) <= MINE_RELAY_TUNING.starterNearbyAlongDistance
                 && Math.abs(racer.lateral - carrier.lateral) <= MINE_RELAY_TUNING.starterNearbyLateralDistance) {
                 return true;
             }
