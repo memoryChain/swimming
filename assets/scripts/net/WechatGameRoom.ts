@@ -30,7 +30,7 @@ function isGameStartedRoomState(state: number | undefined): boolean {
 
 // Verbose logging of the raw GameServerManager payloads. Leave on until the field
 // mappings below are confirmed on a real device, then flip to false.
-const NET_DEBUG = true;
+const NET_DEBUG = false;
 
 function netLog(tag: string, payload?: any): void {
     if (!NET_DEBUG) {
@@ -103,6 +103,10 @@ export class WechatGameRoom implements INetRoom {
     // (native onGameStart, or roomState->started via onRoomInfoChange / getRoomInfo
     // poll). Needed because onGameStart is unreliable (see note above).
     private _gameStartNotified = false;
+    private _startPollGeneration = 0;
+    private _startPollActive = false;
+    private _startPollTimer: ReturnType<typeof setTimeout> | null = null;
+    private _startFallbackTimer: ReturnType<typeof setTimeout> | null = null;
     // True for the room creator (owner); owners must leave via ownerLeaveRoom.
     private _isOwner = false;
     private _localClientId: number | null = null;
@@ -170,6 +174,7 @@ export class WechatGameRoom implements INetRoom {
         const gsm = this.manager();
         this._roomEventsBound = true;
         this.safeOn('onBeKickedOut', () => gsm.onBeKickedOut?.(() => {
+            this.stopStartPolling();
             this._accessInfo = '';
             this._isOwner = false;
             this._localClientId = null;
@@ -201,12 +206,14 @@ export class WechatGameRoom implements INetRoom {
         }));
         this.safeOn('onGameEnd', () => gsm.onGameEnd?.(() => {
             netLog('onGameEnd');
+            this.stopStartPolling();
             this._gameStarted = false;
             this._gameStartNotified = false;
             this._callbacks.onGameEnd?.();
         }));
         this.safeOn('onLogout', () => gsm.onLogout?.(() => {
             netLog('onLogout');
+            this.stopStartPolling();
             this._callbacks.onLogout?.();
         }));
     }
@@ -290,6 +297,7 @@ export class WechatGameRoom implements INetRoom {
         }
         this._gameStartNotified = true;
         this._gameStarted = true;
+        this.stopStartPolling();
         netLog(`game started (${source})`);
         this.bindGameEvents();
         this._callbacks.onGameStart?.();
@@ -298,12 +306,32 @@ export class WechatGameRoom implements INetRoom {
     // Poll the room state after startGame so a member that never receives the native
     // onGameStart still detects the game has started (roomState 2/5). Logs the state
     // so we can see the real value.
-    private pollGameStart(attempt: number): void {
-        if (this._gameStartNotified || attempt >= 15) {
+    private stopStartPolling(): void {
+        this._startPollGeneration++;
+        this._startPollActive = false;
+        if (this._startPollTimer !== null) clearTimeout(this._startPollTimer);
+        if (this._startFallbackTimer !== null) clearTimeout(this._startFallbackTimer);
+        this._startPollTimer = null;
+        this._startFallbackTimer = null;
+    }
+
+    private beginStartPolling(): number {
+        if (!this._gameStartNotified && !this._startPollActive) {
+            this.stopStartPolling();
+            this._startPollActive = true;
+            this.pollGameStart(0, this._startPollGeneration);
+        }
+        return this._startPollGeneration;
+    }
+
+    private pollGameStart(attempt: number, generation: number): void {
+        if (generation !== this._startPollGeneration || !this._startPollActive || this._gameStartNotified) return;
+        if (attempt >= 15) {
+            this._startPollActive = false;
             return;
         }
         this.getRoomInfo().then((info) => {
-            if (this._gameStartNotified) {
+            if (generation !== this._startPollGeneration || !this._startPollActive || this._gameStartNotified) {
                 return;
             }
             const state = info ? info.state : undefined;
@@ -311,7 +339,11 @@ export class WechatGameRoom implements INetRoom {
             if (isGameStartedRoomState(state)) {
                 this.handleGameStarted('poll');
             } else {
-                setTimeout(() => this.pollGameStart(attempt + 1), 400);
+                this._startPollTimer = setTimeout(() => {
+                    if (generation !== this._startPollGeneration) return;
+                    this._startPollTimer = null;
+                    this.pollGameStart(attempt + 1, generation);
+                }, 400);
             }
         });
     }
@@ -461,7 +493,7 @@ export class WechatGameRoom implements INetRoom {
         // 'nativeInstance.uploadFrame' errors while the guest works). We bind onSyncFrame
         // ONLY after the game is confirmed started, in handleGameStarted().
         // onGameStart is unreliable; poll the room state to detect the start.
-        this.pollGameStart(0);
+        const generation = this.beginStartPolling();
         // startGame does NOT support promise-style calls — wrap success/fail.
         return new Promise((resolve, reject) => {
             try {
@@ -476,7 +508,14 @@ export class WechatGameRoom implements INetRoom {
                         // initialize (uploadFrame is gated on _gameStarted) and gives
                         // onGameStart / roomState a chance to fire first; handleGameStarted
                         // is idempotent so whichever lands first wins.
-                        setTimeout(() => this.handleGameStarted('startGame-success'), 1500);
+                        if (generation === this._startPollGeneration && !this._gameStartNotified
+                            && this._startFallbackTimer === null) {
+                            this._startFallbackTimer = setTimeout(() => {
+                                if (generation !== this._startPollGeneration) return;
+                                this._startFallbackTimer = null;
+                                this.handleGameStarted('startGame-success');
+                            }, 1500);
+                        }
                         resolve();
                     },
                     fail: (error: any) => {
@@ -511,10 +550,6 @@ export class WechatGameRoom implements INetRoom {
 
     broadcast(msg: string): void {
         this.manager().broadcastInRoom({ msg });
-        // The host broadcasts START but does NOT call startGame (see RoomFlow), so it
-        // won't poll via startGame(); start watching for the game start here so the
-        // owner still detects it (roomState) even without receiving onGameStart.
-        this.pollGameStart(0);
     }
 
     reconnect(): Promise<number> {
@@ -536,6 +571,7 @@ export class WechatGameRoom implements INetRoom {
                 if (settled) return;
                 settled = true; clearTimeout(timer);
                 this._accessInfo = '';
+                this.stopStartPolling();
                 this._gameStarted = false; this._gameStartNotified = false;
                 this._isOwner = false; this._localClientId = null; this._localExtInfo = '';
                 this.unbindGameEvents();
@@ -566,6 +602,7 @@ export class WechatGameRoom implements INetRoom {
                     accessInfo: this._accessInfo,
                     success: () => {
                         netLog('endGame ok');
+                        this.stopStartPolling();
                         this._gameStarted = false;
                         this._gameStartNotified = false;
                         resolve();
@@ -596,6 +633,7 @@ export class WechatGameRoom implements INetRoom {
     // next start at "开始中".
     resetGameStartedLatch(): void {
         netLog('resetGameStartedLatch');
+        this.stopStartPolling();
         this._gameStarted = false;
         this._gameStartNotified = false;
         // Drop the previous game's frame listeners so the next game rebinds fresh onto
@@ -604,6 +642,7 @@ export class WechatGameRoom implements INetRoom {
     }
 
     logout(): Promise<void> {
+        this.stopStartPolling();
         return this.manager().logout();
     }
 }

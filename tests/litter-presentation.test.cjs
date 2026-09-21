@@ -26,7 +26,7 @@ function fixture() {
         set mesh(value) { this._mesh = value; stats.meshWrites++; }
         get mesh() { return this._mesh; }
         setSharedMaterial() {}
-        setMaterial() {}
+        setMaterial(material) { this.material = material; }
     }
     class Node {
         constructor(name) {
@@ -44,16 +44,19 @@ function fixture() {
         destroy() { this.isValid = false; }
     }
     const meshes = [];
-    const cc = { Node, Vec3, MeshRenderer, utils: { createMesh(data) {
+    class Material {
+        constructor() { stats.materials++; }
+        initialize(info) { this.info = info; }
+        setProperty() {}
+        destroy() {}
+    }
+    const cc = { Node, Vec3, MeshRenderer, Material, Color: { WHITE: {} }, utils: { createMesh(data) {
         stats.meshes++;
         const mesh = { data, destroy() { stats.destroyedMeshes++; } };
         meshes.push(mesh); return mesh;
     } } };
     const mocks = {
         cc,
-        './MineRelayBrawlPresentation': { makeMineVertexMaterial(_name, opaque) {
-            assert.equal(opaque, true); stats.materials++; return { destroy() {} };
-        } },
         './EntertainmentWaterSplash': { ENTERTAINMENT_SPLASH_OWNER: { LITTER: 1 },
             ENTERTAINMENT_SPLASH_PROFILE: { HEAVY_ENTRY: 1, LIGHT_ENTRY: 2 } },
     };
@@ -77,7 +80,7 @@ function fixture() {
         { cancelOwner() {}, play() { stats.splashes++; } });
     const clusters = Array.from({ length: 18 }, (_, id) => ({ id, active: true, generation: 1,
         wave: Math.floor(id / 6), phase: 'floating', phaseProgress: 1,
-        kind: id % 6 === 1 || id % 6 === 4 ? 'soft' : 'rigid', visualVariant: id % 3,
+        kind: id % 6 === 1 || id % 6 === 4 ? 'soft' : 'rigid', visualVariant: Math.floor(id / 2) % 3,
         courseX: 25, lateral: id - 9, anchorCourseX: 25, anchorLateral: id - 9,
         throwSide: 1, impactRevision: 0 }));
     return { stats, meshes, root, geometry, presentation, clusters };
@@ -89,7 +92,15 @@ test('18槽仅创建四份共享网格和一份不透明材质，三种瓶型正
     assert.equal(f.stats.nodes, 19);
     assert.equal(f.stats.meshes, 4);
     assert.equal(f.stats.materials, 1);
+    const material = f.root.children[0].renderer.material;
+    assert.equal(material.info.effectName, 'builtin-unlit');
+    assert.equal(material.info.technique, 0);
+    assert.equal(material.info.defines.USE_INSTANCING, true);
+    assert.equal(material.info.defines.USE_VERTEX_COLOR, true);
+    assert.equal(new Set(f.root.children.map(node => node.renderer.mesh)).size, 4,
+        '满池样本必须实际包含三种硬瓶和餐盒');
     for (const slot of f.clusters) {
+        assert.equal(f.root.children[slot.id].renderer.material, material);
         assert.equal(f.root.children[slot.id].renderer.mesh,
             f.meshes[slot.kind === 'soft' ? 3 : slot.visualVariant]);
     }

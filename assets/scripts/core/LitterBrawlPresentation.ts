@@ -1,11 +1,8 @@
-import { Material, Mesh, MeshRenderer, Node, utils, Vec3 } from 'cc';
+import { Color, Material, Mesh, MeshRenderer, Node, utils, Vec3 } from 'cc';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { LitterClusterState } from './LitterBrawlController';
 import { buildBottleLitterGeometry, buildMealTrayLitterGeometry } from './LitterDebrisGeometry';
 import { sampleWaterFloatOffset, WATER_FLOAT_PROFILES } from './WaterFloatMotion';
-import {
-    makeMineVertexMaterial,
-} from './MineRelayBrawlPresentation';
 import {
     ENTERTAINMENT_SPLASH_OWNER,
     ENTERTAINMENT_SPLASH_PROFILE,
@@ -53,7 +50,16 @@ export class LitterBrawlPresentation {
         }
         const trayMesh = utils.createMesh(buildMealTrayLitterGeometry());
         this.trayMesh = trayMesh;
-        this.clusterMaterial = makeMineVertexMaterial('LitterClusterMaterial', true);
+        this.clusterMaterial = new Material();
+        this.clusterMaterial.initialize({
+            effectName: 'builtin-unlit',
+            technique: 0,
+            // 四种网格分别合批；不支持实例化的设备由引擎回退到普通绘制。
+            // 必须在共享材质初始化时启用，不能创建逐节点材质实例。
+            defines: { USE_VERTEX_COLOR: true, USE_INSTANCING: true },
+        });
+        this.clusterMaterial.name = 'LitterClusterMaterial';
+        this.clusterMaterial.setProperty('mainColor', Color.WHITE);
         for (let id = 0; id < clusterCount; id++) {
             const node = this.makeMeshNode(`LitterCluster${id}`, this.bottleMeshes[id % 3], this.clusterMaterial);
             node.active = false;

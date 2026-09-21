@@ -271,6 +271,165 @@ function flow(isHost = false) {
     return f;
 }
 
+function startRetryFixture() {
+    const messages = [], sessions = [];
+    const previous = { broadcast: net.broadcast, startGame: net.startGame, set: stubs['net/NetRaceSession'].setNetRaceSession };
+    let calls = 0;
+    net.broadcast = message => { try { const data = JSON.parse(message); if (data.t === 'start') messages.push(data); } catch {} };
+    net.startGame = () => { calls++; return new Promise(() => {}); };
+    stubs['net/NetRaceSession'].setNetRaceSession = session => sessions.push(session);
+    const h = flow(true), g = flow();
+    h._members[1].ready = true; h._ruleReady[2] = h.ruleKey(); g._localReady = true;
+    return { h, g, messages, sessions, calls: () => calls,
+        send: data => g.handleBroadcast(JSON.stringify(data)),
+        dispose() { h.dispose(); g.dispose(); net.broadcast = previous.broadcast; net.startGame = previous.startGame; stubs['net/NetRaceSession'].setNetRaceSession = previous.set; },
+    };
+}
+
+// 保存真实定时器回调，再取消实际等待，模拟已入队而 clearTimeout 无法撤回的回调。
+function takeStartTimeout(f) {
+    const timer = f._startTimeoutHandle;
+    assert.equal(typeof timer?._onTimeout, 'function');
+    const callback = timer._onTimeout;
+    clearTimeout(timer);
+    return callback;
+}
+
+test('首条重赛开赛消息丢失后，补发可入场且重复消息只回确认，不重复进入', () => {
+    const f = startRetryFixture();
+    const { NetRaceStartDelivery } = load(path.join(root, 'assets/scripts/net/NetRaceStartDelivery.ts'));
+    let delivery;
+    try {
+        f.h._reconnect = true; f.g._reconnect = true;
+        f.h.startRace();
+        const session = f.sessions[0];
+        assert.equal(f.g._raceEntered, false);
+        assert.equal(session.startMessage, JSON.stringify(f.messages[0]));
+        delivery = new NetRaceStartDelivery(net, session.raceId, session.startMessage, session.localPos, session.members);
+        delivery.start();
+        delivery.timer._onTimeout();
+        f.send(f.messages[1]);
+        assert.equal(f.sessions.length, 2);
+        assert.equal(f.sessions[1].raceId, session.raceId);
+        assert.equal(f.sessions[1].seed, session.seed);
+        const acks = [], broadcast = net.broadcast;
+        net.broadcast = msg => acks.push(msg);
+        try { f.send(f.messages[1]); } finally { net.broadcast = broadcast; }
+        assert.equal(f.sessions.length, 2);
+        assert.deepEqual(JSON.parse(acks[0]), { t: 'startAck', raceId: session.raceId, pos: 2 });
+    } finally { delivery?.dispose(); f.dispose(); }
+});
+
+test('首局补发使用冻结原文，超时和销毁取消补发且排队回调不再发送', () => {
+    const f = startRetryFixture();
+    try {
+        f.h.startRace();
+        const delivery = f.h._startDelivery, resend = delivery.timer._onTimeout;
+        f.h._memberModifiers[2] = 'muscleMan,20';
+        resend();
+        assert.deepEqual(f.messages[1], f.messages[0]);
+        takeStartTimeout(f.h)();
+        const count = f.messages.length;
+        resend(); assert.equal(f.messages.length, count);
+        f.h.startRace();
+        const pending = f.h._startDelivery.timer._onTimeout;
+        f.h.dispose(); pending();
+        assert.equal(f.messages.length, count + 1);
+    } finally { f.dispose(); }
+});
+
+test('房主先超时重试，仍等待的访客切换最新身份、种子与养成，旧超时不能清空新尝试', () => {
+    const f = startRetryFixture();
+    try {
+        f.h._memberModifiers[2] = 'muscleMan,3';
+        f.h.startRace(); f.send(f.messages[0]);
+        const oldGuestTimeout = takeStartTimeout(f.g);
+        takeStartTimeout(f.h)();
+        f.h._memberModifiers[2] = 'muscleMan,8'; f.h.startRace();
+        f.send(f.messages[1]);
+        assert.equal(f.g._pendingRaceId, f.h._pendingRaceId);
+        assert.equal(f.g._pendingSeed, f.h._pendingSeed);
+        assert.equal(f.g._memberModifiers[2], 'muscleMan,8');
+        const newTimer = f.g._startTimeoutHandle;
+        assert.ok(newTimer); oldGuestTimeout();
+        assert.equal(f.g._startTimeoutHandle, newTimer);
+        assert.equal(f.g._startRequested, true);
+        f.h.onNetGameStart(); f.g.onNetGameStart();
+        assert.equal(f.sessions.length, 2);
+        assert.equal(f.sessions[0].raceId, f.sessions[1].raceId);
+        assert.equal(f.sessions[0].seed, f.sessions[1].seed);
+        assert.deepEqual(f.sessions[0].members.map(m => m.modifiersBlob), f.sessions[1].members.map(m => m.modifiersBlob));
+        assert.equal(f.calls(), 3, '访客已有首局平台请求，不因更新身份重复调用 startGame');
+    } finally { f.dispose(); }
+});
+
+test('更新尝试先到后，重复与乱序旧 start 不回拨参数、不延长超时', () => {
+    const f = startRetryFixture();
+    try {
+        f.h.startRace(); takeStartTimeout(f.h)(); f.h.startRace();
+        f.send(f.messages[1]);
+        const timer = f.g._startTimeoutHandle;
+        f.send(f.messages[0]); f.send(f.messages[1]);
+        assert.equal(f.g._pendingRaceId, f.messages[1].raceId);
+        assert.equal(f.g._pendingSeed, f.messages[1].seed);
+        assert.equal(f.g._startTimeoutHandle, timer);
+        assert.equal(f.calls(), 3);
+    } finally { f.dispose(); }
+});
+
+test('访客超时清空待开赛参数后仍拒绝旧尝试，新尝试重新请求且清掉旧养成摘要', () => {
+    const f = startRetryFixture();
+    try {
+        f.h._memberModifiers[2] = 'muscleMan,3';
+        f.h.startRace(); f.send(f.messages[0]);
+        takeStartTimeout(f.g)();
+        f.send(f.messages[0]);
+        assert.equal(f.g._startRequested, false);
+        assert.equal(f.g._pendingRaceId, '');
+        assert.equal(f.g._startTimeoutHandle, null);
+        takeStartTimeout(f.h)(); delete f.h._memberModifiers[2]; f.h.startRace();
+        f.send(f.messages[1]);
+        assert.equal(f.g._pendingRaceId, f.messages[1].raceId);
+        assert.equal(f.g._memberModifiers[2], undefined);
+        assert.equal(f.calls(), 4);
+    } finally { f.dispose(); }
+});
+
+test('房间销毁后旧超时与迟到平台开始回调均不能进入比赛', () => {
+    const f = startRetryFixture();
+    try {
+        f.h.startRace(); f.send(f.messages[0]);
+        const stale = takeStartTimeout(f.g);
+        f.g.dispose(); f.g.onNetGameStart(); stale();
+        assert.equal(f.sessions.length, 0);
+        assert.equal(f.g._startTimeoutHandle, null);
+    } finally { f.dispose(); }
+});
+
+test('开赛参数确认后迟到的大厅养成广播不能改写双方本局摘要', () => {
+    const f = startRetryFixture();
+    try {
+        f.h._memberModifiers[2] = 'muscleMan,8'; f.h.startRace(); f.send(f.messages[0]);
+        f.h.handleBroadcast('MOD|2|muscleMan,20');
+        f.g.handleBroadcast('MOD|2|muscleMan,3');
+        f.h.onNetGameStart(); f.g.onNetGameStart();
+        assert.equal(f.sessions.length, 2);
+        for (const session of f.sessions) assert.equal(session.members.find(m => m.pos === 2).modifiersBlob, 'muscleMan,8');
+    } finally { f.dispose(); }
+});
+
+test('超时之后先收到平台开始信号，再重试时直接用最新参数进入，无需第二次平台通知', () => {
+    const f = startRetryFixture();
+    try {
+        f.h.startRace(); takeStartTimeout(f.h)();
+        f.h.onNetGameStart(); f.g.onNetGameStart();
+        assert.equal(f.sessions.length, 0, '单有平台信号不能进入没有身份的比赛');
+        f.h.startRace(); f.send(f.messages[1]);
+        assert.equal(f.sessions.length, 2);
+        for (const session of f.sessions) assert.equal(session.raceId, f.messages[1].raceId);
+    } finally { f.dispose(); }
+});
+
 test('房主 start 将独立比赛身份交给双方，保活重赛生成新身份', () => {
     const messages = [], sessions = [];
     const previousBroadcast = net.broadcast;

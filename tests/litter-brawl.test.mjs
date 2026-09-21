@@ -595,7 +595,7 @@ test('阶段 I 正式启用七合一轮换但公开独立垃圾入口仍保持�
     assert.match(input, /LitterContact\s*=\s*'g'/);
     assert.match(litterSnapshot, /const TAG = 'L\|'/);
     assert.doesNotMatch(room, /litter-brawl/);
-    assert.match(protocol, /NET_RACE_PROTOCOL_VERSION\s*=\s*94/);
+    assert.match(protocol, /NET_RACE_PROTOCOL_VERSION\s*=\s*95/);
 });
 
 test('分组起飞中途加入通过真实编解码恢复同一瓶型和时间，客机不查询泳者或自行碰撞', () => {

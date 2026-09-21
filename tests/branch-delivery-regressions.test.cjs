@@ -88,6 +88,85 @@ function net(raceId = RACE_ID) {
     return instance;
 }
 
+test('名单确认旧房主离开后，迟到的本局 S 与 L 快照不能夺回权威', () => {
+    const receiver = net();
+    let litterApplied = 0;
+    receiver.setLitterStateListener(() => litterApplied++);
+    receiver.onRoomInfoChange({ members: [{ pos: 1 }] });
+    assert.equal(receiver.isHost, true);
+    const before = receiver._lastSnapshotAt;
+    receiver.onBroadcast(wire(encodeRaceSnapshot(0, [])));
+    const { encodeLitterSnapshot } = load('assets/scripts/net/NetLitterSnapshot.ts');
+    const litter = new LitterBrawlController(2, 7, 200, () => null, () => {});
+    receiver.onBroadcast(wire(encodeLitterSnapshot(0, litter.snapshotState())));
+    assert.equal(receiver.isHost, true);
+    assert.equal(receiver.activeHostPos, 1);
+    assert.equal(receiver._lastSnapshotAt, before);
+    assert.equal(litterApplied, 0);
+    litter.dispose(); receiver.dispose();
+});
+
+test('空名单和不含本人的名单不封禁旧房主，静默后恢复仍可仲裁', () => {
+    const receiver = net();
+    receiver.onRoomInfoChange({ members: [] });
+    receiver.onRoomInfoChange({ members: [{ pos: 2 }] });
+    receiver.promoteToHost();
+    receiver.onBroadcast(wire(encodeRaceSnapshot(0, [])));
+    assert.equal(receiver.isHost, false);
+    assert.equal(receiver.activeHostPos, 0);
+    receiver.dispose();
+});
+
+test('较高座位收到离房名单后立即采信新房主，旧房主返回名单也不恢复本局资格', () => {
+    const receiver = new NetRaceController({ raceId: RACE_ID, localIsHost: false, localPos: 2,
+        seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
+    receiver._activeHostPos = 0;
+    receiver.onRoomInfoChange({ members: [{ pos: 1 }, { pos: 2 }] });
+    receiver.onBroadcast(wire(encodeRaceSnapshot(1, [])));
+    assert.equal(receiver.activeHostPos, 1);
+    receiver.onRoomInfoChange({ members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
+    receiver.onBroadcast(wire(encodeRaceSnapshot(0, [])));
+    assert.equal(receiver.activeHostPos, 1);
+    receiver.dispose();
+});
+
+test('赛中接力补发开赛原文，确认丢失可再确认，收齐后和销毁后均停止补发', () => {
+    const startMessage = JSON.stringify({ t: 'start', raceId: RACE_ID, seed: 7 });
+    const session = { raceId: RACE_ID, startMessage, localIsHost: true, localPos: 0,
+        seed: 7, members: [{ pos: 0 }, { pos: 1 }] };
+    const host = new NetRaceController(session);
+    const guest = new NetRaceController({ ...session, localIsHost: false, localPos: 1 });
+    try {
+        const resend = host._startDelivery.timer._onTimeout;
+        host.onBroadcast(JSON.stringify({ t: 'startAck', raceId: '0.old', pos: 1 }));
+        resend(); assert.equal(broadcasts.at(-1), startMessage);
+        guest.onBroadcast(startMessage); // 丢弃第一次确认。
+        resend(); guest.onBroadcast(broadcasts.at(-1));
+        const ack = broadcasts.at(-1);
+        assert.deepEqual(JSON.parse(ack), { t: 'startAck', raceId: RACE_ID, pos: 1 });
+        host.onBroadcast(ack);
+        const count = broadcasts.length;
+        resend(); assert.equal(broadcasts.length, count);
+        host.dispose(); guest.dispose();
+        resend(); guest.onBroadcast(startMessage);
+        assert.equal(broadcasts.length, count);
+    } finally { host.dispose(); guest.dispose(); }
+});
+
+test('开赛补发只采信本局名单成员确认，离房名单和销毁可释放定时器', () => {
+    const host = new NetRaceController({ raceId: RACE_ID, startMessage: '{"t":"start"}',
+        localIsHost: true, localPos: 0, seed: 7, members: [{ pos: 0 }, { pos: 1 }] });
+    const delivery = host._startDelivery;
+    const resend = delivery.timer._onTimeout;
+    host.onBroadcast(JSON.stringify({ t: 'startAck', raceId: RACE_ID, pos: 7 }));
+    assert.ok(delivery.timer);
+    host.onRoomInfoChange({ members: [] }); assert.ok(delivery.timer);
+    host.onRoomInfoChange({ members: [{ pos: 0 }] }); assert.equal(delivery.timer, null);
+    const count = broadcasts.length;
+    resend(); assert.equal(broadcasts.length, count);
+    host.dispose();
+});
+
 function bombFixture() {
     const racers = [30, 31].map((distance, lane) => ({ active: true, finished: false, distance, lateral: lane }));
     const events = [];

@@ -21,6 +21,8 @@ export interface NetRaceMember {
 export interface NetRaceSessionData {
     // 本局独立身份，由房主随 start 下发；保活重赛不得复用。
     raceId: string;
+    // 大厅已验证的原始开赛参数，供场景切换后继续补发和确认。
+    startMessage?: string;
     // Shared RNG seed broadcast by the host; every client reseeds SharedRNG with it.
     seed: number;
     // Human members in the room, in a stable order agreed by all clients.

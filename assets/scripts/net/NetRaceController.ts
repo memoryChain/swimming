@@ -15,6 +15,7 @@ import { Label, Node, UITransform } from 'cc';
 import { INetRoom, NetSyncFrame, NetRoomInfo } from './INetRoom';
 import { netRoom } from './NetManager';
 import { NetRaceSessionData } from './NetRaceSession';
+import { NetRaceStartDelivery, acknowledgeRaceStart } from './NetRaceStartDelivery';
 import { raceMessagePrefix } from './NetRaceProtocol';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
 import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind, gameplayEpochSlot } from './NetRaceInput';
@@ -143,6 +144,8 @@ export class NetRaceController {
     private _isHost: boolean;
     private _activeHostPos: number;
     private _lastSnapshotAt = 0;
+    private readonly _departedPositions = new Set<number>();
+    private _startDelivery: NetRaceStartDelivery | null = null;
     // Mixed-environment sync flags. `_localFrameSyncDown` latches once our own frame
     // channel is observed dead; `_peerNeedsBroadcast` latches when a peer announces (NB|)
     // that theirs is. Either forces broadcast-based position/input sync.
@@ -190,6 +193,11 @@ export class NetRaceController {
             onDisconnect: () => console.warn('[NetRace] disconnected mid-game'),
             onGameEnd: () => console.log('[NetRace] game end'),
         });
+        if (_session.localIsHost && _session.startMessage) {
+            this._startDelivery = new NetRaceStartDelivery(this._net, _session.raceId,
+                _session.startMessage, _session.localPos, _session.members);
+            this._startDelivery.start();
+        }
         console.log(
             `[NetRace] start localPos=${_session.localPos} host=${_session.localIsHost} ` +
             `seed=${_session.seed} members=${_session.members.length}`,
@@ -576,6 +584,7 @@ export class NetRaceController {
     // higher-pos host only if our current one has gone silent (it dropped). A
     // self-promoted host steps back down if a lower-pos host is (still) alive.
     private adoptHostFromSnapshot(hostPos: number): void {
+        if (this._departedPositions.has(hostPos)) return;
         const now = Date.now();
         if (hostPos < this._activeHostPos) {
             this._activeHostPos = hostPos;
@@ -602,20 +611,27 @@ export class NetRaceController {
     // (exactly one promoter, no stagger wait). Snapshot-silence remains the fallback for
     // when this event doesn't fire (e.g. mid frame-sync the roster isn't pushed).
     private onRoomInfoChange(info: NetRoomInfo): void {
-        if (this._disposed || this._isHost) {
+        if (this._disposed) {
             return;
         }
         // Only trust a roster that actually lists valid seats AND includes us — a partial
         // or empty push (common mid-game) must not trigger a bogus takeover.
         const present: number[] = [];
         for (const m of info.members || []) {
-            if (typeof m.pos === 'number' && m.pos >= 0) {
+            if (typeof m.pos === 'number' && Number.isInteger(m.pos) && m.pos >= 0 && m.pos < 8
+                && !this._departedPositions.has(m.pos)
+                && this._session.members.some(member => member.pos === m.pos)) {
                 present.push(m.pos);
             }
         }
         if (present.length === 0 || present.indexOf(this._session.localPos) < 0) {
             return;
         }
+        for (const member of this._session.members) {
+            if (member.pos >= 0 && present.indexOf(member.pos) < 0) this._departedPositions.add(member.pos);
+        }
+        this._startDelivery?.retainMembers(present);
+        if (this._isHost) return;
         // Haven't locked onto a host yet (no snapshot received) — nothing to migrate from.
         if (this._activeHostPos === Number.MAX_SAFE_INTEGER) {
             return;
@@ -633,8 +649,11 @@ export class NetRaceController {
                 lowest = p;
             }
         }
+        const previousHost = this._activeHostPos;
+        this._activeHostPos = lowest;
+        this._lastSnapshotAt = Date.now();
         if (this._session.localPos === lowest) {
-            console.warn(`[NetRace] host seat=${this._activeHostPos} left room — pos=${lowest} taking over`);
+            console.warn(`[NetRace] host seat=${previousHost} left room — pos=${lowest} taking over`);
             this.promoteToHost();
         }
     }
@@ -785,10 +804,17 @@ export class NetRaceController {
     }
 
     private onBroadcast(msg: string): void {
+        if (this._disposed) return;
+        if (this._startDelivery?.receive(msg)) return;
+        if (!this._session.localIsHost && this._session.startMessage && msg === this._session.startMessage) {
+            acknowledgeRaceStart(this._net, this._session.raceId, this._session.localPos);
+            return;
+        }
         if (this._disposed || !msg.startsWith(this._racePrefix)) return;
         msg = msg.slice(this._racePrefix.length);
         const snapshot = decodeRaceSnapshot(msg);
         if (snapshot) {
+            if (this._departedPositions.has(snapshot.hostPos)) return;
             this._snapRecv++;
             // Reconcile authority first (may demote a self-promoted host); then, only if
             // we are NOT the host, adopt the position targets. Ignoring our own echo this
@@ -842,6 +868,7 @@ export class NetRaceController {
         }
         const litter = decodeLitterSnapshot(msg);
         if (litter) {
+            if (this._departedPositions.has(litter.hostPos)) return;
             this.adoptHostFromSnapshot(litter.hostPos);
             if (!this._isHost && litter.hostPos === this._activeHostPos) {
                 this._litterStateListener?.(litter.state);
@@ -1328,6 +1355,8 @@ export class NetRaceController {
             return;
         }
         this._disposed = true;
+        this._startDelivery?.dispose();
+        this._startDelivery = null;
         if (this._goTimeoutHandle) {
             clearTimeout(this._goTimeoutHandle);
             this._goTimeoutHandle = null;

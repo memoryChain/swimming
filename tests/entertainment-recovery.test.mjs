@@ -374,7 +374,7 @@ test('旁观击倒使用独立漂浮姿态和低频头顶眩晕星，不新增�
         new URL('../assets/scripts/net/NetRaceProtocol.ts', import.meta.url),
         'utf8',
     );
-    assert.match(protocol, /NET_RACE_PROTOCOL_VERSION = 94/);
+    assert.match(protocol, /NET_RACE_PROTOCOL_VERSION = 95/);
 
     const manager = readFileSync(new URL('../assets/scripts/core/GameManager.ts', import.meta.url), 'utf8');
     const recoveryUpdate = manager.match(/private updateEntertainmentRecovery[\s\S]*?const playerState/)?.[0] ?? '';

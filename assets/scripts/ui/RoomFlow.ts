@@ -16,6 +16,7 @@ import { PlayerData } from '../backend/PlayerData';
 import { netRoom } from '../net/NetManager';
 import { NetRoomInfo } from '../net/INetRoom';
 import { NetRaceMember, setNetRaceSession } from '../net/NetRaceSession';
+import { NetRaceStartDelivery, acknowledgeRaceStart } from '../net/NetRaceStartDelivery';
 import { SeededRandom } from '../core/SharedRNG';
 import { platform } from '../platform/PlatformManager';
 import { resolveLocalModifierDigest } from '../progression/RaceModifiers';
@@ -80,6 +81,12 @@ export class RoomFlow {
     private _isHost = true;
     private _pendingSeed = 0;
     private _pendingRaceId = '';
+    private _pendingStartMessage = '';
+    private _startDelivery: NetRaceStartDelivery | null = null;
+    private _pendingModifiers: Readonly<Record<number, string>> | null = null;
+    // 同一房主和赛制内保留已接收的最新尝试；超时只清待开赛状态，不清防旧记录。
+    private _latestStartKey = '';
+    private _latestStartStamp = -1;
     // Peers' 养成 digests collected from the lobby broadcast channel, keyed by seat
     // (posNum). memberExtInfo is only 32 bytes (too small for a modifier blob), so each
     // client broadcasts its tiny digest instead; consumed into the session at start.
@@ -533,6 +540,8 @@ export class RoomFlow {
     // failed. Replace the lobby with a clean centered notice + a back button instead of
     // leaving them in a fake room showing a raw "invalid room state" error.
     private showRoomUnavailable(message: string) {
+        this._startDelivery?.dispose();
+        this._startDelivery = null;
         if (this._roomUnavailable) return;
         this._netReal = false;
         this._roomUnavailable = true;
@@ -757,16 +766,22 @@ export class RoomFlow {
         // atomically with the seed. Since the start message is a precondition for entering,
         // a swimmer can never slip in with the wrong balance. Host-authoritative + consistent.
         this.storeSelfModifiers();
-        netRoom().broadcast(JSON.stringify({
+        this._pendingModifiers = { ...this._memberModifiers };
+        this._pendingStartMessage = JSON.stringify({
             t: 'start',
             pv: NET_RACE_PROTOCOL_VERSION,
             seed: this._pendingSeed,
             raceId: this._pendingRaceId,
-            mods: this._memberModifiers,
+            mods: this._pendingModifiers,
             mode: this._mode,
             distance: this._distance,
             rules: this.ruleKey(),
-        }));
+        });
+        this._startDelivery?.dispose();
+        this._startDelivery = new NetRaceStartDelivery(netRoom(), this._pendingRaceId,
+            this._pendingStartMessage, this._localPos, this._members);
+        this._startDelivery.start();
+        this._startDelivery.send();
         if (this._reconnect) {
             // Rematch on the still-alive session: do NOT startGame again (WeChat rooms are
             // one-game — a second startGame returns 4014 / a fake ok with roomState stuck
@@ -778,6 +793,8 @@ export class RoomFlow {
             // becomes a frame participant + gets a reliable start signal; the broadcast
             // makes the guests do the same. requestStartGame arms the recovery timeout.
             this.requestStartGame();
+            // 平台信号可能在上次超时后先到；与访客一样消费已确认的房间状态。
+            this.maybeEnterNetRace();
         }
     }
 
@@ -787,19 +804,27 @@ export class RoomFlow {
     // is genuinely back and ready — instead of being stuck at 开始中 forever.
     private armStartTimeout() {
         this.clearStartTimeout();
-        this._startTimeoutHandle = setTimeout(() => {
-            this._startTimeoutHandle = null;
-            if (this._raceEntered) {
+        const raceId = this._pendingRaceId;
+        const timeout = setTimeout(() => {
+            // 已排队的旧回调也不能清掉新尝试的参数或新定时器。
+            if (this._startTimeoutHandle !== timeout || this._pendingRaceId !== raceId
+                || !this._root?.isValid || this._roomUnavailable || this._leaving || this._raceEntered) {
                 return;
             }
+            this._startTimeoutHandle = null;
             this._startRequested = false;
             this._gameStartCalled = false;
             this._pendingSeed = 0;
             this._pendingRaceId = '';
+            this._pendingStartMessage = '';
+            this._startDelivery?.dispose();
+            this._startDelivery = null;
+            this._pendingModifiers = null;
             this._gameStartConfirmed = false;
             this.setHint('开始失败，请确认好友已回到房间并准备后重试');
             this.render();
         }, 8000);
+        this._startTimeoutHandle = timeout;
     }
 
     private clearStartTimeout() {
@@ -812,12 +837,13 @@ export class RoomFlow {
     // Enter lock-step by calling startGame (once). Host calls this after broadcasting;
     // guests call it on receiving the broadcast. Race entry is driven by onGameStart.
     private requestStartGame() {
+        // 新尝试刷新等待期限；已参与首局的平台请求无需重复发送。
+        this.armStartTimeout();
         if (this._gameStartCalled) {
             return;
         }
         this._gameStartCalled = true;
         this.setHint('开始中…');
-        this.armStartTimeout();
         netRoom().startGame().catch((error) => {
             console.warn('[Room] startGame failed', error);
         });
@@ -825,6 +851,12 @@ export class RoomFlow {
 
     // 首局房主和成员都需调用 startGame；重赛继续复用已有会话，不再次调用。
     private handleBroadcast(msg: string) {
+        if (!this._root?.isValid || this._roomUnavailable || this._leaving) return;
+        if (this._startDelivery?.receive(msg)) return;
+        if (!this._isHost && this._pendingStartMessage && msg === this._pendingStartMessage) {
+            acknowledgeRaceStart(netRoom(), this._pendingRaceId, this._localPos);
+            return;
+        }
         if (!this._root?.isValid || this._roomUnavailable || this._raceEntered || this._leaving) return;
         const protocolRequest = decodeProtocolRequest(msg);
         if (protocolRequest) {
@@ -857,10 +889,14 @@ export class RoomFlow {
             const data = JSON.parse(msg);
             if (this.handleRules(data)) return;
             if (data && data.t === 'start' && typeof data.seed === 'number') {
-                // 房主已在本地建立本局参数；重复 start 不得覆盖待进入的比赛。
-                if (this._isHost || this._startRequested || !isNetRaceId(data.raceId)) return;
+                // 房主在本地建立参数；访客必须区分重复消息与房主更新的开赛尝试。
+                if (this._isHost || !isNetRaceId(data.raceId)) return;
                 const owner = this._members.find(m => m.owner);
                 if (!owner || !data.raceId.startsWith(`${owner.pos}.`)) return;
+                const stamp = parseInt(data.raceId.slice(2), 36);
+                const startKey = `${owner.pos}|${this.ruleKey()}`;
+                if (!Number.isSafeInteger(stamp) || stamp < 0
+                    || (this._latestStartKey === startKey && stamp <= this._latestStartStamp)) return;
                 if (!isCompatibleProtocolVersion(data.pv)) {
                     if (this._localReady && !this._isHost) {
                         this._localReady = false;
@@ -874,16 +910,22 @@ export class RoomFlow {
                     this.setHint('赛制或准备状态未确认，请重新准备'); return;
                 }
                 if (!isRoomModeSelection(data.mode, data.distance)) return;
+                this._latestStartKey = startKey;
+                this._latestStartStamp = stamp;
                 this._mode = data.mode;
                 this._distance = data.distance;
                 setRaceDifficulty(this._mode);
                 this._pendingSeed = data.seed >>> 0;
                 this._pendingRaceId = data.raceId;
+                this._pendingStartMessage = msg;
                 this._startRequested = true;
                 this.setHint('开始中…');
                 // Adopt the host's consolidated 养成 digest map (authoritative + identical on
                 // every client) BEFORE entering, so all clients apply the same balance.
+                for (const pos of Object.keys(this._memberModifiers)) delete this._memberModifiers[Number(pos)];
                 this.mergeBroadcastModifiers(data.mods);
+                this._pendingModifiers = { ...this._memberModifiers };
+                acknowledgeRaceStart(netRoom(), this._pendingRaceId, this._localPos);
                 if (this._reconnect) {
                     // Rematch: the lock-step session is still alive (we never endGame),
                     // so enter directly instead of calling startGame (which would 4014).
@@ -910,6 +952,7 @@ export class RoomFlow {
     // "started" between races), and entering off that would start a phantom race with a
     // random seed. maybeEnterNetRace enforces "real start in progress + game started".
     private onNetGameStart() {
+        if (!this._root?.isValid || this._roomUnavailable || this._leaving || this._raceEntered) return;
         this._gameStartConfirmed = true;
         this.maybeEnterNetRace();
     }
@@ -919,7 +962,7 @@ export class RoomFlow {
     // WeChat game has started (onGameStart / roomState). Prevents a fresh join into an
     // already-started keep-alive room from auto-entering off the stale roomState.
     private maybeEnterNetRace() {
-        if (this._raceEntered) {
+        if (!this._root?.isValid || this._roomUnavailable || this._leaving || this._raceEntered) {
             return;
         }
         if (this._pendingSeed !== 0 && this._gameStartConfirmed) {
@@ -929,10 +972,13 @@ export class RoomFlow {
 
     // Lock-step has begun on every client: hand the agreed seed + roster to the race.
     private enterNetRace() {
-        if (this._raceEntered || !isNetRaceId(this._pendingRaceId)) {
+        if (!this._root?.isValid || this._roomUnavailable || this._leaving
+            || this._raceEntered || !isNetRaceId(this._pendingRaceId)) {
             return;
         }
         this._raceEntered = true;
+        this._startDelivery?.dispose();
+        this._startDelivery = null;
         lastRoomMode = this._mode;
         lastRoomDistance = this._distance;
         this.stopRulesTimer();
@@ -950,10 +996,11 @@ export class RoomFlow {
             pos: typeof m.pos === 'number' ? m.pos : -1,
             // 养成 digest collected from the lobby broadcasts (empty if it never arrived,
             // e.g. an old client or a dropped broadcast -> that swimmer stays neutral).
-            modifiersBlob: this._memberModifiers[typeof m.pos === 'number' ? m.pos : -1] ?? '',
+            modifiersBlob: this._pendingModifiers?.[typeof m.pos === 'number' ? m.pos : -1] ?? '',
         }));
         setNetRaceSession({
             raceId: this._pendingRaceId,
+            startMessage: this._pendingStartMessage,
             seed: (this._pendingSeed >>> 0) || SeededRandom.entropySeed(),
             members,
             localIsHost: this._isHost,
@@ -993,6 +1040,8 @@ export class RoomFlow {
     }
 
     dispose() {
+        this._startDelivery?.dispose();
+        this._startDelivery = null;
         this.stopRulesTimer();
         this.clearStartTimeout();
         netRoom().setCallbacks({});

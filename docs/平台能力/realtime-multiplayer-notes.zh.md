@@ -253,6 +253,7 @@ sharedRandom();             // 取共享实例
 | `net/DefaultNetRoom.ts` | 编辑器/web 桩，`isSupported()=false`，方法 no-op/reject。 |
 | `net/NetManager.ts` | 工厂，按平台选实现。 |
 | `net/NetRaceSession.ts` | 开局握手数据（seed + roster + localIsHost + localPos），`setNetRaceSession`/`consumeNetRaceSession`。 |
+| `net/NetRaceStartDelivery.ts` | 同一开赛参数每 750ms 补发，按比赛身份与成员座位收确认；大厅和赛中接力管理。 |
 | `net/NetRaceController.ts` | **赛中核心**：每逻辑帧 uploadFrame（输入+自位置）、onSyncFrame 解析、房主迁移、快照/名次广播、赛内调试 HUD。 |
 | `net/NetRaceInput.ts` | 每帧输入编解码，格式 `<pos>|<events>|<selfPos>`。 |
 | `net/NetRaceSnapshot.ts` | 房主权威快照 `S|`（含每泳道 距离/横向/完赛/朝向/**速度/轴心转体角与角速度**）。 |
@@ -273,8 +274,12 @@ sharedRandom();             // 取共享实例
 
 - 一局结束**不调 endGame**，会话靠服务器 heartBeat 保活（`roomState` 停在 running）。
 - 首局：正常握手（广播 seed → 各端 startGame → onGameStart → 进场）。
-- 再来一局（`_reconnect=true`）：**不 createRoom/join、不 endGame、不 startGame**，直接复用运行中的会话——房主广播新 seed 后**直接 enterNetRace**，访客收到广播也直接进。
+- 再来一局（`_reconnect=true`）：**不 createRoom/join、不 endGame、不 startGame**，直接复用运行中的会话——房主广播本次参数后进入比赛，访客收到广播也直接进；未确认收到的成员由赛中控制器继续补发相同参数，避免唯一一条广播丢失后卡在大厅。
 - `RoomFlow._reconnect` 只影响 `setupNet`（复用房+不 endGame），首局走 startGame 握手、再来一局走 direct-enter。
+
+- **开赛超时重试（2026-09-21 补充）**：同一房主、同一赛制内，访客按 `raceId` 中的单调时间标记区分尝试；接受更新的尝试，重复或旧消息不能回拨参数，也不能续期超时。超时清掉待开赛参数，但保留最新尝试记录，避免迟到旧 `start` 重新入场。每个超时回调同时核对定时器身份、比赛身份及房间生命周期，取消后已排队的回调也不能清除新尝试。平台开始信号与最新开赛参数任意顺序到达都可入场；已有平台请求时更新尝试只刷新等待期限，不重复调用 `startGame`。房主广播和双方入场使用开赛时保存的养成摘要快照，迟到 `MOD|` 只更新大厅资料，不改变本局参数。沿用 v94 线格式，不增加赛中逐帧工作。
+
+- **v95 开赛补发与确认（2026-09-21）**：房主保存序列化后的完整 `start` 原文，每 750ms 补发，访客验证并保存参数后回 `startAck`（比赛身份＋座位）。`startMessage` 随本机会话传给赛中控制器，切换页面后继续补发；已经入场的访客只对本局完全相同的开赛原文再次确认，不重新入场、不重置种子或玩法。确认丢失可由下一次原文补发恢复；收到全体确认、有效名单确认未确认者离房、控制器销毁时停止。大厅超时／房间不可用／销毁也取消自己的补发。这个确认只表示参数已接收，正式发令仍沿用赛前 `CR|`／`GO|` 及原超时规则。单机不创建补发器。
 
 > **血泪教训**：曾经因为看到官方 demo 调 endGame（demo 是「一房一局，再来一局重新 createRoom + 重新邀请」），一度改成调 endGame，结果第二局房主进了「幻影比赛」、朋友卡「等待房主」。**demo 的一房一局意味着再来一局要重新建房+重新邀请，UX 差；保活模型才是「同一批人连续玩」的正解。别再改回 endGame。**
 
@@ -417,7 +422,7 @@ sharedRandom();             // 取共享实例
 ### 8.7 确定性房主迁移（房主掉线不卡死）
 
 - 房主权威只是**校准**通道不是**驱动**，各端本地在跑，房主掉线只退化成本地模拟，不会「玩不了」。唯一硬卡点=赛前倒计时（GO 只房主发）→ client 加 7s GO 兜底。
-- **迁移**：`NetRaceController.checkHostMigration`（每帧）——快照 `S|` 带 `hostPos`（发送者 seat）；client 若信任的房主静默 >`HOST_SILENCE_MS(2500)+localPos*800` 则自升房主；`onRoomInfoChange` 第二探测——信任的房主 seat 不在名单→最小 present seat 立即接管。冲突自愈（收到更低 seat 快照就降级）。
+- **迁移**：`NetRaceController.checkHostMigration`（每帧）——快照 `S|` 带 `hostPos`（发送者 seat）；client 若信任的房主静默 >`HOST_SILENCE_MS(2500)+localPos*800` 则自升房主；`onRoomInfoChange` 第二探测——信任的房主 seat 不在有效名单→本局最小存活 seat 立即接管，其他成员立即采信它。空名单、不含自己的名单不能触发剔除。已确认离房的座位在本局保留失效标记，`S|`／`L|` 在更新权威及收包时间之前拒绝其迟到消息；后续占回座位也不恢复本局资格。仅静默、未被名单确认离开的较低座位仍能恢复并参与仲裁。
 - **注意**：房主迁移是**游戏层概念**，微信不知道。所以「自升房主」不改变微信会话状态。
 
 ### 8.8 房间 UI / 邀请健壮性（RoomFlow / LoginManager 坑）
@@ -434,6 +439,7 @@ sharedRandom();             // 取共享实例
   - `NetRaceController.onSyncFrame` 每帧输入 log → `NET_FRAME_LOG=false` 门控。
   - 调试 HUD 刷新 → `HUD_REPAINT_INTERVAL_MS=160` 限流（Label.string 重设会重建文字网格）。
   - `WechatGameRoom.onBroadcast` 跳过高频 S|/P| 日志。
+  - `WechatGameRoom.NET_DEBUG=false` 默认关闭详细平台日志。普通广播不启动房间查询；只有首局 `startGame` 等待期间共用一条轮询，最多 15 次。完成、退出、被踢、重置或注销时取消轮询和成功兜底，并用代次拒绝迟到异步结果及已排队旧回调。
 - 正式发布 vConsole 是关的，这部分开销不存在——但真机联调开着 vConsole 会误判成「联机很卡」。**测性能先关 vConsole。**
 - `driveNetAiFixedStep` 有 6 步上限防死亡螺旋；AI 姿态降频/裁剪在联机模式也跑（没绕过单机优化）。
 - **「一方卡在开始中不上传帧」会拖累另一方**：帧同步每 tick 等所有参与者的帧，一个参与者 startGame 了却不上传帧（如卡大厅）→ 帧通道 stall → 对端空转变卡。根治=保证进了会话就进比赛并上传帧。
