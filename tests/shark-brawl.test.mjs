@@ -152,7 +152,7 @@ test('充气玩具鲨使用兼容骨架、闭合嘴与分段接触动作', () =>
     assert.ok(gltf.nodes.some(node => node.name === 'Shark_Jaw'));
     assert.ok(Math.abs(animationMaxTime(gltf, 'Shark_Bite') - 10 / 24) < 1e-6);
     assert.ok(Math.abs(animationMaxTime(gltf, 'Shark_Swim_Loop') - 1) < 1e-6);
-    assert.equal(source.jaw_weighted_vertices, 0);
+    assert.ok(source.jaw_weighted_vertices > 0);
     assert.equal(source.rest_matrices_unchanged, true);
     assert.match(art, /sharkContactClipTime/);
     assert.match(art, /AnimationClip.WrapMode.Loop/);

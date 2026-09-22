@@ -9,7 +9,6 @@ ARCHIVE=HERE/'archive/SharkModel_pre_D.blend'
 BLUE=(.015,.49,.68,1); BELLY=(.73,.94,.91,1); DARK=(.008,.038,.075,1)
 TEAL=(.025,.68,.70,1); ORANGE=(1,.32,.035,1); WHITE=(.98,1,.96,1)
 VERTS=[]; FACES=[]; COLORS=[]; PARTS=[]
-JAW_PARTS={'充气下颌','闭合弧形笑脸','笑脸端点'}
 # 鼻头 -Y，+Z 向上。各接环为纵向、半宽、半高、中心高。
 RINGS=[(-.475,.018,.020,.24),(-.44,.08,.055,.24),(-.36,.155,.11,.24),
        (-.23,.196,.151,.25),(-.04,.205,.164,.25),(.17,.172,.134,.25),
@@ -50,26 +49,11 @@ def tube(name,points,radius,color,sides=6):
     loft(name,rings,color,sides)
 
 def build_body():
-    # 嘴缝止于原下颌铰点前方；上下壳各自封闭，内面浅而无吞入通道。
-    hinge_y=-.198; t=(hinge_y+.23)/.19
-    hinge=(hinge_y,.196+(.205-.196)*t,.151+(.164-.151)*t,.25)
-    # 上壳从鼻到尾连续，避免把头部单独封端造成脸颊竖直硬接缝。
-    all_rings=sorted(RINGS+[hinge])
-    for lower,rings in [(False,all_rings),(True,[r for r in all_rings if r[0]>-.475 and r[3]-r[2]<.2035])]:
-        seam=.2035 if lower else .2065; v=[]; f=[]; sides=13
-        for y,rx,rz,z in rings:
-            a=math.asin(max(-1,min(1,(seam-z)/rz)))
-            begin,end=(math.pi-a,2*math.pi+a) if lower else (a,math.pi-a)
-            for i in range(sides):
-                angle=begin+(end-begin)*i/(sides-1)
-                v.append((rx*math.cos(angle),y,z+rz*math.sin(angle)))
-        for j in range(len(rings)-1):
-            for i in range(sides-1):f.append((j*sides+i,j*sides+i+1,(j+1)*sides+i+1,(j+1)*sides+i))
-        f.extend([tuple(reversed(range(sides))),tuple((len(rings)-1)*sides+i for i in range(sides))])
-        # 两条嘴沿之间的浅色壳内面，采用同一顶点色材质。
-        f.append(tuple(j*sides for j in range(len(rings)))+tuple(j*sides+sides-1 for j in reversed(range(len(rings)))))
-        part('充气下颌' if lower else '圆鼻上颌',v,f,BELLY if lower else BLUE)
-        COLORS[-1]=(.045,.16,.19,1)
+    start=len(FACES)
+    loft('鼓鼓主体与圆鼻头',[((0,y,z),(rx,0,0),(0,0,rz)) for y,rx,rz,z in RINGS],BLUE,24)
+    for i in range(start,len(FACES)-2):
+        # 固定角度边界，避免按面中心高度挑色造成牙齿状阶梯。
+        if 13 <= (i-start)%24 <= 22: COLORS[i]=BELLY
 
 def build_fins():
     path=[(0,.08,.35,.053,.135),(0,.13,.43,.04,.11),(0,.19,.535,.024,.066),(0,.225,.58,.018,.035),(0,.245,.585,.004,.01)]
@@ -138,11 +122,6 @@ def create_mesh(rig):
     for p in mesh.polygons:
         for li in p.loop_indices: attr.data[li].color=COLORS[p.index]
         p.use_smooth=True
-    jaw_attr=mesh.attributes.new(name='JawWeight',type='FLOAT',domain='POINT')
-    for item in PARTS:
-        if item['name'] in JAW_PARTS:
-            for i in range(item['first'],item['first']+item['count']):
-                jaw_attr.data[i].value=max(0,min(1,(-VERTS[i][1]-.198)/.07))
     bm=bmesh.new(); bm.from_mesh(mesh)
     bmesh.ops.remove_doubles(bm,verts=list(bm.verts),dist=.000001)
     bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces)); bm.to_mesh(mesh); bm.free()
@@ -155,12 +134,6 @@ def create_mesh(rig):
     anchors=[('Shark_Head',-.30),('Shark_Body_A',-.07),('Shark_Body_B',.20),('Shark_Tail_Base',.48),('Shark_Tail_Mid',.68),('Shark_Tail_Tip',.81)]
     for v in mesh.vertices:
         y=v.co.y
-        jaw_weight=mesh.attributes['JawWeight'].data[v.index].value
-        if jaw_weight>0:
-            groups['Shark_Jaw'].add([v.index],jaw_weight,'REPLACE')
-            if jaw_weight<1:groups['Shark_Head'].add([v.index],1-jaw_weight,'REPLACE')
-            continue
-        if y<=-.198:groups['Shark_Head'].add([v.index],1,'REPLACE');continue
         if y<=anchors[0][1]: groups[anchors[0][0]].add([v.index],1,'REPLACE'); continue
         if y>=anchors[-1][1]: groups[anchors[-1][0]].add([v.index],1,'REPLACE'); continue
         for (a,ay),(b,by) in zip(anchors,anchors[1:]):
@@ -183,29 +156,18 @@ def build_actions(rig,swim):
     for a in list(bpy.data.actions):
         if a!=swim: bpy.data.actions.remove(a)
     action=bpy.data.actions.new('Shark_Bite'); action.use_fake_user=True; assign_action(rig,action)
-    keys=[(1,0,1,0,0),(1.96,.018,.966,-2,-26),(3.16,-.006,1.012,1,0),
-          (4.12,-.003,1.018,1.2,-12),(6,.012,.985,-1,0),(8,-.003,1.005,.4,0),(11,0,1,0,0)]
-    for frame,dy,sy,pitch,jaw_angle in keys:
+    keys=[(1,0,1,0),(2,.018,.966,-2),(3.16,-.006,1.012,1),(4,-.003,1.018,1.2),
+          (6,.012,.985,-1),(8,-.003,1.005,.4),(11,0,1,0)]
+    for frame,dy,sy,pitch in keys:
         for bone in rig.pose.bones:
             loc,rot,scale=sampled[min(10,round(frame-1))][bone.name]
             bone.location=loc; bone.rotation_mode='QUATERNION'; bone.rotation_quaternion=rot; bone.scale=scale
-            if bone.name=='Shark_Jaw':
-                bone.matrix_basis.identity()
-                bone.rotation_quaternion=Quaternion((1,0,0),math.radians(jaw_angle))
+            if bone.name=='Shark_Jaw': bone.matrix_basis.identity()
             if bone.name=='Shark_Head':
                 bone.location.y+=dy; bone.scale=(1+(1-sy)*.6,sy,1+(1-sy)*.4)
                 bone.rotation_quaternion=rot @ Quaternion((1,0,0),math.radians(pitch))
             for channel in ('location','rotation_quaternion','scale'): bone.keyframe_insert(data_path=channel,frame=frame,group=bone.name)
     action['contact_seconds']=.09
-    action['jaw_open_seconds']=.04; action['jaw_release_seconds']=.13
-    # 限定插值，避免短促开闭在相邻关键帧之间过冲。
-    for slot in action.slots:
-        for layer in action.layers:
-            for strip in layer.strips:
-                bag=strip.channelbag(slot)
-                if bag:
-                    for fc in bag.fcurves:
-                        for key in fc.keyframe_points:key.interpolation='LINEAR'
     entry=bpy.data.actions.new('Shark_Entry_Rise'); entry.use_fake_user=True; assign_action(rig,entry)
     # 这里只摆正身体；真实上浮位移由既有入场控制器消费权威时间。
     for frame,pitch in [(1,-7),(10,-4),(20,2),(27.4,0)]:
@@ -258,8 +220,7 @@ def main():
     build_body(); build_fins(); build_face(); build_details(); mesh=create_mesh(rig); build_actions(rig,swim)
     assert rest=={b.name:[list(row) for row in b.matrix_local] for b in rig.data.bones}
     assert all(abs(sum(g.weight for g in v.groups)-1)<.00001 for v in mesh.data.vertices)
-    jaw_vertices=sum(any(g.group==mesh.vertex_groups['Shark_Jaw'].index and g.weight>0 for g in v.groups) for v in mesh.data.vertices)
-    assert jaw_vertices>0
+    assert not any(g.group==mesh.vertex_groups['Shark_Jaw'].index and g.weight>0 for v in mesh.data.vertices for g in v.groups)
     scene=bpy.context.scene; scene.render.fps=24; scene.frame_start=1; scene.frame_end=25
     scene['D_作者源']='唯一正式源；archive 仅追溯，手改后用 --export-only 导出'
     bpy.ops.wm.save_as_mainfile(filepath=str(SOURCE)); export('--apply' in sys.argv)
@@ -267,7 +228,7 @@ def main():
     (HERE/'source-audit.json').write_text(json.dumps({'bones':len(rig.data.bones),'rest_matrices_unchanged':True,
       'vertices':len(mesh.data.vertices),'triangles':len(mesh.data.loop_triangles),'meshes':1,'materials':1,'textures':0,
       'blender_bounds':[[min(v.co[i] for v in mesh.data.vertices) for i in range(3)],[max(v.co[i] for v in mesh.data.vertices) for i in range(3)]],
-      'contact_seconds':.09,'clip_seconds':10/24,'jaw_weighted_vertices':jaw_vertices,'jaw_open_degrees':26,'jaw_open_seconds':.04,'jaw_release_seconds':.13,'parts':PARTS},ensure_ascii=False,indent=2),encoding='utf8')
+      'contact_seconds':.09,'clip_seconds':10/24,'jaw_weighted_vertices':0,'parts':PARTS},ensure_ascii=False,indent=2),encoding='utf8')
 
 if __name__=='__main__':
     if '--export-only' in sys.argv:

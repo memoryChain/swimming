@@ -36,7 +36,7 @@ export type EntertainmentBannerCategory =
     | '水球接力'
     | '漩涡警报'
     | '浮标提醒'
-    | '玩具巡场'
+    | '玩具开咬'
     | '水球点名'
     | '水球命中'
     | '水球喷水'

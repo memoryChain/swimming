@@ -1,13 +1,13 @@
 {
   "runtime": "assets/race/models/SharkModel.glb",
-  "bytes": 123068,
+  "bytes": 119008,
   "previous_bytes": 248976,
-  "sha256": "61a2dc32d3201e3ff74ca0cb7d7117de0b518bff1b572b1d91e9abaed6a79b2a",
+  "sha256": "d8f529be5cde3cb9af0d6368d8c45bc2b3b6501bd732db95f27fcc3afd034b22",
   "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0",
   "meshes": 1,
   "materials": 1,
   "textures": 0,
-  "triangles": 2644,
+  "triangles": 2648,
   "exported_vertices": 1408,
   "bones": [
     "Shark_Head",
@@ -19,7 +19,37 @@
     "Shark_Jaw"
   ],
   "inverse_bind_max_delta": 0,
-  "jaw_weight_entries": 0,
+  "jaw_weight_entries": 171,
+  "jaw_keyframes": [
+    {
+      "seconds": 1.2417634698280722e-9,
+      "degrees": 0
+    },
+    {
+      "seconds": 0.04000000283122063,
+      "degrees": 25.9999973406411
+    },
+    {
+      "seconds": 0.09000001102685928,
+      "degrees": 0
+    },
+    {
+      "seconds": 0.12999999523162842,
+      "degrees": 12.00000144338106
+    },
+    {
+      "seconds": 0.2083333283662796,
+      "degrees": 0
+    },
+    {
+      "seconds": 0.2916666865348816,
+      "degrees": 0
+    },
+    {
+      "seconds": 0.4166666865348816,
+      "degrees": 0
+    }
+  ],
   "animations": [
     {
       "name": "Shark_Bite",
@@ -45,33 +75,33 @@
     "height": 128,
     "alpha_min": 0,
     "alpha_max": 255,
-    "occupied_pixels": 2571,
+    "occupied_pixels": 2639,
     "bounds": [
       21,
       32,
       115,
-      86
+      88
     ],
-    "sha256": "2bad400ad49930c1a086ba1b304626ef53a40dbeac9b4b868811d506ffb46f33"
+    "sha256": "f73d7149e3af54a76b09f95482d5c662d7d46e0a56e426843beb6eb0a3af6ec5"
   },
   "source_icon": {
     "width": 256,
     "height": 256,
     "alpha_min": 0,
     "alpha_max": 255,
-    "occupied_pixels": 9830,
+    "occupied_pixels": 10090,
     "bounds": [
       42,
       65,
       231,
-      172
+      177
     ],
-    "sha256": "91316a0ec3c5d72f4a434374e20fa984596d1f5c9a08b0f1343ac5510a53e98a"
+    "sha256": "630e3496c9a244c9305e341a59082ad0de28b945abd39efa6b4cca02793e1b8d"
   },
   "creator_meta": {
     "imported": true,
-    "mesh_triangles": 2452,
-    "matches_current_geometry": false,
+    "mesh_triangles": 2648,
+    "matches_current_geometry": true,
     "animation_names": [
       "Shark_Bite",
       "Shark_Entry_Rise",

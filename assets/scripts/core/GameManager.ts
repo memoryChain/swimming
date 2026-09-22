@@ -224,7 +224,7 @@ function entertainmentActiveBannerCategory(event: EntertainmentEventId): Enterta
         case EntertainmentEventId.WHIRLPOOL: return '漩涡警报';
         case EntertainmentEventId.CANNON: return '水球点名';
         case EntertainmentEventId.MINEFIELD: return '浮标提醒';
-        case EntertainmentEventId.SHARK: return '玩具巡场';
+        case EntertainmentEventId.SHARK: return '玩具开咬';
         case EntertainmentEventId.LITTER: return '赛道异物';
         default: return '广播通知';
     }
@@ -3079,7 +3079,7 @@ export class GameManager extends Component {
                     'warning',
                     Math.round(SHARK_TUNING.warningSeconds * 1000),
                     'shark',
-                    '玩具巡场',
+                    '玩具开咬',
                 );
             },
             onStateChange: (state, previousState) => this.handleSharkStateChange(state, previousState),
@@ -3088,7 +3088,7 @@ export class GameManager extends Component {
                 'danger',
                 1500,
                 'shark',
-                '玩具巡场',
+                '玩具开咬',
             ),
             hungerSchedule: isEntertainmentBrawlMode()
                 ? (getRaceDistance() >= 400 ? [0, 9] : [0])
@@ -3144,20 +3144,20 @@ export class GameManager extends Component {
             this.syncSharkArtPresentation();
             if ((this._shark?.huntIndex ?? 0) > 0) {
                 this._entertainmentEventBanner.showEvent(
-                    '玩具鲨再次巡场 · 留意锁定箭头',
+                    '玩具鲨又要开咬 · 留意锁定箭头',
                     'warning',
                     2200,
                     'shark',
-                    '玩具巡场',
+                    '玩具开咬',
                 );
             }
         } else if (state === SharkState.HUNT) {
             this._entertainmentEventBanner.showEvent(
-                '锁定完成 · 立刻变向拉开距离',
+                '玩具鲨盯上你了 · 变向躲开这一口',
                 'danger',
                 Math.round(SHARK_TUNING.huntOpeningGraceSeconds * 1000),
                 'shark',
-                '玩具巡场',
+                '玩具开咬',
             );
         } else if (state === SharkState.BITE || state === SharkState.PATROL_BITE) {
             this.syncSharkArtPresentation();
@@ -3179,7 +3179,7 @@ export class GameManager extends Component {
             this.syncSharkArtPresentation();
             if (!isEntertainmentBrawlMode()) {
                 this._entertainmentEventBanner.enqueueEvent(
-                    '玩具鲨收工啦 · 本场巡游结束',
+                    '玩具鲨收工啦 · 大家检查一下泳裤',
                     'success',
                     1800,
                     'shark',
@@ -3207,7 +3207,7 @@ export class GameManager extends Component {
             lane, EntertainmentRecoveryReason.SHARK, distance, revision,
         )) return;
         this._lastSharkBitePresentationSequence = revision;
-        // 正式追逐与巡游补命中共用圆鼻接触；漏收蓄势时从接触点接续。
+        // 正式追逐与巡游补命中共用短促咬合；漏收蓄势时从接触点接续。
         const recovery = this._entertainmentRecovery?.stateForLane(lane);
         const elapsedSinceHit = recovery?.phase === EntertainmentRecoveryPhase.KNOCKED
             ? Math.max(0, ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds - recovery.remainingSeconds) : 0;
@@ -4359,7 +4359,7 @@ export class GameManager extends Component {
                 : isWhirlpoolBrawlMode()
                     ? '贴外圈借水流加速，避开漩涡核心'
                     : isSharkBrawlMode()
-                        ? '观察玩具鲨锁定并绕行；被顶后扶圈调整再出发'
+                        ? '充气玩具鲨也会咬人；变向躲开，挨一口后扶圈缓缓'
                         : isCannonBrawlMode()
                             ? '观察水面预警躲避小水球；中心命中后搭浮圈调整'
                             : isTimedBombBrawlMode()

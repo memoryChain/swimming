@@ -741,7 +741,7 @@ export class RaceEventPictureInPictureCamera {
         const hunting = state === SharkState.HUNT || biting;
         this.setCopy(
             '充气玩具鲨',
-            biting ? '圆鼻顶推 · 扶稳再出发' : hunting ? '玩具追逐 · 变向绕开' : '玩具入场 · 留意锁定',
+            biting ? '玩具开咬 · 扶圈缓缓' : hunting ? '小心挨咬 · 变向绕开' : '玩具入场 · 留意锁定',
             hunting ? DANGER_COLOR : WARNING_COLOR,
         );
     }

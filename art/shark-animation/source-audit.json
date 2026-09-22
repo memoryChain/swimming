@@ -1,8 +1,8 @@
 {
   "bones": 7,
   "rest_matrices_unchanged": true,
-  "vertices": 1370,
-  "triangles": 2644,
+  "vertices": 1374,
+  "triangles": 2648,
   "meshes": 1,
   "materials": 1,
   "textures": 0,
@@ -20,141 +20,149 @@
   ],
   "contact_seconds": 0.09,
   "clip_seconds": 0.4166666666666667,
-  "jaw_weighted_vertices": 0,
+  "jaw_weighted_vertices": 165,
+  "jaw_open_degrees": 26,
+  "jaw_open_seconds": 0.04,
+  "jaw_release_seconds": 0.13,
   "parts": [
     {
-      "name": "鼓鼓主体与圆鼻头",
+      "name": "圆鼻上颌",
       "first": 0,
-      "count": 240
+      "count": 143
+    },
+    {
+      "name": "充气下颌",
+      "first": 143,
+      "count": 104
     },
     {
       "name": "短圆背鳍",
-      "first": 240,
+      "first": 247,
       "count": 50
     },
     {
       "name": "左软鳍",
-      "first": 290,
+      "first": 297,
       "count": 40
     },
     {
       "name": "尾鳍下瓣",
-      "first": 330,
+      "first": 337,
       "count": 50
     },
     {
       "name": "右软鳍",
-      "first": 380,
+      "first": 387,
       "count": 40
     },
     {
       "name": "尾鳍上瓣",
-      "first": 420,
+      "first": 427,
       "count": 50
     },
     {
       "name": "眼白",
-      "first": 470,
+      "first": 477,
       "count": 144
     },
     {
       "name": "瞳孔",
-      "first": 614,
+      "first": 621,
       "count": 84
     },
     {
       "name": "眼睛高光",
-      "first": 698,
+      "first": 705,
       "count": 40
     },
     {
       "name": "得意眉眼",
-      "first": 738,
+      "first": 745,
       "count": 56
     },
     {
       "name": "眼白",
-      "first": 794,
+      "first": 801,
       "count": 144
     },
     {
       "name": "瞳孔",
-      "first": 938,
+      "first": 945,
       "count": 84
     },
     {
       "name": "眼睛高光",
-      "first": 1022,
+      "first": 1029,
       "count": 40
     },
     {
       "name": "得意眉眼",
-      "first": 1062,
+      "first": 1069,
       "count": 56
     },
     {
       "name": "闭合弧形笑脸",
-      "first": 1118,
+      "first": 1125,
       "count": 102
     },
     {
       "name": "笑脸端点",
-      "first": 1220,
+      "first": 1227,
       "count": 12
     },
     {
       "name": "笑脸端点",
-      "first": 1232,
+      "first": 1239,
       "count": 12
     },
     {
       "name": "热合接缝",
-      "first": 1244,
+      "first": 1251,
       "count": 42
     },
     {
       "name": "热合接缝",
-      "first": 1286,
+      "first": 1293,
       "count": 42
     },
     {
       "name": "软壳鳃纹",
-      "first": 1328,
+      "first": 1335,
       "count": 18
     },
     {
       "name": "软壳鳃纹",
-      "first": 1346,
+      "first": 1353,
       "count": 18
     },
     {
       "name": "软壳鳃纹",
-      "first": 1364,
+      "first": 1371,
       "count": 18
     },
     {
       "name": "软壳鳃纹",
-      "first": 1382,
+      "first": 1389,
       "count": 18
     },
     {
       "name": "软壳鳃纹",
-      "first": 1400,
+      "first": 1407,
       "count": 18
     },
     {
       "name": "软壳鳃纹",
-      "first": 1418,
+      "first": 1425,
       "count": 18
     },
     {
       "name": "气阀底座",
-      "first": 1436,
+      "first": 1443,
       "count": 60
     },
     {
       "name": "橙色软气阀",
-      "first": 1496,
+      "first": 1503,
       "count": 60
     }
   ]

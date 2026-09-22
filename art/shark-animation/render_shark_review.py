@@ -21,6 +21,16 @@ def render(name,pos,scale=1.58,target=(0,.20,.28)):
     cam.location=pos; cam.rotation_euler=(Vector(target)-cam.location).to_track_quat('-Z','Y').to_euler(); cam.data.ortho_scale=scale
     scene.render.filepath=str(HERE/(name+'.png')); bpy.ops.render.render(write_still=True)
 scene.frame_set(1)
+if '--bite-poses' in sys.argv:
+    rig=bpy.data.objects['Shark_Rig']; action=bpy.data.actions['Shark_Bite']
+    rig.animation_data.action=action
+    if action.slots:rig.animation_data.action_slot=action.slots[0]
+    for name,frame in [('bite-open',1.96),('bite-contact',3.16),('bite-release',4.12)]:
+        scene.frame_set(int(frame),subframe=frame%1)
+        render(name,(-3,-1.7,1.45))
+    swim=bpy.data.actions['Shark_Swim_Loop']; rig.animation_data.action=swim
+    if swim.slots:rig.animation_data.action_slot=swim.slots[0]
+    scene.frame_set(1)
 for name,pos in ([] if '--export-icon-only' in sys.argv else [('front',(0,-3,.28)),('back',(0,3,.28)),('left',(-3,.2,.28)),('right',(3,.2,.28)),('top',(0,.2,3)),('bottom',(0,.2,-3)),('hero',(-3,-1.7,1.45))]):
     render(name,pos)
 scene.render.film_transparent=True; scene.render.resolution_x=256; scene.render.resolution_y=256

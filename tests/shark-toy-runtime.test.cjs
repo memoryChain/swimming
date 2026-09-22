@@ -101,7 +101,9 @@ test('实际导出游动和顶推通道首尾一致，骨架、材质与资源�
     const h=setup(),dir=path.join(h.root,'art/shark-animation');
     const a=JSON.parse(fs.readFileSync(path.join(dir,'export-audit.json'))),source=JSON.parse(fs.readFileSync(path.join(dir,'source-audit.json')));
     for(const name of ['Shark_Swim_Loop','Shark_Bite'])assert.equal(a.animations.find(x=>x.name===name).channel_endpoint_max_delta,0);
-    assert.equal(a.inverse_bind_max_delta,0);assert.equal(source.rest_matrices_unchanged,true);assert.equal(source.jaw_weighted_vertices,0);
+    assert.equal(a.inverse_bind_max_delta,0);assert.equal(source.rest_matrices_unchanged,true);assert.ok(source.jaw_weighted_vertices>0);
+    const jawAt=t=>a.jaw_keyframes.reduce((x,y)=>Math.abs(y.seconds-t)<Math.abs(x.seconds-t)?y:x);
+    assert.ok(jawAt(.04).degrees>24);assert.ok(jawAt(.09).degrees<.01);assert.ok(jawAt(.13).degrees>10);assert.ok(jawAt(10/24).degrees<.01);
     const b=fs.readFileSync(path.join(h.root,'assets/race/models/SharkModel.glb')),g=JSON.parse(b.subarray(20,20+b.readUInt32LE(12)));
     assert.equal(g.meshes.length,1);assert.equal(g.meshes[0].primitives.length,1);assert.equal(g.materials.length,1);assert.equal(g.images?.length??0,0);
     assert.equal(g.skins[0].joints.length,7);assert.ok(b.length<249000);

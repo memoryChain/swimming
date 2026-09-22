@@ -21,7 +21,14 @@ const oldMatrices=old.read(old.g.skins[0].inverseBindMatrices),matrices=read(g.s
 for(let j=0;j<names.length;j++)for(let k=0;k<16;k++)restDelta=Math.max(restDelta,Math.abs(matrices[j*16+k]-oldMatrices[oldNames.indexOf(names[j])*16+k]));
 assert.ok(restDelta<1e-5,`原骨架绑定矩阵偏差 ${restDelta}`);
 const p=g.meshes[0].primitives[0],weights=read(p.attributes.WEIGHTS_0),joints=read(p.attributes.JOINTS_0),jaw=names.indexOf('Shark_Jaw');assert.ok(jaw>=0);
-let jawWeights=0;for(let i=0;i<weights.length;i++)if(joints[i]===jaw&&weights[i]>0)jawWeights++;assert.equal(jawWeights,0);
+let jawWeights=0;for(let i=0;i<weights.length;i++)if(joints[i]===jaw&&weights[i]>0)jawWeights++;assert.ok(jawWeights>0);
+const bite=g.animations.find(a=>a.name==='Shark_Bite');
+const jawChannel=bite.channels.find(c=>g.nodes[c.target.node].name==='Shark_Jaw'&&c.target.path==='rotation');assert.ok(jawChannel);
+const jawSampler=bite.samplers[jawChannel.sampler],jawTimes=read(jawSampler.input),jawValues=read(jawSampler.output);
+const jawRest=jawValues.slice(0,4);
+const jawAngles=jawTimes.map((t,i)=>{const q=jawValues.slice(i*4,i*4+4),dot=q.reduce((n,x,k)=>n+x*jawRest[k],0)/(Math.hypot(...q)*Math.hypot(...jawRest));return {seconds:t,degrees:2*Math.acos(Math.min(1,Math.abs(dot)))*180/Math.PI};});
+const jawAt=t=>jawAngles.reduce((a,b)=>Math.abs(b.seconds-t)<Math.abs(a.seconds-t)?b:a);
+assert.ok(jawAt(.04).degrees>24);assert.ok(jawAt(.09).degrees<.01);assert.ok(jawAt(.13).degrees>10);assert.ok(jawAt(10/24).degrees<.01);
 const animations=g.animations.map(a=>{const times=a.samplers.flatMap(s=>read(s.input));const min=Math.min(...times),max=Math.max(...times);assert.ok(min>=0&&min<1e-7);
 let endpointDelta=0;for(const s of a.samplers){const values=read(s.output),dim={VEC3:3,VEC4:4}[g.accessors[s.output].type],cubic=s.interpolation==='CUBICSPLINE',first=cubic?dim:0,last=values.length-(cubic?2:1)*dim;for(let i=0;i<dim;i++)endpointDelta=Math.max(endpointDelta,Math.abs(values[first+i]-values[last+i]));}
 return {name:a.name,start:min,duration:max,channel_endpoint_max_delta:endpointDelta};});
@@ -31,7 +38,7 @@ assert.equal(meta.uuid,'80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0');const iconMeta=fs
 assert.equal(sha(iconMeta).toUpperCase(),baseline.find(x=>x.Path.endsWith('icon-shark.png.meta')).Hash);
 const report={runtime:'assets/race/models/SharkModel.glb',bytes:current.b.length,previous_bytes:old.b.length,sha256:sha(current.b),uuid:meta.uuid,
 meshes:g.meshes.length,materials:g.materials.length,textures:g.images?.length??0,triangles:read(p.indices).length/3,exported_vertices:g.accessors[p.attributes.POSITION].count,
-bones:names,inverse_bind_max_delta:restDelta,jaw_weight_entries:jawWeights,animations,
+bones:names,inverse_bind_max_delta:restDelta,jaw_weight_entries:jawWeights,jaw_keyframes:jawAngles,animations,
 runtime_icon:png(path.join(root,'assets/race/ui/entertainment-banner-v1/icon-shark.png')),
 source_icon:png(path.join(root,'art/ui/entertainment-banner-v1/icon-shark-generated-source.png')),
 creator_meta:{imported:meta.imported,mesh_triangles:Object.values(meta.subMetas??{}).filter(x=>x.importer==='gltf-mesh').reduce((n,x)=>n+(x.userData?.triangleCount??0),0),
