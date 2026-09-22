@@ -70,17 +70,14 @@ const SHARK_MODEL_PREFAB_CANDIDATES = [
 ];
 
 export const SHARK_MODEL_PRESENTATION = {
-    visualScale: 1.8,
-    visualYOffset: -0.18,
+    // 新作者源鼻端 -0.475m × 1.6 = 0.76m，与原 0.75m 判定锚点对齐。
+    visualScale: 1.6,
+    visualYOffset: -0.10,
     visualEulerDegrees: [0, 90, 0] as const,
     swimAnimationSpeed: 1.2,
-    biteAnimationSpeed: 1.1,
-    biteBlendSeconds: 0.04,
     swimBlendSeconds: 0.08,
-    // 击倒现在发生在 0.09 秒蓄势之后；这里只保留闭合到水花的短延迟。
+    // 接触之后只保留原有水花短延迟；顶推由有效判定时钟采样。
     biteSplashDelaySeconds: 0.04,
-    biteDropStart: 0.04,
-    biteDropEnd: 0.10,
 };
 const CARTON_SWIMMER5_PREFAB_CANDIDATES = [
     'models/CartonSwimmer5',

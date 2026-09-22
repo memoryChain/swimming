@@ -767,7 +767,7 @@ export class UIController extends Component {
                 finished
                     ? `${row.time.toFixed(2)} 秒`
                     : row.sharkEliminated
-                        ? '鲨鱼淘汰'
+                        ? '碰撞退赛'
                         : row.cannonEliminated
                             ? '炮击淘汰'
                             : '未完成',

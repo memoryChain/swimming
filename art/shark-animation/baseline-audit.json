@@ -1,0 +1,243 @@
+{
+  "source": "assets\\race\\models\\SharkModel.glb",
+  "objects": [
+    {
+      "name": "Icosphere",
+      "type": "MESH",
+      "parent": null,
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation_mode": "XYZ",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "vertices": 42,
+      "polygons": 80,
+      "materials": [],
+      "vertex_groups": [],
+      "shape_keys": [],
+      "bounds_min": [
+        -0.951058,
+        -1.0,
+        -1.0
+      ],
+      "bounds_max": [
+        0.951058,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "name": "Shark_Mesh",
+      "type": "MESH",
+      "parent": "Shark_Rig",
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation_mode": "QUATERNION",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "vertices": 2234,
+      "polygons": 2813,
+      "materials": [
+        "Shark_Mat"
+      ],
+      "vertex_groups": [
+        "Shark_Head",
+        "Shark_Body_A",
+        "Shark_Body_B",
+        "Shark_Tail_Base",
+        "Shark_Tail_Mid",
+        "Shark_Tail_Tip",
+        "Shark_Jaw"
+      ],
+      "shape_keys": [],
+      "bounds_min": [
+        -0.279249,
+        -0.499023,
+        0.0
+      ],
+      "bounds_max": [
+        0.310327,
+        0.482372,
+        0.509766
+      ]
+    },
+    {
+      "name": "Shark_Rig",
+      "type": "ARMATURE",
+      "parent": null,
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation_mode": "QUATERNION",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    }
+  ],
+  "armatures": [
+    {
+      "object": "Shark_Rig",
+      "data": "Shark_Rig",
+      "bones": [
+        {
+          "name": "Shark_Head",
+          "parent": null,
+          "head": [
+            0.0,
+            -0.499023,
+            0.254883
+          ],
+          "tail": [
+            0.0,
+            -0.199609,
+            0.254883
+          ],
+          "use_deform": true
+        },
+        {
+          "name": "Shark_Body_A",
+          "parent": "Shark_Head",
+          "head": [
+            0.0,
+            -0.199609,
+            0.254883
+          ],
+          "tail": [
+            0.0,
+            -0.00998,
+            0.254883
+          ],
+          "use_deform": true
+        },
+        {
+          "name": "Shark_Body_B",
+          "parent": "Shark_Body_A",
+          "head": [
+            0.0,
+            -0.00998,
+            0.254883
+          ],
+          "tail": [
+            0.0,
+            0.149707,
+            0.254883
+          ],
+          "use_deform": true
+        },
+        {
+          "name": "Shark_Tail_Base",
+          "parent": "Shark_Body_B",
+          "head": [
+            0.0,
+            0.149707,
+            0.254883
+          ],
+          "tail": [
+            0.0,
+            0.279453,
+            0.254883
+          ],
+          "use_deform": true
+        },
+        {
+          "name": "Shark_Tail_Mid",
+          "parent": "Shark_Tail_Base",
+          "head": [
+            0.0,
+            0.279453,
+            0.254883
+          ],
+          "tail": [
+            0.0,
+            0.389238,
+            0.254883
+          ],
+          "use_deform": true
+        },
+        {
+          "name": "Shark_Tail_Tip",
+          "parent": "Shark_Tail_Mid",
+          "head": [
+            0.0,
+            0.389238,
+            0.254883
+          ],
+          "tail": [
+            0.0,
+            0.499023,
+            0.254883
+          ],
+          "use_deform": true
+        },
+        {
+          "name": "Shark_Jaw",
+          "parent": "Shark_Head",
+          "head": [
+            0.0,
+            -0.198,
+            0.137
+          ],
+          "tail": [
+            0.0,
+            -0.497414,
+            0.137
+          ],
+          "use_deform": true
+        }
+      ],
+      "active_action": "Shark_Bite",
+      "nla_tracks": [
+        {
+          "name": "Shark_Swim_Loop",
+          "strips": [
+            "Shark_Swim_Loop"
+          ]
+        },
+        {
+          "name": "Shark_Bite",
+          "strips": [
+            "Shark_Bite"
+          ]
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "name": "Shark_Bite",
+      "frame_range": [
+        1.0,
+        11.0
+      ],
+      "slots": [
+        "OBShark_Rig"
+      ]
+    },
+    {
+      "name": "Shark_Swim_Loop",
+      "frame_range": [
+        1.0,
+        25.0
+      ],
+      "slots": [
+        "OBShark_Rig"
+      ]
+    }
+  ]
+}

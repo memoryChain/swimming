@@ -36,14 +36,13 @@ export type EntertainmentBannerCategory =
     | '水球接力'
     | '漩涡警报'
     | '水雷警报'
-    | '鲨鱼警报'
+    | '玩具巡场'
     | '炮火警报'
     | '炮击命中'
     | '水球喷水'
     | '带球冲线'
     | '警报解除'
-    | '赛道异物'
-    | '咬伤播报';
+    | '赛道异物';
 
 const EVENT_WIDTH = 840;
 const EVENT_COMPACT_WIDTH = 650;

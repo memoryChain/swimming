@@ -1,0 +1,82 @@
+{
+  "runtime": "assets/race/models/SharkModel.glb",
+  "bytes": 123068,
+  "previous_bytes": 248976,
+  "sha256": "61a2dc32d3201e3ff74ca0cb7d7117de0b518bff1b572b1d91e9abaed6a79b2a",
+  "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0",
+  "meshes": 1,
+  "materials": 1,
+  "textures": 0,
+  "triangles": 2644,
+  "exported_vertices": 1408,
+  "bones": [
+    "Shark_Head",
+    "Shark_Body_A",
+    "Shark_Body_B",
+    "Shark_Tail_Base",
+    "Shark_Tail_Mid",
+    "Shark_Tail_Tip",
+    "Shark_Jaw"
+  ],
+  "inverse_bind_max_delta": 0,
+  "jaw_weight_entries": 0,
+  "animations": [
+    {
+      "name": "Shark_Bite",
+      "start": 1.2417634698280722e-9,
+      "duration": 0.4166666865348816,
+      "channel_endpoint_max_delta": 0
+    },
+    {
+      "name": "Shark_Entry_Rise",
+      "start": 1.2417634698280722e-9,
+      "duration": 1.100000023841858,
+      "channel_endpoint_max_delta": 0.04448670148849487
+    },
+    {
+      "name": "Shark_Swim_Loop",
+      "start": 1.2417634698280722e-9,
+      "duration": 0.9999999403953552,
+      "channel_endpoint_max_delta": 0
+    }
+  ],
+  "runtime_icon": {
+    "width": 128,
+    "height": 128,
+    "alpha_min": 0,
+    "alpha_max": 255,
+    "occupied_pixels": 2571,
+    "bounds": [
+      21,
+      32,
+      115,
+      86
+    ],
+    "sha256": "2bad400ad49930c1a086ba1b304626ef53a40dbeac9b4b868811d506ffb46f33"
+  },
+  "source_icon": {
+    "width": 256,
+    "height": 256,
+    "alpha_min": 0,
+    "alpha_max": 255,
+    "occupied_pixels": 9830,
+    "bounds": [
+      42,
+      65,
+      231,
+      172
+    ],
+    "sha256": "91316a0ec3c5d72f4a434374e20fa984596d1f5c9a08b0f1343ac5510a53e98a"
+  },
+  "creator_meta": {
+    "imported": true,
+    "mesh_triangles": 2452,
+    "matches_current_geometry": false,
+    "animation_names": [
+      "Shark_Bite",
+      "Shark_Entry_Rise",
+      "Shark_Swim_Loop"
+    ],
+    "note": "仅元数据观察；若网格数量不匹配，表示最后改形尚待重导入，不是引擎画面或真机验证"
+  }
+}

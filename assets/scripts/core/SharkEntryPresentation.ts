@@ -13,6 +13,8 @@ export class SharkEntryPresentation {
     private splashPlayed = false;
     private lastVisualY = Number.NaN;
     private disposed = false;
+    private previousState = SharkState.INACTIVE;
+    private exitElapsed = 0;
     private readonly sharkWorldPosition = new Vec3();
 
     constructor(
@@ -27,13 +29,26 @@ export class SharkEntryPresentation {
 
     reset(): void {
         this.splashPlayed = false;
+        this.previousState = SharkState.INACTIVE;
+        this.exitElapsed = 0;
         this.setVisualY(0);
         this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.SHARK_ENTRY);
     }
 
     update(dt: number, shark: SharkController): void {
         if (this.disposed || !shark) return;
-        void dt;
+        if (shark.state === SharkState.SATIATED) {
+            if (this.previousState !== SharkState.SATIATED) {
+                // 已错过退场时直接恢复水下状态，不从水面重新退一次。
+                this.exitElapsed = this.previousState === SharkState.INACTIVE ? 1.2 : 0;
+            }
+            this.exitElapsed = Math.min(1.2, this.exitElapsed + Math.max(0, Number.isFinite(dt) ? dt : 0));
+            const progress = this.exitElapsed / 1.2;
+            this.setVisualY(SHARK_TUNING.satiatedSinkOffset * progress * progress);
+            this.previousState = shark.state;
+            return;
+        }
+        this.previousState = shark.state;
         const firstEntry = shark.state === SharkState.WARNING
             && shark.sequence === 1
             && shark.huntIndex === 0;

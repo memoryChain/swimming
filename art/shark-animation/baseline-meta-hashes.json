@@ -1,0 +1,12 @@
+[
+  {
+    "Algorithm": "SHA256",
+    "Hash": "D219B2333731AF05D8BCA332ABF82567522F9A38F88F53DA0D952323F7028E8D",
+    "Path": "assets/race/models/SharkModel.glb.meta"
+  },
+  {
+    "Algorithm": "SHA256",
+    "Hash": "9011ECB75AC14E86821407DF89BE7159A99EDC0B71DB0D14AEDADD6BA380D629",
+    "Path": "assets/race/ui/entertainment-banner-v1/icon-shark.png.meta"
+  }
+]

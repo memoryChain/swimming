@@ -5,42 +5,19 @@
   "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0",
   "files": [
     "__original-animation-0.bin",
-    "__original-animation-1.bin"
+    "__original-animation-1.bin",
+    "__original-animation-2.bin"
   ],
   "subMetas": {
-    "96632": {
-      "importer": "gltf-embeded-image",
-      "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@96632",
-      "displayName": "",
-      "id": "96632",
-      "name": "Shark_Albedo_512.image",
-      "userData": {
-        "gltfIndex": 0,
-        "fixAlphaTransparencyArtifacts": true,
-        "hasAlpha": false,
-        "type": "texture",
-        "compressSettings": {
-          "useCompressTexture": true,
-          "presetId": "astc-opaque-6x6"
-        }
-      },
-      "ver": "1.0.3",
-      "imported": true,
-      "files": [
-        ".jpg",
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "5f027": {
+    "fee1d": {
       "importer": "gltf-mesh",
-      "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@5f027",
+      "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@fee1d",
       "displayName": "",
-      "id": "5f027",
-      "name": "Shark_Mesh.mesh",
+      "id": "fee1d",
+      "name": "Shark_Mesh.001.mesh",
       "userData": {
         "gltfIndex": 0,
-        "triangleCount": 2813
+        "triangleCount": 2644
       },
       "ver": "1.1.1",
       "imported": true,
@@ -62,7 +39,30 @@
         "sample": 30,
         "span": {
           "from": 0,
-          "to": 0.4583333432674408
+          "to": 0.4166666567325592
+        },
+        "events": []
+      },
+      "ver": "1.0.18",
+      "imported": true,
+      "files": [
+        ".bin"
+      ],
+      "subMetas": {}
+    },
+    "1d7f5": {
+      "importer": "gltf-animation",
+      "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@1d7f5",
+      "displayName": "",
+      "id": "1d7f5",
+      "name": "Shark_Entry_Rise.animation",
+      "userData": {
+        "gltfIndex": 1,
+        "wrapMode": 2,
+        "sample": 30,
+        "span": {
+          "from": 0,
+          "to": 1.100000023841858
         },
         "events": []
       },
@@ -80,12 +80,12 @@
       "id": "bb942",
       "name": "Shark_Swim_Loop.animation",
       "userData": {
-        "gltfIndex": 1,
+        "gltfIndex": 2,
         "wrapMode": 2,
         "sample": 30,
         "span": {
           "from": 0,
-          "to": 1.0416666269302368
+          "to": 1
         },
         "events": []
       },
@@ -107,29 +107,6 @@
         "jointsLength": 7
       },
       "ver": "1.0.1",
-      "imported": true,
-      "files": [
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "e39f7": {
-      "importer": "texture",
-      "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@e39f7",
-      "displayName": "",
-      "id": "e39f7",
-      "name": "UnnamedTexture.texture",
-      "userData": {
-        "wrapModeS": "repeat",
-        "wrapModeT": "repeat",
-        "minfilter": "linear",
-        "magfilter": "linear",
-        "mipfilter": "linear",
-        "anisotropy": 0,
-        "isUuid": true,
-        "imageUuidOrDatabaseUri": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@96632"
-      },
-      "ver": "1.0.22",
       "imported": true,
       "files": [
         ".json"
@@ -170,36 +147,45 @@
     }
   },
   "userData": {
-    "imageMetas": [
-      {
-        "name": "Shark_Albedo_512",
-        "uri": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@96632"
-      }
-    ],
+    "imageMetas": [],
     "animationImportSettings": [
       {
         "name": "Shark_Bite",
-        "duration": 0.4583333432674408,
+        "duration": 0.4166666567325592,
         "fps": 30,
         "splits": [
           {
             "name": "Shark_Bite",
             "from": 0,
-            "to": 0.4583333432674408,
+            "to": 0.4166666567325592,
             "wrapMode": 2,
             "previousId": "d4c35"
           }
         ]
       },
       {
+        "name": "Shark_Entry_Rise",
+        "duration": 1.100000023841858,
+        "fps": 30,
+        "splits": [
+          {
+            "name": "Shark_Entry_Rise",
+            "from": 0,
+            "to": 1.100000023841858,
+            "wrapMode": 2,
+            "previousId": "1d7f5"
+          }
+        ]
+      },
+      {
         "name": "Shark_Swim_Loop",
-        "duration": 1.0416666269302368,
+        "duration": 1,
         "fps": 30,
         "splits": [
           {
             "name": "Shark_Swim_Loop",
             "from": 0,
-            "to": 1.0416666269302368,
+            "to": 1,
             "wrapMode": 2,
             "previousId": "bb942"
           }
@@ -226,14 +212,12 @@
     },
     "assetFinder": {
       "meshes": [
-        "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@5f027"
+        "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@fee1d"
       ],
       "skeletons": [
         "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@08860"
       ],
-      "textures": [
-        "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@e39f7"
-      ],
+      "textures": [],
       "materials": [
         "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@53d07"
       ],

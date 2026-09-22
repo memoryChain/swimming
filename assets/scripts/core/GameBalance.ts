@@ -37,7 +37,7 @@ export const RACE_MODE_OPTIONS: readonly RaceModeConfig[] = [
     { id: 'championship', label: '狂野模式', category: 'competitive', distance: 400, ruleset: 'wild', laneLockdownEnabled: false, steeringEnabled: true },
     { id: 'entertainment-brawl', label: '娱乐模式', category: 'entertainment', distance: 200, ruleset: 'entertainment', laneLockdownEnabled: false, steeringEnabled: true },
     { id: 'stimulant-brawl', label: '心跳苏打大乱斗', category: 'entertainment', distance: 200, ruleset: 'stimulant', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
-    { id: 'shark-brawl', label: '鲨鱼大乱斗', category: 'entertainment', distance: 200, ruleset: 'shark', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
+    { id: 'shark-brawl', label: '充气玩具鲨', category: 'entertainment', distance: 200, ruleset: 'shark', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
     { id: 'whirlpool-brawl', label: '漩涡冲浪赛', category: 'entertainment', distance: 200, ruleset: 'whirlpool', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
     // 保留入口 ID，避免已有存档和联机房间选择失效；玩法本身已替换为炮火逃生赛。
     { id: 'last-place-brawl', label: '炮火逃生赛', category: 'entertainment', distance: 200, ruleset: 'cannon', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },

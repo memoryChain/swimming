@@ -50,6 +50,7 @@ import { Swimmer } from '../entity/Swimmer';
 import { SharkController } from '../entity/SharkController';
 import { SHARK_TUNING, SharkState } from '../entity/SharkTuning';
 import { SharkEntryPresentation } from './SharkEntryPresentation';
+import { SharkArtPresentation } from './SharkArtPresentation';
 import { hasSwimmerCollisionContact, resolveSwimmerCollisions, type SwimmerCollisionImpactListener } from '../entity/SwimmerCollisionResolver';
 import { SwimmerCollisionSplashPool } from '../swimmer/SwimmerCollisionSplash';
 import { collisionSplashModeForRace } from '../swimmer/CollisionSplashRules';
@@ -221,7 +222,7 @@ function entertainmentActiveBannerCategory(event: EntertainmentEventId): Enterta
         case EntertainmentEventId.WHIRLPOOL: return '漩涡警报';
         case EntertainmentEventId.CANNON: return '炮火警报';
         case EntertainmentEventId.MINEFIELD: return '水雷警报';
-        case EntertainmentEventId.SHARK: return '鲨鱼警报';
+        case EntertainmentEventId.SHARK: return '玩具巡场';
         case EntertainmentEventId.LITTER: return '赛道异物';
         default: return '广播通知';
     }
@@ -397,8 +398,8 @@ export class GameManager extends Component {
     private _sharkNode: Node | null = null;
     private _sharkEntryPresentation: SharkEntryPresentation | null = null;
     private _sharkArtModel: Node | null = null;
-    private _sharkAnimation: SkeletalAnimation | null = null;
-    private _sharkWake: Node | null = null;
+    private readonly _sharkArtPresentation = new SharkArtPresentation();
+    private _sharkPresentationGeneration = 0;
     private _sharkSplashFocus: Swimmer | null = null;
     private _sharkSplashFocusSeconds = 0;
     private _lastSharkBitePresentationSequence = -1;
@@ -626,6 +627,8 @@ export class GameManager extends Component {
         this._litterPresentation?.dispose();
         this._litterPresentation = null;
         this._sharkLockOnOverlay.dispose();
+        this._sharkPresentationGeneration++;
+        this._sharkArtPresentation.dispose();
         this._sharkEntryPresentation?.dispose();
         this._sharkEntryPresentation = null;
         this._entertainmentWaterSplashes?.dispose();
@@ -3035,39 +3038,7 @@ export class GameManager extends Component {
         visualRoot.layer = SWIMMER_LAYER;
         visualRoot.setParent(root);
 
-        const fallback = new Node('FallbackVisual');
-        fallback.setParent(visualRoot);
-        const body = new Node('Body');
-        body.setParent(fallback);
-        body.setScale(2.2, 0.62, 0.72);
-        const bodyRenderer = body.addComponent(MeshRenderer);
-        bodyRenderer.mesh = utils.createMesh(primitives.box());
-        const bodyMaterial = new Material();
-        bodyMaterial.initialize({ effectName: 'builtin-unlit' });
-        bodyMaterial.setProperty('mainColor', new Color(61, 83, 103, 255));
-        bodyRenderer.setMaterial(bodyMaterial, 0);
-
-        const fin = new Node('DorsalFin');
-        fin.setParent(fallback);
-        fin.setPosition(-0.1, 0.5, 0);
-        fin.setScale(0.65, 0.72, 0.12);
-        fin.setRotationFromEuler(0, 0, -18);
-        const finRenderer = fin.addComponent(MeshRenderer);
-        finRenderer.mesh = utils.createMesh(primitives.box());
-        finRenderer.setMaterial(bodyMaterial, 0);
-
-        const wake = new Node('Wake');
-        wake.setParent(visualRoot);
-        wake.setPosition(-1.25, 0.03, 0);
-        wake.setRotationFromEuler(-90, 0, 0);
-        const wakeRenderer = wake.addComponent(MeshRenderer);
-        wakeRenderer.mesh = utils.createMesh(primitives.plane({ width: 1.2, length: 1.9, widthSegments: 1, lengthSegments: 1 }));
-        const wakeMaterial = new Material();
-        wakeMaterial.initialize({ effectName: 'builtin-unlit', defines: { USE_COLOR: true } });
-        wakeMaterial.setProperty('mainColor', new Color(220, 244, 255, 100));
-        wakeRenderer.setMaterial(wakeMaterial, 0);
-        wake.active = false;
-        this._sharkWake = wake;
+        const fallback = this._sharkArtPresentation.buildFallback(visualRoot, SWIMMER_LAYER);
         setLayerRecursive(root, SWIMMER_LAYER);
 
         this._sharkNode = root;
@@ -3092,7 +3063,7 @@ export class GameManager extends Component {
                     'warning',
                     Math.round(SHARK_TUNING.warningSeconds * 1000),
                     'shark',
-                    '鲨鱼警报',
+                    '玩具巡场',
                 );
             },
             onStateChange: (state, previousState) => this.handleSharkStateChange(state, previousState),
@@ -3101,7 +3072,7 @@ export class GameManager extends Component {
                 'danger',
                 1500,
                 'shark',
-                '鲨鱼警报',
+                '玩具巡场',
             ),
             hungerSchedule: isEntertainmentBrawlMode()
                 ? (getRaceDistance() >= 400 ? [0, 9] : [0])
@@ -3124,6 +3095,7 @@ export class GameManager extends Component {
                 if (error) this.debug(`shark art load failed: ${error.message}`);
                 return;
             }
+            if (this._sharkArtModel?.isValid) return;
             const model = instantiate(result.prefab);
             model.name = 'SharkArtModel';
             model.setParent(visualRoot);
@@ -3136,88 +3108,31 @@ export class GameManager extends Component {
             );
             setLayerRecursive(model, SWIMMER_LAYER);
             this._sharkArtModel = model;
-            this._sharkAnimation = model.getComponent(SkeletalAnimation) ?? model.getComponentInChildren(SkeletalAnimation);
-            const sharkState = this._shark?.state;
-            if (sharkState === SharkState.BITE || sharkState === SharkState.PATROL_BITE) {
-                this.playSharkBitePresentationOnce(this._shark?.sequence ?? 0);
-            } else {
-                this.startSharkSwimAnimation();
-            }
-            fallback.active = false;
-            if (this._sharkWake?.active) this._sharkWake.active = false;
+            const animation = model.getComponent(SkeletalAnimation) ?? model.getComponentInChildren(SkeletalAnimation);
+            if (this._shark) this._sharkArtPresentation.bind(model, animation, this._shark);
+            if (fallback.active) fallback.active = false;
+            this._sharkArtPresentation.releaseFallback();
         }, RESOURCE_PATHS.sharkPrefabCandidates);
     }
 
-    private startSharkSwimAnimation(blendSeconds = 0) {
-        const animation = this._sharkAnimation;
-        if (!animation?.isValid) return;
-        const state = animation.getState('Shark_Swim_Loop');
-        if (!state) {
-            this.debug('shark swim clip missing');
-            return;
-        }
-        state.speed = SHARK_MODEL_PRESENTATION.swimAnimationSpeed;
-        if (blendSeconds > 0) animation.crossFade('Shark_Swim_Loop', blendSeconds);
-        else animation.play('Shark_Swim_Loop');
-    }
-
-    private startSharkBiteAnimation() {
-        const animation = this._sharkAnimation;
-        if (!animation?.isValid) return;
-        const state = animation.getState('Shark_Bite');
-        if (!state) {
-            this.debug('shark bite clip missing');
-            return;
-        }
-        state.speed = SHARK_MODEL_PRESENTATION.biteAnimationSpeed;
-        animation.crossFade('Shark_Bite', SHARK_MODEL_PRESENTATION.biteBlendSeconds);
-    }
-
-    private resetSharkArtPresentation() {
-        const model = this._sharkArtModel;
-        if (!model?.isValid) return;
-        Tween.stopAllByTarget(model);
-        model.setPosition(0, SHARK_MODEL_PRESENTATION.visualYOffset, 0);
-        this.startSharkSwimAnimation(SHARK_MODEL_PRESENTATION.swimBlendSeconds);
-    }
-
-    private playSharkBitePresentation() {
-        const model = this._sharkArtModel;
-        if (!model?.isValid) return;
-        this.startSharkBiteAnimation();
-        Tween.stopAllByTarget(model);
-        const y = SHARK_MODEL_PRESENTATION.visualYOffset;
-        model.setPosition(0, y, 0);
-        tween(model)
-            .to(0.1, { position: new Vec3(0, y - SHARK_MODEL_PRESENTATION.biteDropStart, 0) }, { easing: 'quadIn' })
-            .to(
-                Math.max(0.08, SHARK_TUNING.bitePresentationSeconds - 0.1),
-                { position: new Vec3(0, y - SHARK_MODEL_PRESENTATION.biteDropEnd, 0) },
-                { easing: 'quadIn' },
-            )
-            .start();
-    }
-
-    private playSharkBitePresentationOnce(sequence: number) {
-        const normalizedSequence = Math.max(0, Math.floor(sequence));
-        if (normalizedSequence <= this._lastSharkBitePresentationSequence) return;
-        if (!this._sharkArtModel?.isValid) return;
-        this._lastSharkBitePresentationSequence = normalizedSequence;
-        this.playSharkBitePresentation();
+    private syncSharkArtPresentation() {
+        if (this._shark) this._sharkArtPresentation.sync(this._shark, 0, false);
     }
 
     private handleSharkStateChange(state: SharkState, previousState: SharkState) {
         if (state === SharkState.INACTIVE) {
             this._lastSharkBitePresentationSequence = -1;
+            this._sharkPresentationGeneration++;
+            this._sharkArtPresentation.reset();
         } else if (state === SharkState.WARNING) {
-            this.resetSharkArtPresentation();
+            this.syncSharkArtPresentation();
             if ((this._shark?.huntIndex ?? 0) > 0) {
                 this._entertainmentEventBanner.showEvent(
-                    '鲨鱼再次出现 · 正在锁定最近选手',
+                    '玩具鲨再次巡场 · 留意锁定箭头',
                     'warning',
                     2200,
                     'shark',
-                    '鲨鱼警报',
+                    '玩具巡场',
                 );
             }
         } else if (state === SharkState.HUNT) {
@@ -3226,12 +3141,12 @@ export class GameManager extends Component {
                 'danger',
                 Math.round(SHARK_TUNING.huntOpeningGraceSeconds * 1000),
                 'shark',
-                '鲨鱼警报',
+                '玩具巡场',
             );
         } else if (state === SharkState.BITE || state === SharkState.PATROL_BITE) {
-            this.playSharkBitePresentationOnce(this._shark?.sequence ?? 0);
+            this.syncSharkArtPresentation();
         } else if (state === SharkState.WANDER) {
-            this.resetSharkArtPresentation();
+            this.syncSharkArtPresentation();
             this._sharkLockOnOverlay.hide();
             if (previousState !== SharkState.PATROL_BITE && !isEntertainmentBrawlMode()) {
                 this._entertainmentEventBanner.enqueueEvent(
@@ -3244,17 +3159,11 @@ export class GameManager extends Component {
             }
         } else if (state === SharkState.SATIATED) {
             this._sharkLockOnOverlay.hide();
-            const sharkNode = this._sharkNode;
-            if (sharkNode?.isValid) {
-                Tween.stopAllByTarget(sharkNode);
-                const position = sharkNode.position;
-                tween(sharkNode).to(1.2, {
-                    position: new Vec3(position.x, COURSE_LAYOUT.waterY + SHARK_TUNING.waterYOffset + SHARK_TUNING.satiatedSinkOffset, position.z),
-                }, { easing: 'quadIn' }).start();
-            }
+            // 退场只移动独立视觉根，不能让旧 Tween 改写权威节点或重开位置。
+            this.syncSharkArtPresentation();
             if (!isEntertainmentBrawlMode()) {
                 this._entertainmentEventBanner.enqueueEvent(
-                    '鲨鱼已经吃饱 · 本场警报解除',
+                    '玩具鲨收工啦 · 本场巡游结束',
                     'success',
                     1800,
                     'shark',
@@ -3274,34 +3183,34 @@ export class GameManager extends Component {
 
     private applySharkKnockDown(lane: number, distance: number, revision: number, broadcast: boolean) {
         const swimmer = this.swimmerForLane(lane);
-        if (!swimmer) return;
+        const shark = this._shark;
+        if (!swimmer || !shark || !Number.isFinite(revision)
+            || revision < shark.sequence || revision <= this._lastSharkBitePresentationSequence) return;
         swimmer.node.getWorldPosition(this._sharkBiteWorldPosition);
         if (!this.applyEventKnockdown(
             lane, EntertainmentRecoveryReason.SHARK, distance, revision,
         )) return;
-        // 若访客丢失了巡游补咬的快照，可靠击倒事件仍补播一次动作；
-        // 序号去重避免随后到达的 PATROL_BITE 快照把动画重新播放一遍。
-        const missedPatrolWindup = this._shark?.state === SharkState.WANDER;
-        this.playSharkBitePresentationOnce(revision);
-        this._entertainmentEventBanner.showEvent(
-            `${swimmer.swimmerName}被鲨鱼咬伤`,
-            'danger',
-            1800,
-            'shark',
-            '咬伤播报',
-        );
+        this._lastSharkBitePresentationSequence = revision;
+        // 正式追逐与巡游补命中共用圆鼻接触；漏收蓄势时从接触点接续。
+        const recovery = this._entertainmentRecovery?.stateForLane(lane);
+        const elapsedSinceHit = recovery?.phase === EntertainmentRecoveryPhase.KNOCKED
+            ? Math.max(0, ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds - recovery.remainingSeconds) : 0;
+        this._sharkArtPresentation.notifyContact(revision, shark, swimmer.node, elapsedSinceHit);
+        if (elapsedSinceHit >= SHARK_TUNING.bitePresentationSeconds) return;
+        this._eventPictureInPicture?.showSharkContact(shark, swimmer.node);
+        // B1 恢复卡已说明当前状态，不再叠一条重复个人播报。
         const splashNode = swimmer.cartoonRig?.splashNode;
         if (splashNode?.isValid) setLayerRecursive(splashNode, SWIMMER_LAYER);
         swimmer.setSplashCulled(false);
         this._sharkSplashFocus = swimmer;
         this._sharkSplashFocusSeconds = Math.max(1, SHARK_TUNING.biteCameraHoldSeconds);
         const splashPosition = this._sharkBiteWorldPosition.clone();
-        const splashDelay = SHARK_MODEL_PRESENTATION.biteSplashDelaySeconds
-            + (missedPatrolWindup ? SHARK_TUNING.biteAnticipationSeconds : 0);
+        const generation = this._sharkPresentationGeneration;
         this.scheduleOnce(() => {
-            if (this._state !== GameState.RACING || !swimmer.node?.isValid) return;
+            if (generation !== this._sharkPresentationGeneration || this._shark !== shark
+                || this._state !== GameState.RACING || !swimmer.node?.isValid) return;
             swimmer.cartoonRig?.triggerBigSplashAt(splashPosition, 3.1);
-        }, splashDelay);
+        }, SHARK_MODEL_PRESENTATION.biteSplashDelaySeconds);
         if (broadcast && this._netRaceController?.isHost) {
             this._netRaceController.enqueueSharkKnockdown(revision, lane, distance);
         }
@@ -3328,7 +3237,6 @@ export class GameManager extends Component {
             this._sharkEntryPresentation?.reset();
             this._sharkSplashFocus = null;
             this._sharkSplashFocusSeconds = 0;
-            if (this._sharkWake?.active) this._sharkWake.active = false;
             for (const controller of this._aiControllers) controller?.setSharkTargetZ(null);
             this.activePlayerAutopilot()?.setSharkTargetZ(null);
             return;
@@ -3341,6 +3249,7 @@ export class GameManager extends Component {
             shark.tick(dt);
         }
         this._sharkEntryPresentation?.update(dt, shark);
+        this._sharkArtPresentation.sync(shark, dt, !!this._netRaceController && !this._netRaceController.isHost);
         const hunted = shark.state === SharkState.WARNING || shark.state === SharkState.HUNT
             ? shark.target
             : null;
@@ -3386,10 +3295,6 @@ export class GameManager extends Component {
             }
         }
         shark.resolveObstacleCollisions(this._sharkCollisionSwimmers);
-        if (this._sharkWake && !this._sharkArtModel) {
-            const wakeVisible = shark.active && !shark.entryActive && shark.state !== SharkState.SATIATED;
-            if (this._sharkWake.active !== wakeVisible) this._sharkWake.active = wakeVisible;
-        }
     }
 
     private updateLaneLockdownStatus(status: LaneLockdownStatus | null) {
@@ -4432,7 +4337,7 @@ export class GameManager extends Component {
                 : isWhirlpoolBrawlMode()
                     ? '贴外圈借水流加速，避开漩涡核心'
                     : isSharkBrawlMode()
-                        ? '躲避鲨鱼锁定；被咬后会失速并重新入水'
+                        ? '观察玩具鲨锁定并绕行；被顶后扶圈调整再出发'
                         : isCannonBrawlMode()
                             ? '观察水面预警躲避炮弹；核心命中会击倒并重新入水'
                             : isTimedBombBrawlMode()
