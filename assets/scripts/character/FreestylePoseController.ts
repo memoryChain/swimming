@@ -1016,19 +1016,19 @@ export class FreestylePoseController {
         this.applyBoneOffset(this._rightFoot, 8, 0, 0);
     }
 
-    applyEntertainmentKnockoutPose(phase: number, _elapsedSeconds: number, model?: Node, support = 1, fitHeight = true) {
+    applyEntertainmentKnockoutPose(phase: number, _elapsedSeconds: number, model?: Node, support = 1, fitHeight = true, motionWeight = 1) {
         this.restoreBasePose();
-        const wave = Math.sin(phase);
+        const wave = Math.sin(phase - 0.4) * motionWeight;
         const leg = CHARACTER_POSE_TUNING.recoveryFloatLegSwayDegrees;
         this.applyBoneOffset(this._neck, -4, wave * 1.2, 0);
-        this.applyBoneOffset(this._head, -5, Math.sin(phase * 0.7) * 2, 0);
+        this.applyBoneOffset(this._head, -5, Math.sin(phase * 0.7 - 0.5) * 2 * motionWeight, 0);
         this.applyBoneOffset(this._leftUpLeg, -3 + wave * leg, 0, -3);
         this.applyBoneOffset(this._rightUpLeg, 3 - wave * leg, 0, 3);
-        if (model) this.recoveryFloat.apply(model, phase, support, fitHeight);
+        if (model) this.recoveryFloat.apply(model, phase, support, fitHeight, motionWeight);
     }
 
     /** 将保存的入场姿态混向刚算出的动态目标，不在表现采样中创建新快照。 */
-    blendFromPoseSnapshot(from: ProceduralPoseSnapshot, ratio: number) {
+    blendFromPoseSnapshot(from: ProceduralPoseSnapshot, ratio: number, leftArmRatio = ratio, rightArmRatio = ratio) {
         if (!this.root) return;
         const t = clamp(ratio, 0, 1);
         if (this._hips && from.hipPosition) {
@@ -1043,7 +1043,9 @@ export class FreestylePoseController {
             const bone = this._manualBones[i];
             const rotation = from.boneRotations.get(bone);
             if (!bone.isValid || !rotation) continue;
-            Quat.slerp(this._tmpBlendRotation, rotation, bone.rotation, t);
+            const boneT = bone === this._leftArm || bone === this._leftForeArm || bone === this._leftHand ? leftArmRatio
+                : bone === this._rightArm || bone === this._rightForeArm || bone === this._rightHand ? rightArmRatio : t;
+            Quat.slerp(this._tmpBlendRotation, rotation, bone.rotation, boneT);
             bone.setRotation(this._tmpBlendRotation);
         }
     }

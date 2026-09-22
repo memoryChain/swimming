@@ -45,7 +45,8 @@ for (const file of SWIMMER_MODEL_FILES) test(`${file}：扶圈真实骨架接触
                 if (limb.leg) continue;
                 const elbow = r.parent.inverseTransformPoint(new Vec3(), limb.middle.getWorldPosition(new Vec3()));
                 const hand = r.parent.inverseTransformPoint(new Vec3(), limb.end.getWorldPosition(new Vec3()));
-                assert.ok(Math.abs(elbow.y - hand.y) < .001, '前臂应平铺');
+                const ringUp = Vec3.transformQuat(new Vec3(),new Vec3(0,1,0),ring.rotation);
+                assert.ok(Math.abs(Vec3.dot(Vec3.subtract(new Vec3(),hand,elbow),ringUp)) < .001, '前臂应平铺在圈面内，内收时随圈面倾斜');
                 const center = Vec3.lerp(new Vec3(), elbow, hand, .5);
                 Vec3.subtract(center, center, ring.position);
                 Vec3.transformQuat(center, center, Quat.invert(new Quat(), ring.rotation));
@@ -147,4 +148,41 @@ test('空中受击延后浮圈但不跳过失衡，旧快照不倒播，采样�
         r.controller.syncEntertainmentKnockoutElapsed(2+i*.05,.62);
         assert.equal(r.controller._lastKnockoutSample,40+i);
     }
+});
+
+test('放大圈径约12%仍按真实骨架贴合，双手分先后完成搭圈且不延长扶稳',()=>{
+    const saved=tuning.recoveryFloatSizeScale;
+    try{
+        for(const file of SWIMMER_MODEL_FILES){
+            const r=make(file);r.controller.enterFreestyle();r.controller.enterEntertainmentKnockout();
+            const sequence=r.controller._recoverySequence;
+            tuning.recoveryFloatSizeScale=1;sequence.apply(r.wrapper,2,0);
+            const oldRadius=r.pose.recoveryFloat.radius;
+            tuning.recoveryFloatSizeScale=1.12;sequence.apply(r.wrapper,2,0);
+            const ratio=r.pose.recoveryFloat.radius/oldRadius;
+            assert.ok(ratio>1.115&&ratio<1.125,`${file} 实际圈径增幅 ${ratio}`);
+            const left=r.pose._leftForeArm,right=r.pose._rightForeArm;
+            const leftTarget=Quat.clone(left.rotation),rightTarget=Quat.clone(right.rotation);
+            const leftTotal=Quat.angle(sequence.reach.pose.boneRotations.get(left),leftTarget);
+            const rightTotal=Quat.angle(sequence.reach.pose.boneRotations.get(right),rightTarget);
+            sequence.apply(r.wrapper,.95,0);
+            assert.ok(Quat.angle(left.rotation,leftTarget)/leftTotal<.2,`${file} 先搭左臂已接近支撑`);
+            assert.ok(Quat.angle(right.rotation,rightTarget)/rightTotal>.3,`${file} 右臂仍在跟上`);
+            sequence.apply(r.wrapper,1.12,0);
+            assert.ok(Quat.angle(left.rotation,leftTarget)<.005&&Quat.angle(right.rotation,rightTarget)<.005,'原扶稳时间内双臂都完成');
+        }
+    }finally{tuning.recoveryFloatSizeScale=saved;}
+});
+
+test('先搭左侧有向下承重倾斜，扶稳后晃幅收敛但不静止',()=>{
+    const r=make('MuscleMan.glb');r.controller.enterFreestyle();r.controller.enterEntertainmentKnockout();
+    const sequence=r.controller._recoverySequence;
+    sequence.apply(r.wrapper,.95,0);
+    const normal=Vec3.transformQuat(new Vec3(),new Vec3(0,1,0),r.pose.recoveryFloat.rotation);
+    assert.ok(normal.z<-.005,'左侧圈沿应低于右侧，表现先搭左臂的重量');
+    // 相同相位分别取刚扶稳与稍后的包络，隔离正弦相位对测量的影响。
+    const elapsed=Math.PI/(2*tuning.recoveryFloatBobSpeed);
+    sequence.support(r.wrapper,elapsed,0);const large=Math.abs(r.pose.recoveryFloat.position.y-tuning.recoveryFloatSurfaceY);
+    sequence.support(r.wrapper,elapsed,2);const calm=Math.abs(r.pose.recoveryFloat.position.y-tuning.recoveryFloatSurfaceY);
+    assert.ok(calm<large*.6&&calm>large*.35,'后段起伏应减小，保留约一半动态');
 });

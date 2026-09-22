@@ -88,7 +88,9 @@ export const CHARACTER_POSE_TUNING = {
     finishTreadWaterCycleSeconds: 2.25,
 
     // B1 只消费新托浮参数；旧下沉、侧翻和四肢浮力键不再读取。
-    recoveryFloatSurfaceY: 0.08,
+    recoveryFloatSurfaceY: 0.09,
+    recoveryFloatSizeScale: 1.12,
+    recoveryFloatHandStaggerSeconds: 0.12,
     recoveryFloatEnterSeconds: 0.46,
     recoveryFloatImpactSeconds: 0.22,
     recoveryFloatReachSeconds: 0.34,

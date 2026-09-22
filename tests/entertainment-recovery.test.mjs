@@ -291,7 +291,7 @@ test('旁观击倒使用独立漂浮姿态和低频头顶眩晕星，不新增�
     assert.match(poseState, /this\._recoverySequence\.apply\(/);
 
     const sequence = readFileSync(new URL('../assets/scripts/character/RecoveryFloatSequence.ts', import.meta.url), 'utf8');
-    assert.match(sequence, /applyEntertainmentKnockoutPose\(phase, elapsed, model\)/);
+    assert.match(sequence, /applyEntertainmentKnockoutPose\(phase, elapsed, model, 1, true, motionWeight\)/);
     assert.match(poseState, /syncEntertainmentKnockoutElapsed\(elapsedSeconds: number, landingSeconds = 0\)/);
     assert.match(poseState, /this\._recoverySequence\.apply\(model, this\._entertainmentKnockoutElapsedSeconds, this\._knockoutLandingSeconds\)/);
     assert.doesNotMatch(poseState, /getSelfTime\(\) - this\._entertainmentKnockoutStartTime/);

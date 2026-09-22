@@ -45,7 +45,7 @@ export class RecoveryFloatSequence {
     }
 
     apply(model: Node, elapsed: number, landingSeconds: number): void {
-        if (this.model !== model || !this.from || !this.impact || !this.reach) this.begin(model);
+        if (this.model !== model || !this.from || !this.impact || !this.reach) this.begin(model, this.settleSeconds);
         const t = Math.max(0, elapsed);
         const impactEnd = Math.max(0.1, TUNING.recoveryFloatImpactSeconds);
         // 空中落水未完成时延后找圈，失衡仍从命中时立即开始。
@@ -59,12 +59,15 @@ export class RecoveryFloatSequence {
             this.blend(model, this.impact, this.reach, ease((t - impactEnd) / (reachEnd - impactEnd)));
             this.restoreRing();
         } else {
-            this.support(model, t, Math.max(0, t - settleEnd));
+            const stagger = Math.min(this.settleSeconds * 0.4, Math.max(0, TUNING.recoveryFloatHandStaggerSeconds));
+            const leftWeight = ease((t - reachEnd) / (this.settleSeconds - stagger));
+            const rightWeight = ease((t - reachEnd - stagger) / (this.settleSeconds - stagger));
+            this.support(model, t, Math.max(0, t - settleEnd), leftWeight - rightWeight);
             if (t < settleEnd && this.reach) {
                 const weight = ease((t - reachEnd) / this.settleSeconds);
                 this.position.set(model.position);
                 this.rotation.set(model.rotation);
-                this.pose.blendFromPoseSnapshot(this.reach.pose, weight);
+                this.pose.blendFromPoseSnapshot(this.reach.pose, weight, leftWeight, rightWeight);
                 Vec3.lerp(this.position, this.reach.position, this.position, weight);
                 Quat.slerp(this.rotation, this.reach.rotation, this.rotation, weight);
                 model.setPosition(this.position);
@@ -85,14 +88,15 @@ export class RecoveryFloatSequence {
         this.ringWeight = 0;
     }
 
-    private support(model: Node, elapsed: number, settledAge: number): void {
+    private support(model: Node, elapsed: number, settledAge: number, sideLoad = 0): void {
         const phase = elapsed * TUNING.recoveryFloatBobSpeed;
+        const motionWeight = 0.45 + 0.55 * Math.exp(-settledAge * 2);
         model.setPosition(0, 0, 0);
-        model.setRotationFromEuler(TUNING.recoveryFloatBodyTiltDegrees + Math.sin(phase * 0.9) * 1.3,
-            90, Math.sin(phase * 0.72) * TUNING.recoveryFloatSwayDegrees);
-        this.pose.applyEntertainmentKnockoutPose(phase, elapsed, model);
+        model.setRotationFromEuler(TUNING.recoveryFloatBodyTiltDegrees + Math.sin(phase * 0.9) * 1.3 * motionWeight,
+            90, Math.sin(phase * 0.72) * TUNING.recoveryFloatSwayDegrees * motionWeight * (1 - sideLoad) - sideLoad * 10);
+        this.pose.applyEntertainmentKnockoutPose(phase, elapsed, model, 1, true, motionWeight);
         // 压住圈沿后下压再回弹；手臂和圈同步，不能穿圈或各晃各的。
-        const press = -0.035 * Math.sin(settledAge * 9) * Math.exp(-settledAge * 3.8);
+        const press = -0.035 * Math.sin(settledAge * 9) * Math.exp(-settledAge * 3.8) - sideLoad * 0.015;
         if (press !== 0) {
             model.setPosition(model.position.x, model.position.y + press, model.position.z);
             this.pose.recoveryFloat.position.y += press;

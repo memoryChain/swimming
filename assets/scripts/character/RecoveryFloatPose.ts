@@ -45,6 +45,11 @@ export class RecoveryFloatPose {
     private readonly rightKneeHinge = new Vec3();
     private readonly leftKneeNeutral = new Quat();
     private readonly rightKneeNeutral = new Quat();
+    private shoulderHalfWidth = 0;
+    private upperLength = 0;
+    private forearmHalfLength = 0;
+    private sizeScale = NaN;
+    private armSpread = 0.5;
 
     bind(root: Node | null): void {
         this.leftArm = root && findNode(root, 'L_Upperarm');
@@ -54,6 +59,7 @@ export class RecoveryFloatPose {
         this.rightElbow = root && findNode(root, 'R_Forearm');
         this.rightHand = root && findNode(root, 'R_Hand');
         this.ready = false;
+        this.sizeScale = NaN;
         const leftHip = root && findNode(root, 'L_Thigh');
         const rightHip = root && findNode(root, 'R_Thigh');
         this.leftKnee = root && findNode(root, 'L_Calf');
@@ -61,6 +67,7 @@ export class RecoveryFloatPose {
         if (leftHip && rightHip && this.leftArm && this.rightArm && this.leftElbow && this.rightElbow && this.leftHand && this.rightHand) {
             this.leftArm.getWorldPosition(this.a);
             this.rightArm.getWorldPosition(this.b);
+            this.shoulderHalfWidth = Vec3.distance(this.a, this.b) * 0.5;
             Vec3.subtract(this.side, this.a, this.b);
             Vec3.add(this.up, this.a, this.b);
             Vec3.multiplyScalar(this.up, this.up, 0.5);
@@ -72,6 +79,10 @@ export class RecoveryFloatPose {
             Vec3.normalize(this.bodyFront, this.bodyFront);
             this.bindHinge(this.leftArm, this.leftElbow, this.leftHand, this.leftHinge, this.leftNeutral);
             this.bindHinge(this.rightArm, this.rightElbow, this.rightHand, this.rightHinge, this.rightNeutral);
+            this.upperLength = (this.boneLength(this.leftArm, this.leftElbow)
+                + this.boneLength(this.rightArm, this.rightElbow)) * 0.5;
+            this.forearmHalfLength = (this.boneLength(this.leftElbow, this.leftHand)
+                + this.boneLength(this.rightElbow, this.rightHand)) * 0.25;
             const leftFoot = findNode(root!, 'L_Foot');
             const rightFoot = findNode(root!, 'R_Foot');
             if (this.leftKnee && this.rightKnee && leftFoot && rightFoot) {
@@ -83,11 +94,12 @@ export class RecoveryFloatPose {
         }
     }
 
-    apply(model: Node, phase: number, support = 1, fitHeight = true): void {
+    apply(model: Node, phase: number, support = 1, fitHeight = true, motionWeight = 1): void {
         const frame = model.parent;
         this.ready = false;
         if (!frame || !this.leftArm || !this.leftElbow || !this.leftHand
             || !this.rightArm || !this.rightElbow || !this.rightHand) return;
+        this.updateArmSpread();
         this.localPoint(frame, this.leftArm, this.a);
         this.localPoint(frame, this.rightArm, this.b);
         // 肩部侧摆决定圈面侧摆；前臂始终在同一个支撑平面内。
@@ -95,7 +107,7 @@ export class RecoveryFloatPose {
         Vec3.normalize(this.side, this.side);
         Vec3.cross(this.up, this.side, this.forward);
         Vec3.normalize(this.up, this.up);
-        const legWave = Math.sin(phase) * CHARACTER_POSE_TUNING.recoveryFloatLegSwayDegrees * Math.PI / 180;
+        const legWave = Math.sin(phase - 0.4) * CHARACTER_POSE_TUNING.recoveryFloatLegSwayDegrees * motionWeight * Math.PI / 180;
         this.knee(this.leftKnee, this.leftKneeHinge, this.leftKneeNeutral, 0.24 + (1 - support) * 0.36 + legWave);
         this.knee(this.rightKnee, this.rightKneeHinge, this.rightKneeNeutral, 0.24 + (1 - support) * 0.22 - legWave);
         this.arm(frame, this.leftArm, this.leftElbow, this.leftHand, -1, this.leftHinge, this.leftNeutral, support);
@@ -114,9 +126,11 @@ export class RecoveryFloatPose {
         const halfLength = (Vec3.distance(this.elbowL, this.handL)
             + Vec3.distance(this.elbowR, this.handR)) * 0.25;
         this.radius = Math.sqrt(halfWidth * halfWidth + halfLength * halfLength);
-        Vec3.scaleAndAdd(this.position, this.position, this.up, -(this.radius * 0.24 + 0.025));
+        // 双臂搭在后半圈，给胸腹留出空间；避免放大后的圈沿切入胸腹。
+        this.position.x += this.radius * 0.87;
+        Vec3.scaleAndAdd(this.position, this.position, this.up, -(this.radius * 0.24 + 0.02));
         const heightCorrection = fitHeight ? CHARACTER_POSE_TUNING.recoveryFloatSurfaceY
-            + Math.sin(phase) * CHARACTER_POSE_TUNING.recoveryFloatBobAmplitude - this.position.y : 0;
+            + Math.sin(phase) * CHARACTER_POSE_TUNING.recoveryFloatBobAmplitude * motionWeight - this.position.y : 0;
         model.setPosition(model.position.x, model.position.y + heightCorrection, model.position.z);
         this.position.y += heightCorrection;
         Quat.fromAxisAngle(this.rotation, Vec3.UNIT_X, Math.atan2(-this.side.y, this.side.z));
@@ -139,6 +153,27 @@ export class RecoveryFloatPose {
         Quat.multiply(neutral, this.delta, elbow.rotation);
     }
 
+    private boneLength(from: Node, to: Node): number {
+        from.getWorldPosition(this.a);
+        to.getWorldPosition(this.b);
+        return Vec3.distance(this.a, this.b);
+    }
+
+    private updateArmSpread(): void {
+        const scale = Math.max(1, Math.min(1.2, CHARACTER_POSE_TUNING.recoveryFloatSizeScale));
+        if (scale === this.sizeScale || this.upperLength <= 0) return;
+        this.sizeScale = scale;
+        // 放大前先算双肘需要多张开多少，圈仍由真实前臂接触位置确定，不单独缩放造成悬空。
+        // 圈径仍以原扶圈臂向量为基准；增加前伸只改变支撑位置，不再把圈放大。
+        const oldForwardDown = 0.38 * 0.38 + 0.78 * 0.78;
+        const forwardDown = 1.1 * 1.1 + 0.78 * 0.78;
+        const oldHalfWidth = this.shoulderHalfWidth + this.upperLength * 0.5 / Math.sqrt(oldForwardDown + 0.25);
+        const oldRadiusSquared = oldHalfWidth * oldHalfWidth + this.forearmHalfLength * this.forearmHalfLength;
+        const newHalfWidth = Math.sqrt(oldRadiusSquared * scale * scale - this.forearmHalfLength * this.forearmHalfLength);
+        const lateral = Math.min(0.88, Math.max(0, (newHalfWidth - this.shoulderHalfWidth) / this.upperLength));
+        this.armSpread = Math.sqrt(forwardDown) * lateral / Math.sqrt(1 - lateral * lateral);
+    }
+
     private knee(bone: Node | null, hinge: Vec3, neutral: Quat, flex: number): void {
         if (!bone) return;
         Quat.fromAxisAngle(this.delta, hinge, flex);
@@ -148,16 +183,16 @@ export class RecoveryFloatPose {
 
     private arm(frame: Node, upper: Node, elbow: Node, hand: Node, side: number, hinge: Vec3, neutral: Quat, support: number): void {
         const loose = 1 - support;
-        this.target.set(0.38 - loose * 0.22, 0, 0);
+        this.target.set(0.38 + support * 0.72 - loose * 0.22, 0, 0);
         Vec3.scaleAndAdd(this.target, this.target, this.up, -0.78 + loose * 0.34);
-        Vec3.scaleAndAdd(this.target, this.target, this.side, side * (0.5 + loose * 0.35));
+        Vec3.scaleAndAdd(this.target, this.target, this.side, side * (this.armSpread + loose * 0.35));
         this.pointBone(frame, upper, elbow, this.target);
         Vec3.normalize(this.upperDirection, this.target);
         // 调整上臂滚转，使肘只沿人体铰链屈伸，禁止肘侧折或反折。
-        // 找圈时双臂向外、前臂抬起，左右略错开；搭稳后收敛到同一支撑平面。
+        // 找圈时双臂向外、前臂抬起；搭稳后略内收，收敛到后半圈的支撑平面。
         this.forearmDirection.set(1, 0, 0);
         Vec3.scaleAndAdd(this.forearmDirection, this.forearmDirection, this.up, loose * (side < 0 ? 0.6 : 0.85));
-        Vec3.scaleAndAdd(this.forearmDirection, this.forearmDirection, this.side, side * loose * 0.3);
+        Vec3.scaleAndAdd(this.forearmDirection, this.forearmDirection, this.side, side * (loose * 0.3 - support * 0.55));
         Vec3.normalize(this.forearmDirection, this.forearmDirection);
         Vec3.cross(this.desiredHinge, this.upperDirection, this.forearmDirection);
         Vec3.normalize(this.desiredHinge, this.desiredHinge);

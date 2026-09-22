@@ -1,8 +1,8 @@
 <!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>扶圈恢复过渡</title>
 <style>body{margin:0;background:#102633;color:#e3f5fc;font:16px/1.6 system-ui}main{max-width:960px;margin:auto;padding:18px}h1{font-size:25px;margin:0}p{color:#b6d3df}canvas{width:100%;display:block;border-radius:12px;background:#285c74}button,select{font:inherit;padding:8px;background:#255268;border:1px solid #528298;border-radius:8px;color:white}label{display:inline-block;margin:8px 12px 8px 0}input{width:100%;accent-color:#83e6ec}.row{display:flex;gap:16px;flex-wrap:wrap}.row div{flex:1;min-width:260px}.state{color:#8ee9f2;font-weight:650}.note{background:#1b394a;padding:14px;border-radius:12px;font-size:14px}</style>
-<main><h1>失衡 → 找圈 → 搭圈 → 回弹</h1><p>这次检查完整动作。可暂停、拖动时间或慢放，看人物和浮圈怎样接上。</p>
+<main><h1>大一点的圈，细一点的动作</h1><p>浮圈约放大12%，双手先后搭圈、偏压回正，扶稳后逐渐平静。可暂停、慢放或拖动时间查看。</p>
 <label>体型 <select id="character"><option value="0">宽肩角色</option><option value="1">窄肩角色</option></select></label><label>速度 <select id="rate"><option value="1">原速</option><option value="0.35">慢放</option></select></label><button id="play">暂停</button><input id="time" type="range" min="0" max="3.5" step="0.05" value="0" aria-label="时间"><p class="state" id="state"></p>
-<div class="row"><div><canvas id="side" width="768" height="576"></canvas><p>侧面：先保留受击前姿势，再失衡、回正和压圈。</p></div><div><canvas id="front" width="768" height="576"></canvas><p>斜前方：双臂靠近圈沿，扶稳后继续起伏。</p></div></div>
+<div class="row"><div><canvas id="side" width="768" height="576"></canvas><p>侧面：失衡、回正、搭圈，随后回弹并逐渐减小晃动。</p></div><div><canvas id="front" width="768" height="576"></canvas><p>斜前方：双手错开约0.12秒搭圈，先扶住的一侧略低。</p></div></div>
 <p class="note">真实运行时状态机、骨骼与浮圈变换的20Hz离线采样。人物为中性材质，水面为简化参照；不是游戏录屏，不包含事件水花、空中落水位移或恢复HUD。原3.5秒暂停及2秒保护不变。首次约1.12秒完成扶稳，空中受击会随落水进度稍晚。</p></main>
 <script>
 const DATA=/*__DATA__*/,$=id=>document.getElementById(id),I=()=>[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
