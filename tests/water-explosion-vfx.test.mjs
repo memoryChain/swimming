@@ -28,7 +28,7 @@ test('共享水花使用预建低模网格、单材质和二十赫兹变换更�
     assert.match(sharedSplash, /buildLightEntryGeometry\(\)/);
     assert.match(sharedSplash, /buildHeavyEntryBodyGeometry\(\)/);
     assert.match(sharedSplash, /buildExplosionBodyGeometry\(\)/);
-    assert.match(sharedSplash, /buildExplosionPressureCoreGeometry\(\)/);
+    assert.match(sharedSplash, /buildLocalWaterBurstGeometry\(\)/);
     assert.match(sharedSplash, /buildHeavyImpactRingGeometry\(\)/);
     assert.match(sharedSplash, /buildExplosionImpactRingGeometry\(\)/);
     assert.match(sharedSplash, /appendBrokenRing/);
@@ -95,15 +95,16 @@ test('爆炸冲击波使用立体波峰并让水柱先于水面余波结束', ()
     assert.match(timedBomb, /EXPLOSION_SECONDS = 0\.95/);
 });
 
-test('水雷和定时炸弹在水面水花之外显示实际爆点高度的三维爆压核心', () => {
-    assert.match(sharedSplash, /EXPLOSION_CORE_END_PHASE = 0\.46/);
-    assert.match(sharedSplash, /ExplosionPressureCore/);
-    assert.match(sharedSplash, /appendPressureShell/);
+test('水雷和定时道具在真实位置显示短促碎水团，水面水冠独立存在', () => {
+    assert.match(sharedSplash, /EXPLOSION_CORE_END_PHASE = 0\.32/);
+    assert.match(sharedSplash, /LocalWaterBurst/);
+    assert.match(sharedSplash, /appendOpenSprayCrown/);
+    assert.doesNotMatch(sharedSplash, /appendPressureShell|\[1, 0\.44, 0\.06|\[1, 0\.72, 0\.22/);
     assert.match(sharedSplash, /explosionCorePosition\?: Readonly<Vec3>/);
     assert.match(sharedSplash, /slot\.explosionCore\.setScale\(coreScale, coreVertical, coreScale\)/);
-    assert.match(minefield, /mineNode\.getWorldPosition\(this\.explosionCoreWorldPosition\)/);
+    assert.match(minefield, /Vec3\.transformMat4\(this\.explosionCoreWorldPosition, this\.sprayLocal, mineNode\.worldMatrix\)/);
     assert.match(minefield, /explosionCorePosition,/);
-    assert.match(timedBomb, /this\.mineRoot!\.getWorldPosition\(this\.explosionCoreWorldPosition\)/);
+    assert.match(timedBomb, /Vec3\.transformMat4\(this\.explosionCoreWorldPosition, this\.centerLocal, this\.root\.worldMatrix\)/);
     assert.match(timedBomb, /explosionCorePosition: this\.explosionCoreWorldPosition/);
     assert.doesNotMatch(sharedSplash, /ParticleSystem|Graphics|\.clear\(\)/);
 });
@@ -129,20 +130,16 @@ test('定时炸弹结算画中画复用权威爆心并切换到水面俯角', ()
     assert.match(eventCamera, /private readonly timedBombBlastPosition = new Vec3\(\)/);
     assert.match(eventCamera, /this\.timedBombBlastPosition\.set\(blastPosition\)/);
     assert.match(eventCamera, /this\.timedBombBlastPosition\.x - this\.options\.course\.direction \* 2\.8/);
-    assert.match(eventCamera, /this\.options\.course\.waterY \+ 6\.4/);
+    assert.match(eventCamera, /this\.options\.course\.waterY \+ 4\.2/);
     assert.match(eventCamera, /this\.applyCameraPose\(56\)/);
     assert.match(eventCamera, /camera\.visibility = Layers\.Enum\.DEFAULT \| SWIMMER_LAYER \| UNDERWATER_LAYER \| VENUE_CEILING_LAYER/);
 });
 
-test('娱乐模式定时炸弹保留精修炸药束、切角计时器和连续导线并保持单网格', () => {
-    const start = timedBomb.indexOf('export function buildTimedBombGeometry');
-    const end = timedBomb.indexOf('function buildLowPolyLampGeometry', start);
-    const model = start >= 0 && end > start ? timedBomb.slice(start, end) : '';
-    assert.match(model, /appendFacetedBundleBand/);
-    assert.match(model, /appendChamferedBox/);
-    assert.match(model, /appendFacetedCable/);
-    assert.match(timedBomb, /this\.mineMesh = utils\.createMesh\(buildTimedBombGeometry\(\)\)/);
-    assert.doesNotMatch(model, /resources\.load|assetManager\.load|new Material/);
+test('C2水球使用独立模型资源，喷水仍委托共用池', () => {
+    assert.match(timedBomb, /loadSwimmerPrefab/);
+    assert.match(timedBomb, /RESOURCE_PATHS\.timedWaterBalloonPrefabCandidates/);
+    assert.match(timedBomb, /this\.waterSplashes\?\.play\(/);
+    assert.doesNotMatch(timedBomb, /new EntertainmentWaterSplashPool|this\.mineMesh = utils\.createMesh\(buildTimedBombGeometry\(\)\)/);
 });
 
 test('障碍水雷使用分层不对称模型并保持轻微三轴漂转', () => {

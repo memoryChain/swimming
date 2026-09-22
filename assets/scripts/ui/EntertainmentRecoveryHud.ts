@@ -37,8 +37,8 @@ const EMERGENCY_PROGRESS_RADIUS = 4;
 const EMERGENCY_PROGRESS_X = 64;
 const EMERGENCY_PROGRESS_Y = -112;
 const EMERGENCY_PROGRESS_STEPS = 100;
-const EMERGENCY_PROGRESS_DANGER = new Color(238, 67, 49, 255);
-const EMERGENCY_PROGRESS_STABLE = new Color(255, 196, 52, 255);
+const EMERGENCY_PROGRESS_DANGER = new Color(255, 193, 55, 255);
+const EMERGENCY_PROGRESS_STABLE = new Color(190, 214, 65, 255);
 const EMERGENCY_PROGRESS_READY = new Color(72, 210, 105, 255);
 const EMERGENCY_COPY_LAYOUTS = {
     large: { fontSize: 74, lineHeight: 88, width: 520, left: -155 },
@@ -47,7 +47,7 @@ const EMERGENCY_COPY_LAYOUTS = {
 } as const;
 const INVULNERABLE_ENTER_SECONDS = 0.16;
 const INVULNERABLE_SETTLE_SECONDS = 0.08;
-const DIM_COLOR = new Color(0, 7, 16, 205);
+const DIM_COLOR = new Color(0, 7, 16, 68);
 
 /** 玩家击倒／无敌提示；击倒阶段独占压暗层，倒计时仍只以 10Hz 刷新。 */
 export class EntertainmentRecoveryHud {
@@ -73,7 +73,7 @@ export class EntertainmentRecoveryHud {
     private emergencyElapsed = 0;
     private emergencyDotIndex = 0;
     private lastEmergencyDots = '';
-    private emergencyCopyText = '急救中';
+    private emergencyCopyText = '正在找回方向';
     private emergencyProgressElapsed = SAMPLE_SECONDS;
     private lastEmergencyProgressStep = -1;
     private lastRecoveryCopyRevision = -1;
@@ -115,10 +115,10 @@ export class EntertainmentRecoveryHud {
         });
 
         const emergencyStatusNode = makeLabel(
-            'EmergencyStatusLabel', this.emergencyMotionRoot, '紧急救援', 34, uiColor(255, 251, 246, 255),
+            'EmergencyStatusLabel', this.emergencyMotionRoot, '调整中', 34, uiColor(255, 251, 246, 255),
         );
         emergencyStatusNode.getComponent(UITransform)!.setContentSize(230, 58);
-        emergencyStatusNode.setPosition(-170, 42, 1);
+        emergencyStatusNode.setPosition(-166, 42, 1);
         const emergencyStatusLabel = emergencyStatusNode.getComponent(Label)!;
         emergencyStatusLabel.enableWrapText = false;
         emergencyStatusLabel.overflow = Label.Overflow.SHRINK;
@@ -127,7 +127,7 @@ export class EntertainmentRecoveryHud {
         emergencyStatusOutline.color = uiColor(80, 18, 14, 180);
         emergencyStatusOutline.width = 2;
 
-        this.emergencyLabelNode = makeLabel('EmergencyLabel', this.emergencyMotionRoot, '急救中', 74, uiColor(244, 251, 255, 255));
+        this.emergencyLabelNode = makeLabel('EmergencyLabel', this.emergencyMotionRoot, '正在找回方向', 74, uiColor(244, 251, 255, 255));
         this.emergencyLabelTransform = this.emergencyLabelNode.getComponent(UITransform)!;
         this.emergencyLabelTransform.setContentSize(EMERGENCY_COPY_LAYOUTS.large.width, 112);
         this.emergencyLabelNode.setPosition(
@@ -186,7 +186,7 @@ export class EntertainmentRecoveryHud {
         this.lastEmergencyProgressStep = -1;
         this.lastRecoveryCopyRevision = -1;
         this.lastPhase = EntertainmentRecoveryPhase.ACTIVE;
-        this.applyEmergencyCopy({ text: '急救中', tier: 'large' });
+        this.applyEmergencyCopy({ text: '正在找回方向', tier: 'medium' });
         this.emergencyMotionRoot.setPosition(0, 0, 0);
         this.emergencyMotionRoot.setScale(1, 1, 1);
         this.emergencyLabelNode.setScale(1, 1, 1);
@@ -212,14 +212,14 @@ export class EntertainmentRecoveryHud {
         const visible = phase !== EntertainmentRecoveryPhase.ACTIVE;
         if (this.root.active !== visible) this.root.active = visible;
         if (!visible) {
-            if (phase !== this.lastPhase) this.transitionTo(phase);
+            if (phase !== this.lastPhase) this.transitionTo(phase, remainingSeconds);
             return;
         }
         if (phase === EntertainmentRecoveryPhase.KNOCKED && revision !== this.lastRecoveryCopyRevision) {
             this.lastRecoveryCopyRevision = revision;
             this.applyEmergencyCopy(selectEntertainmentRecoveryCopy(reason, lane, revision));
         }
-        if (phase !== this.lastPhase) this.transitionTo(phase);
+        if (phase !== this.lastPhase) this.transitionTo(phase, remainingSeconds);
         if (phase === EntertainmentRecoveryPhase.KNOCKED) {
             this.updateEmergencyText(dt);
             this.updateEmergencyProgress(dt, remainingSeconds);
@@ -229,7 +229,7 @@ export class EntertainmentRecoveryHud {
         if (this.elapsed < SAMPLE_SECONDS) return;
         this.elapsed %= SAMPLE_SECONDS;
         const seconds = Math.max(0, Math.ceil(remainingSeconds * 10) / 10).toFixed(1);
-        this.statusStrip.setContent('无敌保护', `${seconds}秒`, 'protect');
+        this.statusStrip.setContent('保护中', `${seconds}秒`, 'protect');
     }
 
     dispose(): void {
@@ -246,7 +246,7 @@ export class EntertainmentRecoveryHud {
         if (this.root?.isValid) this.root.destroy();
     }
 
-    private transitionTo(phase: EntertainmentRecoveryPhase): void {
+    private transitionTo(phase: EntertainmentRecoveryPhase, remainingSeconds = 0): void {
         this.lastPhase = phase;
         this.elapsed = SAMPLE_SECONDS;
         Tween.stopAllByTarget(this.dimOpacity);
@@ -271,6 +271,12 @@ export class EntertainmentRecoveryHud {
             this.setEmergencyProgressStep(0);
             this.dimOpacity.opacity = 0;
             this.emergencyCardOpacity.opacity = 0;
+            if (ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds - remainingSeconds >= EMERGENCY_IMPACT_HOLD_SECONDS) {
+                this.dimOpacity.opacity = 255;
+                this.emergencyCardOpacity.opacity = 255;
+                this.emergencyElapsed = 0;
+                return;
+            }
             tween(this.dimOpacity)
                 .delay(EMERGENCY_DIM_DELAY_SECONDS)
                 .to(EMERGENCY_DIM_FADE_SECONDS, { opacity: 255 }, { easing: 'quadOut' })

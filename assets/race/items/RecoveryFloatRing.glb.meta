@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "93b00e21-d283-4aac-953f-202c51fc36c9",
+  "files": [],
+  "subMetas": {
+    "dad7d": {
+      "importer": "gltf-mesh",
+      "uuid": "93b00e21-d283-4aac-953f-202c51fc36c9@dad7d",
+      "displayName": "",
+      "id": "dad7d",
+      "name": "RecoveryFloatRingMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 640
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "6933b": {
+      "importer": "gltf-material",
+      "uuid": "93b00e21-d283-4aac-953f-202c51fc36c9@6933b",
+      "displayName": "",
+      "id": "6933b",
+      "name": "RecoveryFloatRingColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "df791": {
+      "importer": "gltf-scene",
+      "uuid": "93b00e21-d283-4aac-953f-202c51fc36c9@df791",
+      "displayName": "",
+      "id": "df791",
+      "name": "RecoveryFloatRing.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "93b00e21-d283-4aac-953f-202c51fc36c9@dad7d"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "93b00e21-d283-4aac-953f-202c51fc36c9@6933b"
+      ],
+      "scenes": [
+        "93b00e21-d283-4aac-953f-202c51fc36c9@df791"
+      ]
+    }
+  }
+}

@@ -403,6 +403,10 @@ export const RESOURCE_PATHS = {
         'items/StimulantBottle/StimulantBottle',
         'items/StimulantBottle',
     ],
+    recoveryFloatRingPrefabCandidates: [
+        'items/RecoveryFloatRing/RecoveryFloatRing',
+        'items/RecoveryFloatRing',
+    ],
     calmSlushPrefabCandidates: [
         'items/CalmSlush/CalmSlush',
         'items/CalmSlush',

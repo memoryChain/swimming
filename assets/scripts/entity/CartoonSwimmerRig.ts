@@ -1,3 +1,4 @@
+import { RecoveryFloatPresentation } from '../character/RecoveryFloatPresentation';
 import { _decorator, Camera, Color, Component, EffectAsset, instantiate, JsonAsset, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3, Vec4 } from 'cc';
 import { CharacterHeadBounds } from '../character/CharacterHeadBounds';
 import { CharacterHandContact } from '../character/CharacterHandContact';
@@ -174,10 +175,15 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         leftHandWaterProgress: 0,
         rightHandWaterProgress: 0,
     };
+    private _recoveryFloat: RecoveryFloatPresentation | null = null;
     private readonly _pose = new FreestylePoseController();
     private readonly _animationPlayer = new CharacterAnimationPlayer();
     private readonly _poseState = new CharacterPoseStateController({
         pose: this._pose,
+        onRecoveryFloat: (pose, weight) => {
+            if (pose) this._recoveryFloat?.update(pose, weight);
+            else this._recoveryFloat?.hide();
+        },
         getModel: () => this._model,
         getRoot: () => this.root,
         getSelfTime: () => this._selfTime,
@@ -642,6 +648,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 return;
             }
 
+            if (!this._recoveryFloat) this._recoveryFloat = new RecoveryFloatPresentation(this.node);
+            this._recoveryFloat.setBlinkVisible(this._recoveryBlinkVisible);
             this._model = instantiate(result.prefab);
             this._model.name = 'UserSwimmerModel';
             const prunedComponents = pruneNullComponentsRecursive(this._model);
@@ -948,6 +956,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     setRecoveryBlinkVisible(visible: boolean): void {
         if (this._recoveryBlinkVisible === visible) return;
         this._recoveryBlinkVisible = visible;
+        this._recoveryFloat?.setBlinkVisible(visible);
         if (this._rendererRevealFramesRemaining <= 0) {
             this.setSkinnedRenderersEnabled(visible);
         }
@@ -1100,7 +1109,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
-    setEntertainmentKnocked(transitionSeconds = 0) {
+    setEntertainmentKnocked(transitionSeconds = CHARACTER_POSE_TUNING.recoveryFloatEnterSeconds) {
         this._pose.resetCollisionSoftness();
         if (this._modelDebugMode) {
             return;
@@ -1111,8 +1120,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._poseState.enterEntertainmentKnockout(transitionSeconds);
     }
 
-    syncEntertainmentKnockoutElapsed(elapsedSeconds: number) {
-        this._poseState.syncEntertainmentKnockoutElapsed(elapsedSeconds);
+    syncEntertainmentKnockoutElapsed(elapsedSeconds: number, landingSeconds = 0) {
+        this._poseState.syncEntertainmentKnockoutElapsed(elapsedSeconds, landingSeconds);
     }
 
     setDiveStreamlinePose() {
@@ -1563,6 +1572,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     onDestroy() {
+        this._recoveryFloat?.dispose();
+        this._recoveryFloat = null;
         this._poseState.resetRuntime();
         this._pose.unbind();
         this._standingSoles.clear();

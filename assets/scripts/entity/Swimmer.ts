@@ -512,7 +512,7 @@ export class Swimmer extends Component {
         if (this._entertainmentKnocked) return;
         this._entertainmentKnocked = true;
         this._entertainmentInvulnerable = false;
-        this.cartoonRig?.setRecoveryBlinkVisible(true);
+        this.syncEntertainmentRecoveryBodyVisibility(true);
         this._movementSpeed = 0;
         Tween.stopAllByTarget(this.node);
         this.prepareEntertainmentKnockoutLanding();
@@ -520,7 +520,7 @@ export class Swimmer extends Component {
         this._phases.clearDiveUnderwaterPhase();
         this._motor.suspendForEntertainmentKnockout();
         this.cartoonRig?.finishDiveChargeEffect();
-        this.cartoonRig?.setActiveSwimming(false);
+        // 随后的共用恢复入口负责停止动画；保留当前骨架供搭圈过渡捕获。
         this.cartoonRig?.setPerfectGlowActive(false);
     }
 
@@ -609,7 +609,8 @@ export class Swimmer extends Component {
                 }
             }
         }
-        this.cartoonRig?.syncEntertainmentKnockoutElapsed(Math.max(0, elapsed - duration));
+        // 原始权威时间驱动失衡；落水时长只决定找圈何时开始，不能吞掉受击前段。
+        this.cartoonRig?.syncEntertainmentKnockoutElapsed(elapsed, duration);
     }
 
     private prepareEntertainmentKnockoutLanding(): void {
@@ -625,7 +626,7 @@ export class Swimmer extends Component {
         const height = this._entertainmentLandingStartPosition.y - swimY;
         this._entertainmentLandingImpactOffsetX = 0;
         this._entertainmentLandingImpactOffsetZ = 0;
-        if (height > CHARACTER_POSE_TUNING.entertainmentKnockoutAirborneThreshold) {
+        if (Math.abs(height) > CHARACTER_POSE_TUNING.entertainmentKnockoutAirborneThreshold) {
             this._entertainmentLandingEndPosition.y = swimY;
             this._entertainmentLandingPeakY = this._entertainmentLandingStartPosition.y;
             this._entertainmentLandingRiseRatio = 0;
@@ -634,7 +635,7 @@ export class Swimmer extends Component {
                 Math.max(
                     CHARACTER_POSE_TUNING.entertainmentKnockoutLandingMinSeconds,
                     CHARACTER_POSE_TUNING.entertainmentKnockoutLandingMinSeconds
-                        + height * CHARACTER_POSE_TUNING.entertainmentKnockoutLandingSecondsPerMeter,
+                        + Math.abs(height) * CHARACTER_POSE_TUNING.entertainmentKnockoutLandingSecondsPerMeter,
                 ),
             );
             this._entertainmentLandingComplete = false;
@@ -661,7 +662,7 @@ export class Swimmer extends Component {
 
     respawnAfterEntertainmentHit(distance: number, worldZ: number, initialSpeed: number): void {
         // 先隐藏再复位，避免旧位置到新位置在同一渲染帧中硬跳。
-        this.cartoonRig?.setRecoveryBlinkVisible(false);
+        this.syncEntertainmentRecoveryBodyVisibility(false);
         Tween.stopAllByTarget(this.node);
         this._movementSpeed = 0;
         this._entertainmentKnocked = false;
@@ -681,17 +682,25 @@ export class Swimmer extends Component {
     }
 
     endEntertainmentInvulnerability(): void {
+        if (this._entertainmentKnocked) {
+            this.resetEntertainmentKnockoutPresentation();
+            this.cartoonRig?.setActiveSwimming(false);
+            this.cartoonRig?.resetPose();
+        }
         this._entertainmentKnocked = false;
         this._entertainmentInvulnerable = false;
-        this.cartoonRig?.setRecoveryBlinkVisible(true);
+        this.syncEntertainmentRecoveryBodyVisibility(true);
         this.updatePerfectZoneGlow();
     }
 
     syncEntertainmentRecoveryBodyVisibility(visible: boolean): void {
+        this._recoveryBodyVisible = visible;
         this.cartoonRig?.setRecoveryBlinkVisible(visible);
     }
 
     get isEntertainmentKnocked(): boolean { return this._entertainmentKnocked; }
+    private _recoveryBodyVisible = true;
+    get isRecoveryBodyVisible(): boolean { return this._recoveryBodyVisible; }
     get isEntertainmentInvulnerable(): boolean { return this._entertainmentInvulnerable; }
 
     hideAfterElimination() {
@@ -730,7 +739,7 @@ export class Swimmer extends Component {
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {
         this._entertainmentKnocked = false;
         this._entertainmentInvulnerable = false;
-        this.cartoonRig?.setRecoveryBlinkVisible(true);
+        this.syncEntertainmentRecoveryBodyVisibility(true);
         this._movementSpeed = 0;
         this.captureStartPosition();
         this._ultimate.reset();
@@ -1204,7 +1213,7 @@ export class Swimmer extends Component {
     reset() {
         this._entertainmentKnocked = false;
         this._entertainmentInvulnerable = false;
-        this.cartoonRig?.setRecoveryBlinkVisible(true);
+        this.syncEntertainmentRecoveryBodyVisibility(true);
         this._movementSpeed = 0;
         this.cartoonRig?.setStandingSurface(null);
         this.captureStartPosition();

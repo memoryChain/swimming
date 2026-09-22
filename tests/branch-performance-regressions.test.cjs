@@ -508,7 +508,7 @@ test('资源完成回调不批量实例化，节点分帧创建，收集和销�
     assert.equal(controller.modelBuildJobs.length, 0);
 });
 
-test('共享水花实际几何符合分层预算，包括新增爆压核心', () => {
+test('共享水花实际几何符合分层预算，包括局部碎水喷散', () => {
     const h = harness();
     const source = fs.readFileSync(path.join(root, 'assets/scripts/core/EntertainmentWaterSplash.ts'), 'utf8');
     const names = [...source.matchAll(/function (build\w+Geometry)\(/g)].map(match => match[1]);
@@ -518,7 +518,7 @@ test('共享水花实际几何符合分层预算，包括新增爆压核心', ()
     assert(triangles('buildHeavyEntryBodyGeometry') + triangles('buildHeavyImpactRingGeometry') <= 256);
     const water = triangles('buildExplosionBodyGeometry') + triangles('buildExplosionImpactRingGeometry');
     assert(water <= 480);
-    assert(water + triangles('buildExplosionPressureCoreGeometry') <= 600);
+    assert(water + triangles('buildLocalWaterBurstGeometry') <= 600);
 });
 
 test('缺失模型使用下一候选且保持每帧预算，离场后的加载结果不再入队', () => {

@@ -412,7 +412,7 @@ export class SwimmerNameOverlay {
             if (!entry.root.active) {
                 entry.root.active = true;
             }
-            const wantsDizzy = entry.swimmer.isEntertainmentKnocked && !!entry.dizzyStars[0]?.sprite.spriteFrame;
+            const wantsDizzy = entry.swimmer.isEntertainmentKnocked && entry.swimmer.isRecoveryBodyVisible && !!entry.dizzyStars[0]?.sprite.spriteFrame;
             const enteredDizzy = wantsDizzy && !entry.dizzyKnocked;
             entry.dizzyKnocked = wantsDizzy;
             let showDizzy = wantsDizzy && entry.dizzyRoot.active;

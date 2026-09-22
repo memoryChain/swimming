@@ -34,7 +34,7 @@ function fixture(lanes = 4) {
 }
 
 test('急救文案按正式、通用幽默和受击原因分池，并按长度使用三档字号', () => {
-    assert.ok(ENTERTAINMENT_RECOVERY_COPY_POOLS.formal.includes('急救中'));
+    assert.ok(ENTERTAINMENT_RECOVERY_COPY_POOLS.formal.includes('正在找回方向'));
     for (const pool of Object.values(ENTERTAINMENT_RECOVERY_COPY_POOLS)) {
         assert.ok(pool.length >= 3);
         for (const copy of pool) {
@@ -179,7 +179,7 @@ test('鲨鱼、炮火、定时炸弹和独立／六合一水雷接入复用泳�
     assert.match(source, /recovery\?\.phase === EntertainmentRecoveryPhase\.KNOCKED/);
     assert.doesNotMatch(source, /eliminateCannonHitLane|handleSharkElimination|enqueueSharkElimination/);
     const knockoutPresentation = source.match(/private presentEntertainmentKnockout[\s\S]*?\n    }/)?.[0] ?? '';
-    assert.match(knockoutPresentation, /setEntertainmentKnocked\(0\.18\)/);
+    assert.match(knockoutPresentation, /setEntertainmentKnocked\(CHARACTER_POSE_TUNING\.recoveryFloatEnterSeconds\)/);
     assert.match(knockoutPresentation, /syncEntertainmentKnockoutPresentation/);
     assert.match(knockoutPresentation, /knockedSeconds - remainingSeconds/);
     assert.match(knockoutPresentation, /configureEntertainmentKnockoutLaunch/);
@@ -190,14 +190,13 @@ test('鲨鱼、炮火、定时炸弹和独立／六合一水雷接入复用泳�
     assert.match(swimmer, /resumeAfterEntertainmentHit/);
     assert.match(swimmer, /prepareEntertainmentKnockoutLanding\(\)/);
     assert.match(swimmer, /syncEntertainmentKnockoutPresentation\(elapsedSeconds: number\)/);
-    assert.match(swimmer, /Math\.max\(0, elapsed - duration\)/);
     assert.match(swimmer, /entertainmentKnockoutLandingSplashScale/);
     assert.match(swimmer, /configureEntertainmentKnockoutLaunch/);
     assert.match(swimmer, /const impactArc = 4 \* t \* \(1 - t\)/);
-    assert.match(swimmer, /syncEntertainmentKnockoutElapsed\(Math\.max\(0, elapsed - duration\)\)/);
-    assert.match(swimmer, /respawnAfterEntertainmentHit[\s\S]*?setRecoveryBlinkVisible\(false\)[\s\S]*?applyCoursePosition/);
+    assert.match(swimmer, /syncEntertainmentKnockoutElapsed\(elapsed, duration\)/);
+    assert.match(swimmer, /respawnAfterEntertainmentHit[\s\S]*?syncEntertainmentRecoveryBodyVisibility\(false\)[\s\S]*?applyCoursePosition/);
     assert.match(swimmer, /syncEntertainmentRecoveryBodyVisibility\(visible: boolean\)/);
-    assert.match(swimmer, /endEntertainmentInvulnerability[\s\S]*?setRecoveryBlinkVisible\(true\)/);
+    assert.match(swimmer, /endEntertainmentInvulnerability[\s\S]*?syncEntertainmentRecoveryBodyVisibility\(true\)/);
     assert.doesNotMatch(swimmer.match(/respawnAfterEntertainmentHit[\s\S]*?\n    }/)?.[0] ?? '', /\.startRace\(/);
     const rig = readFileSync(new URL('../assets/scripts/entity/CartoonSwimmerRig.ts', import.meta.url), 'utf8');
     const recoveryBlink = rig.match(/setRecoveryBlinkVisible[\s\S]*?\n    }/)?.[0] ?? '';
@@ -230,9 +229,9 @@ test('本地击倒使用独占急救遮罩，重生后再显示无敌状态条',
     assert.match(hud, /EMERGENCY_CARD_Y = 42/);
     assert.match(hud, /EmergencyCardLayout/);
     assert.match(hud, /EmergencyStatusLabel/);
-    assert.match(hud, /紧急救援/);
-    assert.match(hud, /'紧急救援', 34/);
-    assert.match(hud, /'急救中', 74/);
+    assert.match(hud, /调整中/);
+    assert.match(hud, /'调整中', 34/);
+    assert.match(hud, /'正在找回方向', 74/);
     assert.match(hud, /EMERGENCY_COPY_LAYOUTS/);
     assert.match(hud, /lastRecoveryCopyRevision = -1/);
     assert.match(hud, /selectEntertainmentRecoveryCopy\(reason, lane, revision\)/);
@@ -253,8 +252,8 @@ test('本地击倒使用独占急救遮罩，重生后再显示无敌状态条',
     assert.match(hud, /EmergencyProgressTrack/);
     assert.match(hud, /EmergencyProgressFill/);
     assert.match(hud, /EMERGENCY_PROGRESS_X = 64/);
-    assert.match(hud, /EMERGENCY_PROGRESS_DANGER = new Color\(238, 67, 49, 255\)/);
-    assert.match(hud, /EMERGENCY_PROGRESS_STABLE = new Color\(255, 196, 52, 255\)/);
+    assert.match(hud, /EMERGENCY_PROGRESS_DANGER = new Color\(255, 193, 55, 255\)/);
+    assert.match(hud, /EMERGENCY_PROGRESS_STABLE = new Color\(190, 214, 65, 255\)/);
     assert.match(hud, /EMERGENCY_PROGRESS_READY = new Color\(72, 210, 105, 255\)/);
     assert.match(hud, /updateEmergencyProgress\(dt, remainingSeconds\)/);
     assert.match(hud, /ENTERTAINMENT_RECOVERY_TUNING\.knockedSeconds/);
@@ -272,9 +271,9 @@ test('本地击倒使用独占急救遮罩，重生后再显示无敌状态条',
     assert.match(hud, /BlockInputEvents/);
     assert.match(hud, /phase === EntertainmentRecoveryPhase\.KNOCKED/);
     assert.match(hud, /phase === EntertainmentRecoveryPhase\.INVULNERABLE/);
-    assert.match(hud, /无敌保护/);
+    assert.match(hud, /保护中/);
     assert.match(hud, /new EntertainmentStatusStrip\(this\.root, 'InvulnerabilityStatus'\)/);
-    assert.match(hud, /this\.statusStrip\.setContent\('无敌保护', `\$\{seconds\}秒`, 'protect'\)/);
+    assert.match(hud, /this\.statusStrip\.setContent\('保护中', `\$\{seconds\}秒`, 'protect'\)/);
     assert.match(statusStrip, /makeLabel\('Message'/);
     assert.match(statusStrip, /makeLabel\('Value'/);
     assert.doesNotMatch(statusStrip, /makeUiNode\('Icon'/);
@@ -288,14 +287,13 @@ test('旁观击倒使用独立漂浮姿态和低频头顶眩晕星，不新增�
         'utf8',
     );
     assert.match(poseState, /EntertainmentKnocked = 'entertainment-knocked'/);
-    assert.match(poseState, /applyEntertainmentKnockoutPose\(0, 0\)/);
-    assert.match(poseState, /entertainmentKnockoutSinkSeconds/);
-    assert.match(poseState, /entertainmentKnockoutSinkDepth \* sinkRatio/);
-    assert.match(poseState, /baseY - sink \+ bob/);
-    assert.match(poseState, /applyEntertainmentKnockoutPose\(phase, elapsed\)/);
-    assert.match(poseState, /entertainmentKnockoutRollDegrees/);
-    assert.match(poseState, /syncEntertainmentKnockoutElapsed\(elapsedSeconds: number\)/);
-    assert.match(poseState, /const elapsed = this\._entertainmentKnockoutElapsedSeconds/);
+    assert.doesNotMatch(poseState, /entertainmentKnockoutSinkDepth|entertainmentKnockoutRollDegrees/);
+    assert.match(poseState, /this\._recoverySequence\.apply\(/);
+
+    const sequence = readFileSync(new URL('../assets/scripts/character/RecoveryFloatSequence.ts', import.meta.url), 'utf8');
+    assert.match(sequence, /applyEntertainmentKnockoutPose\(phase, elapsed, model\)/);
+    assert.match(poseState, /syncEntertainmentKnockoutElapsed\(elapsedSeconds: number, landingSeconds = 0\)/);
+    assert.match(poseState, /this\._recoverySequence\.apply\(model, this\._entertainmentKnockoutElapsedSeconds, this\._knockoutLandingSeconds\)/);
     assert.doesNotMatch(poseState, /getSelfTime\(\) - this\._entertainmentKnockoutStartTime/);
     assert.doesNotMatch(
         poseState.match(/private applyEntertainmentKnockoutSetup[\s\S]*?\n    }/)?.[0] ?? '',
@@ -344,25 +342,10 @@ test('旁观击倒使用独立漂浮姿态和低频头顶眩晕星，不新增�
     assert.match(overlay, /RESOURCE_PATHS\.entertainmentKnockoutUi\.dizzyStars/);
     assert.doesNotMatch(overlay, /ParticleSystem|Graphics\.clear\(\)/);
     assert.doesNotMatch(overlay, /dizzyRoot\.setRotationFromEuler|DIZZY_ROTATION_DEGREES_PER_SECOND/);
-    assert.match(pose, /applyEntertainmentKnockoutPose\(phase: number, elapsedSeconds: number\)/);
-    assert.match(pose, /this\.applyFinishFloatingPose\(\)/);
-    assert.match(pose, /Vec3\.UNIT_Y/);
-    assert.match(pose, /applyEntertainmentLimbBuoyancy/);
-    assert.match(pose, /entertainmentLimbDirectionInRoot/);
-    assert.match(pose, /this\.applyCurrentBoneOffset\(this\._leftArm/);
-    assert.match(pose, /this\.applyCurrentBoneOffset\(this\._rightLeg/);
-    assert.match(tuning, /entertainmentKnockoutSinkDepth: 0\.34/);
-    assert.match(tuning, /entertainmentKnockoutSinkSeconds: 3\.0/);
     assert.match(tuning, /entertainmentKnockoutAirborneThreshold: 0\.06/);
     assert.match(tuning, /entertainmentKnockoutLandingMaxSeconds: 0\.62/);
     assert.match(tuning, /entertainmentKnockoutImpactFlightSeconds: 0\.58/);
     assert.match(tuning, /entertainmentKnockoutLandingSplashScale: 1\.65/);
-    assert.match(tuning, /entertainmentKnockoutLimbFloatRiseSeconds: 1\.4/);
-    assert.match(tuning, /entertainmentKnockoutUpperArmBuoyancy: 0\.55/);
-    assert.match(tuning, /entertainmentKnockoutForeArmBuoyancy: 0\.85/);
-    assert.match(tuning, /entertainmentKnockoutThighBuoyancy: 0\.14/);
-    assert.match(tuning, /entertainmentKnockoutCalfBuoyancy: 0\.36/);
-    assert.match(tuning, /entertainmentKnockoutLimbSwayDegrees: 8/);
 
     const star = statSync(new URL(
         '../assets/race/ui/entertainment-knockout-v1/dizzy-stars.png',

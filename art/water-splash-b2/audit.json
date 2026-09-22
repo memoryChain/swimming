@@ -1,0 +1,81 @@
+{
+  "generated": "2026-09-22T05:37:30.639Z",
+  "before": {
+    "meshes": 6,
+    "materials": 1,
+    "nodes": 29,
+    "renderers": 19,
+    "geometry": [
+      {
+        "vertices": 102,
+        "triangles": 96
+      },
+      {
+        "vertices": 147,
+        "triangles": 192
+      },
+      {
+        "vertices": 247,
+        "triangles": 316
+      },
+      {
+        "vertices": 84,
+        "triangles": 56
+      },
+      {
+        "vertices": 204,
+        "triangles": 136
+      },
+      {
+        "vertices": 84,
+        "triangles": 128
+      }
+    ],
+    "peakTriangles": 2868
+  },
+  "after": {
+    "meshes": 6,
+    "materials": 1,
+    "nodes": 29,
+    "renderers": 19,
+    "geometry": [
+      {
+        "vertices": 102,
+        "triangles": 96
+      },
+      {
+        "vertices": 147,
+        "triangles": 192
+      },
+      {
+        "vertices": 270,
+        "triangles": 328
+      },
+      {
+        "vertices": 84,
+        "triangles": 56
+      },
+      {
+        "vertices": 204,
+        "triangles": 136
+      },
+      {
+        "vertices": 72,
+        "triangles": 96
+      }
+    ],
+    "peakTriangles": 2808
+  },
+  "beforeSha256": "dd1fa3e944be27be379115de247936f5f60eb0c6953e9bce9cbc2b3aa2e34cdc",
+  "afterSha256": "c992f602d37976ee1c7019fdbfc3566554b61888e1667a70fdcc53e04df604f4",
+  "explosionTriangles": {
+    "before": 580,
+    "after": 560
+  },
+  "capacity": {
+    "light": 4,
+    "heavy": 3,
+    "impact": 3
+  },
+  "note": "离线真实几何与池行为采样，未包含引擎渲染和真机帧耗"
+}

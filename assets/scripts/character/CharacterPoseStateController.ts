@@ -1,4 +1,6 @@
 import { Node, Quat, Vec3 } from 'cc';
+import type { RecoveryFloatPose } from './RecoveryFloatPose';
+import { RecoveryFloatSequence } from './RecoveryFloatSequence';
 import { CHARACTER_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { FreestylePoseController, ProceduralPoseSnapshot } from './FreestylePoseController';
@@ -18,6 +20,7 @@ export enum CharacterPoseState {
 
 export type CharacterPoseStateControllerOptions = {
     pose: FreestylePoseController;
+    onRecoveryFloat?: (pose: RecoveryFloatPose | null, weight: number) => void;
     getModel: () => Node | null;
     getRoot: () => Node | null;
     getSelfTime: () => number;
@@ -49,17 +52,20 @@ export class CharacterPoseStateController {
     private _diveTransitionDuration = CHARACTER_POSE_TUNING.diveStreamlineTransitionSeconds;
     private _treadWaterStartTime = 0;
     private _entertainmentKnockoutElapsedSeconds = 0;
+    private _lastKnockoutSample = -Infinity;
+    private _knockoutLandingSeconds = 0;
+    private readonly _recoverySequence: RecoveryFloatSequence;
     private _showcaseStartTime = 0;
     private _showcaseAction: SampledActionMotion | null = findSampledDebugAction('waving');
     private _poseTransition: PoseTransition | null = null;
     private readonly _transitionPosition = new Vec3();
     private readonly _transitionRotation = new Quat();
     private readonly _transitionScale = new Vec3();
-    private readonly _knockoutBaseRotation = new Quat();
-    private readonly _knockoutLocalRoll = new Quat();
-    private readonly _knockoutRotation = new Quat();
 
-    constructor(private readonly _options: CharacterPoseStateControllerOptions) {}
+    constructor(private readonly _options: CharacterPoseStateControllerOptions) {
+        // Creator 的字段初始化早于参数属性赋值；依赖构造参数的对象必须在构造函数内创建。
+        this._recoverySequence = new RecoveryFloatSequence(_options.pose);
+    }
 
     get state(): CharacterPoseState {
         return this._state;
@@ -90,6 +96,7 @@ export class CharacterPoseStateController {
     }
 
     enterPreview() {
+        if (this._state === CharacterPoseState.EntertainmentKnocked) this.applyRaceModelSetup();
         this._options.pose.setDiveSupportPlane(null);
         this.setState(CharacterPoseState.Preview);
     }
@@ -129,18 +136,37 @@ export class CharacterPoseStateController {
         this.setState(CharacterPoseState.TreadWater);
     }
 
-    enterEntertainmentKnockout(transitionSeconds = 0) {
+    enterEntertainmentKnockout(transitionSeconds = CHARACTER_POSE_TUNING.recoveryFloatEnterSeconds) {
+        if (this._state === CharacterPoseState.EntertainmentKnocked) return;
         this._entertainmentKnockoutElapsedSeconds = 0;
-        this.transitionTo(CharacterPoseState.EntertainmentKnocked, transitionSeconds);
+        this._lastKnockoutSample = -Infinity;
+        this._knockoutLandingSeconds = 0;
+        this._poseTransition = null;
+        this._state = CharacterPoseState.EntertainmentKnocked;
+        this._options.pose.setDiveSupportPlane(null);
+        const model = this._options.getModel();
+        if (model && this._options.getRoot()) this._recoverySequence.begin(model, transitionSeconds);
+        this.updateEntertainmentKnockout();
+        this._options.updateSplashSurface(0);
+        this._options.setSplashVisible(false);
     }
 
-    syncEntertainmentKnockoutElapsed(elapsedSeconds: number) {
-        this._entertainmentKnockoutElapsedSeconds = Number.isFinite(elapsedSeconds)
-            ? Math.max(0, elapsedSeconds)
-            : 0;
+    syncEntertainmentKnockoutElapsed(elapsedSeconds: number, landingSeconds = 0) {
+        this._entertainmentKnockoutElapsedSeconds = Math.max(this._entertainmentKnockoutElapsedSeconds,
+            Number.isFinite(elapsedSeconds) ? elapsedSeconds : 0);
+        this._knockoutLandingSeconds = Math.max(0, landingSeconds);
+        // 快照纠偏时直接跳到当前姿态，不能补播已经过期的入场。
+        if (this._state === CharacterPoseState.EntertainmentKnocked) {
+            const sample = Math.floor((this._entertainmentKnockoutElapsedSeconds + 0.000001) * 20);
+            if (sample === this._lastKnockoutSample) return;
+            this._lastKnockoutSample = sample;
+            this.updateEntertainmentKnockout();
+        }
     }
 
     reset() {
+        this._recoverySequence.reset();
+        this._options.onRecoveryFloat?.(null, 0);
         this._options.pose.setDiveSupportPlane(null);
         this._diveTransitionElapsed = 0;
         this._treadWaterStartTime = 0;
@@ -151,10 +177,12 @@ export class CharacterPoseStateController {
     }
 
     resetRuntime() {
+        this._recoverySequence.reset();
+        this._options.onRecoveryFloat?.(null, 0);
         this._diveTransitionElapsed = 0;
         this._treadWaterStartTime = 0;
-        this._entertainmentKnockoutElapsedSeconds = 0;
         this._poseTransition = null;
+        this._lastKnockoutSample = -Infinity;
     }
 
     reapplyCurrentState() {
@@ -162,6 +190,8 @@ export class CharacterPoseStateController {
     }
 
     update(dt: number, hasAnimation: boolean): boolean {
+        // 娱乐恢复由权威时钟以 20Hz 同步采样，不再另按渲染帧推进。
+        if (this._state === CharacterPoseState.EntertainmentKnocked) return true;
         if (this._poseTransition) {
             this.updatePoseTransition(dt);
             return true;
@@ -183,10 +213,6 @@ export class CharacterPoseStateController {
             this.updateTreadWater();
             return true;
         }
-        if (this._state === CharacterPoseState.EntertainmentKnocked) {
-            this.updateEntertainmentKnockout();
-            return true;
-        }
         if (this._state === CharacterPoseState.Preview && !hasAnimation) {
             this._options.pose.applyPreviewPose(this._options.getSelfTime());
         }
@@ -194,12 +220,17 @@ export class CharacterPoseStateController {
     }
 
     private setState(state: CharacterPoseState) {
+        if (state !== CharacterPoseState.EntertainmentKnocked) this._recoverySequence.reset();
         this._poseTransition = null;
         this._state = state;
         this.applyStateSetup(state);
     }
 
     transitionTo(state: CharacterPoseState, transitionSeconds: number) {
+        if (state === CharacterPoseState.EntertainmentKnocked) {
+            this.enterEntertainmentKnockout(transitionSeconds);
+            return;
+        }
         const duration = Math.max(0, transitionSeconds);
         const model = this._options.getModel();
         if (duration <= 0 || !model || !this._options.getRoot()) {
@@ -264,6 +295,10 @@ export class CharacterPoseStateController {
     }
 
     private applyStateSetup(state: CharacterPoseState) {
+        if (state !== CharacterPoseState.EntertainmentKnocked) {
+            this._recoverySequence.reset();
+            this._options.onRecoveryFloat?.(null, 0);
+        }
         switch (state) {
             case CharacterPoseState.ShowcaseStanding:
                 this.applyShowcaseStandingSetup();
@@ -383,17 +418,9 @@ export class CharacterPoseStateController {
 
     private applyEntertainmentKnockoutSetup() {
         const model = this._options.getModel();
-        if (!model || !this._options.getRoot()) {
-            return;
-        }
-        const y = CHARACTER_POSE_TUNING.raceModelBaseY
-            + this._options.raceModelYOffset()
-            + MOTION_TUNING.swimBodyYOffset
-            + CHARACTER_POSE_TUNING.entertainmentKnockoutModelYOffset;
-        model.setPosition(0, y, 0);
+        if (!model || !this._options.getRoot()) return;
         this.applyModelScale(model);
-        this.applyEntertainmentKnockoutRotation(0);
-        this._options.pose.applyEntertainmentKnockoutPose(0, 0);
+        this.updateEntertainmentKnockout();
         this._options.updateSplashSurface(0);
         this._options.setSplashVisible(false);
     }
@@ -435,37 +462,9 @@ export class CharacterPoseStateController {
 
     private updateEntertainmentKnockout() {
         const model = this._options.getModel();
-        if (!model || !this._options.getRoot()) {
-            return;
-        }
-        const elapsed = this._entertainmentKnockoutElapsedSeconds;
-        const phase = elapsed * CHARACTER_POSE_TUNING.entertainmentKnockoutBobSpeed;
-        const baseY = CHARACTER_POSE_TUNING.raceModelBaseY
-            + this._options.raceModelYOffset()
-            + MOTION_TUNING.swimBodyYOffset
-            + CHARACTER_POSE_TUNING.entertainmentKnockoutModelYOffset;
-        const sinkRatio = smoothStep(elapsed / Math.max(0.01, CHARACTER_POSE_TUNING.entertainmentKnockoutSinkSeconds));
-        const sink = CHARACTER_POSE_TUNING.entertainmentKnockoutSinkDepth * sinkRatio;
-        const bob = Math.sin(phase) * CHARACTER_POSE_TUNING.entertainmentKnockoutBobAmplitude;
-        model.setPosition(0, baseY - sink + bob, 0);
-        this.applyEntertainmentKnockoutRotation(
-            Math.sin(phase * 0.72) * CHARACTER_POSE_TUNING.entertainmentKnockoutRollSwayDegrees,
-        );
-        this._options.pose.applyEntertainmentKnockoutPose(phase, elapsed);
-    }
-
-    private applyEntertainmentKnockoutRotation(swayDegrees: number) {
-        const model = this._options.getModel();
-        if (!model) return;
-        const euler = this._options.raceModelEulerDegrees();
-        Quat.fromEuler(this._knockoutBaseRotation, euler[0], euler[1], euler[2]);
-        Quat.fromAxisAngle(
-            this._knockoutLocalRoll,
-            Vec3.UNIT_Y,
-            (CHARACTER_POSE_TUNING.entertainmentKnockoutRollDegrees + swayDegrees) * Math.PI / 180,
-        );
-        Quat.multiply(this._knockoutRotation, this._knockoutBaseRotation, this._knockoutLocalRoll);
-        model.setRotation(this._knockoutRotation);
+        if (!model || !this._options.getRoot()) return;
+        this._recoverySequence.apply(model, this._entertainmentKnockoutElapsedSeconds, this._knockoutLandingSeconds);
+        this._options.onRecoveryFloat?.(this._options.pose.recoveryFloat, this._recoverySequence.ringWeight);
     }
 
     private updateShowcaseStanding() {

@@ -1,0 +1,11 @@
+{
+  "triangles": 640,
+  "meshes": 1,
+  "materials": 1,
+  "textures": 0,
+  "majorRadius": 1,
+  "tubeRadius": 0.24,
+  "innerDiameter": 1.52,
+  "outerDiameter": 2.48,
+  "bytes": 43020
+}

@@ -30,7 +30,7 @@ export type EntertainmentSplashRequest = {
     verticalScale?: number;
     layer?: number;
     rippleOnly?: boolean;
-    /** 道具实际世界位置的局部碎水喷散；水面水冠仍固定在 position。兼容旧字段名。 */
+    /** 爆炸本体的真实世界位置；水花仍使用 position 固定在水面。 */
     explosionCorePosition?: Readonly<Vec3>;
 };
 
@@ -48,12 +48,6 @@ type SplashSlot = {
     verticalScale: number;
     rippleOnly: boolean;
     explosionCoreActive: boolean;
-    /** 本次触发前已累计的采样时间，避免新效果被提前扣时。 */
-    pendingTime: number;
-    bodyRadialBias: number;
-    bodyVerticalBias: number;
-    coreRadialBias: number;
-    coreVerticalBias: number;
 };
 
 type ColorTuple = readonly [number, number, number, number];
@@ -66,7 +60,7 @@ const LIGHT_DEFAULT_SECONDS = 0.42;
 const HEAVY_DEFAULT_SECONDS = 0.56;
 const EXPLOSION_DEFAULT_SECONDS = 0.95;
 const EXPLOSION_BODY_END_PHASE = 0.62;
-const EXPLOSION_CORE_END_PHASE = 0.32;
+const EXPLOSION_CORE_END_PHASE = 0.46;
 
 /**
  * 全部娱乐玩法共用的低模水花池。几何和材质只创建一次；比赛中只消费既有视觉事件，
@@ -91,7 +85,7 @@ export class EntertainmentWaterSplashPool {
         this.explosionBodyMesh = utils.createMesh(buildExplosionBodyGeometry());
         this.heavyRingMesh = utils.createMesh(buildHeavyImpactRingGeometry());
         this.explosionRingMesh = utils.createMesh(buildExplosionImpactRingGeometry());
-        this.explosionCoreMesh = utils.createMesh(buildLocalWaterBurstGeometry());
+        this.explosionCoreMesh = utils.createMesh(buildExplosionPressureCoreGeometry());
         this.material = makeWaterSplashMaterial();
         this.buildSlots(ENTERTAINMENT_SPLASH_PROFILE.LIGHT_ENTRY, LIGHT_POOL_SIZE, this.lightMesh, null);
         this.buildSlots(ENTERTAINMENT_SPLASH_PROFILE.HEAVY_ENTRY, HEAVY_POOL_SIZE, this.heavyBodyMesh, this.heavyRingMesh);
@@ -105,24 +99,15 @@ export class EntertainmentWaterSplashPool {
         slot.owner = request.owner;
         slot.duration = Math.max(0.05, request.duration ?? defaultDuration(request.profile));
         slot.remaining = slot.duration;
-        slot.pendingTime = this.activeCount > 0 ? this.elapsed : 0;
         slot.intensity = Math.max(0, request.intensity ?? 1);
         slot.radialScale = Math.max(0, request.radialScale ?? 1);
         slot.verticalScale = Math.max(0, request.verticalScale ?? 1);
         slot.rippleOnly = !!request.rippleOnly;
         slot.explosionCoreActive = slot.profile === ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION
-            && !slot.rippleOnly && !!request.explosionCorePosition;
-        // 共用基线只做小幅轮廓差异；调用方强度、缩放和时长仍完整相乘。
-        slot.bodyRadialBias = request.owner === ENTERTAINMENT_SPLASH_OWNER.CANNON ? 1.08 : 1;
-        slot.bodyVerticalBias = request.owner === ENTERTAINMENT_SPLASH_OWNER.MINEFIELD ? 1.14 : 1;
-        slot.coreRadialBias = request.owner === ENTERTAINMENT_SPLASH_OWNER.TIMED_BOMB ? 1.1 : 1;
-        slot.coreVerticalBias = request.owner === ENTERTAINMENT_SPLASH_OWNER.MINEFIELD ? 1.12 : 1;
+            && !!request.explosionCorePosition;
         slot.root.setWorldPosition(request.position.x, request.position.y, request.position.z);
         slot.root.setRotationFromEuler(0, request.yawDegrees ?? 0, 0);
-        this.setLayer(slot, request.layer ?? this.worldRoot.layer);
-        // 槽位复用时还原上一轮末段的沉降，不能把下一次水花留在水下。
-        if (slot.body.position.y !== 0) slot.body.setPosition(0, 0, 0);
-        if (slot.ring && slot.ring.position.y !== 0) slot.ring.setPosition(0, 0, 0);
+        if (request.layer !== undefined) this.setLayer(slot, request.layer);
         if (slot.explosionCore) {
             if (slot.explosionCoreActive) {
                 slot.explosionCore.setWorldPosition(request.explosionCorePosition!);
@@ -151,8 +136,7 @@ export class EntertainmentWaterSplashPool {
         for (let index = 0; index < this.slots.length; index++) {
             const slot = this.slots[index];
             if (slot.remaining <= 0) continue;
-            slot.remaining = Math.max(0, slot.remaining - Math.max(0, presentationStep - slot.pendingTime));
-            slot.pendingTime = 0;
+            slot.remaining = Math.max(0, slot.remaining - presentationStep);
             this.applyPhase(slot, 1 - slot.remaining / slot.duration);
             if (slot.remaining <= 0) this.deactivate(slot);
         }
@@ -204,7 +188,7 @@ export class EntertainmentWaterSplashPool {
             const body = this.makeRendererNode('Body', root, bodyMesh);
             const ring = ringMesh ? this.makeRendererNode('Ring', root, ringMesh) : null;
             const explosionCore = profile === ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION
-                ? this.makeRendererNode('LocalWaterBurst', root, this.explosionCoreMesh)
+                ? this.makeRendererNode('ExplosionPressureCore', root, this.explosionCoreMesh)
                 : null;
             if (explosionCore) explosionCore.active = false;
             root.active = false;
@@ -222,11 +206,6 @@ export class EntertainmentWaterSplashPool {
                 verticalScale: 1,
                 rippleOnly: false,
                 explosionCoreActive: false,
-                pendingTime: 0,
-                bodyRadialBias: 1,
-                bodyVerticalBias: 1,
-                coreRadialBias: 1,
-                coreVerticalBias: 1,
             });
         }
     }
@@ -274,7 +253,7 @@ export class EntertainmentWaterSplashPool {
             ? 0.2 + bodyExpand * 1.42
             : 0.24 + expand * 1.04;
         const bodyVertical = slot.profile === ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION
-            ? 0.08 + bodyCrest * 1.16
+            ? 0.16 + bodyCrest * 1.5
             : 0.18 + crest * 1.05;
         const bodyFinished = slot.profile === ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION
             && phase >= EXPLOSION_BODY_END_PHASE;
@@ -283,14 +262,10 @@ export class EntertainmentWaterSplashPool {
         } else if (!slot.rippleOnly) {
             if (!slot.body.active) slot.body.active = true;
             slot.body.setScale(
-                bodyRadial * slot.intensity * slot.radialScale * (slot.profile === ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION ? slot.bodyRadialBias : 1),
-                bodyVertical * slot.intensity * slot.verticalScale * (slot.profile === ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION ? slot.bodyVerticalBias : 1),
-                bodyRadial * slot.intensity * slot.radialScale * (slot.profile === ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION ? slot.bodyRadialBias : 1),
+                bodyRadial * slot.intensity * slot.radialScale,
+                bodyVertical * slot.intensity * slot.verticalScale,
+                bodyRadial * slot.intensity * slot.radialScale,
             );
-            if (slot.profile === ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION) {
-                const sink = -0.16 * clamp01((bodyPhase - 0.65) / 0.35);
-                if (slot.body.position.y !== sink) slot.body.setPosition(0, sink, 0);
-            }
         }
         if (!slot.ring) return;
         const ringPhase = clamp01((phase - 0.06) / 0.86);
@@ -306,10 +281,6 @@ export class EntertainmentWaterSplashPool {
                 ? 1
                 : 1 - (phase - 0.72) / 0.28 * 0.82;
         slot.ring.setScale(ringScale, Math.max(0.18, ringHeightScale), ringScale);
-        if (slot.profile === ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION) {
-            const sink = -0.065 * clamp01((phase - 0.68) / 0.32);
-            if (slot.ring.position.y !== sink) slot.ring.setPosition(0, sink, 0);
-        }
         if (slot.explosionCore && slot.explosionCoreActive) {
             const corePhase = clamp01(phase / EXPLOSION_CORE_END_PHASE);
             if (corePhase >= 1) {
@@ -317,9 +288,8 @@ export class EntertainmentWaterSplashPool {
             } else {
                 if (!slot.explosionCore.active) slot.explosionCore.active = true;
                 const coreExpand = 1 - Math.pow(1 - corePhase, 3);
-                const coreScale = (0.16 + coreExpand * 1.1) * slot.intensity * slot.radialScale * slot.coreRadialBias;
-                const coreVertical = (0.12 + Math.sin(corePhase * Math.PI) * 0.92)
-                    * slot.intensity * slot.verticalScale * slot.coreVerticalBias;
+                const coreScale = (0.16 + coreExpand * 1.28) * slot.intensity;
+                const coreVertical = coreScale * (1 - corePhase * 0.18);
                 slot.explosionCore.setScale(coreScale, coreVertical, coreScale);
             }
         }
@@ -337,7 +307,6 @@ export class EntertainmentWaterSplashPool {
         slot.remaining = 0;
         slot.rippleOnly = false;
         slot.explosionCoreActive = false;
-        slot.pendingTime = 0;
         if (!slot.body.active) slot.body.active = true;
         if (slot.ring && !slot.ring.active) slot.ring.active = true;
         if (slot.explosionCore?.active) slot.explosionCore.active = false;
@@ -395,48 +364,65 @@ function buildExplosionBodyGeometry(): primitives.IGeometry {
     const positions: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
-    appendBrokenRing(positions, colors, indices, 0.16, 0.72, 14, 5, 0.018,
-        [0.74, 0.97, 1, 0.66], [0.24, 0.76, 0.96, 0.02]);
-    appendOpenSprayCrown(positions, colors, indices);
+    appendRing(positions, colors, indices, 0.16, 0.72,
+        [1, 0.44, 0.06, 0.62], [1, 0.7, 0.16, 0], 0.018, 14);
+    appendWaterCrown(positions, colors, indices, 14, 1);
     for (let i = 0; i < 9; i++) appendCurvedWaterJet(positions, colors, indices, i, 9, 1);
     for (let i = 0; i < 11; i++) appendWaterDroplet(positions, colors, indices, i, 11, 1);
     return geometry(positions, colors, indices, new Vec3(-2.15, 0, -2.15), new Vec3(2.15, 2.65, 2.15));
 }
 
 /**
- * 真实道具位置的短促碎水团。离散块状水滴之间保留透视空隙，没有完整球壳或发光中心。
- * 与水面水冠共用材质、池及事件计时；空中／水下的位置只在 play 时锁定一次。
+ * 低面数的三维爆压核心。它与水面水花共用材质和对象池，只负责补足水下爆点的空间读感。
+ * 外壳采用不规则分段球面，中心和碎泡仍并入同一个网格，不再为内部层次拆分额外材质或节点。
  */
-function buildLocalWaterBurstGeometry(): primitives.IGeometry {
+function buildExplosionPressureCoreGeometry(): primitives.IGeometry {
     const positions: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
-    const palette: readonly ColorTuple[] = [[0.76, 0.97, 1, 0.76], [0.3, 0.82, 0.96, 0.68], [0.93, 1, 1, 0.7]];
-    for (let i = 0; i < 12; i++) {
-        const angle = i * 2.39996;
-        const radius = i < 3 ? 0.17 : 0.42 + (i % 3) * 0.16;
-        const y = i < 3 ? (i - 1) * 0.18 : ((i % 5) - 2) * 0.21;
-        appendOctahedronAt(positions, colors, indices, Math.cos(angle) * radius, y,
-            Math.sin(angle) * radius, i < 3 ? 0.19 : 0.09 + (i % 3) * 0.025, palette[i % 3]);
-    }
-    return geometry(positions, colors, indices, new Vec3(-0.95, -0.7, -0.95), new Vec3(0.95, 0.7, 0.95));
+    appendPressureShell(positions, colors, indices, 12, 4);
+    appendOctahedronAt(positions, colors, indices, 0, 0.02, 0, 0.26, [1, 0.72, 0.22, 0.86]);
+    appendOctahedronAt(positions, colors, indices, -0.5, 0.38, 0.17, 0.09, [0.82, 0.97, 1, 0.58]);
+    appendOctahedronAt(positions, colors, indices, 0.37, 0.5, -0.28, 0.075, [0.72, 0.94, 1, 0.5]);
+    appendOctahedronAt(positions, colors, indices, 0.46, -0.2, 0.3, 0.065, [0.68, 0.92, 1, 0.44]);
+    return geometry(positions, colors, indices, new Vec3(-0.82, -0.72, -0.82), new Vec3(0.82, 0.88, 0.82));
 }
 
-/** 六片有厚度的外翻水冠，片间留空；轻／重入水仍使用原水冠。 */
-function appendOpenSprayCrown(positions: number[], colors: number[], indices: number[]): void {
-    const faces = [0,1,2, 2,1,3, 4,6,5, 6,7,5, 0,4,1, 1,4,5,
-        2,3,6, 6,3,7, 0,2,4, 4,2,6, 1,5,3, 3,5,7];
-    for (let i = 0; i < 6; i++) {
-        const base = positions.length / 3;
-        const angle = i / 6 * Math.PI * 2;
-        const height = 1.06 + (i % 3) * 0.13;
-        for (let back = 0; back < 2; back++) for (let top = 0; top < 2; top++) for (let side = 0; side < 2; side++) {
-            const a = angle + (side ? 1 : -1) * (top ? 0.27 : 0.32);
-            const r = (top ? 0.84 : 0.4) + back * 0.085;
-            positions.push(Math.cos(a) * r, top ? height : 0.035, Math.sin(a) * r);
-            pushColor(colors, top ? [0.86, 0.98, 1, 0.38] : [0.18, 0.74, 0.94, 0.76], 1);
+function appendPressureShell(
+    positions: number[], colors: number[], indices: number[], segments: number, bands: number,
+): void {
+    const base = positions.length / 3;
+    const shellColors: readonly ColorTuple[] = [
+        [0.34, 0.8, 1, 0.16],
+        [0.76, 0.96, 1, 0.3],
+        [0.94, 1, 1, 0.38],
+        [0.52, 0.88, 1, 0.22],
+        [0.28, 0.72, 0.98, 0.08],
+    ];
+    for (let band = 0; band <= bands; band++) {
+        const latitude = -Math.PI * 0.5 + band / bands * Math.PI;
+        const bandRadius = Math.cos(latitude);
+        const y = Math.sin(latitude) * 0.7;
+        for (let segment = 0; segment < segments; segment++) {
+            const angle = segment / segments * Math.PI * 2;
+            const irregularity = 0.72 + ((segment + band * 2) % 5) * 0.018;
+            positions.push(
+                Math.cos(angle) * bandRadius * irregularity,
+                y * (0.96 + (segment % 3) * 0.025),
+                Math.sin(angle) * bandRadius * irregularity,
+            );
+            pushColor(colors, shellColors[band], 1);
         }
-        for (const face of faces) indices.push(base + face);
+    }
+    for (let band = 0; band < bands; band++) {
+        for (let segment = 0; segment < segments; segment++) {
+            const next = (segment + 1) % segments;
+            const lower = base + band * segments + segment;
+            const lowerNext = base + band * segments + next;
+            const upper = lower + segments;
+            const upperNext = lowerNext + segments;
+            indices.push(lower, upper, lowerNext, lowerNext, upper, upperNext);
+        }
     }
 }
 
@@ -461,15 +447,15 @@ function buildExplosionImpactRingGeometry(): primitives.IGeometry {
         positions, colors, indices,
         0.32, 0.55, 0.86, 18, 8,
         0.018, 0.16, 0.024,
-        [0.34, 0.82, 0.98, 0.18], [0.86, 0.98, 1, 0.7], [0.24, 0.72, 0.94, 0.025],
+        [0.34, 0.82, 0.98, 0.22], [0.96, 1, 1, 0.94], [0.24, 0.72, 0.94, 0.025],
     );
     appendBrokenWaveCrest(
         positions, colors, indices,
         1.08, 1.42, 2.08, 20, 7,
         0.012, 0.105, 0.018,
-        [0.26, 0.76, 0.96, 0.1], [0.72, 0.94, 1, 0.42], [0.16, 0.62, 0.9, 0],
+        [0.26, 0.76, 0.96, 0.12], [0.8, 0.97, 1, 0.62], [0.16, 0.62, 0.9, 0],
     );
-    return geometry(positions, colors, indices, new Vec3(-2.11, 0, -2.11), new Vec3(2.11, 0.18, 2.11));
+    return geometry(positions, colors, indices, new Vec3(-2.1, 0, -2.1), new Vec3(2.1, 0.18, 2.1));
 }
 
 function appendBrokenWaveCrest(

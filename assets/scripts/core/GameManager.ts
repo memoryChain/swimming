@@ -80,6 +80,7 @@ import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { CannonBrawlHud } from '../ui/CannonBrawlHud';
 import { EntertainmentRecoveryHud } from '../ui/EntertainmentRecoveryHud';
+import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
 import { MineRelayBrawlHud } from '../ui/MineRelayBrawlHud';
 import { DebugLogController } from './DebugLogController';
 import { consumeMainGameLaunchMode, consumeRoomMode, consumeRoomRaceDistance, getAiDebugSetup, getAiDebugDifficulty, resolveAiDebugBuildOptions, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
@@ -2119,7 +2120,7 @@ export class GameManager extends Component {
             swimmer.configureEntertainmentKnockoutLaunch(-swimmer.raceDirection, away);
         }
         // 所有致命娱乐事件统一复用短促翻起的受击姿态，避免停在命中前的游泳动作。
-        swimmer.cartoonRig?.setEntertainmentKnocked(0.18);
+        swimmer.cartoonRig?.setEntertainmentKnocked(CHARACTER_POSE_TUNING.recoveryFloatEnterSeconds);
         swimmer.syncEntertainmentKnockoutPresentation(
             Math.max(0, ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds - remainingSeconds),
         );

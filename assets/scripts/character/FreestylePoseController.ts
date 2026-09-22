@@ -1,3 +1,4 @@
+import { RecoveryFloatPose } from './RecoveryFloatPose';
 import { Node, Quat, Vec3 } from 'cc';
 import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
@@ -168,11 +169,7 @@ export class FreestylePoseController {
     private readonly _tmpWorldDirection = new Vec3();
     private readonly _tmpParentDirection = new Vec3();
     private readonly _tmpBaseDirection = new Vec3();
-    private readonly _knockoutWorldUpInRoot = new Vec3();
-    private readonly _knockoutJointWorldA = new Vec3();
-    private readonly _knockoutJointWorldB = new Vec3();
-    private readonly _knockoutDirectionInRoot = new Vec3();
-    private readonly _knockoutInverseRootRotation = new Quat();
+    readonly recoveryFloat = new RecoveryFloatPose();
     private readonly _tmpDeltaRotation = new Quat();
     private readonly _tmpRootWorldRotation = new Quat();
     private readonly _tmpParentWorldRotation = new Quat();
@@ -261,6 +258,7 @@ export class FreestylePoseController {
     private _movementPitchRadians = 0;
 
     unbind() {
+        this.recoveryFloat.bind(null);
         // 换模等待期间仍可能收到水花、镜头和边界查询，不能保留已销毁的骨骼。
         this.root = null;
         this._rootBone = this._torso = this._hips = this._spine = this._spine1 = null;
@@ -281,6 +279,7 @@ export class FreestylePoseController {
     }
 
     bind(root: Node) {
+        this.recoveryFloat.bind(root);
         this.root = root;
         this._rootBone = findNode(root, 'Root');
         this._spine = findBoneNode(root, 'Spine');
@@ -1017,122 +1016,38 @@ export class FreestylePoseController {
         this.applyBoneOffset(this._rightFoot, 8, 0, 0);
     }
 
-    applyEntertainmentKnockoutPose(phase: number, elapsedSeconds: number) {
-        this.applyFinishFloatingPose();
-        const amplitude = CHARACTER_POSE_TUNING.entertainmentKnockoutLimbSwayDegrees;
-        const leftWave = Math.sin(phase * 0.62);
-        const rightWave = Math.sin(phase * 0.47 + 1.35);
-        const legWave = Math.sin(phase * 0.54 + 2.1);
-        const floatWeight = smoothStep(Math.min(
-            1,
-            Math.max(0, elapsedSeconds) / Math.max(
-                0.01,
-                CHARACTER_POSE_TUNING.entertainmentKnockoutLimbFloatRiseSeconds,
-            ),
-        ));
+    applyEntertainmentKnockoutPose(phase: number, _elapsedSeconds: number, model?: Node, support = 1, fitHeight = true) {
+        this.restoreBasePose();
+        const wave = Math.sin(phase);
+        const leg = CHARACTER_POSE_TUNING.recoveryFloatLegSwayDegrees;
+        this.applyBoneOffset(this._neck, -4, wave * 1.2, 0);
+        this.applyBoneOffset(this._head, -5, Math.sin(phase * 0.7) * 2, 0);
+        this.applyBoneOffset(this._leftUpLeg, -3 + wave * leg, 0, -3);
+        this.applyBoneOffset(this._rightUpLeg, 3 - wave * leg, 0, 3);
+        if (model) this.recoveryFloat.apply(model, phase, support, fitHeight);
+    }
 
-        if (this.root && floatWeight > 0) {
-            this.root.getWorldRotation(this._knockoutInverseRootRotation);
-            Quat.invert(this._knockoutInverseRootRotation, this._knockoutInverseRootRotation);
-            Vec3.transformQuat(
-                this._knockoutWorldUpInRoot,
-                Vec3.UNIT_Y,
-                this._knockoutInverseRootRotation,
-            );
-            Vec3.normalize(this._knockoutWorldUpInRoot, this._knockoutWorldUpInRoot);
-            this.applyEntertainmentLimbBuoyancy(
-                this._leftArm,
-                this._leftForeArm,
-                this._leftHand,
-                CHARACTER_POSE_TUNING.entertainmentKnockoutUpperArmBuoyancy * floatWeight * (1 + leftWave * 0.06),
-                CHARACTER_POSE_TUNING.entertainmentKnockoutForeArmBuoyancy * floatWeight * (1 + rightWave * 0.05),
-            );
-            this.applyEntertainmentLimbBuoyancy(
-                this._rightArm,
-                this._rightForeArm,
-                this._rightHand,
-                CHARACTER_POSE_TUNING.entertainmentKnockoutUpperArmBuoyancy * floatWeight * 0.92 * (1 + rightWave * 0.06),
-                CHARACTER_POSE_TUNING.entertainmentKnockoutForeArmBuoyancy * floatWeight * 0.9 * (1 + leftWave * 0.05),
-            );
-            this.applyEntertainmentLimbBuoyancy(
-                this._leftUpLeg,
-                this._leftLeg,
-                this._leftFoot,
-                CHARACTER_POSE_TUNING.entertainmentKnockoutThighBuoyancy * floatWeight,
-                CHARACTER_POSE_TUNING.entertainmentKnockoutCalfBuoyancy * floatWeight * (1 + legWave * 0.05),
-            );
-            this.applyEntertainmentLimbBuoyancy(
-                this._rightUpLeg,
-                this._rightLeg,
-                this._rightFoot,
-                CHARACTER_POSE_TUNING.entertainmentKnockoutThighBuoyancy * floatWeight * 0.88,
-                CHARACTER_POSE_TUNING.entertainmentKnockoutCalfBuoyancy * floatWeight * 0.9 * (1 - legWave * 0.05),
-            );
+    /** 将保存的入场姿态混向刚算出的动态目标，不在表现采样中创建新快照。 */
+    blendFromPoseSnapshot(from: ProceduralPoseSnapshot, ratio: number) {
+        if (!this.root) return;
+        const t = clamp(ratio, 0, 1);
+        if (this._hips && from.hipPosition) {
+            Vec3.lerp(this._tmpBlendPosition, from.hipPosition, this._hips.position, t);
+            this._hips.setPosition(this._tmpBlendPosition);
         }
-
-        // Layer restrained, asynchronous joint motion over the buoyant pose. The
-        // direction solver above preserves the authored chain; these small offsets
-        // keep both sides from rising in a mechanically identical way.
-        this.applyCurrentBoneOffset(this._leftShoulder, leftWave * amplitude * 0.18, 0, rightWave * amplitude * 0.22);
-        this.applyCurrentBoneOffset(this._rightShoulder, rightWave * amplitude * 0.18, 0, -leftWave * amplitude * 0.22);
-        this.applyCurrentBoneOffset(this._leftArm, leftWave * amplitude * 0.5, rightWave * amplitude * 0.2, -leftWave * amplitude * 0.65);
-        this.applyCurrentBoneOffset(this._rightArm, rightWave * amplitude * 0.5, -leftWave * amplitude * 0.2, rightWave * amplitude * 0.65);
-        this.applyCurrentBoneOffset(this._leftForeArm, rightWave * amplitude * 0.65, 0, -leftWave * amplitude * 0.35);
-        this.applyCurrentBoneOffset(this._rightForeArm, -leftWave * amplitude * 0.65, 0, rightWave * amplitude * 0.35);
-        this.applyCurrentBoneOffset(this._leftHand, leftWave * amplitude * 0.4, rightWave * amplitude * 0.2, 0);
-        this.applyCurrentBoneOffset(this._rightHand, rightWave * amplitude * 0.4, -leftWave * amplitude * 0.2, 0);
-        this.applyCurrentBoneOffset(this._leftUpLeg, legWave * amplitude * 0.35, 0, -rightWave * amplitude * 0.18);
-        this.applyCurrentBoneOffset(this._rightUpLeg, -rightWave * amplitude * 0.35, 0, leftWave * amplitude * 0.18);
-        this.applyCurrentBoneOffset(this._leftLeg, rightWave * amplitude * 0.42, 0, 0);
-        this.applyCurrentBoneOffset(this._rightLeg, -leftWave * amplitude * 0.42, 0, 0);
-        this.applyCurrentBoneOffset(this._leftFoot, leftWave * amplitude * 0.3, 0, 0);
-        this.applyCurrentBoneOffset(this._rightFoot, rightWave * amplitude * 0.3, 0, 0);
+        Vec3.lerp(this._tmpBlendPosition, from.rootPosition, this.root.position, t);
+        this.root.setPosition(this._tmpBlendPosition);
+        Quat.slerp(this._tmpBlendRotation, from.rootRotation, this.root.rotation, t);
+        this.root.setRotation(this._tmpBlendRotation);
+        for (let i = 0; i < this._manualBones.length; i++) {
+            const bone = this._manualBones[i];
+            const rotation = from.boneRotations.get(bone);
+            if (!bone.isValid || !rotation) continue;
+            Quat.slerp(this._tmpBlendRotation, rotation, bone.rotation, t);
+            bone.setRotation(this._tmpBlendRotation);
+        }
     }
 
-    private applyEntertainmentLimbBuoyancy(
-        upper: Node,
-        middle: Node,
-        end: Node,
-        upperLift: number,
-        lowerLift: number,
-    ) {
-        if (!this.root || !upper || !middle || !end) return;
-        this.entertainmentLimbDirectionInRoot(upper, middle);
-        Vec3.scaleAndAdd(
-            this._knockoutDirectionInRoot,
-            this._knockoutDirectionInRoot,
-            this._knockoutWorldUpInRoot,
-            upperLift,
-        );
-        Vec3.normalize(this._knockoutDirectionInRoot, this._knockoutDirectionInRoot);
-        this.applyBoneDirectionFromRoot(upper, middle, this._knockoutDirectionInRoot);
-
-        this.entertainmentLimbDirectionInRoot(middle, end);
-        Vec3.scaleAndAdd(
-            this._knockoutDirectionInRoot,
-            this._knockoutDirectionInRoot,
-            this._knockoutWorldUpInRoot,
-            lowerLift,
-        );
-        Vec3.normalize(this._knockoutDirectionInRoot, this._knockoutDirectionInRoot);
-        this.applyBoneDirectionFromRoot(middle, end, this._knockoutDirectionInRoot);
-    }
-
-    private entertainmentLimbDirectionInRoot(from: Node, to: Node) {
-        from.getWorldPosition(this._knockoutJointWorldA);
-        to.getWorldPosition(this._knockoutJointWorldB);
-        Vec3.subtract(
-            this._knockoutDirectionInRoot,
-            this._knockoutJointWorldB,
-            this._knockoutJointWorldA,
-        );
-        Vec3.transformQuat(
-            this._knockoutDirectionInRoot,
-            this._knockoutDirectionInRoot,
-            this._knockoutInverseRootRotation,
-        );
-        Vec3.normalize(this._knockoutDirectionInRoot, this._knockoutDirectionInRoot);
-    }
 
     handWaterContact(cycle: number): number {
         const phase = positiveMod(-this.armPoseCycle(cycle), Math.PI * 2) / (Math.PI * 2);
