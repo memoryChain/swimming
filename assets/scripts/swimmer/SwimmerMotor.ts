@@ -1,3 +1,4 @@
+import { CONDITION_BALANCE } from '../core/ConditionBalance';
 import { CharacterAbilityState } from './CharacterAbilityState';
 import { abilityValue, CharacterAbilityId } from '../core/CharacterAbilityConfig';
 import { StrokeHeartRateModel } from '../condition/StrokeHeartRateModel';
@@ -21,6 +22,7 @@ const MAX_QUEUED_MOTION = CYCLE_AMOUNT * 2;
 const DEG2RAD = Math.PI / 180;
 
 export type StrokeQualityResult = {
+    energyCost?: number;
     type: StrokeType;
     strokeQuality: number;
     badReason?: string;
@@ -42,6 +44,7 @@ export type StrokeQualityResult = {
 };
 
 type StrokeAction = {
+    energyCost: number;
     heartRate: number;
     perfectWidth: number;
     ranges: ReleaseRanges | null;
@@ -93,6 +96,8 @@ export type StrokeTimingGuide = {
 type ReleaseRanges = { perfect: { start: number; end: number }; good: { start: number; end: number } };
 
 export class SwimmerMotor {
+    /** 仅跟游模式绑定，在真实起划时复核有效区。 */
+    strokeCostScale: (() => number) | null = null;
     readonly ability = new CharacterAbilityState();
 
     setCharacterAbility(id: CharacterAbilityId) {
@@ -997,6 +1002,7 @@ export class SwimmerMotor {
         this.startStrokeAcceleration(Math.max(0, STROKE_QUALITY_TUNING.armStrokeTimeoutAccel) * action.propulsionScale, false);
         const actionSeconds = this.predictedActionSecondsAfterRelease(action);
         this._pendingStrokeQualityResults.push({
+            energyCost: action.energyCost,
             type,
             strokeQuality: 0,
             badReason: 'timeout',
@@ -1074,6 +1080,7 @@ export class SwimmerMotor {
         const turnPower = clamp01(releaseProgress / Math.max(0.01, STROKE_QUALITY_TUNING.armStrokeTimeoutProgress));
         this.applyStrokeSteering(type, turnPower);
         const result = {
+            energyCost: action.energyCost,
             type,
             strokeQuality,
             badReason,
@@ -1105,6 +1112,7 @@ export class SwimmerMotor {
 
     private startActionBaseAcceleration(action: StrokeAction) {
         action.baseAccelerationStarted = true;
+        action.energyCost = Math.max(0, CONDITION_BALANCE.energy.drainPerStroke) * (this.strokeCostScale?.() ?? 1);
         this.ability.armStart();
         action.heartRate = Math.round(this.heartRate * 100) / 100;
         const ranges = this._effectiveReleaseRanges;
@@ -1745,6 +1753,7 @@ export class SwimmerMotor {
             heldBaseImpulse: 0,
             heldBaseImpulseBudget: 0,
             heldBaseAcceleration: 0,
+            energyCost: CONDITION_BALANCE.energy.drainPerStroke,
             propulsionScale: 1,
             strokeQualitySettled: false,
             alternationQuality: 0,
@@ -1802,6 +1811,7 @@ export class SwimmerMotor {
             heldBaseImpulse: 0,
             heldBaseImpulseBudget: 0,
             heldBaseAcceleration: 0,
+            energyCost: CONDITION_BALANCE.energy.drainPerStroke,
             propulsionScale: 1,
             strokeQualitySettled: false,
             alternationQuality: 0,

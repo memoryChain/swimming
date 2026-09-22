@@ -85,7 +85,8 @@ export class PlayerConditionModel {
     // 结算只扣体力，开始次数由 Motor 计算，避免同一划被重复计数。
     updateFromStroke(input: StrokeConditionInput) {
         if (!input.strokeAccepted) return;
-        this.drainEnergyForStroke();
+        if (input.energyCost !== undefined) this.consumeEnergy(input.energyCost);
+        else this.drainEnergyForStroke();
         this.refreshModifiers();
     }
 

@@ -747,6 +747,16 @@ export class NetRaceController {
         return this._snapshotTargets;
     }
 
+    draftingSnapshot(lane: number, human: boolean): NetSnapshotEntry | null {
+        if (human) {
+            const record = this._selfSnapshots[lane];
+            return record && Date.now() - record.time <= 700 ? record.entry : null;
+        }
+        if (!this._snapshotTime || Date.now() - this._snapshotTime > 700) return null;
+        for (const entry of this._snapshotTargets) if (entry.lane === lane) return entry;
+        return null;
+    }
+
     get snapshotRevision(): number {
         return this._snapshotRevision;
     }
@@ -1258,6 +1268,7 @@ export class NetRaceController {
         } else {
             this._selfSnapshots[entry.lane] = { entry, time: now };
         }
+        if (remote?.swimmer) remote.swimmer.draftingSource = entry.draftingSource ?? -1;
         remote?.applyOwnerCondition(
             entry.conditionEnergyRatio,
             entry.conditionHeartRate,

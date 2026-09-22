@@ -59,7 +59,7 @@ export class AiConditionModel {
 
     // 成功技能一次性扣费，与划水计数独立；立即刷新耗尽倍率供同帧输入/快照使用。
     consumeEnergy(cost: number) {
-        if (this._infiniteStamina) return;
+        if (this._infiniteStamina || !Number.isFinite(cost) || cost <= 0) return;
         this._energy = energyAfterCost(this._energy, cost);
         this._energyDepleted = this._energy <= 0;
         this.refreshModifiers();

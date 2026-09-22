@@ -47,6 +47,7 @@ export function zoneForHeartRate(heartRate: number): HeartRateZone {
 // qualityScore = StrokeQualityResult.strokeQuality (0..1).
 // pressureScore = StrokeMetrics.effortScore (0..1).
 export interface StrokeConditionInput {
+    energyCost?: number;
     strokeAccepted: boolean;
     qualityScore: number;
     pressureScore: number;

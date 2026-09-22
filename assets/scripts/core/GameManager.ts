@@ -35,6 +35,7 @@ import {
 import { DEV } from 'cc/env';
 import { GameFlowController } from '../app/GameFlowController';
 import { MusicManager } from '../app/MusicManager';
+import { DraftingController } from '../swimmer/DraftingController';
 import { PlayerConditionModel } from '../condition/PlayerConditionModel';
 import { AiConditionModel } from '../condition/AiConditionModel';
 import { RaceContext } from '../condition/RaceContext';
@@ -106,7 +107,7 @@ import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceFinishResult, RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
-import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isCannonBrawlMode, isEntertainmentBrawlMode, isLitterBrawlMode, isMinefieldBrawlMode, isSharkBrawlMode, isStimulantBrawlMode, isTimedBombBrawlMode, isWhirlpoolBrawlMode, raceDistanceToCourseX, SWIMMER_BALANCE } from './GameBalance';
+import { getRaceModeConfig, getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isCannonBrawlMode, isEntertainmentBrawlMode, isLitterBrawlMode, isMinefieldBrawlMode, isSharkBrawlMode, isStimulantBrawlMode, isTimedBombBrawlMode, isWhirlpoolBrawlMode, raceDistanceToCourseX, SWIMMER_BALANCE } from './GameBalance';
 import { preloadStimulantBrawlModels, StimulantBrawlController } from './StimulantBrawlController';
 import { StrokeSfxManager } from '../app/StrokeSfxManager';
 import { EntertainmentWaterSplashPool } from './EntertainmentWaterSplash';
@@ -357,6 +358,7 @@ export class GameManager extends Component {
     private _entertainmentDirector: EntertainmentModeDirector | null = null;
     private _whirlpoolBrawl: WhirlpoolBrawlController | null = null;
     private _giantWave: GiantWaveController | null = null;
+    private _drafting: DraftingController | null = null;
     private _whirlpoolVisualResources: WhirlpoolVisualResources | null = null;
     private _whirlpoolActivationPreviewPending = false;
     private _whirlpoolActivationPreviewPlayed = false;
@@ -600,6 +602,8 @@ export class GameManager extends Component {
         setRuntimeWhirlpoolSpawns(null);
         this._whirlpoolBrawl?.dispose();
         this._whirlpoolBrawl = null;
+        this._drafting?.dispose();
+        this._drafting = null;
         this._giantWave?.dispose();
         this._giantWave = null;
         this._whirlpoolActivationPreviewPending = false;
@@ -666,6 +670,7 @@ export class GameManager extends Component {
             return;
         }
         const netDt = dt;
+        this.updateDrafting(dt);
         // Deterministic AI: in a net race step the AI on a fixed 33ms clock (raw dt),
         // so the shared-seed AI advance identically on every client (no drift).
         this.driveNetAiFixedStep(dt);
@@ -1216,6 +1221,7 @@ export class GameManager extends Component {
                     this._entertainmentEventBanner.hide();
                     this._sharkLockOnOverlay.hide();
                     this._whirlpoolBrawl?.reset();
+                    this._drafting?.reset();
                     this._giantWave?.reset();
                     this._cannonBrawl?.reset();
                     this._cannonBrawlPresentation?.reset();
@@ -3858,7 +3864,7 @@ export class GameManager extends Component {
                     // 在本步结算后扣除，快照和房主迁移都不携带未消费的计数。
                     const condition = this._aiConditions[i];
                     condition?.setInfiniteStamina(swimmer.motor.ability.infiniteStamina);
-                    condition?.consumeStrokes(swimmer.consumeAiConditionStrokes());
+                    condition?.consumeEnergy(swimmer.consumeAiConditionCost());
                     if (condition) {
                         swimmer.applyConditionSpeedScale(condition.efficiencyModifier);
                         swimmer.applyConditionCadenceScale(condition.strokeCadenceScale);
@@ -4023,6 +4029,8 @@ export class GameManager extends Component {
                         conditionHeartRate: swimmer.heartRate,
                         conditionDepletionCooldown: aiCondition?.depletionCooldownRemaining ?? -1,
                         calmSlushRemaining: swimmer.motor.calmSlushRemaining,
+                        draftingSource: swimmer.draftingSource,
+                        draftingEligible: !!this._drafting?.active && swimmer.draftingEligible,
                     });
                 }
                 this._netRaceController.sendSnapshot(
@@ -4177,6 +4185,7 @@ export class GameManager extends Component {
                 // Applying this every frame would keep resetting the countdown between snapshots.
                 if (applyAiConditionSnapshot && hostTarget) {
                     swimmer.applyNetCalmSlushRemaining(hostTarget.calmSlushRemaining ?? -1);
+                    swimmer.draftingSource = hostTarget.draftingSource ?? -1;
                 }
                 // S| is authoritative for genuine AI condition. Non-host peers also
                 // keep stepping a shadow model, then reconcile it here so a promoted
@@ -4255,6 +4264,8 @@ export class GameManager extends Component {
             conditionEnergyRatio: this._playerCondition.energyRatio,
             conditionHeartRate: player.heartRate,
             calmSlushRemaining: player.motor.calmSlushRemaining,
+            draftingSource: player.draftingSource,
+            draftingEligible: !!this._drafting?.active && player.draftingEligible,
         };
     }
 
@@ -4672,6 +4683,24 @@ export class GameManager extends Component {
         this._gameFlow?.handlePlayerKickStroke(type);
     }
 
+    private updateDrafting(dt: number): void {
+        if (getRaceModeConfig().ruleset === 'standard') {
+            if (this._drafting) {
+                this._drafting.dispose(); this._drafting = null;
+                this._uiController?.raceHudStatus?.setDrafting(false);
+            }
+            return;
+        }
+        const active = this._state === GameState.RACING || this._state === GameState.GLIDING || this._state === GameState.DIVING;
+        if (!this._drafting && active && this._worldRoot) {
+            const swimmers: (Swimmer | null)[] = [];
+            for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) swimmers.push(this.swimmerForLane(lane));
+            this._drafting = new DraftingController(this._worldRoot, swimmers, this._playerLaneIndex,
+                this._netRaceController, COURSE_LAYOUT.waterY);
+        }
+        this._drafting?.update(dt, active);
+    }
+
     private updatePlayerCondition(dt: number) {
         if (this._state !== GameState.RACING) {
             return;
@@ -4713,7 +4742,7 @@ export class GameManager extends Component {
             }
             const progress = raceDistance > 0 ? swimmer.distance / raceDistance : 0;
             this._aiConditions[i].setInfiniteStamina(swimmer.motor.ability.infiniteStamina);
-            this._aiConditions[i].consumeStrokes(swimmer.consumeAiConditionStrokes());
+            this._aiConditions[i].consumeEnergy(swimmer.consumeAiConditionCost());
             this._aiConditions[i].syncHeartRate(swimmer.heartRate);
             this._aiConditions[i].tickAi({
                 difficulty: controller.difficulty,
@@ -5321,6 +5350,7 @@ export class GameManager extends Component {
                 swimmer.ultimate.energy / ULTIMATE_ENERGY_BALANCE.maxEnergy,
                 this._state === GameState.RACING && swimmer.canUseDolphinAbility && swimmer.ultimate.canAffordDolphin,
                 swimmer.motor.ability.infiniteStamina);
+            if (this._drafting) hud.setDrafting(swimmer.draftingSource >= 0 && swimmer.draftingEligible && condition.energyRatio > 0 && !swimmer.motor.ability.infiniteStamina);
         }
         const stroke = hud?.stroke;
         if (stroke?.consumeSample(dt)) {

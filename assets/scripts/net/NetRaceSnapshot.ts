@@ -1,3 +1,4 @@
+import { encodeDraftingState, draftingCode } from './NetDraftingCodec';
 import { encodeCharacterAbility, decodeCharacterAbility } from './NetCharacterAbilityCodec';
 import type { CollisionSoftnessState } from '../swimmer/CollisionSoftnessModel';
 import { encodeCollisionSoftness, decodeCollisionSoftness } from './NetCollisionSoftnessCodec';
@@ -21,13 +22,15 @@ import { encodeCollisionSoftness, decodeCollisionSoftness } from './NetCollision
 //             defer to) the highest-priority (lowest-pos) live host.
 // distCm    = distance in centimetres (round(distance*100))    — race progress
 // latMm     = lane offset in millimetres (round(lateralOffset*1000))
-// fin       = 1 if that lane has finished, else 0
+// fin       = v104 一字符36进制：低位为完赛，余位为水面资格与跟游来源；旧0/1仍可解码。
 // headMrad  = steering heading in milliradians (round(heading*1000)) — facing/weave,
 //             which drifts across JS engines (Math.sin/cos) so must be synced too.
 // headVelMrad = persistent steering angular velocity in milliradians/second.
 // The leading "S|" tag distinguishes snapshots from other broadcast messages.
 
 export interface NetSnapshotEntry {
+    draftingSource?: number;
+    draftingEligible?: boolean;
     abilityState?: Readonly<import('../swimmer/CharacterAbilityState').CharacterAbilitySnapshot>;
     lane: number;
     distance: number;
@@ -251,7 +254,7 @@ export function encodeRaceSnapshot(
     sequence = -1,
 ): string {
     const body = entries
-        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)},${encodeConditionCooldown(e.calmSlushRemaining ?? -1)}`)
+        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${encodeDraftingState(e)},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)},${encodeConditionCooldown(e.calmSlushRemaining ?? -1)}`)
         .join(';');
     const revision = encodeSnapshotRevision(Math.max(0, Math.floor(stimulant?.revision ?? 0)));
     const mask = Math.max(0, Math.floor(stimulant?.collectedMask ?? 0)).toString(16);
@@ -387,7 +390,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             const lane = parseInt(parts[0], 10);
             const distCm = parseInt(parts[1], 10);
             const latMm = parseInt(parts[2], 10);
-            const fin = parts[3] === '1';
+            const fin = (draftingCode(parts[3]) & 1) !== 0;
             const headMrad = parts.length > 4 ? parseInt(parts[4], 10) : 0;
             if (!Number.isFinite(lane) || !Number.isFinite(distCm) || !Number.isFinite(latMm)) {
                 continue;
@@ -421,6 +424,8 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
                 collisionSoftness: decodeCollisionSoftness(parts[15]),
                 abilityState: decodeCharacterAbility(parts[16]),
                 calmSlushRemaining: decodeConditionCooldown(parts.length > 17 ? parseInt(parts[17], 10) : -1),
+                draftingEligible: !fin && draftingCode(parts[3]) >= 2,
+                draftingSource: fin ? -1 : Math.max(-1, Math.floor(draftingCode(parts[3]) / 2) - 2),
             });
         }
     }
@@ -577,7 +582,7 @@ export function encodeSelfSnapshot(
     ownerStateSeq = entry.ownerStateSeq ?? -1,
     ownerPos = entry.ownerPos ?? -1,
 ): string {
-    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeOwnerStateSeq(ownerPos)},${encodeCollisionSoftness(entry.collisionSoftness)},${encodeCharacterAbility(entry.abilityState)},${encodeConditionCooldown(entry.calmSlushRemaining ?? -1)}`;
+    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${encodeDraftingState(entry)},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeOwnerStateSeq(ownerPos)},${encodeCollisionSoftness(entry.collisionSoftness)},${encodeCharacterAbility(entry.abilityState)},${encodeConditionCooldown(entry.calmSlushRemaining ?? -1)}`;
 }
 
 // Returns null if the payload is not a self-position report.
@@ -592,7 +597,7 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
     const lane = parseInt(parts[0], 10);
     const distCm = parseInt(parts[1], 10);
     const latMm = parseInt(parts[2], 10);
-    const fin = parts[3] === '1';
+    const fin = (draftingCode(parts[3]) & 1) !== 0;
     const headMrad = parts.length > 4 ? parseInt(parts[4], 10) : 0;
     if (!Number.isFinite(lane) || !Number.isFinite(distCm) || !Number.isFinite(latMm)) {
         return null;
@@ -628,6 +633,8 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
         collisionSoftness: decodeCollisionSoftness(parts[16]),
         abilityState: decodeCharacterAbility(parts[17]),
         calmSlushRemaining: decodeConditionCooldown(parts.length > 18 ? parseInt(parts[18], 10) : -1),
+        draftingEligible: !fin && draftingCode(parts[3]) >= 2,
+        draftingSource: fin ? -1 : Math.max(-1, Math.floor(draftingCode(parts[3]) / 2) - 2),
     };
 }
 

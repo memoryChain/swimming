@@ -1,5 +1,6 @@
 import { abilityValue } from '../core/CharacterAbilityConfig';
 import type { CharacterAbilitySnapshot } from '../swimmer/CharacterAbilityState';
+import { CONDITION_BALANCE } from '../core/ConditionBalance';
 import { DOLPHIN_JUMP } from '../core/DolphinJumpConfig';
 import { _decorator, Camera, Component, Node, Quat, Tween, Vec3, tween } from 'cc';
 import { CHARACTER_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
@@ -84,6 +85,19 @@ export class Swimmer extends Component {
     private readonly _strokeMetrics = new StrokeMetrics();
     private readonly _pendingConditionInputs: StrokeConditionInput[] = [];
     private _pendingAiConditionStrokes = 0;
+    private _pendingAiConditionCost = 0;
+    /** 累计普通手划成本；补给和技能不改变它。 */
+    settledStrokeEnergy = 0;
+    get draftingEpoch(): number { return this._netSnappedAtMs; }
+    draftingSource = -1;
+    draftingTargetZ: number | null = null;
+    draftingTargetSpeed = 0;
+    get draftingEligible(): boolean {
+        return this._motor.isRacing && this.node.active && !this._entertainmentKnocked
+            && !this._phases.isFlipTurnActive && !this._phases.isDolphinJumpActive
+            && !this._phases.isUnderwater && this._motor.ability.depth <= 0.2
+            && this.distance < getRaceDistance();
+    }
     private readonly _ultimate = new UltimateEnergyModel();
     private _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT;
     private readonly _phases = new SwimmerRacePhases(this);
@@ -1230,6 +1244,10 @@ export class Swimmer extends Component {
         this._pendingRhythmResults.length = 0;
         this._pendingConditionInputs.length = 0;
         this._pendingAiConditionStrokes = 0;
+        this._pendingAiConditionCost = 0;
+        this.settledStrokeEnergy = 0;
+        this.draftingSource = -1;
+        this.draftingTargetZ = null;
         this._ultimate.reset();
         this._strokeMetrics.reset();
         this.node.setPosition(this.divePlatformPosition());
@@ -1305,8 +1323,11 @@ export class Swimmer extends Component {
         }
         this._maxStrokeQualityCombo = Math.max(this._maxStrokeQualityCombo, this._strokeQualityCombo);
         this._ultimate.addStrokeRating(rating, this._strokeQualityCombo);
+        const energyCost = strokeQualityResult.energyCost ?? CONDITION_BALANCE.energy.drainPerStroke;
+        this.settledStrokeEnergy += energyCost;
         if (!this.isAI) {
             this._pendingConditionInputs.push({
+                energyCost,
                 strokeAccepted: true,
                 qualityScore: strokeQualityResult.strokeQuality,
                 pressureScore: this._strokeMetrics.effortScore,
@@ -1315,6 +1336,7 @@ export class Swimmer extends Component {
         } else if (!this.collisionRemoteHuman) {
             // AI 只累计数字，避免逐划创建 condition 输入对象。
             this._pendingAiConditionStrokes += 1;
+            this._pendingAiConditionCost += energyCost;
         }
         const result = rhythmResultFromStrokeQuality(strokeQualityResult, this._strokeQualityCombo);
         result.strokeSide = type;
@@ -1751,8 +1773,16 @@ export class Swimmer extends Component {
         this._motor.setConditionCadenceScale(scale);
     }
 
+    consumeAiConditionCost(): number {
+        const cost = this._pendingAiConditionCost;
+        this._pendingAiConditionCost = 0;
+        this._pendingAiConditionStrokes = 0;
+        return cost;
+    }
+
     consumeAiConditionStrokes(): number {
         const count = this._pendingAiConditionStrokes;
+        this._pendingAiConditionCost = 0;
         this._pendingAiConditionStrokes = 0;
         return count;
     }

@@ -37,6 +37,19 @@ function fixture(reservedRatio=0){
 function find(n,name){if(n.name===name)return n;for(const c of n.children){const f=find(c,name);if(f)return f;}}
 function count(n){return 1+n.children.reduce((s,c)=>s+count(c),0);}
 function update(h,charge=1,can=true){h.updateValues(2.37,182,true,.72,20,200,charge,can);}
+
+test('跟游提示只变更显隐，耗尽优先，隐藏和重新打开不残留，反复切换不重建',()=>{
+ const {hud}=fixture();hud.setVisible(true);update(hud);
+ const label=find(hud.root,'DraftingState'),nodes=count(hud.root);
+ hud.setDrafting(true);assert.equal(label.active,true);
+ const before=writes;for(let i=0;i<30;i++)hud.setDrafting(true);
+ assert.equal(writes,before);assert.equal(count(hud.root),nodes);
+ hud.updateValues(2,120,false,0,20,200,0,false);assert.equal(label.active,false);
+ hud.setDrafting(true);assert.equal(label.active,false);
+ update(hud);hud.setDrafting(true);assert.equal(label.active,true);
+ hud.setVisible(false);assert.equal(label.active,false);hud.setDrafting(true);assert.equal(label.active,false);
+ hud.setVisible(true);assert.equal(label.active,false);assert.equal(count(hud.root),nodes);
+});
 function roster(){return Array.from({length:8},(_,i)=>({swimmer:{id:i},avatarId:`avatar${i}`}));}
 function rows(entries,self=5){return entries.map((e,i)=>({swimmer:e.swimmer,isPlayer:i===self,placement:i+1}));}
 

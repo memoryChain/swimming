@@ -68,6 +68,7 @@ export class RaceHudStatusView {
     private readonly heartValue: Label;
     private readonly energyValue: Label;
     private readonly energyState: Label;
+    private readonly draftingState: Label;
     private readonly energyIcon: Sprite;
     private readonly energyIconOpacity: UIOpacity;
     private readonly energyTrack: Sprite;
@@ -133,6 +134,9 @@ export class RaceHudStatusView {
         this.energyState = this.label(readouts, 'EnergyState', '体力耗尽', 118, 203, 84, 22, 15.3);
         this.energyState.color = RED;
         this.energyState.node.active = false;
+        this.draftingState = this.label(readouts, 'DraftingState', '跟游省力', 118, 203, 84, 22, 15.3);
+        this.draftingState.color = CYAN;
+        this.draftingState.node.active = false;
         this.distance = this.label(this.top, 'Distance', '200 m', -232, 32, 53, 25, 14.5, true, 'right');
         this.sprite(this.top, 'ProgressTrack', 'progress', -173, 39, 399, 12, COURSE_TRACK);
         this.progress = this.sprite(this.top, 'ProgressFill', 'progress', -173, 39, 399, 12, CYAN);
@@ -233,7 +237,7 @@ export class RaceHudStatusView {
         if (visible) this.entrance.play();
         else this.entrance.reset();
         this.elapsed = 0.1;
-        if (!visible) { this.setReady(false); }
+        if (!visible) { this.setReady(false); this.active(this.draftingState.node, false); }
     }
     /** 先门控再读取/格式化数据，UI 节流不影响玩法和网络。 */
     consumeSample(dt: number): boolean {
@@ -323,9 +327,15 @@ export class RaceHudStatusView {
             });
         }
     }
+    setDrafting(active: boolean): void {
+        if (!this.root.activeInHierarchy) return;
+        this.active(this.draftingState.node, active && !this.energyDepleted);
+    }
+
     private setEnergyDepleted(depleted: boolean) {
         if (this.energyDepleted === depleted) return;
         this.energyDepleted = depleted;
+        if (depleted) this.active(this.draftingState.node, false);
         this.energyPulsePhase = 0;
         if (this.energyIconOpacity.opacity !== 255) this.energyIconOpacity.opacity = 255;
         this.active(this.energyState.node, depleted);

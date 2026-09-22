@@ -1,5 +1,6 @@
 import { CHARACTER_ABILITY_TUNING } from './CharacterAbilityConfig';
 import { GIANT_WAVE_TUNING } from './GiantWaveRules';
+import { DRAFTING_TUNING } from '../swimmer/DraftingRules';
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
 import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
@@ -336,6 +337,23 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('strokeQuality.armCycleHighSpeedPerSecond', '高速划水轮速', '速度达到“顶速速度”后手臂划水每秒的圈数（上限）。越高=高速时一圈越快，甜区的实际时间窗口越短（越难打）。', () => STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond, (v) => STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond = v, 0.05, 1, 6, 2),
             control('strokeQuality.armCycleSpeedStart', '起爬速度', '低于这个速度时轮速恒为下限；到达后才开始随速度加快。单位 m/s。', () => STROKE_QUALITY_TUNING.armCycleSpeedStart, (v) => STROKE_QUALITY_TUNING.armCycleSpeedStart = v, 0.1, 0, 6, 2, 'm/s'),
             control('strokeQuality.armCycleSpeedFull', '顶速速度', '到达这个速度时轮速升到上限；再快也不变。应大于“起爬速度”。单位 m/s。', () => STROKE_QUALITY_TUNING.armCycleSpeedFull, (v) => STROKE_QUALITY_TUNING.armCycleSpeedFull = v, 0.1, 0.1, 8, 2, 'm/s'),
+        ],
+    },
+    {
+        name: '尾迹跟游',
+        controls: [
+            control('drafting.enabled', '启用尾迹跟游', '仅狂野和娱乐模式。关闭后不再产生新的跟游折扣。', () => Number(DRAFTING_TUNING.enabled), v => DRAFTING_TUNING.enabled = v >= 0.5, 1, 0, 1, 0),
+            control('drafting.visuals', '显示尾迹水纹', '仅切换水纹显示，不改变体力判定。用于性能对照。', () => Number(DRAFTING_TUNING.visuals), v => DRAFTING_TUNING.visuals = v >= 0.5, 1, 0, 1, 0),
+            control('drafting.energySavingRatio', '跟游节省体力', '普通手划起手时锁定折扣，海豚技能不打折。', () => DRAFTING_TUNING.energySavingRatio, v => DRAFTING_TUNING.energySavingRatio = v, 0.05, 0, 0.5, 2),
+            control('drafting.minDistance', '尾迹安全起点', '沿路径距领游者中心的米数，应大于身体接触距离。', () => DRAFTING_TUNING.minDistance, v => DRAFTING_TUNING.minDistance = v, 0.1, 1.9, 3, 1),
+            control('drafting.maxDistance', '尾迹最远距离', '沿真实游动路径计算，并同时受尾迹年龄约束。', () => DRAFTING_TUNING.maxDistance, v => DRAFTING_TUNING.maxDistance = v, 0.5, 3.5, 7, 1),
+            control('drafting.width', '尾迹总宽', '跟游有效路径带的总宽度，单位米。', () => DRAFTING_TUNING.width, v => DRAFTING_TUNING.width = v, 0.1, 0.6, 2.4, 1),
+            control('drafting.maxAge', '尾迹保留秒数', '有限采样缓存中的旧路径超过该时间失效。', () => DRAFTING_TUNING.maxAge, v => DRAFTING_TUNING.maxAge = v, 0.1, 1, 3, 1),
+            control('drafting.startSpeed', '开始生成速度', '水面向前游动超过此速度才开始生成。', () => DRAFTING_TUNING.startSpeed, v => DRAFTING_TUNING.startSpeed = v, 0.1, 0.8, 1.5, 1),
+            control('drafting.stopSpeed', '停止生成速度', '低于此值不再补充尾迹，已有尾迹短暂消散。', () => DRAFTING_TUNING.stopSpeed, v => DRAFTING_TUNING.stopSpeed = v, 0.1, 0.1, 0.7, 1),
+            control('drafting.enterSeconds', '进入确认秒数', '稳定进入后才可享受下一划折扣。', () => DRAFTING_TUNING.enterSeconds, v => DRAFTING_TUNING.enterSeconds = v, 0.05, 0.05, 0.5, 2),
+            control('drafting.exitSeconds', '退出记忆秒数', '短暂擦边时保留跟随来源，真正起划仍检查是否在有效区。', () => DRAFTING_TUNING.exitSeconds, v => DRAFTING_TUNING.exitSeconds = v, 0.05, 0, 0.3, 2),
+            control('drafting.residueSeconds', '停止消散秒数', '停止前进后的残留上限，潜水和急救会直接切断。', () => DRAFTING_TUNING.residueSeconds, v => DRAFTING_TUNING.residueSeconds = v, 0.1, 0.1, 0.6, 1),
         ],
     },
     {

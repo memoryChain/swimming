@@ -252,6 +252,73 @@ function sendPosition(sender, distance, conditionEnergyRatio = .5) {
     return broadcasts.at(-1);
 }
 
+function draftingEntry(lane, source = 0) {
+    return { lane, distance: 20, lateral: 0, finished: false, heading: 0, headingVelocity: 0,
+        speed: 2.5, energy: 40, axialRoll: 0, axialRollVelocity: 0,
+        collisionPitch: 0, collisionPitchVelocity: 0, conditionEnergyRatio: .8,
+        conditionHeartRate: 100, draftingSource: source, draftingEligible: true };
+}
+
+test('尾迹真人状态跨可靠帧和广播去重，重复包不续期，离房后迟到包不复活', () => {
+    const { encodeSelfSnapshot } = load('assets/scripts/net/NetRaceSnapshot.ts');
+    const originalNow = Date.now;
+    let now = originalNow();
+    Date.now = () => now;
+    try {
+        for (const reliableFirst of [false, true]) {
+            const receiver = net();
+            let conditions = 0;
+            const swimmer = { draftingSource: -1 };
+            receiver.registerRemote(0, 0, { swimmer, applyEvents() {}, applyOwnerCondition() { conditions++; } });
+            const accepted = draftingEntry(0, 2);
+            const broadcast = e => receiver.onBroadcast(wire(encodeSelfSnapshot(e, 10, 0)));
+            const reliable = e => receiveFrame(receiver, { frameId: 1, items: [encodeInputFrame(0, [], e, 10, 10)] });
+            try {
+                if (reliableFirst) reliable(accepted); else broadcast(accepted);
+                assert.equal(receiver.draftingSnapshot(0, true).draftingSource, 2);
+                assert.equal(swimmer.draftingSource, 2);
+                now += 701;
+                if (reliableFirst) broadcast(accepted); else reliable(accepted);
+                assert.equal(conditions, 1);
+                assert.equal(receiver.draftingSnapshot(0, true), null);
+                receiver.onBroadcast(wire(encodeSelfSnapshot({ ...accepted, draftingEligible: false }, 11, 0)));
+                assert.equal(swimmer.draftingSource, -1);
+                broadcast(accepted);
+                assert.equal(receiver.draftingSnapshot(0, true).draftingEligible, false);
+                receiver.onBroadcast(wire('Q|0'));
+                receiver.onBroadcast(wire(encodeSelfSnapshot(accepted, 12, 0)));
+                assert.equal(receiver.draftingSnapshot(0, true), null);
+                assert.equal(conditions, 2);
+            } finally { receiver.dispose(); }
+        }
+    } finally { Date.now = originalNow; }
+});
+
+test('尾迹AI状态拒绝过期和重复续期，迁移后旧房主快照不再提供来源', () => {
+    const originalNow = Date.now;
+    let now = originalNow();
+    Date.now = () => now;
+    const sender = hostSnapshotSender(), receiver = net();
+    try {
+        sender.sendSnapshot([draftingEntry(3)]);
+        const old = broadcasts.at(-1);
+        receiver.onBroadcast(old);
+        assert.equal(receiver.draftingSnapshot(3, false).draftingSource, 0);
+        now += 701;
+        receiver.onBroadcast(old);
+        assert.equal(receiver.draftingSnapshot(3, false), null);
+        sender.sendSnapshot([draftingEntry(3)]);
+        receiver.onBroadcast(broadcasts.at(-1));
+        assert.equal(receiver.draftingSnapshot(3, false).draftingSource, 0);
+        receiver.onRoomInfoChange({ members: [{ pos: 1 }] });
+        assert.equal(receiver.isHost, true);
+        assert.equal(receiver.draftingSnapshot(3, false), null);
+        sender.sendSnapshot([draftingEntry(3)]);
+        receiver.onBroadcast(broadcasts.at(-1));
+        assert.equal(receiver.draftingSnapshot(3, false), null);
+    } finally { receiver.dispose(); sender.dispose(); Date.now = originalNow; }
+});
+
 test('房主位置快照乱序和重复不能回拨位置、体力或重复调用玩法监听', () => {
     const sender = hostSnapshotSender();
     const receiver = net();

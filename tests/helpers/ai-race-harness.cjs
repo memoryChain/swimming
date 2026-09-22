@@ -57,7 +57,7 @@ function createAiHarness() {
             body.applyConditionCadenceScale(condition.strokeCadenceScale);
             ai.stepSimulation(dt);
             body.stepSimulation(dt);
-            condition.consumeStrokes(body.consumeAiConditionStrokes());
+            condition.consumeEnergy(body.consumeAiConditionCost());
             // 正式流程会消费反馈；测试也不积压结果队列。
             body.consumeRhythmResults();
         }

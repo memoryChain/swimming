@@ -1,10 +1,10 @@
 import { _decorator, Component } from 'cc';
+import { CONDITION_BALANCE } from '../core/ConditionBalance';
 import { getRaceDistance, isRaceSteeringEnabled } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { DOLPHIN_JUMP } from '../core/DolphinJumpConfig';
 import { abilityValue } from '../core/CharacterAbilityConfig';
-import { CONDITION_BALANCE } from '../core/ConditionBalance';
 import { AI_STROKE_TUNING, AI_DOLPHIN_TUNING } from '../competitor/CompetitorConfig';
 import { AI_CHARACTER_STRATEGIES, intelligenceForDifficulty } from '../competitor/AiRaceConfig';
 import { AiRaceObservation, AiRacePlanner } from '../competitor/AiRacePlanner';
@@ -65,6 +65,7 @@ export class AISwimmerController extends Component {
     private _kickClock = 0;
     private _strokeDistance = 0;
     private _strokeEnergy = 0;
+    private _strokeCostAtPress = 0;
     private _lastStrokeStart = -10;
     private _clock = 0;
     private _targetZ: number | null = null;
@@ -273,6 +274,9 @@ export class AISwimmerController extends Component {
                 this._targetZ = clamp(otherZ + direction * 1.5, -halfWidth + 0.8, halfWidth - 0.8);
             }
         }
+        if (b.draftingTargetZ !== null && this.planner.action !== 'sprint'
+            && s.energy < s.energyTotal * 0.85 && !s.infiniteStamina
+            && s.speed <= b.draftingTargetSpeed + 0.3) this._targetZ = b.draftingTargetZ;
         const eventTarget = this.resolveEventTargetZ();
         if (eventTarget !== null) this._targetZ = eventTarget;
     }
@@ -347,6 +351,7 @@ export class AISwimmerController extends Component {
         this._lastStrokeStart = this._clock;
         this._strokeDistance = this.swimmer.distance;
         this._strokeEnergy = this.condition?.energy ?? this.energyTotal;
+        this._strokeCostAtPress = this.swimmer.settledStrokeEnergy;
         const center = (STROKE_QUALITY_TUNING.perfectStart + STROKE_QUALITY_TUNING.perfectEnd) * 0.5;
         const skill = this.intelligence;
         const sigma = skill.timingSigma * (AI_STROKE_TUNING.timingSigmaLow / 0.12);
@@ -384,11 +389,13 @@ export class AISwimmerController extends Component {
         if (progress >= 0) b.handleStrokeHeld(this._side, false);
         const distance = b.distance - this._strokeDistance;
         const energy = this.condition?.energy ?? this.energyTotal;
-        // 仅普通划水样本估算每米成本，跳跃与折返被阶段锁排除。至少一划成本，避开结算时序偏差。
+        // 跟游使用真实手划账本；未启用跟游的标准模式保留原预算路径。
         if (distance > 0.1 && !b.isUnderwater) {
-            const cost = Math.max(CONDITION_BALANCE.energy.drainPerStroke, this._strokeEnergy - energy);
+            const cost = b.motor.strokeCostScale
+                ? b.settledStrokeEnergy - this._strokeCostAtPress
+                : Math.max(CONDITION_BALANCE.energy.drainPerStroke, this._strokeEnergy - energy);
             const sample = clamp(cost / Math.max(0.3, distance + b.currentSpeed * (this.intelligence.gap + STROKE_QUALITY_TUNING.minHoldSeconds)), 0.25, 2.5);
-            this._observation.strokeCostPerMeter += (sample - this._observation.strokeCostPerMeter) * 0.12;
+            if (cost > 0) this._observation.strokeCostPerMeter += (sample - this._observation.strokeCostPerMeter) * 0.12;
         }
         this._nextSide = opposite(this._side);
         const skill = this.intelligence;

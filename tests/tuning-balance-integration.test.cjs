@@ -713,17 +713,18 @@ test('真实泳者结算分别投递玩家和 AI 消耗，远端真人不重复�
     const file=path.join(h.root,'assets/scripts/entity/Swimmer.ts');
     const source=ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
     const decl=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='Swimmer');
-    const names=['makeStrokeQualityResult','consumeAiConditionStrokes','consumeConditionInputs'];
+    const names=['makeStrokeQualityResult','consumeAiConditionStrokes','consumeAiConditionCost','consumeConditionInputs'];
     const members=decl.members.filter(n=>names.includes(n.name?.getText(source)));
     assert.equal(members.length,names.length);
     const js=ts.transpileModule(`class Settlement { ${members.map(n=>n.getText(source)).join('\n')} }`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
     const C=require('node:vm').runInNewContext(js+';Settlement',{
         ...h.loadModule('core/StrokeQualityScoring'),...h.loadModule('core/GameConstants'),
+        ...h.loadModule('core/ConditionBalance'),
     });
     for (const identity of ['player','ai','remote']) {
         const body=new C();Object.assign(body,{isAI:identity!=='player',collisionRemoteHuman:identity==='remote',
             _phases:{isUnderwater:false},_ultimate:{addStrokeRating(){}},_strokeMetrics:{effortScore:1},
-            _pendingAiConditionStrokes:0,_pendingConditionInputs:[],_strokeQualityCombo:0,
+            _pendingAiConditionStrokes:0,_pendingAiConditionCost:0,settledStrokeEnergy:0,_pendingConditionInputs:[],_strokeQualityCombo:0,
             _maxStrokeQualityCombo:0,_perfectStrokeQualityCount:0,_goodStrokeQualityCount:0,_missStrokeQualityCount:0});
         assert.equal(body.makeStrokeQualityResult('left',null),null);
         for (const quality of [0,.5,1]) body.makeStrokeQualityResult('left',{strokeQuality:quality,type:'left',holdSeconds:.4});
@@ -735,6 +736,11 @@ test('真实泳者结算分别投递玩家和 AI 消耗，远端真人不重复�
             const {PlayerConditionModel}=h.loadModule('condition/PlayerConditionModel');const condition=new PlayerConditionModel();
             for(const input of inputs) condition.updateFromStroke(input);assert.equal(condition.energy,97);
         }
+        for (const quality of [0,.5,1]) body.makeStrokeQualityResult('left',{strokeQuality:quality,type:'left',holdSeconds:.4,energyCost:.85});
+        assert.ok(Math.abs(body.consumeAiConditionCost()-(identity==='ai'?2.55:0))<1e-8);
+        assert.equal(body.consumeAiConditionCost(),0);
+        assert.equal(body.consumeAiConditionStrokes(),0);
+        for(const input of body.consumeConditionInputs()) assert.equal(input.energyCost,.85);
     }
 });
 
