@@ -2,16 +2,15 @@
   "date": "2026-09-22",
   "models": {
     "WaterBallCannon": {
-      "bytes": 71528,
-      "sha256": "ca95a27f5caf3aef7ca8ad25d1f1c34658fe679ae787ca3a555f8ac546c1e24e",
+      "bytes": 84896,
+      "sha256": "6289df3b132b16552fe3490837109c1917299d2063d16819eebcbe237cfdbde1",
       "meshes": 2,
       "materials": 1,
       "textures": 0,
-      "triangles": 1012,
+      "triangles": 1332,
       "nodes": [
         "CannonBase",
         "CannonNozzle",
-        "Muzzle",
         "WaterBallCannon"
       ],
       "imported": true,
@@ -35,6 +34,22 @@
       "importer": "gltf",
       "subResources": 4,
       "uuid": "4513d5fd-af7a-47a1-9a4e-ea76dc01d37c"
+    },
+    "CannonWaterBall": {
+      "bytes": 53140,
+      "sha256": "7e5425c6c6b39d64f45712bf05f3d9eef597a23d5808aa9e85f5eabf978c20e9",
+      "meshes": 1,
+      "materials": 1,
+      "textures": 0,
+      "triangles": 720,
+      "nodes": [
+        "WaterBallSurface",
+        "CannonWaterBall"
+      ],
+      "imported": true,
+      "importer": "gltf",
+      "subResources": 3,
+      "uuid": "cd4e2d85-307f-49eb-80f5-25f69df3049d"
     }
   },
   "icons": {
@@ -50,14 +65,14 @@
       "borderMax": 0,
       "bounds": [
         58,
-        47,
+        35,
         219,
         208
       ],
-      "bytes": 54247,
+      "bytes": 54202,
       "uuid": "a92d81e3-1f73-4c6f-a320-6f1d00d1d107",
       "uuidPreserved": true,
-      "byteDelta": 47474,
+      "byteDelta": -45,
       "sourceMatches": true
     },
     "mine": {
@@ -79,18 +94,19 @@
       "bytes": 62183,
       "uuid": "550b2b21-d173-4d5c-af32-bc469faa3ff5",
       "uuidPreserved": true,
-      "byteDelta": 55799,
+      "byteDelta": 0,
       "sourceMatches": true
     }
   },
   "sourceRuntimeEquality": {
     "WaterBallCannon": true,
-    "SprayBuoy": true
+    "SprayBuoy": true,
+    "CannonWaterBall": true
   },
-  "codeBytes": 87705,
+  "codeBytes": 172768,
   "engineVisual": "待验",
   "devices": "待验",
-  "rawAssetByteDelta": 287031,
+  "rawAssetByteDelta": 250221,
   "sound": {
     "source": "本项目确定性原创合成，无外部录音",
     "recipe": "build_pop_sound.py",

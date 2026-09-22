@@ -11,17 +11,21 @@ async function main(){
     const evaluate=async expression=>{const r=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value};
     const report=[];
     try{
-        for(const kind of ['cannon','buoy']){
+        for(const kind of process.argv.includes('--cannon')?['cannon']:['cannon','buoy']){
             await call('Page.navigate',{url:'http://127.0.0.1:8770/'+kind+'-review.html'});
             for(let n=0;n<40;n++){
                 const ready=await evaluate(`typeof window.setReviewState === 'function' && window.reviewState?.kind === '${kind}'`);
                 if(ready)break;if(n===39)throw Error('页面未就绪');await new Promise(r=>setTimeout(r,100));
             }
-            const checks=await evaluate(`(()=>{const rows=[];for(const angle of [0,1,2])for(const time of ${JSON.stringify(kind==='cannon'?[0,1,1.9,2.05,2.5,3.3,4.6,5.8]:[0,.3,.8,1.6,3.05,3.25,4.2])})rows.push(window.setReviewState({angle,time}));return {rows,webglError:document.getElementById('main').getContext('webgl').getError(),external:performance.getEntriesByType('resource').filter(r=>!r.name.startsWith('data:')).map(r=>r.name)}})()`);
+            const checks=await evaluate(`(()=>{const rows=[];for(const angle of ${kind==='cannon'?'[0,1,2,3]':'[0,1,2]'})for(const time of ${JSON.stringify(kind==='cannon'?[0,1,1.9,2.05,2.5,3.3,4.6,5.8]:[0,.3,.8,1.6,3.05,3.25,4.2])})rows.push(window.setReviewState({angle,time}));return {rows,webglError:document.getElementById('main').getContext('webgl').getError(),external:performance.getEntriesByType('resource').filter(r=>!r.name.startsWith('data:')).map(r=>r.name)}})()`);
             if(checks.webglError!==0)throw Error('WebGL 错误');
             if(checks.external.length)throw Error('预览不自包含：'+checks.external.join(','));
             await evaluate(`window.setReviewState({angle:0,time:${kind==='cannon'?2.5:3.05}})`);
             const shot=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(__dirname,'offline-'+kind+'.png'),Buffer.from(shot.data,'base64'));
+            if(kind==='cannon'){
+                await evaluate(`window.setReviewState({angle:3,time:2.05})`);
+                const detail=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(__dirname,'offline-cannon-nozzle.png'),Buffer.from(detail.data,'base64'));
+            }
             if(kind==='buoy'){
                 for(const [name,time] of [['ready',1.8],['pop',3],['spent',3.15]]){
                     await evaluate(`window.setReviewState({angle:0,time:${time}})`);
@@ -39,8 +43,8 @@ async function main(){
             const mobile=await evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth})');if(mobile.scroll>mobile.width)throw Error('窄屏横向溢出');
             await call('Emulation.clearDeviceMetricsOverride');report.push({kind,...checks,mobile});
         }
-        fs.writeFileSync(path.join(__dirname,'browser-audit.json'),JSON.stringify({date:'2026-09-22',note:'独立浏览器离线检查；非 Creator／微信真机',results:report},null,2)+'\n');
-        console.log('离线页面三角度／全状态、WebGL、零外部资源和 360px 宽度检查通过。');
+        fs.writeFileSync(path.join(__dirname,process.argv.includes('--cannon')?'cannon-elevation-browser-audit.json':'browser-audit.json'),JSON.stringify({date:'2026-09-22',note:'独立浏览器离线检查；非 Creator／微信真机',results:report},null,2)+'\n');
+        console.log('离线页面多角度／全状态、WebGL、零外部资源和 360px 宽度检查通过。');
     }finally{await call('Emulation.clearDeviceMetricsOverride');ws.close()}
 }
 main().catch(e=>{console.error(e.message);process.exitCode=1});

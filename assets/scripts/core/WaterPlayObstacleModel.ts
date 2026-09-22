@@ -2,7 +2,10 @@ import { Color, instantiate, Material, Mesh, MeshRenderer, Node, primitives, uti
 import { findNode, loadSwimmerPrefab, setLayerRecursive } from '../character/CharacterModelLoader';
 import { WATER_PLAY_GEOMETRY } from './WaterPlayObstacleGeometry';
 
-export const WATER_CANNON_MUZZLE = { x: 0, y: 1.04, z: 1.02 } as const;
+export const WATER_CANNON_PIVOT = { x: 0, y: 1.04, z: 0 } as const;
+/** 喷管局部端面；须经喷管的仰角与炮台水平朝向变换。 */
+export const WATER_CANNON_MUZZLE = { x: 0, y: 0, z: 1.02 } as const;
+export const WATER_CANNON_REST_PITCH = 40;
 export const SPRAY_BUOY_NOZZLE_HEIGHT = 0.25;
 export const SPRAY_BUOY_TETHER_ANCHOR = { x: -0.32, y: 0.195, z: 0.05 } as const;
 

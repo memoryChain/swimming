@@ -2,6 +2,7 @@
 from pathlib import Path
 import sys,json,math,shutil,argparse
 import bpy
+from mathutils import Vector
 SOURCE=Path(__file__).resolve().parent
 ROOT=SOURCE.parents[1]
 sys.path.insert(0,str(SOURCE))
@@ -11,23 +12,43 @@ BLUE=(.04,.38,.82,1);WHITE=(.9,.97,1,1);ORANGE=(1,.38,.035,1)
 CYAN=(.04,.7,.78,1);DARK=(.035,.18,.32,1);LIME=(.7,.94,.14,1)
 
 def cannon(root,mat):
-    # 主体比例：底座宽 1.70m／总高 1.47m；短喷头长 0.97m，固定底座无炮轮。
+    # 厚实底座宽 1.70m，喷管绕 1.04m 高横轴抬头；默认仰角 40°。
     base=Builder()
     base.lathe([(0,.65),(.07,.85),(.31,.85),(.42,.7)], [BLUE,BLUE,WHITE],ellipse=.86)
-    base.lathe([(.38,.4),(.52,.35),(.84,.27)],WHITE)
+    base.lathe([(.38,.4),(.52,.35),(.65,.27)],WHITE)
     # 橙色防滑踏面与底座上表面重叠 0.015m。
     base.lathe([(.405,.63),(.445,.59)],ORANGE,ellipse=.86)
+    for side in [-1,1]:
+        # 两侧短支座与底面重叠 0.04m，顶部包住圆钝横轴端盖。
+        base.lathe([(.38,.16),(.53,.14),(1.04,.13)],WHITE,center=(side*.43,0,0),segments=12)
+        start=len(base.vertices)
+        base.lathe([(.30,.14),(.45,.20),(.54,.20),(.58,.14)],[BLUE,ORANGE,WHITE],axis='z',segments=12)
+        for i in range(start,len(base.vertices)):
+            x,y,z=base.vertices[i];base.vertices[i]=(side*z,1.04+y,x)
     a=base.object('CannonBase',mat,root)
     head=Builder()
-    head.lathe([(-.38,.11),(-.31,.34),(-.1,.43),(.15,.39),(.33,.3)],BLUE,center=(0,1.04,0),axis='z')
+    head.lathe([(-.38,.11),(-.31,.34),(-.1,.43),(.15,.39),(.33,.3)],BLUE,axis='z')
     # 白色喷管插入蓝色壳体 0.11m；橙色软口与管身交叠 0.04m。
-    head.lathe([(.22,.265),(.38,.28),(.75,.24),(.89,.27)],WHITE,center=(0,1.04,0),axis='z')
-    head.lathe([(.85,.27),(.91,.32),(.98,.32),(1.02,.26),(1.02,.17),(.87,.17)],ORANGE,center=(0,1.04,0),axis='z')
-    head.lathe([(.885,.17),(.90,.17)],DARK,center=(0,1.04,0),axis='z')
+    head.lathe([(.22,.265),(.38,.28),(.75,.29),(.89,.31)],WHITE,axis='z')
+    head.lathe([(.85,.31),(.91,.36),(.98,.36),(1.02,.32),(1.02,.275),(.87,.275)],ORANGE,axis='z')
+    head.lathe([(.885,.275),(.90,.275)],DARK,axis='z')
     b=head.object('CannonNozzle',mat,root)
+    b.location=(0,0,1.04);b.rotation_euler.x=math.radians(-40)
     # 喷口锚点是可见开口端面中心，运行时从同一坐标发球。
-    anchor=bpy.data.objects.new('Muzzle',None);bpy.context.scene.collection.objects.link(anchor);anchor.parent=root;anchor.location=(0,-1.02,1.04)
-    return [a,b], {'muzzle':[0,1.04,1.02],'contacts':{'pedestalBaseOverlap':.04,'pedestalHeadVerticalOverlap':.23,'nozzleBodyOverlap':.11,'rimPipeOverlap':.04,'mouthInsetClearance':.01}}
+    anchor=bpy.data.objects.new('Muzzle',None);bpy.context.scene.collection.objects.link(anchor);anchor.parent=b;anchor.location=(0,-1.02,0)
+    # 源颜色带轻量切面明暗，游戏无光照材质也能读出喷管与底座体积。
+    light=Vector((-.45,-.65,.8)).normalized()
+    for obj in [a,b]:
+        colors=obj.data.color_attributes.active_color
+        for polygon in obj.data.polygons:
+            normal=obj.rotation_euler.to_matrix()@polygon.normal
+            shade=.65+.35*max(0,normal.dot(light))
+            for loop in polygon.loop_indices:
+                r,g,b0,alpha=colors.data[loop].color
+                colors.data[loop].color=(r*shade,g*shade,b0*shade,alpha)
+    nodes=mat.node_tree.nodes;vertex=next(n for n in nodes if n.type=='VERTEX_COLOR')
+    emission=nodes.new('ShaderNodeEmission');mat.node_tree.links.new(vertex.outputs['Color'],emission.inputs['Color']);mat.node_tree.links.new(emission.outputs[0],nodes.get('Material Output').inputs['Surface'])
+    return [a,b], {'pivot':[0,1.04,0],'muzzleInNozzle':[0,0,1.02],'restPitchDegrees':40,'mouthRadius':.275,'contacts':{'pedestalBaseOverlap':.04,'supportBaseOverlap':.04,'pivotCapInnerX':.30,'pivotCapOuterX':.58,'supportCenterX':.43,'pivotHeight':1.04,'nozzleBodyOverlap':.11,'rimPipeOverlap':.04,'mouthInsetClearance':.01}}
 
 def buoy(root,mat):
     from buoy_recipe import build_buoy
@@ -36,8 +57,8 @@ def buoy(root,mat):
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--only',choices=['WaterBallCannon','SprayBuoy'])
     args=parser.parse_args(sys.argv[sys.argv.index('--')+1:] if '--' in sys.argv else [])
-    reports=json.loads((SOURCE/'asset-audit.json').read_text(encoding='utf-8')) if args.only else {}
-    fallback=json.loads((SOURCE/'geometry.json').read_text(encoding='utf-8')) if args.only else {}
+    reports=json.loads((SOURCE/'asset-audit.json').read_text(encoding='utf-8')) if (SOURCE/'asset-audit.json').exists() else {}
+    fallback=json.loads((SOURCE/'geometry.json').read_text(encoding='utf-8')) if (SOURCE/'geometry.json').exists() else {}
     for name,recipe in [('WaterBallCannon',cannon),('SprayBuoy',buoy)]:
         if args.only and name!=args.only:continue
         bpy.ops.wm.read_factory_settings(use_empty=True);bpy.context.preferences.filepaths.save_version=0
@@ -56,8 +77,9 @@ def main():
         if name=='WaterBallCannon':
             for frame,y in [(1,-4.2),(37,0),(90,0),(114,-4.2)]:
                 root.location.y=y;root.keyframe_insert('location',frame=frame)
-            for frame,y in [(45,0),(47,.1),(51,0)]:
-                objects[1].location.y=y;objects[1].keyframe_insert('location',frame=frame)
+            for frame,recoil in [(45,0),(47,-.1),(51,0)]:
+                objects[1].location=(0,-recoil*math.cos(math.radians(40)),1.04+recoil*math.sin(math.radians(40)))
+                objects[1].keyframe_insert('location',frame=frame)
             root.animation_data.action.name='E_Cannon_Entry_Ready_Exit'
             objects[1].animation_data.action.name='E_Cannon_Soft_Recoil'
             scene.frame_set(40)

@@ -2,7 +2,7 @@ import { Color, gfx, Material, Mesh, MeshRenderer, Node, primitives, utils, Vec3
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { CANNON_BRAWL_TUNING, CannonImpact, CannonLaunch } from './CannonBrawlController';
 import { RESOURCE_PATHS } from './ResourcePaths';
-import { WaterPlayObstacleModels, WATER_CANNON_MUZZLE } from './WaterPlayObstacleModel';
+import { WaterPlayObstacleModels, WATER_CANNON_MUZZLE, WATER_CANNON_PIVOT, WATER_CANNON_REST_PITCH } from './WaterPlayObstacleModel';
 import {
     ENTERTAINMENT_SPLASH_OWNER,
     ENTERTAINMENT_SPLASH_PROFILE,
@@ -31,12 +31,13 @@ export class CannonBrawlPresentation {
     private marker: Node | null = null;
     private projectile: Node | null = null;
     private models: WaterPlayObstacleModels | null = null;
+    private projectileModels: WaterPlayObstacleModels | null = null;
     private readonly nozzles: (Node | null)[] = [];
     private readonly recoilElapsed = [1, 1];
+    private readonly nozzleSin = [0, 0];
+    private readonly nozzleCos = [1, 1];
     private markerMesh: Mesh | null = null;
-    private projectileMesh: Mesh | null = null;
     private markerMaterial: Material | null = null;
-    private projectileMaterial: Material | null = null;
     private activeStrikeId = -1;
     private lastStrikeId = -1;
     private lastImpactStrikeId = -1;
@@ -76,6 +77,7 @@ export class CannonBrawlPresentation {
         this.elapsed = PRESENTATION_INTERVAL;
         this.clock = 0;
         this.clearRecoil();
+        for (let i = 0; i < this.nozzles.length; i++) this.setNozzlePitch(i, WATER_CANNON_REST_PITCH * Math.PI / 180);
         this.setActive(this.marker, false);
         this.setActive(this.projectile, false);
         this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.CANNON);
@@ -142,10 +144,17 @@ export class CannonBrawlPresentation {
         if (cannon?.isValid) {
             this.setActive(cannon, true);
             cannon.setRotationFromEuler(0, Math.atan2(target.x - this.sourceWorldX(), target.z - edgeZ) * 180 / Math.PI, 0);
-            this.nozzles[this.activeCannonIndex]?.setPosition(0, 0, 0);
-            Vec3.transformMat4(this.muzzleWorld, this.muzzleLocal, cannon.worldMatrix);
+            const nozzle = this.nozzles[this.activeCannonIndex];
+            if (nozzle?.isValid) {
+                // 原弧线在起点的切线：dy/dp = 目标高 - 炮口高 + πH。
+                // 炮口沿轴线偏移项抵消，直接由转轴到目标解出仰角。
+                const distance = Math.hypot(target.x - this.sourceWorldX(), target.z - edgeZ);
+                const rise = Math.PI * PROJECTILE_ARC_HEIGHT - WATER_CANNON_PIVOT.y;
+                this.setNozzlePitch(this.activeCannonIndex, Math.atan2(rise, distance));
+                Vec3.transformMat4(this.muzzleWorld, this.muzzleLocal, nozzle.worldMatrix);
+            }
         }
-        // 固定底座只转向；弹道从可见喷口端面出发，回弹不改变已发出的水球轨迹。
+        // 底座水平转向，喷管抬头；已发水球不再跟随喷管回弹。
         this.sourceX = this.muzzleWorld.x;
         this.sourceY = this.muzzleWorld.y;
         this.sourceZ = this.muzzleWorld.z;
@@ -210,14 +219,14 @@ export class CannonBrawlPresentation {
             const shotAge = Math.max(0, launch.warningSeconds - remainingSeconds);
             this.recoilElapsed[this.activeCannonIndex] = Math.max(this.recoilElapsed[this.activeCannonIndex], shotAge - presentationStep);
             if (shotAge >= 0.28 && this.nozzles[this.activeCannonIndex]?.position.z !== 0) {
-                this.nozzles[this.activeCannonIndex]?.setPosition(0, 0, 0);
+                this.setNozzleRecoil(this.activeCannonIndex, 0);
             }
         }
         for (let i = 0; i < this.nozzles.length; i++) {
             if (this.recoilElapsed[i] >= 0.28) continue;
             this.recoilElapsed[i] = Math.min(0.28, this.recoilElapsed[i] + presentationStep);
             const t = this.recoilElapsed[i] / 0.28;
-            this.nozzles[i]?.setPosition(0, 0, t >= 1 ? 0 : -Math.sin(t * Math.PI) * 0.10);
+            this.setNozzleRecoil(i, t >= 1 ? 0 : -Math.sin(t * Math.PI) * 0.10);
         }
 
         if (launch && this.activeStrikeId === launch.strikeId) {
@@ -243,21 +252,15 @@ export class CannonBrawlPresentation {
         if (this.projectile?.isValid) this.projectile.destroy();
         this.marker = this.projectile = null;
         this.models?.dispose();
+        this.projectileModels?.dispose();
         this.markerMesh?.destroy();
-        this.projectileMesh?.destroy();
         this.markerMaterial?.destroy();
-        this.projectileMaterial?.destroy();
     }
 
     private build(): void {
         if (!this.parent?.isValid) return;
         this.markerMesh = utils.createMesh(buildMarkerGeometry());
-        this.projectileMesh = utils.createMesh(buildLowPolyBallGeometry());
         this.markerMaterial = makeVertexMaterial('CannonBrawlMarkerMaterial', false);
-        this.projectileMaterial = new Material();
-        this.projectileMaterial.initialize({ effectName: 'builtin-unlit' });
-        this.projectileMaterial.name = 'CannonBrawlProjectileMaterial';
-        this.projectileMaterial.setProperty('mainColor', new Color(32, 214, 244, 255));
 
         const midpoint = (this.course.startX + this.course.finishX) * 0.5;
         this.standWorldX = midpoint;
@@ -272,17 +275,40 @@ export class CannonBrawlPresentation {
             this.cannons.push(cannon);
         }
         this.models = new WaterPlayObstacleModels('WaterBallCannon', this.cannons, RESOURCE_PATHS.waterBallCannonPrefabCandidates);
-        for (let i = 0; i < this.cannons.length; i++) this.nozzles.push(this.models.part(i, 'CannonNozzle'));
+        for (let i = 0; i < this.cannons.length; i++) {
+            this.nozzles.push(this.models.part(i, 'CannonNozzle'));
+            this.setNozzlePitch(i, WATER_CANNON_REST_PITCH * Math.PI / 180);
+        }
         this.marker = this.makeMeshNode('CannonImpactWarning', this.markerMesh, this.markerMaterial);
-        this.projectile = this.makeMeshNode('CannonProjectile', this.projectileMesh, this.projectileMaterial);
+        this.projectile = new Node('CannonProjectile');
+        this.projectile.setParent(this.parent);
+        this.projectile.layer = this.parent.layer;
+        this.projectileModels = new WaterPlayObstacleModels('CannonWaterBall', [this.projectile], RESOURCE_PATHS.cannonWaterBallPrefabCandidates);
         this.marker.active = false;
         this.projectile.active = false;
     }
 
     private clearRecoil(): void {
         for (let i = 0; i < this.nozzles.length; i++) {
-            if (this.recoilElapsed[i] < 0.28) this.nozzles[i]?.setPosition(0, 0, 0);
+            if (this.recoilElapsed[i] < 0.28) this.setNozzleRecoil(i, 0);
             this.recoilElapsed[i] = 1;
+        }
+    }
+
+    private setNozzlePitch(index: number, radians: number): void {
+        this.nozzleSin[index] = Math.sin(radians);
+        this.nozzleCos[index] = Math.cos(radians);
+        this.nozzles[index]?.setRotationFromEuler(-radians * 180 / Math.PI, 0, 0);
+        this.setNozzleRecoil(index, 0);
+    }
+
+    private setNozzleRecoil(index: number, distance: number): void {
+        const nozzle = this.nozzles[index];
+        if (!nozzle?.isValid) return;
+        const y = WATER_CANNON_PIVOT.y + this.nozzleSin[index] * distance;
+        const z = WATER_CANNON_PIVOT.z + this.nozzleCos[index] * distance;
+        if (nozzle.position.x !== WATER_CANNON_PIVOT.x || nozzle.position.y !== y || nozzle.position.z !== z) {
+            nozzle.setPosition(WATER_CANNON_PIVOT.x, y, z);
         }
     }
 
@@ -371,10 +397,6 @@ function buildMarkerGeometry(): primitives.IGeometry {
         new Vec3(-CANNON_BRAWL_TUNING.splashAlongRadius, -0.01, -CANNON_BRAWL_TUNING.splashLateralRadius),
         new Vec3(CANNON_BRAWL_TUNING.splashAlongRadius, 0.01, CANNON_BRAWL_TUNING.splashLateralRadius),
     );
-}
-
-function buildLowPolyBallGeometry(): primitives.IGeometry {
-    return primitives.sphere(0.25, { segments: 12 });
 }
 
 type ColorTuple = readonly [number, number, number, number];

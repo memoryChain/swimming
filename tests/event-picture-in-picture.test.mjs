@@ -79,9 +79,9 @@ test('水下反射裁切只匹配真正的反射相机，不污染事件画中�
     assert.match(swimmerEffect, /reflectionCameraMatch > 0\.5/);
 });
 
-test('共用事件镜头只在高空俯拍阶段排除顶棚', () => {
+test('共用事件镜头在高空俯拍与水炮全段排除顶棚', () => {
     assert.match(camera, /showWhirlpoolPreview[\s\S]*?this\.setCeilingVisible\(false\)/);
-    assert.match(camera, /showCannonLaunch[\s\S]*?this\.setCeilingVisible\(true\)/);
+    assert.match(camera, /showCannonLaunch[\s\S]*?this\.setCeilingVisible\(false\)/);
     assert.match(camera, /this\.setCeilingVisible\(shark\.state !== SharkState\.WARNING\)/);
     assert.match(camera, /private setCeilingVisible\(visible: boolean\)[\s\S]*?if \(this\.ceilingVisible === visible\) return/);
     assert.doesNotMatch(gameManager, /_eventPictureInPicture\?\.showMine|_eventPictureInPicture\?\.showStimulant/);

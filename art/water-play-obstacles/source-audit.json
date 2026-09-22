@@ -3,16 +3,16 @@
     "parts": [
       {
         "name": "CannonBase",
-        "triangles": 348,
-        "vertices": 180,
-        "volume": 0.9382615627828027,
+        "triangles": 668,
+        "vertices": 348,
+        "volume": 1.0124870031024353,
         "closed": true
       },
       {
         "name": "CannonNozzle",
         "triangles": 664,
         "vertices": 340,
-        "volume": 0.4841106450370427,
+        "volume": 0.5052694201453177,
         "closed": true
       }
     ],
@@ -22,7 +22,28 @@
     ],
     "fps": 20,
     "frameEnd": 120,
-    "note": "GLB 导出静态资源，游戏使用权威阶段驱动固定节点动作。"
+    "note": "GLB 导出静态资源，游戏使用权威阶段驱动固定节点动作。",
+    "aimAudit": {
+      "pivotCocos": [
+        0,
+        1.04,
+        0
+      ],
+      "muzzleLocalCocos": [
+        0,
+        0,
+        1.02
+      ],
+      "restPitch": 40,
+      "pitchChecked": [
+        25,
+        85
+      ],
+      "capContactOverlap": 0.020000000000000018,
+      "headContactOverlap": 0.07800000000000001,
+      "minimumHeadToDeckGap": 0.06237398690261581,
+      "meshPivotVerified": true
+    }
   },
   "SprayBuoy": {
     "parts": [
@@ -68,5 +89,20 @@
       "balloonStartsY": 0.61,
       "verified": true
     }
+  },
+  "CannonWaterBall": {
+    "parts": [
+      {
+        "name": "WaterBallSurface",
+        "triangles": 720,
+        "vertices": 362,
+        "volume": 0.06934553994579118,
+        "closed": true
+      }
+    ],
+    "actions": [],
+    "fps": 24,
+    "frameEnd": 250,
+    "note": "GLB 导出静态资源，游戏使用权威阶段驱动固定节点动作。"
   }
 }

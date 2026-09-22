@@ -2,36 +2,18 @@
   "ver": "2.3.14",
   "importer": "gltf",
   "imported": true,
-  "uuid": "d013dad2-607a-43d7-b488-6782dd679bbf",
+  "uuid": "cd4e2d85-307f-49eb-80f5-25f69df3049d",
   "files": [],
   "subMetas": {
-    "664b4": {
+    "d24b9": {
       "importer": "gltf-mesh",
-      "uuid": "d013dad2-607a-43d7-b488-6782dd679bbf@664b4",
+      "uuid": "cd4e2d85-307f-49eb-80f5-25f69df3049d@d24b9",
       "displayName": "",
-      "id": "664b4",
-      "name": "CannonBaseMesh.mesh",
+      "id": "d24b9",
+      "name": "WaterBallSurfaceMesh.mesh",
       "userData": {
         "gltfIndex": 0,
-        "triangleCount": 668
-      },
-      "ver": "1.1.1",
-      "imported": true,
-      "files": [
-        ".bin",
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "224fe": {
-      "importer": "gltf-mesh",
-      "uuid": "d013dad2-607a-43d7-b488-6782dd679bbf@224fe",
-      "displayName": "",
-      "id": "224fe",
-      "name": "CannonNozzleMesh.mesh",
-      "userData": {
-        "gltfIndex": 1,
-        "triangleCount": 664
+        "triangleCount": 720
       },
       "ver": "1.1.1",
       "imported": true,
@@ -43,7 +25,7 @@
     },
     "536bd": {
       "importer": "gltf-material",
-      "uuid": "d013dad2-607a-43d7-b488-6782dd679bbf@536bd",
+      "uuid": "cd4e2d85-307f-49eb-80f5-25f69df3049d@536bd",
       "displayName": "",
       "id": "536bd",
       "name": "PoolPlasticVertexColor.material",
@@ -57,12 +39,12 @@
       ],
       "subMetas": {}
     },
-    "a49db": {
+    "22fdb": {
       "importer": "gltf-scene",
-      "uuid": "d013dad2-607a-43d7-b488-6782dd679bbf@a49db",
+      "uuid": "cd4e2d85-307f-49eb-80f5-25f69df3049d@22fdb",
       "displayName": "",
-      "id": "a49db",
-      "name": "WaterBallCannon.prefab",
+      "id": "22fdb",
+      "name": "CannonWaterBall.prefab",
       "userData": {
         "gltfIndex": 0
       },
@@ -96,16 +78,15 @@
     },
     "assetFinder": {
       "meshes": [
-        "d013dad2-607a-43d7-b488-6782dd679bbf@664b4",
-        "d013dad2-607a-43d7-b488-6782dd679bbf@224fe"
+        "cd4e2d85-307f-49eb-80f5-25f69df3049d@d24b9"
       ],
       "skeletons": [],
       "textures": [],
       "materials": [
-        "d013dad2-607a-43d7-b488-6782dd679bbf@536bd"
+        "cd4e2d85-307f-49eb-80f5-25f69df3049d@536bd"
       ],
       "scenes": [
-        "d013dad2-607a-43d7-b488-6782dd679bbf@a49db"
+        "cd4e2d85-307f-49eb-80f5-25f69df3049d@22fdb"
       ]
     }
   }

@@ -8,8 +8,8 @@
     "buoyRenderers": 7
   },
   "current": {
-    "cannonTriangles": 1012,
-    "projectileTriangles": 288,
+    "cannonTriangles": 1332,
+    "projectileTriangles": 720,
     "markerTriangles": 72,
     "buoyTriangles": 1328,
     "cannonRenderers": 4,
@@ -32,5 +32,24 @@
     "balloonPopBytes": 7982,
     "sharedMaterialCount": 1,
     "twentyRoundsStable": true
+  },
+  "projectilePolish": {
+    "oldTriangles": 288,
+    "newTriangles": 720,
+    "rendererDelta": 0,
+    "materialDelta": 0,
+    "nodeDelta": 1,
+    "newTextures": 0,
+    "newTransparentLayers": 0,
+    "glbBytes": 53140
+  },
+  "cannonElevation": {
+    "oldTriangles": 1012,
+    "newTriangles": 1332,
+    "rendererDelta": 0,
+    "materialDelta": 0,
+    "nodeDelta": 0,
+    "newTextures": 0,
+    "glbBytes": 84896
   }
 }

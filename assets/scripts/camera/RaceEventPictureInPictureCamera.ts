@@ -221,7 +221,8 @@ export class RaceEventPictureInPictureCamera {
         // 鲨鱼危险镜头优先级最高；炮火仍缓存落点，待鲨鱼镜头退出后再接管。
         if (this.mode === 'shark') return;
         this.mode = 'cannon';
-        this.setCeilingVisible(true);
+        // 远侧落点取景会升到屋盖上方，只让本画中画排除顶棚／横梁层。
+        this.setCeilingVisible(false);
         this.holdSeconds = 0;
         this.setCopy('水球镜头', '小水球已锁定落点', DANGER_COLOR);
         this.setVisible(true);

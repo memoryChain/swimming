@@ -3,8 +3,41 @@ const {fixture}=require('./helpers/water-play-harness.cjs');
 const impact={mineId:0,hitLane:0,courseX:10,lateral:0,hitMask:1,revision:2};
 const launch={strikeId:0,targetDistance:40,targetZ:2,warningSeconds:2.8,revision:1};
 
+test('精修水球同源多色且保持单网格，晚加载不重置飞行、隐藏或销毁状态',()=>{
+    const f=fixture('cannon');f.p.showLaunch(launch);f.p.update(.5,launch,1,true);
+    const ball=f.p.projectile,surface=ball.children[0],g=surface.components[0].mesh.geometry;
+    assert.equal(ball.children.length,1);assert.equal(g.indices.length/3,720);
+    assert.ok(new Set(g.colors.map((v,i)=>i%4===0?g.colors.slice(i,i+3).join(','):null)).size>50);
+    assert.ok(Math.max(...g.colors.filter((v,i)=>i%4===0))>.7,'水球有可辨识高光');
+    const position={...ball.worldPosition};f.ready();f.ready();
+    assert.equal(f.p.projectileNode,ball);assert.deepEqual({...ball.worldPosition},position);
+    assert.ok(surface.components[0].mesh.imported);assert.equal(f.materials.length,3);
+    const exit=fixture('cannon');exit.p.showLaunch(launch);exit.p.beginExit();exit.ready();exit.ready();assert.equal(exit.p.projectileNode,null);
+    const dead=fixture('cannon');dead.p.dispose();const count=dead.nodes.length;dead.ready();dead.ready();assert.equal(dead.nodes.length,count);assert.ok(dead.meshes.every(m=>m.destroyed));
+    const failed=fixture('cannon');failed.ready();failed.ready(new Error('离线'));assert.equal(failed.p.projectile.children[0].components[0].mesh.geometry.indices.length/3,720);
+});
+
+test('水炮飞行和落水停留只排除本相机顶棚，退出恢复且主画面建筑不变',()=>{
+    const {f,camera:c,ceiling}=require('./helpers/cannon-venue-review.cjs').makeReview();
+    const main={visibility:1},pool=new f.Node('pool'),beam=new f.Node('ceiling_lighting_rig');beam.setParent(pool);
+    const controller=new ceiling.TopViewCeilingController();controller.bind(pool,main);
+    const mainMask=main.visibility,mask=mainMask,feed={visibility:mask,isValid:true};
+    Object.assign(c,{camera:feed,ceilingVisible:true,mode:'none',setCopy(){},setVisible(){},shouldRender(){return false}});
+    c.showCannonLaunch(launch,25);assert.equal(feed.visibility&ceiling.VENUE_CEILING_LAYER,0);
+    c.showCannonImpact({strikeId:0,knockedLane:-1,hitMask:0});c.updateCannon(null,0,true,.05);
+    assert.equal(c.mode,'cannon');assert.equal(feed.visibility&ceiling.VENUE_CEILING_LAYER,0);
+    assert.equal(main.visibility,mainMask);assert.equal(beam.active,true);assert.equal(beam.layer,ceiling.VENUE_CEILING_LAYER);
+    c.updateCannon(null,0,true,2);assert.equal(c.mode,'none');assert.equal(feed.visibility,mask);
+    c.mode='shark';c.showCannonLaunch(launch,25);assert.equal(c.mode,'shark');assert.equal(feed.visibility,mask);
+});
+
+test('正式场馆两侧、折返及远近落点的 1260 个采样，排除顶棚后无建筑遮挡',()=>{
+    const {audit}=require('./helpers/cannon-venue-review.cjs');
+    const result=audit({ignoreCeiling:true});assert.equal(result.samples,1260);assert.deepEqual(result.hits,{});
+});
+
 test('E 源资源与运行时相同，网格、材质及接触轮廓符合预算',()=>{
-    for(const [name,count,budget] of [['WaterBallCannon',2,1100],['SprayBuoy',2,1500]]){
+    for(const [name,count,budget] of [['WaterBallCannon',2,1350],['SprayBuoy',2,1500],['CannonWaterBall',1,800]]){
         const bytes=fs.readFileSync('art/water-play-obstacles/'+name+'.glb');
         assert.deepEqual(bytes,fs.readFileSync('assets/race/items/'+name+'.glb'));
         const g=JSON.parse(bytes.subarray(20,20+bytes.readUInt32LE(12)));
@@ -54,7 +87,7 @@ test('水炮弹道从真实炮口开始，两侧转向一致；回弹归零且�
     const f=fixture('cannon');assert.ok(f.p.cannons.every(n=>!n.active));
     for(let id=0;id<2;id++){
         const shot={...launch,strikeId:id};f.p.showLaunch(shot);
-        const expected=f.Vec3.transformMat4(new f.Vec3(),new f.Vec3(0,1.04,1.02),f.p.cannons[id].worldMatrix);
+        const expected=f.Vec3.transformMat4(new f.Vec3(),new f.Vec3(0,0,1.02),f.p.nozzles[id].worldMatrix);
         assert.ok(f.Vec3.equals(f.p.projectile.worldPosition,expected));
         f.p.update(.05,shot,2.75,true);assert.ok(f.p.nozzles[id].position.z<0);
         f.p.update(.3,shot,2.45,true);assert.equal(f.p.nozzles[id].position.z,0);

@@ -10,9 +10,9 @@ function png(file){const b=fs.readFileSync(file),width=b.readUInt32BE(16),height
  rows.push(row);for(let x=0;x<width;x++){const a=row[x*4+3];min=Math.min(min,a);max=Math.max(max,a);if(x===0||y===0||x===width-1||y===height-1)borderMax=Math.max(borderMax,a);if(a>5){bounds[0]=Math.min(bounds[0],x);bounds[1]=Math.min(bounds[1],y);bounds[2]=Math.max(bounds[2],x);bounds[3]=Math.max(bounds[3],y)}}}
  if(min!==0||max!==255||borderMax!==0)throw Error('透明边界或主体 alpha 异常');return{width,height,depth,type,alpha:[min,max],borderMax,bounds,bytes:b.length};}
 const audit={date:'2026-09-22',models:{},icons:{},sourceRuntimeEquality:{},codeBytes:fs.statSync(path.join(root,'assets/scripts/core/WaterPlayObstacleGeometry.ts')).size,engineVisual:'待验',devices:'待验'};
-for(const name of ['WaterBallCannon','SprayBuoy']){
+for(const name of ['WaterBallCannon','SprayBuoy','CannonWaterBall']){
  const b=fs.readFileSync(path.join(__dirname,name+'.glb')),runtime=path.join(root,'assets/race/items',name+'.glb'),g=JSON.parse(b.subarray(20,20+b.readUInt32LE(12)));
- if(!b.equals(fs.readFileSync(runtime)))throw Error('GLB 副本不一致');const meta=JSON.parse(fs.readFileSync(runtime+'.meta','utf8'));
+ if(!b.equals(fs.readFileSync(runtime)))throw Error('GLB 副本不一致');const meta=fs.existsSync(runtime+'.meta')?JSON.parse(fs.readFileSync(runtime+'.meta','utf8')):{imported:false,importer:'待 Creator 导入',subMetas:{},uuid:null};
  audit.models[name]={bytes:b.length,sha256:hash(b),meshes:g.meshes.length,materials:g.materials.length,textures:g.textures?.length||0,triangles:g.meshes.reduce((n,m)=>n+m.primitives.reduce((n,p)=>n+g.accessors[p.indices].count/3,0),0),nodes:g.nodes.map(n=>n.name),imported:meta.imported,importer:meta.importer,subResources:Object.keys(meta.subMetas).length,uuid:meta.uuid};
  audit.sourceRuntimeEquality[name]=true;
 }

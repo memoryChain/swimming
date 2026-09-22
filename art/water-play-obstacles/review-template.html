@@ -22,6 +22,7 @@ function renderer(canvas){
  const floor={positions:[-30,-1.6,-30,30,-1.6,-30,-30,-1.6,30,30,-1.6,30],indices:[0,1,2,2,1,3]},water={positions:[-30,0,-30,30,0,-30,-30,0,30,30,0,30],indices:[0,1,2,2,1,3]};
  return (frame,pip=false)=>{const angle=+$('angle').value,isC=DATA.kind==='cannon';let eye=isC?[-11,8,18]:[2,2.3,4.5],target=isC?[1,1.5,0]:[0,.50,0],fov=isC?49:45;
  if(angle===1)eye=eye.map((v,i)=>i===1?v:-v);if(angle===2)eye=isC?[0,24,.1]:[0,5,.01];
+ if(isC&&angle===3&&!pip){const base=frame.parts.find(p=>p.name==='CannonBase');const p=base?base.matrix.slice(12,15):[0,0,-5.4];eye=[p[0]+4,p[1]+3,p[2]+4];target=[p[0],p[1]+1.5,p[2]];fov=40}
  if(pip&&frame.camera&&isC){eye=frame.camera.eye;target=frame.camera.target;fov=frame.camera.fov}
  if(!isC&&$('crowd').checked&&!pip){eye=[7,7,10];target=[0,.4,0];fov=48}
  if(pip&&!isC){eye=[1.7,1.4,2.6];target=[0,.50,0];fov=48}
@@ -33,6 +34,7 @@ function renderer(canvas){
  };
 }
 const draw=renderer($('main')),drawPip=renderer($('pip'));$('time').max=DATA.total;
+if(DATA.kind==='cannon'){const option=document.createElement('option');option.value='3';option.textContent='炮口近景';$('angle').appendChild(option)}
 $('pipNote').textContent=DATA.kind==='cannon'?'飞行与落水阶段使用当前水炮画中画参数，256×144。':'此格仅为离线近景审查，游戏未新增浮标画中画。';
 $('icon').src=DATA.views.find(v=>v.view==='icon').url;$('budget').textContent=DATA.audit.meshes+' 网格／1 材质／'+DATA.audit.triangles+' 三角面／无贴图';
 for(const v of DATA.views.slice(0,6)){const figure=document.createElement('figure');figure.innerHTML='<img src="'+v.url+'"><figcaption>'+({front:'正面',back:'背面',left:'左侧',right:'右侧',top:'顶部',bottom:'底部'}[v.view])+'</figcaption>';$('six').appendChild(figure)}

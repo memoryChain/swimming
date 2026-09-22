@@ -3,16 +3,27 @@
     "meshes": 2,
     "materials": 1,
     "textures": 0,
-    "triangles": 1012,
-    "bytes": 71528,
-    "muzzle": [
+    "triangles": 1332,
+    "bytes": 84896,
+    "pivot": [
       0,
       1.04,
+      0
+    ],
+    "muzzleInNozzle": [
+      0,
+      0,
       1.02
     ],
+    "restPitchDegrees": 40,
+    "mouthRadius": 0.275,
     "contacts": {
       "pedestalBaseOverlap": 0.04,
-      "pedestalHeadVerticalOverlap": 0.23,
+      "supportBaseOverlap": 0.04,
+      "pivotCapInnerX": 0.3,
+      "pivotCapOuterX": 0.58,
+      "supportCenterX": 0.43,
+      "pivotHeight": 1.04,
       "nozzleBodyOverlap": 0.11,
       "rimPipeOverlap": 0.04,
       "mouthInsetClearance": 0.01
@@ -51,5 +62,17 @@
       "knotBalloonOverlap": 0.04
     },
     "balloonHeight": 1.355
+  },
+  "CannonWaterBall": {
+    "meshes": 1,
+    "materials": 1,
+    "textures": 0,
+    "triangles": 720,
+    "bytes": 53140,
+    "boundsY": [
+      -0.27,
+      0.27
+    ],
+    "visualOnly": true
   }
 }

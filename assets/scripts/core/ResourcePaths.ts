@@ -404,6 +404,10 @@ export const RESOURCE_PATHS = {
         'items/TimedWaterBalloon/TimedWaterBalloon',
         'items/TimedWaterBalloon',
     ],
+    cannonWaterBallPrefabCandidates: [
+        'items/CannonWaterBall/CannonWaterBall',
+        'items/CannonWaterBall',
+    ],
     waterBallCannonPrefabCandidates: [
         'items/WaterBallCannon/WaterBallCannon',
         'items/WaterBallCannon',

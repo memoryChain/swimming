@@ -25,18 +25,56 @@ npx.cmd --yes --package typescript@5.4.5 -c "node art/water-play-obstacles/build
 
 完整游戏镜头读性、引擎材质／水中排序、微信双机弱网、iOS／Android 性能和实际包体仍待验；音频浏览器解码与玩法回归不等于手机混音听感验收。
 
+## 水炮镜头与飞行水球精修（2026-09-22）
+
+水炮为同时容纳水球和落点，远投时相机最高升到 23.47m，原本仍绘制 9.28～13.80m 的顶棚灯架，造成横梁挡住画面。现在发射至落水停留全段仅关闭本画中画的 `VENUE_CEILING_LAYER`；主相机和场馆节点不隐藏，退出恢复原过滤，鲨鱼优先级保持。
+
+飞行水球改为独立作者源 `CannonWaterBall.blend`：略带水滴感的轮廓、蓝青渐变、底部深色和两侧湿润高光。720 三角面、单网格／单材质／无纹理，GLB 53,140 字节；高光烘入顶点色，不是实时反射。半径约 0.25m、上下各 0.27m，弹道中心、落点和判定不变。运行时与同源回退均使用这套网格，失败与晚加载不回退纯色球、不重置当前飞行或显隐。
+
+- [自包含前后对照页](cannon-polish-review.html)：正式建筑网格与实际相机取景、六种发射位置／落点、飞行进度与水球旋转审查。
+- [离线对照截图](cannon-polish-comparison.png)、[作者源正面](CannonWaterBall-front.png)、[完整水炮状态](cannon-review.html)。均非 Creator 或真机截图。
+- [遮挡审计](cannon-occlusion-audit.json)：两侧、远近落点、折返共 1,260 个采样点，每点检查水球中心和落点两条视线；原有 892 条视线被 `ceiling_lighting_rig` 挡住，排除此层后在这些采样中为零。不代表穷尽所有画面像素。
+- 娱乐聚合 250／250，E 行为＋镜头 27／27，性能／交付 100／100；这些组有交叉。指定 TypeScript 检查、源封闭／正体积／无退化、字体生成与检查（1,586 字符／280 文件）、纹理检查（281 项）通过。对照页 246 个画面 WebGL 零错误、无外部请求、360px 无横向溢出。
+- 新水球 `.meta` 尚未由 Creator 生成；未启动、重启或截图 Creator。正式导入后再执行 `npm run textures:fix` 与 `npm run textures:check`，检查顶点色、远近落点、镜头抢占／返场和双端显示。现有无纹理 GLB 不需要新增压缩贴图。主视角、微信双机、iOS／Android 帧耗与包体仍待验。
+- [保护文件核对](cannon-polish-preservation.json)：场馆、炮架、浮标、C 水球、D 鲨鱼 GLB 与炮击规则／浮标表现哈希一致；C 表现文件同期出现其他会话的鼓胀和球心更新，本任务未编辑或回退它，不宣称该文件哈希未变。随后重跑 C 定时水球专项 80／80 与指定类型检查通过。
+
+复现飞行水球与对照：
+
+```powershell
+python scripts/run-blender.py -- --python art/water-play-obstacles/build_cannon_water_ball.py
+python scripts/run-blender.py -- --python art/water-play-obstacles/render_cannon_water_ball.py
+npx.cmd --yes --package typescript@5.4.5 -c "node art/water-play-obstacles/build_review.cjs --only cannon"
+npx.cmd --yes --package typescript@5.4.5 -c "node art/water-play-obstacles/build_cannon_polish_review.cjs"
+npx.cmd --yes --package typescript@5.4.5 -c "node art/water-play-obstacles/audit_cannon_camera.cjs"
+```
+
+## 水炮抬头与转轴修订（2026-09-22）
+
+岸边水炮补出双侧支座与圆钝转轴，扩大橙色软口的内径，保留蓝白橙泳池设施风格；切面明暗写入源顶点色，游戏无光照材质也有体积层次。同源图标同步更新，资源身份保留。当前水炮为两网格／一材质／1,332 三角面、84,896 字节 GLB，比上一版每台增加 320 面，没有新增绘制节点、材质或纹理。
+
+默认以 40° 朝上就位，发射时按权威落点解出仰角。底座只水平转向；喷管绕局部 `(0, 1.04, 0)` 横轴转动，弹道起点取喷管局部 `(0, 0, 1.02)` 端面。原弧线 `y = sourceY + (landingY - sourceY)p + 5.8 sin(πp)` 保留，喷管仰角与 `p=0` 的切线一致。因底座高度与落水终点同为 `waterY+0.12`，解为 `atan2(π×5.8-1.04, 转轴到落点的水平距离)`；抬头造成的炮口偏移恰好抵消，不靠试角度逼近。
+
+回弹仍为 0.28 秒、最大 0.10m，改为沿炮管向后下方退让；已发出的水球不再跟随炮口。晚快照直接恢复当前仰角与飞行阶段，不重播旧回弹；网格晚加载保持变换；重开恢复 40°。落点、1.25 秒时长、核心／外围命中与联机规则不变。
+
+[水炮完整预览](cannon-review.html)增加“炮口近景”，可拖动发射前后查看；[新造型源渲染](WaterBallCannon-review.png)、[侧面](WaterBallCannon-left.png)、[运行时代码离线近景](offline-cannon-nozzle.png)。源、GLB、回退与图标均由原脚本重建。六面与连接审查覆盖 25～85° 俯仰和最大回弹，喷管到顶盘最小间距约 0.062m；两侧轴端盖与壳体保持有意嵌入。源转轴与 GLB 正向均校验朝上。
+
+新增 `tests/cannon-elevation.test.cjs` 执行真实表现：两岸 30 组远近落点的出射方向、喷口起点、回弹方向、晚加载、快照与重开。上轮新飞行水球已由现有 Creator 会话生成元数据；本轮水炮元数据已记录 668＋664 三角面，仍不代表引擎画面或真机验收。未启动、重启或截图 Creator。
+
+本轮娱乐聚合最终 255／255（已纳入新增仰角测试），E、镜头与仰角专项 30／30，性能／生命周期 100／100，指定 TypeScript 检查通过，各组覆盖有交叉。独立浏览器四角度共 32 个状态、WebGL、无外部资源与 360px 宽度通过。1,260 点的正式场馆中心视线复核仍无顶棚层以外遮挡。新水球、C 定时水球、浮标资源及炮击规则／浮标表现哈希一致；D 鲨鱼同期由其他会话修改，未回退。水炮与图标 UUID 保留，见 [保护核对](cannon-elevation-preservation.json)。共用占用内纹理 fix／check 282 项与字体检查 1,580 字符／280 文件通过。
+
 ## 源资源与运行时对应
 
 | 道具 | 可编辑作者源 | 运行时 | 状态预览 |
 | --- | --- | --- | --- |
 | 蓝白运动场水炮 | [WaterBallCannon.blend](WaterBallCannon.blend) | [WaterBallCannon.glb](../../assets/race/items/WaterBallCannon.glb) | [自包含离线预览](cannon-review.html) |
+| 蓝青飞行水球 | [CannonWaterBall.blend](CannonWaterBall.blend) | [CannonWaterBall.glb](../../assets/race/items/CannonWaterBall.glb) | [细节与镜头对照](cannon-polish-review.html) |
 | 气球喷水浮标 | [SprayBuoy.blend](SprayBuoy.blend) | [SprayBuoy.glb](../../assets/race/items/SprayBuoy.glb) | [自包含离线预览](buoy-review.html) |
 
 两个 HTML 均可直接用浏览器打开，无 CDN、外部图片或服务器依赖。可看原速／慢放、三种角度和时间轴；页面嵌入作者源六面图及 72px 图标。水炮画中画取当前实际方法的参数；浮标页的小窗只是离线近景，游戏没有浮标画中画。
 
-模型以米制、GLB +Y 向上导出。水炮 `CannonBase` 与 `CannonNozzle` 为两块独立可编辑网格，局部炮口中心 `(0, 1.04, 1.02)`；浮标由 `BuoyBody` 与 `BuoyBalloon` 两网格组成，局部喷口中心 `(0, 0.25, 0)`。不透明顶点色、单材质、无贴图，无复杂骨骼或运行时动画组件。
+模型以米制、GLB +Y 向上导出。水炮 `CannonBase` 与 `CannonNozzle` 为两块独立可编辑网格，喷管原点位于 `(0, 1.04, 0)` 转轴，炮口在喷管局部 `(0, 0, 1.02)`；浮标由 `BuoyBody` 与 `BuoyBalloon` 两网格组成，局部喷口中心 `(0, 0.25, 0)`。不透明顶点色、单材质、无贴图，无复杂骨骼或运行时动画组件。
 
-水炮底座宽 1.70m，总高约 1.47m，圆钝短喷口；浮标外半径约 0.66／0.65m，主体厚约 0.26m，与既有道具碰撞椭圆匹配。源动作时间轴包含入场／就位／退出、水炮 0.28 秒轻回弹，以及浮标扰动／上浮／稳定／轻压／下潜。源动作供编辑审查，游戏按现有权威阶段驱动同名固定节点，GLB 不携带重复动画系统。
+水炮底座宽 1.70m，默认 40° 时高约 1.94m，圆钝短喷口；浮标外半径约 0.66／0.65m，主体厚约 0.26m，与既有道具碰撞椭圆匹配。源动作时间轴包含入场／就位／退出、水炮 0.28 秒轻回弹，以及浮标扰动／上浮／稳定／轻压／下潜。源动作供编辑审查，游戏按现有权威阶段驱动同名固定节点，GLB 不携带重复动画系统。
 
 作者配方为 [build_obstacles.py](build_obstacles.py)，共享建模工具为 [model_tools.py](model_tools.py)。部件接触有小幅明确重叠；喷口暗色内衬与口缘端面保留间隔，避免共面闪烁。六面和封闭网格检查见 [source-audit.json](source-audit.json)。
 
