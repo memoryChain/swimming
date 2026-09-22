@@ -1,0 +1,18 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>水球动态镜头 · 遮挡修订</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#112a39;color:#e5f8ff;font:16px/1.7 system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:24px}h1{font-size:26px}p,small{color:#b6d3df}.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}canvas{width:100%;height:auto}label{display:block;margin:12px 0}select,button{max-width:100%;background:#224e64;color:white;border:1px solid #6b9dad;padding:8px;font:inherit}input{width:100%}@media(max-width:700px){main{padding:12px}.pair{grid-template-columns:1fr}}</style>
+<main><h1>保留拉远拉近，避开池岸设施</h1><p>对比同一发水球：两侧都排除顶棚；右侧让机位保持在泳池内侧上空，并保留动态取景距离。</p>
+<label>发射与落点 <select id="shot"></select></label><button id="play">播放这一发</button>
+<label>飞行进度 <span id="progress"></span><input id="time" aria-label="飞行进度" type="range" min="0" max="25" value="21"></label>
+<div class="pair"><div><strong>此前：镜头可退入池岸设施区域</strong><canvas id="before" width="800" height="450"></canvas></div><div><strong>现在：推拉镜头保持在安全区域</strong><canvas id="after" width="800" height="450"></canvas></div></div>
+<p>正式场馆网格以灰色呈现，池边扶手等设施用橙色便于辨认。页面包含两岸、去返程、近远及边缘落点共 60 组；水球位置与机位取自实际代码。</p>
+<small>自包含离线 WebGL 预览，不是 Creator 或手机画面。不模拟正式水体、材质、角色与动态物体遮挡；泳道绳仍按实际深度呈现。引擎最终视觉和 iOS／Android 性能待验。</small></main>
+<script>const DATA=/*__DATA__*/;
+/*__RENDERER__*/
+const renderers=['before','after'].map(renderer),water={positions:[0,.15,-10.5,50,.15,-10.5,0,.15,10.5,50,.15,10.5],indices:[0,1,2,2,1,3]},ring={positions:[],indices:[]};
+for(let i=0;i<=48;i++){const a=i/48*Math.PI*2;for(const r of [.95,1.05])ring.positions.push(Math.cos(a)*r,.205,Math.sin(a)*r*.82);if(i<48)ring.indices.push(i*2,i*2+1,i*2+2,i*2+1,i*2+3,i*2+2)}
+DATA.shots.forEach((s,i)=>{const o=document.createElement('option');o.value=i;o.textContent=s.name;$('shot').append(o)});$('shot').value='7';
+function draw(){const shot=DATA.shots[+$('shot').value],frame=shot.frames[+$('time').value];$('progress').textContent=Math.round(frame.t*100)+'%';for(let i=0;i<2;i++){const r=renderers[i];r.begin(i?frame.eye:frame.before,frame.target,frame.fov);for(const mesh of DATA.buildings)r.draw(mesh,/props/i.test(mesh.name)?[.8,.24,.04,1]:[.25,.32,.36,1]);r.draw(water,[.02,.33,.47,1]);r.draw(ring,[1,.06,.015,1],[shot.x,0,shot.z]);r.draw(DATA.ball,[.014,.67,.9,1],frame.ball)}window.reviewErrors=renderers.map(r=>r.gl.getError())}
+let animation=0;function stop(){cancelAnimationFrame(animation);animation=0}
+for(const id of ['shot','time'])$(id).addEventListener('input',()=>{stop();draw()});$('play').onclick=()=>{stop();const start=performance.now();function tick(now){$('time').value=Math.min(25,Math.floor((now-start)/1250*25));draw();if(now-start<1250)animation=requestAnimationFrame(tick)}animation=requestAnimationFrame(tick)};
+window.setClearanceState=(s,t)=>{stop();$('shot').value=s;$('time').value=t;draw()};draw();
+</script></html>

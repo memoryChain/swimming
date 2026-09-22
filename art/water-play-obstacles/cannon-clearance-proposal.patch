@@ -1,0 +1,99 @@
+--- a/assets/scripts/camera/RaceEventPictureInPictureCamera.ts
++++ b/assets/scripts/camera/RaceEventPictureInPictureCamera.ts
+@@ -605,7 +605,28 @@
+             const scale = requiredDistance / cameraDistance;
+             this.cameraPosition.set(this.focus.x + offsetX * scale, this.focus.y + offsetY * scale, this.focus.z + offsetZ * scale);
+         }
++        this.constrainCannonCameraPose();
+         this.applyCameraPose(52);
++    }
++
++    /** 保留推拉距离，只把可能退入看台、池岸扶手的机位移回水面上空。 */
++    private constrainCannonCameraPose(): void {
++        const course = this.options.course;
++        // 包含整个核心椭圆及少量留白，而不仅是落点中心。
++        const coreDistance = (Math.hypot(this.cannonTargetX - this.focus.x,
++            course.waterY + 0.05 - this.focus.y, this.cannonTargetZ - this.focus.z) + 1.2) / 0.4383711468;
++        const desiredDistance = Math.max(Vec3.distance(this.cameraPosition, this.focus), coreDistance);
++        const minX = Math.min(course.startX, course.finishX);
++        const maxX = Math.max(course.startX, course.finishX);
++        const halfWidth = Math.max(0, course.poolWidth * 0.5 - 2);
++        this.cameraPosition.x = Math.max(minX, Math.min(maxX, this.cameraPosition.x));
++        this.cameraPosition.z = Math.max(-halfWidth, Math.min(halfWidth, this.cameraPosition.z));
++        const dx = this.cameraPosition.x - this.focus.x;
++        const dz = this.cameraPosition.z - this.focus.z;
++        // 横向收回后改由高度补足距离，避免水球／核心区被挤出画面。
++        // 8m 的水面净空让近景不会贴着最高约 2.5m 的岸边设施拍摄。
++        const height = Math.sqrt(Math.max(0, desiredDistance * desiredDistance - dx * dx - dz * dz));
++        this.cameraPosition.y = Math.max(this.cameraPosition.y, course.waterY + 8, this.focus.y + height);
+     }
+
+     private updateLitterCameraPose(): void {
+--- a/tests/helpers/cannon-venue-review.cjs
++++ b/tests/helpers/cannon-venue-review.cjs
+@@ -2,9 +2,9 @@
+ const fs=require('fs'),path=require('path'),vm=require('vm');
+ const {fixture}=require('./water-play-harness.cjs');
+ const {compiler}=require('./water-splash-harness.cjs');
+-function makeReview(){
++function makeReview({ includeAllMeshes=false, cameraSourceTransform=s=>s }={}){
+     const f=fixture('cannon');Object.assign(f.course,{poolWidth:21,waterY:.15,startX:2.8,finishX:47.2});f.p.standWorldX=25;f.p.reset();
+-    const code=fs.readFileSync('assets/scripts/camera/RaceEventPictureInPictureCamera.ts','utf8').replace(/^import[\s\S]*?;\r?\n/gm,'');
++    const code=cameraSourceTransform(fs.readFileSync('assets/scripts/camera/RaceEventPictureInPictureCamera.ts','utf8').replace(/^import[\s\S]*?;\r?\n/gm,''));
+     const ceiling=f.load(path.resolve('assets/scripts/venue/TopViewCeilingController.ts'));
+     const ts=compiler(),exports={};vm.runInNewContext(ts.transpileModule(code,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports,Vec3:f.Vec3,Color:class{},SharkState:{INACTIVE:0},setCameraVenueCeilingVisible:ceiling.setCameraVenueCeilingVisible});
+     const camera=Object.create(exports.RaceEventPictureInPictureCamera.prototype);
+@@ -13,7 +13,7 @@
+     function accessor(index){const a=json.accessors[index],v=json.bufferViews[a.bufferView],n=a.type==='VEC3'?3:1,size=a.componentType===5126||a.componentType===5125?4:2,read=a.componentType===5126?'readFloatLE':a.componentType===5125?'readUInt32LE':'readUInt16LE',out=[];for(let i=0;i<a.count;i++)for(let k=0;k<n;k++)out.push(bytes[read](binStart+(v.byteOffset||0)+(a.byteOffset||0)+i*(v.byteStride||n*size)+k*size));return out;}
+     const meshes=[];
+     function visit(index,parent){const n=json.nodes[index];const local=new f.Mat4();if(n.matrix)f.Mat4.fromArray(local,n.matrix);else f.Mat4.fromRTS(local,new f.Quat(...(n.rotation||[0,0,0,1])),new f.Vec3(...(n.translation||[0,0,0])),new f.Vec3(...(n.scale||[1,1,1])));const matrix=f.Mat4.multiply(new f.Mat4(),parent,local);
+-        if(n.mesh!==undefined&&!/water|floor|lane|podium|props|ground|inner_wall|pool_edge/i.test(n.name)){
++        if(n.mesh!==undefined&&(includeAllMeshes ? !/poolwatersurface/i.test(n.name) : !/water|floor|lane|podium|props|ground|inner_wall|pool_edge/i.test(n.name))){
+             for(const primitive of json.meshes[n.mesh].primitives){const positions=accessor(primitive.attributes.POSITION),indices=accessor(primitive.indices),points=[];
+                 for(let i=0;i<positions.length;i+=3){const p=f.Vec3.transformMat4(new f.Vec3(),new f.Vec3(...positions.slice(i,i+3)),matrix);points.push([p.x,p.y,p.z]);}
+                 meshes.push({name:n.name,ceiling:/ceiling/i.test(n.name),points,indices});
+--- /dev/null
++++ b/tests/cannon-camera-clearance.test.cjs
+@@ -0,0 +1,42 @@
++const test=require('node:test'),assert=require('node:assert/strict');
++const { makeReview }=require('./helpers/cannon-venue-review.cjs');
++const { review }=require('../art/water-play-obstacles/audit_cannon_clearance.cjs');
++
++test('两岸、去返程和最边缘落点的完整水球与核心区不被正式场馆建筑遮挡',()=>{
++    const {summary,shots}=review();
++    assert.equal(summary.samples,1560);assert.equal(summary.bounded,summary.samples);
++    assert.deepEqual(summary.hits,[]);assert.deepEqual(summary.projectionFailures,[]);
++    assert.equal(summary.foreground.after,0,'近处池岸设施不再进入采样前景');
++    assert.ok(summary.foreground.before>0,'同一组采样应复现修改前的问题');
++    assert.ok(summary.minDistanceChange>=-1e-7,'不压缩水球和落点所需取景距离');
++    const long=shots.find(s=>s.x===47.2&&s.z===9.8&&s.side===0&&s.direction===1);
++    const distances=long.frames.map(f=>Math.hypot(...f.eye.map((n,k)=>n-f.target[k])));
++    assert.ok(Math.max(...distances)-Math.min(...distances)>15,'保留明显拉远拉近');
++});
++
++test('晚加载的估算弹道、折返课程和窄泳池仍有有限且安全的机位',()=>{
++    const {camera:c,f}=makeReview();c.cannonProjectile=null;
++    Object.assign(c,{cannonSourceX:25,cannonSourceY:1.8,cannonSourceZ:-11,cannonTargetX:3,cannonTargetZ:-9.8});
++    for(const width of [3,21])for(const reverse of [false,true]){
++        Object.assign(f.course,{startX:reverse?47.2:2.8,finishX:reverse?2.8:47.2,poolWidth:width});
++        f.course.directionAtDistance=()=>reverse?-1:1;
++        for(let i=0;i<=50;i++){
++            c.updateCannonCameraPose(i/50,3);
++            assert.ok(Number.isFinite(c.cameraPosition.x+c.cameraPosition.y+c.cameraPosition.z));
++            assert.ok(c.cameraPosition.x>=2.8&&c.cameraPosition.x<=47.2);
++            assert.ok(Math.abs(c.cameraPosition.z)<=Math.max(0,width*.5-2));
++            assert.ok(c.cameraPosition.y>=f.course.waterY+8);
++        }
++    }
++});
++
++test('落水停留沿用安全机位，退出与重开不残留水炮镜头',()=>{
++    const {camera:c,f}=makeReview();
++    Object.assign(c,{cannonSourceX:25,cannonSourceY:1.8,cannonSourceZ:-11,cannonTargetX:10,cannonTargetZ:-9.8,
++        cannonProjectile:null,mode:'cannon',holdSeconds:1,shouldRender:()=>true,finishRender(){},
++        hide(){this.mode='none';this.holdSeconds=0},resetTimedBombTrackingState(){}});
++    c.updateCannonCameraPose(1,10);const position=c.cameraPosition.clone();
++    c.updateCannon(null,0,true,.05);assert.ok(f.Vec3.equals(position,c.cameraPosition));assert.equal(c.fov,49);
++    c.updateCannon(null,0,false,.05);assert.equal(c.mode,'none');
++    c.mode='cannon';c.reset();assert.equal(c.mode,'none');assert.equal(c.holdSeconds,0);
++});

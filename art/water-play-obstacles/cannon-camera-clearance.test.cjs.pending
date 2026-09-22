@@ -1,0 +1,42 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+const { makeReview }=require('./helpers/cannon-venue-review.cjs');
+const { review }=require('../art/water-play-obstacles/audit_cannon_clearance.cjs');
+
+test('两岸、去返程和最边缘落点的完整水球与核心区不被正式场馆建筑遮挡',()=>{
+    const {summary,shots}=review();
+    assert.equal(summary.samples,1560);assert.equal(summary.bounded,summary.samples);
+    assert.deepEqual(summary.hits,[]);assert.deepEqual(summary.projectionFailures,[]);
+    assert.equal(summary.foreground.after,0,'近处池岸设施不再进入采样前景');
+    assert.ok(summary.foreground.before>0,'同一组采样应复现修改前的问题');
+    assert.ok(summary.minDistanceChange>=-1e-7,'不压缩水球和落点所需取景距离');
+    const long=shots.find(s=>s.x===47.2&&s.z===9.8&&s.side===0&&s.direction===1);
+    const distances=long.frames.map(f=>Math.hypot(...f.eye.map((n,k)=>n-f.target[k])));
+    assert.ok(Math.max(...distances)-Math.min(...distances)>15,'保留明显拉远拉近');
+});
+
+test('晚加载的估算弹道、折返课程和窄泳池仍有有限且安全的机位',()=>{
+    const {camera:c,f}=makeReview();c.cannonProjectile=null;
+    Object.assign(c,{cannonSourceX:25,cannonSourceY:1.8,cannonSourceZ:-11,cannonTargetX:3,cannonTargetZ:-9.8});
+    for(const width of [3,21])for(const reverse of [false,true]){
+        Object.assign(f.course,{startX:reverse?47.2:2.8,finishX:reverse?2.8:47.2,poolWidth:width});
+        f.course.directionAtDistance=()=>reverse?-1:1;
+        for(let i=0;i<=50;i++){
+            c.updateCannonCameraPose(i/50,3);
+            assert.ok(Number.isFinite(c.cameraPosition.x+c.cameraPosition.y+c.cameraPosition.z));
+            assert.ok(c.cameraPosition.x>=2.8&&c.cameraPosition.x<=47.2);
+            assert.ok(Math.abs(c.cameraPosition.z)<=Math.max(0,width*.5-2));
+            assert.ok(c.cameraPosition.y>=f.course.waterY+8);
+        }
+    }
+});
+
+test('落水停留沿用安全机位，退出与重开不残留水炮镜头',()=>{
+    const {camera:c,f}=makeReview();
+    Object.assign(c,{cannonSourceX:25,cannonSourceY:1.8,cannonSourceZ:-11,cannonTargetX:10,cannonTargetZ:-9.8,
+        cannonProjectile:null,mode:'cannon',holdSeconds:1,shouldRender:()=>true,finishRender(){},
+        hide(){this.mode='none';this.holdSeconds=0},resetTimedBombTrackingState(){}});
+    c.updateCannonCameraPose(1,10);const position=c.cameraPosition.clone();
+    c.updateCannon(null,0,true,.05);assert.ok(f.Vec3.equals(position,c.cameraPosition));assert.equal(c.fov,49);
+    c.updateCannon(null,0,false,.05);assert.equal(c.mode,'none');
+    c.mode='cannon';c.reset();assert.equal(c.mode,'none');assert.equal(c.holdSeconds,0);
+});
