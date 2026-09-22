@@ -30,7 +30,9 @@ test('C1 导出预算、节点与源导出一致；水雷接口保持原几何',
     const file=fs.readFileSync('art/timed-water-balloon/TimedWaterBalloon.glb');
     assert.deepEqual(file,fs.readFileSync('assets/race/items/TimedWaterBalloon.glb'));
     const gltf=JSON.parse(file.subarray(20,20+file.readUInt32LE(12)));
-    assert.equal(gltf.meshes.length,2);assert.equal(gltf.materials.length,1);assert.equal(gltf.textures?.length||0,0);
+    assert.equal(gltf.meshes.length,2);assert.equal(gltf.materials.length,1);assert.equal(gltf.textures.length,1);
+    assert.equal(gltf.materials[0].alphaMode ?? 'OPAQUE','OPAQUE');
+    assert.ok(gltf.meshes.every(m=>m.primitives.every(p=>p.attributes.TEXCOORD_0!==undefined)));
     assert.equal(gltf.meshes.reduce((sum,m)=>sum+m.primitives.reduce((s,p)=>s+gltf.accessors[p.indices].count/3,0),0),696);
     for(const name of ['TimedWaterBalloon','BalloonBody','BalloonConnector'])assert.ok(gltf.nodes.some(n=>n.name===name));
     assert.equal(gltf.skins?.length||0,0);
@@ -68,7 +70,7 @@ test('水下、空中和翻滚跟随真实挂点；到时解绑前记录球心�
     f.a.setPosition(1,-2,2);f.a.setRotationFromEuler(0,0,0);f.p.update(.05,arm,f.a,.01,true,true);
     f.p.showResolution(true,new f.Vec3(99,0,99));
     assert.equal(f.splashes.length,1);assert.equal(f.p.visualNode,null);
-    assert.equal(f.splashes[0].position.x,1);assert.equal(f.splashes[0].position.y,.035);
+    assert.ok(Math.abs(f.splashes[0].position.x-1)<.06);assert.equal(f.splashes[0].position.y,.035);
     assert.ok(f.splashes[0].explosionCorePosition.y < -1.4);
 });
 
@@ -79,6 +81,27 @@ test('晚加载恢复当前锁定状态；退出、销毁后回调不能复活�
     f.p.updateResidualEffects(.4,true);assert.equal(f.p.visualNode,null);
     const late=fixture();late.p.attach(arm,late.a,true);late.p.reset();late.ready();assert.equal(late.p.visualNode,null);
     const dead=fixture();dead.p.dispose();const count=dead.created();dead.ready();assert.equal(dead.created(),count);
+});
+
+test('警示脉动在临近到时增强，转交和快照不重启相位，喷水取形变后球心',()=>{
+    const f=fixture();f.ready();f.p.attach(arm,f.a);
+    let early=0,late=0,peak=0;
+    for(let i=0;i<=200;i++){
+        const remaining=10-i*.05;f.p.syncSnapshot(arm,f.a,remaining,remaining<=.8);
+        const s=f.p.body.scale;peak=Math.max(peak,s.x);
+        assert.ok(s.x>=1&&s.x<=1.51&&s.y>=1&&s.y<=1.36);
+        if(i<30)early=Math.max(early,s.x-s.y);
+        if(i>160)late=Math.max(late,s.x-s.y);
+    }
+    assert.ok(peak>1.45&&late>early+.06,'后段有明显鼓胀及挤压回弹');
+    f.p.syncSnapshot(arm,f.a,.35,true);
+    const scale=new f.Vec3().set(f.p.body.scale),rotation=new f.Quat().set(f.p.body.rotation);
+    f.p.transfer({...arm,carrierLane:1},f.a,f.b);
+    f.p.syncSnapshot({...arm,carrierLane:1},f.b,.35,true);
+    assert.ok(f.Vec3.equals(scale,f.p.body.scale)&&f.Quat.equals(rotation,f.p.body.rotation));
+    const expected=f.Vec3.transformMat4(new f.Vec3(),new f.Vec3(0,.245,0),f.p.body.worldMatrix);
+    f.p.showResolution(true,new f.Vec3());
+    assert.ok(f.Vec3.equals(expected,f.splashes[0].explosionCorePosition),'水花来自挤压和抖动后的真实球心');
 });
 
 test('模型挂点重建、保活重开和隐藏帧不残留、不写变换',()=>{
@@ -104,16 +127,17 @@ test('11 个角色完整划水与翻滚时，最大鼓胀球体不侵入头部�
     for(const file of h.SWIMMER_MODEL_FILES){
         const r=h.createRig(file),frame=new h.Node();r.wrapper.parent=frame;frame.children.push(r.wrapper);
         const anchor=createTimedWaterBalloonMount(r.wrapper,r.variant.id);assert.ok(anchor);
-        const local=new h.Vec3(0,.14+.245*1.22,0),center=new h.Vec3(),point=new h.Vec3(),world=new h.Vec3();
+        // 最大径向膨胀和最短纵向压缩作保守包络，另加摇摆中心偏移余量。
+        const local=new h.Vec3(0,.14+.245*1.335,0),center=new h.Vec3(),point=new h.Vec3(),world=new h.Vec3();
         for(let i=0;i<24;i++){
             r.wrapper.setRotationFromEuler(90,90,0);frame.setRotationFromEuler(i*15,0,0);frame.setPosition(0,i%3-1,0);
             r.pose.applyFreestylePose(i*Math.PI/12,i*Math.PI/12+Math.PI,.2,1,.4,1,1,1);
             h.Vec3.transformMat4(center,local,anchor.worldMatrix);
             let min=Infinity;
             for(const v of r.fullHead){world.set(0,0,0);for(const inf of v.influences){h.Vec3.transformMat4(point,v.point,h.Mat4.multiply(new h.Mat4(),inf.bone.worldMatrix,inf.bind));h.Vec3.scaleAndAdd(world,world,point,inf.weight);}min=Math.min(min,h.Vec3.distance(world,center));}
-            assert.ok(min>.18*1.22,`${file} 头部间距 ${min}`);
+            assert.ok(min>.18*1.51+.04,`${file} 头部间距 ${min}`);
             for(const limb of r.pose._collisionLimp._limbs.filter(l=>!l.leg)){
-                for(const n of [limb.upper,limb.middle,limb.end])assert.ok(h.Vec3.distance(n.getWorldPosition(point),center)>.18*1.22,`${file} 手臂骨骼穿入球体`);
+                for(const n of [limb.upper,limb.middle,limb.end])assert.ok(h.Vec3.distance(n.getWorldPosition(point),center)>.18*1.51+.04,`${file} 手臂骨骼穿入球体`);
             }
         }
     }

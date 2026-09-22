@@ -30,6 +30,8 @@ export class MineRelayBrawlPresentation {
     private throwArcHeight = 0;
     private deflateRemaining = 0;
     private inflation = 1;
+    private readonly bodyScale = new Vec3(1, 1, 1);
+    private readonly bodyEuler = new Vec3();
     private readonly source = new Vec3();
     private readonly target = new Vec3();
     private readonly centerLocal = new Vec3();
@@ -143,8 +145,8 @@ export class MineRelayBrawlPresentation {
         const visible = !!this.visualNode;
         // 解绑前记录球体真实中心，潜水、空中和转交时都不能用水面根位置替代。
         if (visible) {
-            this.centerLocal.set(0, 0.14 + 0.245 * this.inflation, 0);
-            Vec3.transformMat4(this.explosionCoreWorldPosition, this.centerLocal, this.root.worldMatrix);
+            this.centerLocal.set(0, 0.245, 0);
+            Vec3.transformMat4(this.explosionCoreWorldPosition, this.centerLocal, this.body!.worldMatrix);
         } else if (worldPosition) this.explosionCoreWorldPosition.set(worldPosition);
         if (!exploded && visible) {
             this.root.getWorldPosition(this.target);
@@ -223,11 +225,22 @@ export class MineRelayBrawlPresentation {
         if (!this.arm || !this.body || !this.root.active) return;
         const age = Math.max(0, this.arm.fuseSeconds - this.remainingSeconds);
         const urgency = Math.max(0, Math.min(1, age / Math.max(0.01, this.arm.fuseSeconds)));
-        this.inflation = 1 + urgency * 0.22;
-        if (Math.abs(this.body.scale.x - this.inflation) > 0.0001) this.body.setScale(this.inflation, this.inflation, this.inflation);
-        // 从本轮计时推导相位；换人和晚快照不从零鼓胀，锁定只增加短促抖动。
-        const shake = this.locked ? Math.sin(age * 47) * 4 : Math.sin(age * 3.1) * 2;
-        this.body.setRotationFromEuler(shake, 0, Math.sin(age * 2.4) * (this.locked ? 3 : 1.5));
+        const swell = Math.pow(urgency, 1.65);
+        const warning = Math.max(0, (urgency - 0.35) / 0.65);
+        // 相位是本轮年龄的函数，频率从 0.75Hz 连续加快到 2.55Hz。
+        // 横向鼓起时纵向轻压，再回弹；最后锁定仍只改变外观。
+        const phase = Math.PI * 2 * (age * 0.75 + age * urgency * 0.9);
+        const pulse = Math.pow(Math.max(0, Math.sin(phase)), 3) * warning;
+        this.inflation = 1 + swell * 0.44;
+        this.bodyScale.set(this.inflation + pulse * 0.07,
+            1 + swell * 0.36 - pulse * 0.025, this.inflation + pulse * 0.07);
+        if (!Vec3.equals(this.body.scale, this.bodyScale)) this.body.setScale(this.bodyScale);
+        const tremor = this.locked ? Math.sin(age * 39) * 5 : Math.sin(age * 3.1) * (2 + warning);
+        this.bodyEuler.set(tremor, Math.sin(age * 2.4) * 1.5,
+            this.locked ? Math.sin(age * 31) * 4 : Math.sin(age * 2.4) * 2);
+        if (!Vec3.equals(this.body.eulerAngles, this.bodyEuler)) {
+            this.body.setRotationFromEuler(this.bodyEuler.x, this.bodyEuler.y, this.bodyEuler.z);
+        }
     }
 
     private beginThrow(duration: number, arcHeight: number): void {
@@ -260,7 +273,8 @@ export class MineRelayBrawlPresentation {
         this.deflateRemaining = Math.max(0, this.deflateRemaining - step);
         if (this.deflateRemaining <= 0) { this.detachMine(); return; }
         const scale = Math.max(0.02, this.deflateRemaining / DEFLATE_SECONDS);
-        if (this.body) this.body.setScale(this.inflation * scale, this.inflation * (0.2 + 0.8 * scale), this.inflation * scale);
+        if (this.body) this.body.setScale(this.bodyScale.x * scale,
+            this.bodyScale.y * (0.2 + 0.8 * scale), this.bodyScale.z * scale);
         if (this.connector?.active) this.connector.active = false;
     }
 

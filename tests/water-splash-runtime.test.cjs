@@ -135,7 +135,8 @@ test('炮火、水雷、定时道具的真实触发方法均驱动同一池，�
     m.showImpact({mineId:0,courseX:20,lateral:2,revision:1});const field=live(h)[1];assert.equal(field.intensity,1);near(field.explosionCore.getWorldPosition(new h.Vec3()).y,-.4+.25);
     mine.setScale(1,1,1);
     const Timed=caller(h,'MineRelayBrawlPresentation.ts',['showResolution','visualNode']);const t=new Timed();
-    Object.assign(t,{waterSplashes:h.pool,course,worldRoot:h.root,arm:{roundId:5},root:mine,model:{},inflation:1,centerLocal:new h.Vec3(),explosionCoreWorldPosition:new h.Vec3(),resolutionWorldPosition:new h.Vec3(),detachMine(){mine.active=false;}});
+    const body=new h.Node('BalloonBody');body.setParent(mine);body.setPosition(0,.14,0);
+    Object.assign(t,{waterSplashes:h.pool,course,worldRoot:h.root,arm:{roundId:5},root:mine,body,model:{},inflation:1,centerLocal:new h.Vec3(),explosionCoreWorldPosition:new h.Vec3(),resolutionWorldPosition:new h.Vec3(),detachMine(){mine.active=false;}});
     t.showResolution(true,new h.Vec3(80,.035,2));const timed=live(h)[2];assert.equal(timed.intensity,1.25);near(timed.root.position.y,.035);near(timed.explosionCore.getWorldPosition(new h.Vec3()).y,-.4+.14+.245);
     mine.setPosition(999,9,999);h.pool.update(.1);near(timed.explosionCore.getWorldPosition(new h.Vec3()).x,80);
 });

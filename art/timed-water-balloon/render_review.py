@@ -25,10 +25,10 @@ def render(name,location,target,scale=1):
     scene.render.filepath=str(OUT/(name+'.png'));bpy.ops.render.render(write_still=True)
 
 
-for state,scale,angle in [('normal',1,0),('inflated',1.22,0),('locked',1.22,4)]:
-    body.scale=(scale,)*3;body.rotation_euler.y=math.radians(angle)
+for state,scale,height,angle in [('normal',1,1,0),('inflated',1.36,1.29,0),('locked',1.51,1.335,5)]:
+    body.scale=(scale,scale,height);body.rotation_euler.y=math.radians(angle)
     for view,delta in [('front',(0,-3,0)),('side',(3,0,0)),('race',(2,-3,1.7))]:
-        render(state+'-'+view,Vector((0,0,.32))+Vector(delta),(0,0,.32),.88)
+        render(state+'-'+view,Vector((0,0,.38))+Vector(delta),(0,0,.38),1.02)
 body.scale=(1,)*3;body.rotation_euler.y=0
 for name,delta in [('back',(0,3,0)),('left',(-3,0,0)),('top',(0,0,3)),('bottom',(0,0,-3))]:
     render('structure-'+name,Vector((0,0,.3))+Vector(delta),(0,0,.3),.85)
@@ -49,7 +49,7 @@ for i,row in enumerate(rows):
         rotation=Quaternion(row['rotation'])
         obj.location=offset+Vector(row['position'])+rotation @ template.location;obj['reviewIndex']=i
         obj.rotation_mode='QUATERNION';obj.rotation_quaternion=rotation
-        if template==body:obj.scale=(1.22,)*3
+        if template==body:obj.scale=(1.51,1.51,1.335)
         review.append(obj)
 body.hide_render=True;connector.hide_render=True
 render('all-character-mounts',(7,-10,10),(3.5,-1.7,.05),10.5)

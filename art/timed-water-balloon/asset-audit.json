@@ -1,7 +1,11 @@
 {
   "meshes": 2,
   "materials": 1,
-  "textures": 0,
+  "textures": 1,
+  "textureSize": [
+    512,
+    512
+  ],
   "triangles": 696,
   "bodyWidth": 0.36,
   "bodyDepth": 0.3312,
@@ -10,7 +14,7 @@
   "bodyPivotY": 0.14,
   "inflationRange": [
     1,
-    1.22
+    1.51
   ],
   "connectorKnotOverlap": 0.012,
   "nodes": [
@@ -18,5 +22,5 @@
     "BalloonBody",
     "BalloonConnector"
   ],
-  "bytes": 23452
+  "bytes": 43724
 }

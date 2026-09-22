@@ -41,6 +41,53 @@
       ],
       "subMetas": {}
     },
+    "dc145": {
+      "importer": "gltf-embeded-image",
+      "uuid": "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@dc145",
+      "displayName": "",
+      "id": "dc145",
+      "name": "WaterBalloonWarning.image",
+      "userData": {
+        "gltfIndex": 0,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": false,
+        "type": "texture",
+        "compressSettings": {
+          "useCompressTexture": true,
+          "presetId": "astc-world-opaque-8x8"
+        }
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".json",
+        ".png"
+      ],
+      "subMetas": {}
+    },
+    "e39f7": {
+      "importer": "texture",
+      "uuid": "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@e39f7",
+      "displayName": "",
+      "id": "e39f7",
+      "name": "UnnamedTexture.texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@dc145"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
     "426eb": {
       "importer": "gltf-material",
       "uuid": "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@426eb",
@@ -75,7 +122,12 @@
     }
   },
   "userData": {
-    "imageMetas": [],
+    "imageMetas": [
+      {
+        "name": "WaterBalloonWarning",
+        "uri": "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@dc145"
+      }
+    ],
     "lods": {
       "enable": false,
       "hasBuiltinLOD": false,
@@ -100,7 +152,9 @@
         "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@cccbd"
       ],
       "skeletons": [],
-      "textures": [],
+      "textures": [
+        "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@e39f7"
+      ],
       "materials": [
         "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@426eb"
       ],

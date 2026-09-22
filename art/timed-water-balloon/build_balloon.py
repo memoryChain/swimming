@@ -4,8 +4,11 @@ import bpy
 import bmesh
 import math
 import json
+import sys
 
 SOURCE = Path(__file__).resolve().parent
+sys.path.insert(0, str(SOURCE))
+from paint_warning import build_warning_texture
 
 
 def material():
@@ -14,8 +17,8 @@ def material():
     shader = mat.node_tree.nodes.get('Principled BSDF')
     shader.inputs['Roughness'].default_value = .38
     shader.inputs['Metallic'].default_value = 0
-    color = mat.node_tree.nodes.new('ShaderNodeVertexColor')
-    color.layer_name = 'Color'
+    color = mat.node_tree.nodes.new('ShaderNodeTexImage')
+    color.image = build_warning_texture(SOURCE)
     mat.node_tree.links.new(color.outputs['Color'], shader.inputs['Base Color'])
     return mat
 
@@ -68,6 +71,17 @@ def main():
              (.26,.106),(.32,.154),(.385,.18),(.447,.173),(.502,.143),(.55,.096),(.576,.038),(.58,.008)]
     body = mesh_object('BalloonBody', *lathe(rings), mat, root)
     body.location.z = .14
+    uv = body.data.uv_layers.new(name='WarningUV')
+    for face in body.data.polygons:
+        segments = [body.data.loops[i].vertex_index % 24 for i in face.loop_indices]
+        seam = min(segments) == 0 and max(segments) == 23
+        for loop in face.loop_indices:
+            index = body.data.loops[loop].vertex_index
+            u = (index % 24) / 24
+            if seam and u == 0: u = 1
+            uv.data[loop].uv = (u, (rings[index // 24][0] - .128) / .452)
+    # 图案已经包含橙黄底色，导出顶点色保持白色以免乘暗印花。
+    for color in body.data.color_attributes['Color'].data: color.color_srgb = (1,1,1,1)
     vertices, faces, colors = [], [], []
     centers = [(0,0,0),(.012,0,.035),(.022,0,.075),(.012,0,.112),(0,0,.14)]
     for x,y,z in centers:
@@ -79,6 +93,9 @@ def main():
             faces.append((j*8+i,j*8+(i+1)%8,(j+1)*8+(i+1)%8,(j+1)*8+i));colors.append((1,.72,.035,1))
     faces.extend([tuple(reversed(range(8))),tuple(32+i for i in range(8))]);colors.extend([(1,.72,.035,1)]*2)
     connector=mesh_object('BalloonConnector',vertices,faces,colors,mat,root)
+    uv = connector.data.uv_layers.new(name='WarningUV')
+    for loop in uv.data: loop.uv = (.5,.03)
+    for color in connector.data.color_attributes['Color'].data: color.color_srgb = (1,1,1,1)
     objects=[body,connector]
     for obj in objects: obj.select_set(True)
     root.select_set(True)
@@ -87,9 +104,10 @@ def main():
     bpy.ops.export_scene.gltf(filepath=str(SOURCE/'TimedWaterBalloon.glb'),export_format='GLB',
         use_selection=True,export_materials='EXPORT',export_vertex_color='ACTIVE',export_yup=True)
     for obj in objects: obj.data.calc_loop_triangles()
-    report={'meshes':2,'materials':1,'textures':0,'triangles':sum(len(o.data.loop_triangles) for o in objects),
+    report={'meshes':2,'materials':1,'textures':1,'textureSize':[512,512],
+        'triangles':sum(len(o.data.loop_triangles) for o in objects),
         'bodyWidth':.36,'bodyDepth':.3312,'height':.58,'connectorLength':.14,
-        'bodyPivotY':.14,'inflationRange':[1,1.22], 'connectorKnotOverlap':.012,
+        'bodyPivotY':.14,'inflationRange':[1,1.51], 'connectorKnotOverlap':.012,
         'nodes':['TimedWaterBalloon','BalloonBody','BalloonConnector'],
         'bytes':(SOURCE/'TimedWaterBalloon.glb').stat().st_size}
     (SOURCE/'asset-audit.json').write_text(json.dumps(report,indent=2),encoding='utf-8')

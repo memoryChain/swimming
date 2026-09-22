@@ -104,7 +104,7 @@ test('水雷和定时道具在真实位置显示短促碎水团，水面水冠�
     assert.match(sharedSplash, /slot\.explosionCore\.setScale\(coreScale, coreVertical, coreScale\)/);
     assert.match(minefield, /Vec3\.transformMat4\(this\.explosionCoreWorldPosition, this\.sprayLocal, mineNode\.worldMatrix\)/);
     assert.match(minefield, /explosionCorePosition,/);
-    assert.match(timedBomb, /Vec3\.transformMat4\(this\.explosionCoreWorldPosition, this\.centerLocal, this\.root\.worldMatrix\)/);
+    assert.match(timedBomb, /Vec3\.transformMat4\(this\.explosionCoreWorldPosition, this\.centerLocal, this\.body!\.worldMatrix\)/);
     assert.match(timedBomb, /explosionCorePosition: this\.explosionCoreWorldPosition/);
     assert.doesNotMatch(sharedSplash, /ParticleSystem|Graphics|\.clear\(\)/);
 });
