@@ -30,6 +30,7 @@ const TIMED_BOMB_TRANSFER_PREVIEW_SECONDS = 0.8;
 const TIMED_BOMB_REOPEN_COOLDOWN_SECONDS = 1;
 const TIMED_BOMB_RESOLUTION_HOLD_SECONDS = 1;
 const LITTER_LANDING_HOLD_SECONDS = 0.5;
+const LITTER_PAN_SECONDS = 0.65;
 
 const WARNING_COLOR = new Color(255, 190, 86, 255);
 const DANGER_COLOR = new Color(255, 82, 72, 255);
@@ -97,8 +98,14 @@ export class RaceEventPictureInPictureCamera {
     private timedBombBlastPositionReady = false;
     private timedBombPoseReady = false;
     private litterHoldSeconds = 0;
+    private litterWave = -1;
     private litterFocusWorldX = 0;
     private litterFocusZ = 0;
+    private litterPanFromX = 0;
+    private litterPanFromZ = 0;
+    private litterPanToX = 0;
+    private litterPanToZ = 0;
+    private litterPanProgress = 1;
     private lastTimedBombCopyLane = -2;
     private lastTimedBombCopySeconds = -1;
     private lastTimedBombCopyLocal = false;
@@ -468,51 +475,73 @@ export class RaceEventPictureInPictureCamera {
 
         // 垃圾可抢占持续跟随的巨浪；其他事件占用时不遍历槽位或计算取景。
         if (this.mode !== 'none' && this.mode !== 'litter' && this.mode !== 'giant-wave') return;
+        if (!this.camera) return;
 
         let fallingWave = -1;
+        let currentWaveEntering = false;
         for (let index = 0; index < clusters.length; index++) {
             const cluster = clusters[index];
+            // 同波尚未开始的分组也要等完，不能在组间空隙提前转走。
+            if (cluster.active && cluster.wave === this.litterWave && cluster.phase === 'falling') {
+                currentWaveEntering = true;
+            }
             if (!cluster.active || cluster.phase !== 'falling' || cluster.phaseProgress < 0) continue;
             if (cluster.wave > fallingWave) fallingWave = cluster.wave;
         }
 
-        if (fallingWave < 0) {
-            if (this.mode !== 'litter') return;
-            this.litterHoldSeconds = Math.max(0, this.litterHoldSeconds - safeDt);
-            if (this.litterHoldSeconds <= 0) {
+        const continuing = this.mode === 'litter';
+        if (continuing) {
+            // 插值时钟使用完整模拟时间；相机变换仍只在共享渲染采样点写入。
+            this.litterPanProgress = clamp01(this.litterPanProgress + safeDt / LITTER_PAN_SECONDS);
+            const t = this.litterPanProgress;
+            const eased = t * t * (3 - 2 * t);
+            this.litterFocusWorldX = this.litterPanFromX + (this.litterPanToX - this.litterPanFromX) * eased;
+            this.litterFocusZ = this.litterPanFromZ + (this.litterPanToZ - this.litterPanFromZ) * eased;
+            this.litterHoldSeconds = currentWaveEntering
+                ? LITTER_LANDING_HOLD_SECONDS
+                : Math.max(0, this.litterHoldSeconds - safeDt);
+            // 先拍完当前波及到位水花；旧波快照不能让镜头倒退。
+            if (currentWaveEntering || this.litterHoldSeconds > 0) fallingWave = this.litterWave;
+            else if (fallingWave <= this.litterWave) {
                 this.hide();
                 return;
             }
-            if (!this.shouldRender(safeDt)) return;
-            this.updateLitterCameraPose();
-            this.finishRender();
-            return;
-        }
+        } else if (fallingWave < 0) return;
 
         // 垃圾镜头只承担事件建立感；鲨鱼、炮火、漩涡和定时炸弹等已有镜头均可优先占用共享画面。
-        if (this.mode !== 'litter') {
+        if (!continuing) {
             this.mode = 'litter';
             this.setCeilingVisible(false);
-            this.setCopy('赛道异物', '垃圾投放中', WARNING_COLOR);
+            this.setCopy('赛道异物', '杂物投放中', WARNING_COLOR);
             this.setVisible(true);
         }
-        this.litterHoldSeconds = LITTER_LANDING_HOLD_SECONDS;
+        if (!continuing || fallingWave !== this.litterWave) {
+            let focusWorldX = 0;
+            let focusZ = 0;
+            let focusCount = 0;
+            for (let index = 0; index < clusters.length; index++) {
+                const cluster = clusters[index];
+                if (!cluster.active || cluster.wave !== fallingWave) continue;
+                focusWorldX += this.options.course.distanceToWorldX(cluster.courseX);
+                focusZ += cluster.lateral;
+                focusCount++;
+            }
+            // 整波构图只建立一次，不被已到位垃圾的漂移或碰撞牵动。
+            if (focusCount > 0) {
+                this.litterPanToX = focusWorldX / focusCount;
+                this.litterPanToZ = focusZ / focusCount;
+                if (!continuing) {
+                    this.litterFocusWorldX = this.litterPanToX;
+                    this.litterFocusZ = this.litterPanToZ;
+                }
+                this.litterPanFromX = this.litterFocusWorldX;
+                this.litterPanFromZ = this.litterFocusZ;
+                this.litterPanProgress = continuing ? 0 : 1;
+            }
+            this.litterWave = fallingWave;
+            this.litterHoldSeconds = LITTER_LANDING_HOLD_SECONDS;
+        }
         if (!this.shouldRender(safeDt)) return;
-
-        let focusWorldX = 0;
-        let focusZ = 0;
-        let focusCount = 0;
-        for (let index = 0; index < clusters.length; index++) {
-            const cluster = clusters[index];
-            if (!cluster.active || cluster.wave !== fallingWave) continue;
-            focusWorldX += this.options.course.distanceToWorldX(cluster.courseX);
-            focusZ += cluster.lateral;
-            focusCount++;
-        }
-        if (focusCount > 0) {
-            this.litterFocusWorldX = focusWorldX / focusCount;
-            this.litterFocusZ = focusZ / focusCount;
-        }
         this.updateLitterCameraPose();
         this.finishRender();
     }
@@ -579,14 +608,19 @@ export class RaceEventPictureInPictureCamera {
     }
 
     private updateLitterCameraPose(): void {
+        // 接近平视看清看台来向、空中翻转与落水；按两岸起点留出水平安全区。
+        // 54 度垂直视角与 16:9 画幅的水平半视锥正切约为 0.906。
+        const halfSpan = this.options.course.poolWidth * 0.5 + 4.6 + Math.abs(this.litterFocusZ) + 1;
+        const distance = Math.max(24, halfSpan / 0.906 + 2.5);
         this.focus.set(
             this.litterFocusWorldX,
-            this.options.course.waterY + 0.85,
+            this.options.course.waterY + 2.7,
             this.litterFocusZ,
         );
         this.cameraPosition.set(
-            this.litterFocusWorldX - this.options.course.direction * 5.2,
-            this.options.course.waterY + 10.8,
+            // 固定场馆同一观察侧，反向游程不把低机位推入另一端封闭看台。
+            this.litterFocusWorldX - distance,
+            this.options.course.waterY + 4.8,
             this.litterFocusZ + 0.5,
         );
         this.applyCameraPose(54);
@@ -850,6 +884,8 @@ export class RaceEventPictureInPictureCamera {
         this.warningPush = 0;
         this.biteHoldSeconds = 0;
         this.litterHoldSeconds = 0;
+        this.litterWave = -1;
+        this.litterPanProgress = 1;
         this.biteCameraBasisReady = false;
         this.lastSharkState = SharkState.INACTIVE;
     }

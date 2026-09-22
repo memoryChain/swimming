@@ -135,18 +135,35 @@ export class LitterBrawlPresentation {
             const targetY = this.course.waterY + 0.08;
             if (cluster.phase === 'falling') {
                 const t = clamp01(cluster.phaseProgress);
+                // 从看台方向高处抛入，仍消费原权威预警进度与落点。
                 const startZ = cluster.throwSide * (this.course.poolWidth * 0.5 + 4.6);
+                const phase = this.clock * 2.1 + cluster.id * 0.83;
+                const floatInstancePhase = cluster.id * 0.83 + cluster.visualVariant * 0.19;
+                const rigid = cluster.kind === 'rigid';
+                const airborne = 1 - smoothstep(t);
                 node.setWorldPosition(
                     targetX + Math.sin(t * Math.PI) * cluster.throwSide * 0.65,
-                    targetY + (1 - t) * 5.4 + Math.sin(t * Math.PI) * 1.8,
+                    targetY + (rigid ? 0.035 : 0.015)
+                        + sampleWaterFloatOffset(this.clock, floatInstancePhase,
+                            rigid ? WATER_FLOAT_PROFILES.rigidDebris : WATER_FLOAT_PROFILES.softDebris)
+                        + (1 - t) * 5.4 + Math.sin(t * Math.PI) * 1.8,
                     lerp(startZ, cluster.lateral, smoothstep(t)),
                 );
-                if (cluster.kind === 'rigid') {
-                    node.setRotationFromEuler(35 + t * 230, cluster.id * 53 + t * 330, 20 + t * 165);
-                    this.setUniformScale(node, 0.7);
+                if (rigid) {
+                    node.setRotationFromEuler(
+                        this.clock * 24 * (cluster.id % 2 === 0 ? 1 : -1) + Math.sin(phase * 0.55) * 8
+                            - airborne * 300 * cluster.throwSide,
+                        cluster.visualVariant * 63 + Math.sin(phase * 0.31) * 14 - airborne * 230,
+                        Math.cos(phase * 0.43) * 7 + airborne * 145,
+                    );
+                    this.setUniformScale(node, 0.68);
                 } else {
-                    node.setRotationFromEuler(32 + Math.sin(t * Math.PI * 2) * 16, cluster.id * 41 + t * 120, 10 + t * 55);
-                    this.setUniformScale(node, 0.86);
+                    node.setRotationFromEuler(
+                        67 + Math.sin(phase * 0.61) * 6 - airborne * 125,
+                        cluster.id * 29 + Math.sin(phase * 0.29) * 16 - airborne * 150,
+                        Math.sin(phase * 0.79) * 2.8 + airborne * 65,
+                    );
+                    this.setUniformScale(node, 0.88);
                 }
             } else {
                 const phase = this.clock * 2.1 + cluster.id * 0.83;

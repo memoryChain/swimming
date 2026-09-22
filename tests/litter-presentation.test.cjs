@@ -38,8 +38,8 @@ function fixture() {
         setParent(parent) { this.parent = parent; parent.children.push(this); }
         addComponent(Type) { return this.renderer = new Type(); }
         getComponent() { return this.renderer; }
-        setWorldPosition() { stats.transformWrites++; }
-        setRotationFromEuler() { stats.transformWrites++; }
+        setWorldPosition(x, y, z) { this.position = { x, y, z }; stats.transformWrites++; }
+        setRotationFromEuler(x, y, z) { this.rotation = { x, y, z }; stats.transformWrites++; }
         setScale(x, y, z) { this.scale.set(x, y, z); stats.scaleWrites++; }
         destroy() { this.isValid = false; }
     }
@@ -75,16 +75,64 @@ function fixture() {
     const geometry = load(path.join(core, 'LitterDebrisGeometry.ts'));
     const { LitterBrawlPresentation } = load(path.join(core, 'LitterBrawlPresentation.ts'));
     const root = new Node('world');
+    const splashRequests = [];
     const presentation = new LitterBrawlPresentation(root,
         { distanceToWorldX: x => x, poolWidth: 21, waterY: 0.055 }, 18,
-        { cancelOwner() {}, play() { stats.splashes++; } });
+        { cancelOwner() {}, play(request) { stats.splashes++; splashRequests.push({ ...request, position: { ...request.position } }); } });
     const clusters = Array.from({ length: 18 }, (_, id) => ({ id, active: true, generation: 1,
         wave: Math.floor(id / 6), phase: 'floating', phaseProgress: 1,
         kind: id % 6 === 1 || id % 6 === 4 ? 'soft' : 'rigid', visualVariant: Math.floor(id / 2) % 3,
         courseX: 25, lateral: id - 9, anchorCourseX: 25, anchorLateral: id - 9,
         throwSide: 1, impactRevision: 0 }));
-    return { stats, meshes, root, geometry, presentation, clusters };
+    return { stats, meshes, root, geometry, presentation, clusters, splashRequests };
 }
+
+test('杂物两侧高处抛入保持完整预警，到位水花使用权威落点且不改变槽位', () => {
+    for (const side of [-1, 1]) {
+        const f = fixture();
+        for (const c of f.clusters) {
+            c.throwSide = side;
+            c.lateral = c.anchorLateral = side * (2 + c.id % 6);
+            c.phase = 'falling'; c.phaseProgress = -0.01;
+        }
+        f.presentation.update(0, f.clusters, true);
+        assert.ok(f.root.children.every(n => !n.active), '分组等待不能提前出现');
+        for (let frame = 0; frame <= 27; frame++) {
+            for (const c of f.clusters) c.phaseProgress = frame / 27;
+            const before = JSON.stringify(f.clusters);
+            f.presentation.update(0.05, f.clusters, true);
+            assert.equal(JSON.stringify(f.clusters), before, '表现不能写入玩法或同步状态');
+            for (const c of f.clusters) {
+                const p = f.root.children[c.id].position;
+                assert.ok(Math.abs(p.x - c.anchorCourseX) <= .65 + 1e-8);
+                assert.ok(p.y > 0.055 && p.y < 5.8, '抛物线保持可读高度');
+                if (frame === 0) {
+                    assert.equal(p.z, side * 15.1);
+                    assert.ok(p.y > 5.4, '从看台方向高处开始');
+                }
+                if (frame === 13) assert.ok(p.y > 4, '飞行中段仍明显离开水面');
+                if (frame === 27) {
+                    assert.ok(Math.abs(p.z - c.anchorLateral) < 1e-8);
+                    assert.ok(p.y < .25, '末段接回水面');
+                }
+            }
+            assert.equal(f.stats.splashes, 0, '整个 1.35 秒预警内不提前播落点水花');
+        }
+        const last = f.root.children.map(n => ({ p: n.position, r: n.rotation }));
+        for (const c of f.clusters) { c.phase = 'floating'; c.phaseProgress = 0; }
+        f.presentation.update(0.05, f.clusters, true);
+        assert.equal(f.splashRequests.length, 18);
+        f.splashRequests.forEach((s, id) => {
+            assert.equal(s.position.x, f.clusters[id].anchorCourseX);
+            assert.equal(s.position.z, f.clusters[id].anchorLateral);
+            assert.ok(Math.abs(f.root.children[id].position.y - last[id].p.y) < 0.02);
+            assert.ok(Math.abs(f.root.children[id].rotation.x - last[id].r.x) < 3);
+        });
+        assert.equal(f.stats.nodes, 19);
+        assert.equal(f.stats.meshes, 4);
+        assert.equal(f.stats.materials, 1);
+    }
+});
 
 test('18槽仅创建四份共享网格和一份不透明材质，三种瓶型正确绑定且网格满足预算', () => {
     const f = fixture();

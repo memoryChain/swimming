@@ -2877,8 +2877,8 @@ export class GameManager extends Component {
                 if (isEntertainmentBrawlMode()) return;
                 this._entertainmentEventBanner.showEvent(
                     wave === 0
-                        ? '看台有观众开始往泳池里乱扔垃圾了'
-                        : '又有垃圾被扔进泳池·注意水面漂浮物',
+                        ? '看台杂物飞来 · 留意落点及时绕行'
+                        : '又有杂物飞来 · 看准水面空隙绕行',
                     'warning',
                     2200,
                     'broadcast',
@@ -4367,7 +4367,7 @@ export class GameManager extends Component {
                                 : isMinefieldBrawlMode()
                                     ? '喷水浮标缓慢漂移；触碰后喷水并搭圈调整，水花会推开附近选手'
                                     : isLitterBrawlMode()
-                                        ? '观众会将垃圾扔入水中；硬垃圾会弹开并瞬间减速，软垃圾可穿过但会持续拖慢'
+                                        ? '杂物从看台方向抛入，注意落点；硬瓶弹开减速，软餐盒可穿但持续拖慢'
                                     : '率先完成全程者获胜',
         });
     }
