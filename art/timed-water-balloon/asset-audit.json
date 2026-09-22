@@ -1,0 +1,22 @@
+{
+  "meshes": 2,
+  "materials": 1,
+  "textures": 0,
+  "triangles": 696,
+  "bodyWidth": 0.36,
+  "bodyDepth": 0.3312,
+  "height": 0.58,
+  "connectorLength": 0.14,
+  "bodyPivotY": 0.14,
+  "inflationRange": [
+    1,
+    1.22
+  ],
+  "connectorKnotOverlap": 0.012,
+  "nodes": [
+    "TimedWaterBalloon",
+    "BalloonBody",
+    "BalloonConnector"
+  ],
+  "bytes": 23452
+}

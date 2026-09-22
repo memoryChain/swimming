@@ -403,6 +403,10 @@ export const RESOURCE_PATHS = {
         'items/StimulantBottle/StimulantBottle',
         'items/StimulantBottle',
     ],
+    timedWaterBalloonPrefabCandidates: [
+        'items/TimedWaterBalloon/TimedWaterBalloon',
+        'items/TimedWaterBalloon',
+    ],
     recoveryFloatRingPrefabCandidates: [
         'items/RecoveryFloatRing/RecoveryFloatRing',
         'items/RecoveryFloatRing',

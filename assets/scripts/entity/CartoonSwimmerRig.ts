@@ -1,4 +1,5 @@
 import { RecoveryFloatPresentation } from '../character/RecoveryFloatPresentation';
+import { createTimedWaterBalloonMount } from '../character/TimedWaterBalloonMount';
 import { _decorator, Camera, Color, Component, EffectAsset, instantiate, JsonAsset, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3, Vec4 } from 'cc';
 import { CharacterHeadBounds } from '../character/CharacterHeadBounds';
 import { CharacterHandContact } from '../character/CharacterHandContact';
@@ -415,6 +416,17 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.clearLoadedModel();
         this.loadModelForCurrentVariant();
         return true;
+    }
+
+    private _timedWaterBalloonMount: Node | null = null;
+
+    /** 仅携带时按需建立；挂点随真实肩背骨、潜水和翻滚，不单独锁水面高度。 */
+    get timedWaterBalloonMount(): Node | null {
+        if (!this._model?.isValid) return null;
+        if (!this._timedWaterBalloonMount?.isValid) {
+            this._timedWaterBalloonMount = createTimedWaterBalloonMount(this._model, this._modelVariantId);
+        }
+        return this._timedWaterBalloonMount;
     }
 
     get modelVariantId(): string {

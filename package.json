@@ -23,7 +23,7 @@
     "test:shark": "npx --yes --package tsx@4.20.5 tsx --test tests/shark-brawl.test.mjs tests/entertainment-recovery.test.mjs tests/net-race-codec-ordering.test.mjs",
     "test:whirlpool": "npx --yes --package tsx@4.20.5 tsx --test tests/whirlpool-brawl.test.mjs tests/net-race-codec-ordering.test.mjs",
     "test:cannon": "npx --yes --package tsx@4.20.5 tsx --test tests/cannon-brawl.test.mjs tests/water-explosion-vfx.test.mjs tests/entertainment-recovery.test.mjs tests/net-race-codec-ordering.test.mjs",
-    "test:mine-relay": "npx --yes --package tsx@4.20.5 tsx --test tests/mine-relay-brawl.test.mjs tests/water-explosion-vfx.test.mjs tests/net-race-codec-ordering.test.mjs",
+    "test:mine-relay": "npx --yes --package typescript@5.4.5 --package tsx@4.20.5 tsx --test tests/mine-relay-brawl.test.mjs tests/timed-water-balloon.test.cjs tests/water-explosion-vfx.test.mjs tests/net-race-codec-ordering.test.mjs",
     "test:litter": "npx --yes --package typescript@5.4.5 --package tsx@4.20.5 tsx --test tests/litter-brawl.test.mjs tests/entertainment-mode-director.test.mjs tests/net-race-codec-ordering.test.mjs tests/litter-presentation.test.cjs",
     "test:event-camera": "node --test tests/event-picture-in-picture.test.mjs",
     "test:entertainment": "npx --yes --package typescript@5.4.5 --package tsx@4.20.5 tsx --test tests/entertainment-mode-director.test.mjs tests/entertainment-event-banner.test.mjs tests/stimulant-brawl.test.mjs tests/shark-brawl.test.mjs tests/whirlpool-brawl.test.mjs tests/cannon-brawl.test.mjs tests/mine-relay-brawl.test.mjs tests/litter-brawl.test.mjs tests/water-explosion-vfx.test.mjs tests/entertainment-recovery.test.mjs tests/net-race-codec-ordering.test.mjs tests/litter-presentation.test.cjs",

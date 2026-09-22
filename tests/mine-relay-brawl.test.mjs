@@ -548,7 +548,7 @@ test('两种玩法的 HUD 与表现不逐帧重建 UI，也不接管主镜头', 
     const presentation = readFileSync(new URL('../assets/scripts/core/MinefieldBrawlPresentation.ts', import.meta.url), 'utf8');
     assert.match(presentation, /PRESENTATION_INTERVAL = 1 \/ 20/);
     assert.match(presentation, /visible !== this\.visible/);
-    assert.match(presentation, /buildMineGeometry/);
+    assert.match(presentation, /WaterPlayObstacleModels/);
     assert.match(presentation, /ENTRY_DISTURB_SECONDS = 0\.28/);
     assert.match(presentation, /ENTRY_RISE_SECONDS = 0\.72/);
     assert.match(presentation, /ENTRY_SETTLE_SECONDS = 0\.3/);
@@ -559,11 +559,11 @@ test('两种玩法的 HUD 与表现不逐帧重建 UI，也不接管主镜头', 
     assert.match(presentation, /entryGeneration/);
     assert.doesNotMatch(presentation, /Graphics|\.clear\(\)/);
     const timedBombPresentation = readFileSync(new URL('../assets/scripts/core/MineRelayBrawlPresentation.ts', import.meta.url), 'utf8');
-    assert.match(timedBombPresentation, /buildTimedBombGeometry/);
-    assert.match(timedBombPresentation, /TimedBombWarningLamp/);
+    assert.match(timedBombPresentation, /timedWaterBalloonPrefabCandidates/);
+    assert.match(timedBombPresentation, /BalloonBody/);
     assert.match(timedBombPresentation, /appendFacetedCylinder/);
-    assert.match(timedBombPresentation, /beginThrowFromStands/);
-    assert.match(timedBombPresentation, /THROW_ARC_HEIGHT = 3\.6/);
+    assert.match(timedBombPresentation, /throwFromStands/);
+    assert.match(timedBombPresentation, /initialTransferCooldownSeconds\), 3\.6/);
     assert.match(timedBombPresentation, /TRANSFER_THROW_SECONDS = 0\.22/);
     assert.match(timedBombPresentation, /TRANSFER_THROW_ARC_HEIGHT = 0\.55/);
     assert.match(timedBombPresentation, /transfer\(arm: MineRelayArm/);

@@ -217,7 +217,7 @@ function entertainmentBannerIcon(event: EntertainmentEventId): EntertainmentBann
 function entertainmentActiveBannerCategory(event: EntertainmentEventId): EntertainmentBannerCategory {
     switch (event) {
         case EntertainmentEventId.STIMULANT: return '补给投放';
-        case EntertainmentEventId.TIMED_BOMB: return '炸弹接力';
+        case EntertainmentEventId.TIMED_BOMB: return '水球接力';
         case EntertainmentEventId.WHIRLPOOL: return '漩涡警报';
         case EntertainmentEventId.CANNON: return '炮火警报';
         case EntertainmentEventId.MINEFIELD: return '水雷警报';
@@ -2408,6 +2408,7 @@ export class GameManager extends Component {
                 this._worldRoot,
                 COURSE_LAYOUT,
                 this.entertainmentWaterSplashes(),
+                carrier => carrier.getComponent(Swimmer)?.cartoonRig?.timedWaterBalloonMount ?? null,
             );
         }
         this._mineRelayBrawl = new MineRelayBrawlController(
@@ -2455,9 +2456,11 @@ export class GameManager extends Component {
             if (applied.activeChanged || applied.carrierChanged) {
                 const arm = controller.currentArm();
                 const carrierNode = arm ? this.swimmerForLane(arm.carrierLane)?.node ?? null : null;
-                this._mineRelayPresentation?.sync(
+                this._mineRelayPresentation?.syncSnapshot(
                     arm,
                     carrierNode,
+                    controller.currentRemainingSeconds(),
+                    controller.isLocked(),
                 );
                 if (arm) {
                     this._eventPictureInPicture?.showTimedBombCarrier(
@@ -2515,6 +2518,7 @@ export class GameManager extends Component {
             this._state === GameState.RACING,
         );
         const carrierLane = arm?.carrierLane ?? -1;
+        this._eventPictureInPicture?.setTimedBombVisual(this._mineRelayPresentation?.visualNode ?? null);
         this._eventPictureInPicture?.updateTimedBomb(
             carrierNode,
             carrierLane,
@@ -2560,17 +2564,17 @@ export class GameManager extends Component {
         );
         if (event.carrierLane === this._playerLaneIndex) {
             this._entertainmentEventBanner.showPersonal(
-                '炸弹落到你身上 · 贴近对手传出',
+                '水球到你啦 · 贴近对手转交',
                 'danger',
                 1400,
             );
         } else if (!isEntertainmentBrawlMode()) {
             this._entertainmentEventBanner.showEvent(
-                `定时炸弹落到${event.carrierLane + 1}号泳道`,
+                `水球发放到${event.carrierLane + 1}号泳道`,
                 'warning',
                 1200,
                 'timed-bomb',
-                '炸弹接力',
+                '水球接力',
             );
         }
         if (broadcast && this._netRaceController?.isHost) {
@@ -2598,9 +2602,9 @@ export class GameManager extends Component {
             true,
         );
         if (event.fromLane === this._playerLaneIndex) {
-            this._entertainmentEventBanner.showPersonal('定时炸弹已传出', 'success', 800);
+            this._entertainmentEventBanner.showPersonal('水球已转交', 'success', 800);
         } else if (event.toLane === this._playerLaneIndex) {
-            this._entertainmentEventBanner.showPersonal('定时炸弹传到你身上了', 'danger', 1000);
+            this._entertainmentEventBanner.showPersonal('水球到你啦', 'danger', 1000);
         }
         if (broadcast && this._netRaceController?.isHost) {
             this._netRaceController.enqueueMineRelayTransfer(
@@ -2632,14 +2636,14 @@ export class GameManager extends Component {
                 event.carrierLane === this._playerLaneIndex,
             );
             if (event.carrierLane === this._playerLaneIndex) {
-                this._entertainmentEventBanner.showPersonal('带雷冲线 · 拆弹成功', 'success', 1200);
+                this._entertainmentEventBanner.showPersonal('成功带球冲线', 'success', 1200);
             } else if (!isEntertainmentBrawlMode()) {
                 this._entertainmentEventBanner.showEvent(
-                    `${event.carrierLane + 1}号泳道带雷冲线 · 拆弹成功`,
+                    `${event.carrierLane + 1}号泳道成功带球冲线`,
                     'success',
                     1200,
                     'timed-bomb',
-                    '拆弹成功',
+                    '带球冲线',
                 );
             }
         }
@@ -2698,13 +2702,7 @@ export class GameManager extends Component {
                 recoveryRevision,
             );
         }
-        if (showPresentation) this._entertainmentEventBanner.showEvent(
-            `${swimmer.swimmerName}被定时炸弹炸倒 · 等待重生`,
-            'danger',
-            1250,
-            'timed-bomb',
-            '炸弹爆炸',
-        );
+        // B1 恢复卡接管个人反馈，不叠加重复的大提示。
     }
 
     private setupMinefieldBrawl() {
@@ -4438,7 +4436,7 @@ export class GameManager extends Component {
                         : isCannonBrawlMode()
                             ? '观察水面预警躲避炮弹；核心命中会击倒并重新入水'
                             : isTimedBombBrawlMode()
-                                ? '炸弹会随机落到选手身上；倒计时结束会被炸倒并在原进度重生'
+                                ? '水球随机发放；贴近对手转交，最后锁定后无法转交；到时喷水并由浮圈托住调整'
                                 : isMinefieldBrawlMode()
                                     ? '水雷在泳池中缓慢漂移；直接触雷会被击倒，附近选手会被冲击波推开'
                                     : isLitterBrawlMode()

@@ -1,0 +1,112 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9",
+  "files": [],
+  "subMetas": {
+    "55b72": {
+      "importer": "gltf-mesh",
+      "uuid": "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@55b72",
+      "displayName": "",
+      "id": "55b72",
+      "name": "BalloonBodyMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 620
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "cccbd": {
+      "importer": "gltf-mesh",
+      "uuid": "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@cccbd",
+      "displayName": "",
+      "id": "cccbd",
+      "name": "BalloonConnectorMesh.mesh",
+      "userData": {
+        "gltfIndex": 1,
+        "triangleCount": 76
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "426eb": {
+      "importer": "gltf-material",
+      "uuid": "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@426eb",
+      "displayName": "",
+      "id": "426eb",
+      "name": "WaterBalloonRubber.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "c2075": {
+      "importer": "gltf-scene",
+      "uuid": "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@c2075",
+      "displayName": "",
+      "id": "c2075",
+      "name": "TimedWaterBalloon.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@55b72",
+        "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@cccbd"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@426eb"
+      ],
+      "scenes": [
+        "b2f7beb6-8970-40a1-a3d1-46a9f98bcfe9@c2075"
+      ]
+    }
+  }
+}

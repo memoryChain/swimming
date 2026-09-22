@@ -41,7 +41,7 @@ export const RACE_MODE_OPTIONS: readonly RaceModeConfig[] = [
     { id: 'whirlpool-brawl', label: '漩涡冲浪赛', category: 'entertainment', distance: 200, ruleset: 'whirlpool', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
     // 保留入口 ID，避免已有存档和联机房间选择失效；玩法本身已替换为炮火逃生赛。
     { id: 'last-place-brawl', label: '炮火逃生赛', category: 'entertainment', distance: 200, ruleset: 'cannon', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
-    { id: 'timed-bomb-brawl', label: '定时炸弹模式', category: 'entertainment', distance: 200, ruleset: 'timed-bomb', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
+    { id: 'timed-bomb-brawl', label: '定时水球传递', category: 'entertainment', distance: 200, ruleset: 'timed-bomb', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
     { id: 'minefield-brawl', label: '水雷模式', category: 'entertainment', distance: 200, ruleset: 'minefield', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
     { id: 'litter-brawl', label: '垃圾漂流大乱斗', category: 'entertainment', distance: 200, ruleset: 'litter', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
     { id: 'giant-wave-brawl', label: '巨浪冲浪', category: 'entertainment', distance: 200, ruleset: 'giant-wave', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },

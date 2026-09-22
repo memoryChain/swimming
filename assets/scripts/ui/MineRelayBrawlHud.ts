@@ -4,7 +4,7 @@ import { EntertainmentStatusStrip, EntertainmentStatusTone } from './Entertainme
 
 const SAMPLE_SECONDS = 0.1;
 const COMPLETION_SECONDS = 2;
-/** 定时炸弹模式状态条；稳定节点、10Hz 采样、只在最终值变化时写属性。 */
+/** 定时水球模式状态条；稳定节点、10Hz 采样、只在最终值变化时写属性。 */
 export class MineRelayBrawlHud {
     readonly root: Node;
     private readonly strip: EntertainmentStatusStrip;
@@ -67,25 +67,25 @@ export class MineRelayBrawlHud {
             const seconds = Math.max(0, Math.ceil(remainingSeconds * 10) / 10).toFixed(1);
             if (carrierLane === playerLane) {
                 if (locked) {
-                    message = '炸弹已锁定';
+                    message = '你携带 · 即将喷水 · 无法转交';
                 } else {
-                    message = '你持有定时炸弹 · 贴近对手传出';
+                    message = '你携带水球 · 贴近对手转交';
                 }
                 tone = 'danger';
             } else {
-                message = `炸弹在${carrierLane + 1}号泳道${locked ? ' · 已锁定' : ''}`;
+                message = `水球在${carrierLane + 1}号泳道${locked ? ' · 无法转交' : ''}`;
                 tone = locked ? 'danger' : 'warning';
             }
             value = `${seconds}秒`;
         } else if (remainingRounds > 0) {
-            message = '下一轮炸弹待命';
+            message = '下一轮水球待命';
             value = `${remainingRounds}轮`;
         } else if (showCompletion && (this.hadPendingRound || this.completionRemainingSeconds > 0)) {
             if (this.hadPendingRound) {
                 this.hadPendingRound = false;
                 this.completionRemainingSeconds = COMPLETION_SECONDS;
             }
-            message = '炸弹阶段结束';
+            message = '水球阶段结束';
             value = '全力冲刺';
         } else {
             this.hide();

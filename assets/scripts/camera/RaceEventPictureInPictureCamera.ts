@@ -80,6 +80,8 @@ export class RaceEventPictureInPictureCamera {
     private whirlpoolZ = 0;
     private whirlpoolSuper = false;
     private timedBombCarrier: Node | null = null;
+    private timedBombVisual: Node | null = null;
+    private readonly timedBombVisualCenter = new Vec3(0, 0.36, 0);
     private timedBombLane = -1;
     private timedBombLocal = false;
     private timedBombLocked = false;
@@ -292,6 +294,10 @@ export class RaceEventPictureInPictureCamera {
         );
         this.applyCameraPose(this.whirlpoolSuper ? 45 : 42);
         this.finishRender();
+    }
+
+    setTimedBombVisual(node: Node | null): void {
+        this.timedBombVisual = node?.isValid ? node : null;
     }
 
     showTimedBombCarrier(
@@ -545,7 +551,7 @@ export class RaceEventPictureInPictureCamera {
             );
             this.timedBombDesiredCameraPosition.set(
                 this.timedBombBlastPosition.x - this.options.course.direction * 2.8,
-                this.options.course.waterY + 6.4,
+                this.options.course.waterY + 4.2,
                 this.timedBombBlastPosition.z + outward * 3.8,
             );
             if (!this.timedBombPoseReady) {
@@ -557,16 +563,21 @@ export class RaceEventPictureInPictureCamera {
             return;
         }
         carrier.getWorldPosition(this.subjectPosition);
+        if (this.timedBombVisual?.isValid && this.timedBombVisual.active) {
+            Vec3.transformMat4(this.targetPosition, this.timedBombVisualCenter, this.timedBombVisual.worldMatrix);
+            // 携带与短传都取实际水球位置；空中／水下不固定看水面。
+            Vec3.lerp(this.subjectPosition, this.subjectPosition, this.targetPosition, 0.72);
+        }
         const outward = this.subjectPosition.z >= 0 ? 1 : -1;
         this.timedBombDesiredFocus.set(
-            this.subjectPosition.x + this.options.course.direction * 0.45,
-            this.options.course.waterY + 0.18,
+            this.subjectPosition.x + this.options.course.direction * 0.12,
+            this.subjectPosition.y + 0.18,
             this.subjectPosition.z,
         );
         this.timedBombDesiredCameraPosition.set(
-            this.subjectPosition.x - this.options.course.direction * 4.2,
-            this.options.course.waterY + 2.8,
-            this.subjectPosition.z + outward * 4.3,
+            this.subjectPosition.x - this.options.course.direction * 2.6,
+            this.subjectPosition.y + 1.8,
+            this.subjectPosition.z + outward * 2.7,
         );
         if (!this.timedBombPoseReady) {
             this.cameraPosition.set(this.timedBombDesiredCameraPosition);
@@ -697,22 +708,22 @@ export class RaceEventPictureInPictureCamera {
         let status: string;
         let color: Readonly<Color> = WARNING_COLOR;
         if (this.timedBombResolution === 'exploded') {
-            status = this.timedBombLocal ? '你被炸倒 · 急救中' : `${this.timedBombLane + 1}号泳道被炸倒`;
+            status = this.timedBombLocal ? '水球喷水 · 调整中' : `${this.timedBombLane + 1}号泳道调整中`;
             color = DANGER_COLOR;
         } else if (this.timedBombResolution === 'disarmed') {
-            status = this.timedBombLocal ? '你已冲线 · 拆弹成功' : `${this.timedBombLane + 1}号泳道拆弹成功`;
+            status = this.timedBombLocal ? '成功带球冲线' : `${this.timedBombLane + 1}号泳道成功带球冲线`;
             color = INFO_COLOR;
         } else if (this.timedBombLocked) {
             status = this.timedBombLocal
-                ? `炸弹已锁定在你身上 · ${wholeSeconds}秒`
-                : `${this.timedBombLane + 1}号泳道已锁定 · ${wholeSeconds}秒`;
+                ? `你携带 · 无法转交 · ${wholeSeconds}秒`
+                : `${this.timedBombLane + 1}号泳道无法转交 · ${wholeSeconds}秒`;
             color = DANGER_COLOR;
         } else {
             status = this.timedBombLocal
-                ? `你持有定时炸弹 · ${wholeSeconds}秒`
+                ? `你携带水球 · ${wholeSeconds}秒`
                 : `${this.timedBombLane + 1}号泳道持有 · ${wholeSeconds}秒`;
         }
-        this.setCopy('炸弹追踪', status, color);
+        this.setCopy('水球追踪', status, color);
     }
 
     private isTimedBombBlockedByHigherPriority(): boolean {
@@ -727,6 +738,7 @@ export class RaceEventPictureInPictureCamera {
 
     private resetTimedBombTrackingState(): void {
         this.timedBombCarrier = null;
+        this.timedBombVisual = null;
         this.timedBombLane = -1;
         this.timedBombLocal = false;
         this.timedBombLocked = false;

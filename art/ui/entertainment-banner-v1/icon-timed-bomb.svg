@@ -1,17 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <g transform="rotate(-10 64 64)">
-    <path d="M54 29C58 15 68 12 76 22M72 29C81 16 92 18 96 29" fill="none" stroke="#07182D" stroke-width="10" stroke-linecap="round"/>
-    <path d="M54 29C58 15 68 12 76 22M72 29C81 16 92 18 96 29" fill="none" stroke="#FFB51B" stroke-width="6" stroke-linecap="round"/>
-    <rect x="24" y="25" width="25" height="82" rx="9" fill="#ED2738" stroke="#07182D" stroke-width="6"/>
-    <rect x="48" y="22" width="25" height="86" rx="9" fill="#FF3945" stroke="#07182D" stroke-width="6"/>
-    <rect x="72" y="27" width="23" height="80" rx="9" fill="#D91E32" stroke="#07182D" stroke-width="6"/>
-    <path d="M31 32H43L39 74H27Z" fill="#FF6470" opacity="0.55"/>
-    <path d="M55 29H67L63 77H51Z" fill="#FF7880" opacity="0.55"/>
-    <rect x="20" y="45" width="79" height="16" rx="5" fill="#151F2B" stroke="#07182D" stroke-width="5"/>
-    <rect x="20" y="78" width="79" height="16" rx="5" fill="#151F2B" stroke="#07182D" stroke-width="5"/>
-    <path d="M26 48H92" stroke="#3E5068" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
-    <rect x="86" y="47" width="34" height="31" rx="7" fill="#222F42" stroke="#07182D" stroke-width="6"/>
-    <rect x="92" y="54" width="22" height="17" rx="4" fill="#09131F" stroke="#B8C6D2" stroke-width="3"/>
-    <path d="M97 59V66M103 59V66M109 59V66" stroke="#FF574B" stroke-width="4" stroke-linecap="round"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>定时水球图标</title>
+  <desc>来自 art/timed-water-balloon/TimedWaterBalloon.blend 的透明离线渲染；重建入口为 render_review.py。</desc>
+  <image href="icon-timed-bomb-generated-source.png" width="256" height="256"/>
 </svg>
