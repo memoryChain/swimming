@@ -55,6 +55,7 @@ export function waveWeight(s: GiantWaveState, x: number, z: number, direction: n
 /** 短路径采样覆盖迎面快速穿浪；瞬移不沿整条路径补领作用。 */
 export function sweptWaveWeight(s: GiantWaveState, x: number, z: number, oldX: number,
     oldZ: number, direction: number, dt: number): number {
+    if (s.phase !== 'active' || s.age < s.entrance || s.age >= waveArrivalTime(s)) return 0;
     if (Math.hypot(x - oldX, z - oldZ) > 3) return waveWeight(s, x, z, direction);
     const movement = s.direction * (waveTravel(s, s.age) - waveTravel(s, Math.max(0, s.age - dt)));
     let sum = 0;

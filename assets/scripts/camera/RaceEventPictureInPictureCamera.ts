@@ -10,7 +10,7 @@ import { styleProjectUiLabel } from '../ui/ProjectUiFonts';
 import { makeLabel, makeRoundedRect, makeUiNode, UI_DESIGN_HEIGHT, UI_DESIGN_WIDTH, uiColor } from '../ui/RuntimeUiFactory';
 import { platform } from '../platform/PlatformManager';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
-import type { GiantWaveState } from '../core/GiantWaveRules';
+import { waveArrivalTime, type GiantWaveState } from '../core/GiantWaveRules';
 
 const FEED_WIDTH = 256;
 const FEED_HEIGHT = 144;
@@ -64,6 +64,7 @@ export class RaceEventPictureInPictureCamera {
     private readonly renderInterval = 1 / Math.max(1, Math.min(30,
         PERFORMANCE_CONFIG.eventPictureInPicture.framesPerSecond));
     private holdSeconds = 0;
+    private giantWaveImpact = false;
     private warningPush = 0;
     private biteHoldSeconds = 0;
     private biteCameraBasisReady = false;
@@ -282,17 +283,24 @@ export class RaceEventPictureInPictureCamera {
     }
 
     showGiantWavePreview(state: GiantWaveState, impact = false): void {
-        if (this.mode === 'shark' || this.mode === 'cannon' || this.mode === 'timed-bomb') return;
-        this.mode = 'giant-wave'; this.holdSeconds = impact ? state.impactTime + state.fadeTime : Math.min(3.5, state.growthTime);
+        if (!this.camera || state.phase !== 'active'
+            || (this.mode !== 'none' && this.mode !== 'giant-wave')) return;
+        if (this.mode === 'giant-wave' && this.giantWaveImpact === impact) return;
+        this.mode = 'giant-wave';
+        this.giantWaveImpact = impact;
         this.setCeilingVisible(false);
         this.setCopy('巨浪冲浪', impact ? '浪头拍岸 · 泡沫回落' : '顺浪借力 · 迎浪减速', INFO_COLOR);
         this.setVisible(true);
     }
 
     updateGiantWave(racing: boolean, dt: number, state: GiantWaveState): void {
-        if (this.mode !== 'giant-wave') return;
-        this.holdSeconds = Math.max(0, this.holdSeconds - safeStep(dt));
-        if (!racing || state.phase !== 'active' || this.holdSeconds <= 0) { this.hide(); return; }
+        if (!racing || state.phase !== 'active') {
+            if (this.mode === 'giant-wave') this.hide();
+            return;
+        }
+        // 巨浪持续跟随，但只在共享镜头空闲时接回；不修改其他事件的停留时间。
+        if (!this.camera || (this.mode !== 'none' && this.mode !== 'giant-wave')) return;
+        this.showGiantWavePreview(state, state.age >= waveArrivalTime(state));
         if (!this.shouldRender(safeStep(dt))) return;
         this.focus.set(state.x, this.options.course.waterY, state.z);
         this.cameraPosition.set(state.x - state.direction * 5,
@@ -458,8 +466,8 @@ export class RaceEventPictureInPictureCamera {
             return;
         }
 
-        // 其他事件正在占用唯一镜头时，不遍历垃圾槽位或计算垃圾取景。
-        if (this.mode !== 'none' && this.mode !== 'litter') return;
+        // 垃圾可抢占持续跟随的巨浪；其他事件占用时不遍历槽位或计算取景。
+        if (this.mode !== 'none' && this.mode !== 'litter' && this.mode !== 'giant-wave') return;
 
         let fallingWave = -1;
         for (let index = 0; index < clusters.length; index++) {

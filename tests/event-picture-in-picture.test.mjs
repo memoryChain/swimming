@@ -117,7 +117,7 @@ test('垃圾画中画只观察当前飞行槽位并在最后一组落水后短�
     assert.match(camera, /this\.setCopy\('赛道异物', '垃圾投放中', WARNING_COLOR\)/);
     assert.match(camera, /distanceToWorldX\(cluster\.courseX\)/);
     assert.match(camera, /this\.setCeilingVisible\(false\)/);
-    assert.match(camera, /if \(this\.mode !== 'none' && this\.mode !== 'litter'\) return/);
+    assert.match(camera, /if \(this\.mode !== 'none' && this\.mode !== 'litter' && this\.mode !== 'giant-wave'\) return/);
     const litterUpdate = camera.match(/updateLitter\([\s\S]*?\n    }\n\n    dispose/)?.[0] ?? '';
     assert.doesNotMatch(litterUpdate, /\.filter\(|\.map\(|new Vec|new Array|\[\.\.\./);
 });

@@ -22,6 +22,7 @@ export class GiantWaveController {
     private hudClock = 0;
     private soundedWave = -1;
     private wasRacing = false;
+    private autopilot: AISwimmerController | null = null;
     constructor(world: Node, hud: Node, private readonly course: RaceCourseLayout,
         private readonly swimmers: readonly Swimmer[], private readonly ai: readonly AISwimmerController[],
         seed: number, preset: GiantWavePreset, private readonly banner: EntertainmentEventBanner,
@@ -42,15 +43,21 @@ export class GiantWaveController {
     }
     reset(): void {
         this.simulation.reset(); this.presentation.hide(); this.strip.reset();
+        this.camera?.updateGiantWave(false, 0, this.simulation.state);
         this.aiClock = 0; this.hudClock = 0; this.soundedWave = -1; this.wasRacing = false;
         for (const swimmer of this.swimmers) swimmer.clearGiantWave();
         for (const controller of this.ai) controller?.setGiantWaveTargetZ(null);
+        this.clearAutopilot();
     }
     update(dt: number, racing: boolean, autopilot: AISwimmerController | null): void {
+        if (this.autopilot !== autopilot) {
+            this.clearAutopilot();
+            this.autopilot = autopilot;
+            this.aiClock = 0;
+        }
         if (!racing) {
             if (this.wasRacing) {
-                this.reset(); this.camera?.updateGiantWave(false, 0, this.simulation.state);
-                autopilot?.setGiantWaveTargetZ(null);
+                this.reset();
             }
             return;
         }
@@ -111,9 +118,14 @@ export class GiantWaveController {
         return giantWaveTargetZ(this.simulation.state, this.samples[index], index, this.course.poolWidth,
             this.simulation.swimSpan / this.course.courseLength);
     }
+    private clearAutopilot(): void {
+        this.autopilot?.setGiantWaveTargetZ(null);
+        this.autopilot = null;
+    }
     dispose(): void {
         for (const swimmer of this.swimmers) { swimmer.giantWaveState = null; swimmer.clearGiantWave(); }
         for (const controller of this.ai) controller?.setGiantWaveTargetZ(null);
+        this.clearAutopilot();
         view.off('canvas-resize', this.layout, this);
         view.off('design-resolution-changed', this.layout, this);
         this.strip.dispose(); this.presentation.dispose();
