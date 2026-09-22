@@ -4,6 +4,7 @@ import { DOLPHIN_JUMP } from '../core/DolphinJumpConfig';
 import { _decorator, Camera, Component, Node, Quat, Tween, Vec3, tween } from 'cc';
 import { CHARACTER_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
 import type { CharacterAction } from '../character/CharacterActionConfig';
+import { GIANT_WAVE_TUNING, GiantWaveState, sweptWaveWeight } from '../core/GiantWaveRules';
 import {
     Rating,
     StrokeType,
@@ -120,6 +121,41 @@ export class Swimmer extends Component {
     // Internal accessors for the race-phase controller (SwimmerRacePhases).
     get motor(): SwimmerMotor {
         return this._motor;
+    }
+
+    /** 仅独立巨浪调试赛绑定；普通比赛不采样水流。 */
+    giantWaveState: GiantWaveState | null = null;
+    private _waveX = NaN;
+    private _waveZ = 0;
+    private _waveRiding = false;
+    private _waveOpposed = false;
+    get isGiantWaveRiding(): boolean { return this._waveRiding; }
+    get isGiantWaveOpposed(): boolean { return this._waveOpposed; }
+    get canRideGiantWave(): boolean {
+        return this._motor.isRacing && this.node.active && !this._entertainmentKnocked
+            && !this._phases.isFlipTurnActive && !this._phases.isDolphinJumpActive
+            && !this._phases.isUnderwater && this._motor.ability.depth <= 0.2;
+    }
+    clearGiantWave(): void {
+        this._motor.clearGiantWave(); this._waveX = NaN; this._waveRiding = false;
+        this._waveOpposed = false;
+        this.cartoonRig?.setGiantWaveLift(0);
+    }
+    private sampleGiantWave(dt: number): void {
+        const wave = this.giantWaveState;
+        if (!wave) return;
+        if (!this.canRideGiantWave) { this.clearGiantWave(); return; }
+        const x = this._courseLayout.distanceToWorldX(this._motor.distance);
+        const z = this._startPosition.z + this._motor.lateralOffset;
+        const weight = sweptWaveWeight(wave, x, z,
+            Number.isFinite(this._waveX) ? this._waveX : x, Number.isFinite(this._waveX) ? this._waveZ : z,
+            this._courseLayout.directionAtDistance(this._motor.distance), dt);
+        this._waveRiding = weight > (this._waveRiding ? 0.02 : 0.08);
+        this._waveOpposed = weight < (this._waveOpposed ? -0.02 : -0.08);
+        this._motor.setGiantWaveTarget(weight * wave.boost, wave.boost, wave.slowdown);
+        this.cartoonRig?.setGiantWaveLift(Math.min(1, Math.abs(this._motor.giantWaveSpeed) / Math.max(0.01, wave.boost))
+            * GIANT_WAVE_TUNING.height * 0.45);
+        this._waveX = x; this._waveZ = z;
     }
 
     get netAbilityState(): Readonly<CharacterAbilitySnapshot> { return this._motor.ability; }
@@ -928,6 +964,7 @@ export class Swimmer extends Component {
         this.cartoonRig?.updateUnderwaterBubbles(this._phases.isSwimUnderwaterActive || this._motor.ability.ignoresSwimmers);
         if (!this._motor.isRacing) {
             this._movementSpeed = 0;
+            if (this.giantWaveState) this.clearGiantWave();
             return;
         }
         // 普通游泳从本步已校正的模拟位置起算，排除网络校正与渲染插值的跳变。
@@ -944,6 +981,7 @@ export class Swimmer extends Component {
         // 用步前状态覆盖落水交界帧，避免阶段 tick 结束后提前恢复整帧心率。
         const freezeJumpHeartRate = this._phases.isDolphinJumpActive;
         if (this._phases.tick(dt)) {
+            if (this.giantWaveState) this.clearGiantWave();
             this._motor.ability.suspend();
             this._motor.tickRestingHeartRate(dt, freezeJumpHeartRate);
             this.updateMovementSpeed(phaseXBeforeStep, phaseZBeforeStep, dt);
@@ -971,6 +1009,7 @@ export class Swimmer extends Component {
                 this._whirlpoolInfluence.captureDrag * submergedScale,
             );
         }
+        if (this.giantWaveState) this.sampleGiantWave(dt);
         const finished = this._motor.update(dt, {
             isAI: this.isAI,
         });

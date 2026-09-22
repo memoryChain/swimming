@@ -69,6 +69,10 @@ export class AISwimmerController extends Component {
     private _clock = 0;
     private _targetZ: number | null = null;
     private _stimulantTargetZ: number | null = null;
+    private _giantWaveTargetZ: number | null = null;
+    setGiantWaveTargetZ(value: number | null): void {
+        this._giantWaveTargetZ = value !== null && Number.isFinite(value) ? value : null;
+    }
     private _sharkTargetZ: number | null = null;
     private _whirlpoolTargetZ: number | null = null;
     private _cannonTargetZ: number | null = null;
@@ -279,7 +283,7 @@ export class AISwimmerController extends Component {
      */
     private resolveEventTargetZ(): number | null {
         let desiredPriority = 0;
-        if (this._stimulantTargetZ !== null) desiredPriority = 1;
+        if (this._stimulantTargetZ !== null || this._giantWaveTargetZ !== null) desiredPriority = 1;
         if (this._whirlpoolTargetZ !== null) desiredPriority = 2;
         if (this._litterTargetZ !== null) desiredPriority = 3;
         if (this._mineRelayTargetZ !== null) desiredPriority = 4;
@@ -306,7 +310,7 @@ export class AISwimmerController extends Component {
             case 4: return this._mineRelayTargetZ;
             case 3: return this._litterTargetZ;
             case 2: return this._whirlpoolTargetZ;
-            case 1: return this._stimulantTargetZ;
+            case 1: return this._stimulantTargetZ ?? this._giantWaveTargetZ;
             default: return null;
         }
     }

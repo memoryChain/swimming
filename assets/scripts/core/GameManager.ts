@@ -156,6 +156,8 @@ import { loadSavedTuningAsync } from './TuningDebugControls';
 import { PERFORMANCE_CONFIG } from './PerformanceConfig';
 import { randomInt } from './SharedRNG';
 import { setTimeScale, scaledDelta, TIME_SCALE } from './TimeScale';
+import { GiantWaveController } from './GiantWaveController';
+import { setRaceMode } from './GameBalance';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { RaceEventPictureInPictureCamera } from '../camera/RaceEventPictureInPictureCamera';
 import { ScenePreviewCamera } from '../camera/ScenePreviewCamera';
@@ -351,6 +353,7 @@ export class GameManager extends Component {
     private _entertainmentWaterSplashes: EntertainmentWaterSplashPool | null = null;
     private _entertainmentDirector: EntertainmentModeDirector | null = null;
     private _whirlpoolBrawl: WhirlpoolBrawlController | null = null;
+    private _giantWave: GiantWaveController | null = null;
     private _whirlpoolVisualResources: WhirlpoolVisualResources | null = null;
     private _whirlpoolActivationPreviewPending = false;
     private _whirlpoolActivationPreviewPlayed = false;
@@ -530,6 +533,9 @@ export class GameManager extends Component {
                                 this.enterUnderwaterDebug();
                             } else {
                                 this._aiDebugMode = launchMode === 'ai-debug';
+                                if (!this._aiDebugMode && getRaceDifficultyConfig().id === 'giant-wave-brawl') {
+                                    setRaceMode('competitive');
+                                }
                                 if (this._aiDebugMode) {
                                     this._aiDebugDifficulty = getAiDebugDifficulty();
                                 }
@@ -591,6 +597,8 @@ export class GameManager extends Component {
         setRuntimeWhirlpoolSpawns(null);
         this._whirlpoolBrawl?.dispose();
         this._whirlpoolBrawl = null;
+        this._giantWave?.dispose();
+        this._giantWave = null;
         this._whirlpoolActivationPreviewPending = false;
         this._whirlpoolActivationPreviewPlayed = false;
         disposeWhirlpoolVisualResources(this._whirlpoolVisualResources);
@@ -749,6 +757,7 @@ export class GameManager extends Component {
         this.updateEntertainmentMode(this._netSession ? netDt : dt);
         this.updateStimulantBrawl(dt);
         this.updateWhirlpoolBrawl(dt);
+        this.updateGiantWave(dt);
         this.updateEntertainmentRecovery(this._netSession ? netDt : dt);
         this.updateCannonBrawl(dt);
         this.updateMineRelayBrawl(dt);
@@ -1058,6 +1067,9 @@ export class GameManager extends Component {
         this._roomMode = consumeRoomMode();
         const roomRaceDistance = consumeRoomRaceDistance();
         this._netSession = consumeNetRaceSession();
+        if ((this._roomMode || this._netSession) && getRaceDifficultyConfig().id === 'giant-wave-brawl') {
+            setRaceMode('competitive');
+        }
         if (this._roomMode || this._netSession || this._aiDebugMode) {
             setSoloRaceTicket(null);
             setSoloRaceDistance(this._netSession?.distance ?? (this._roomMode ? roomRaceDistance : null));
@@ -1199,6 +1211,7 @@ export class GameManager extends Component {
                     this._entertainmentEventBanner.hide();
                     this._sharkLockOnOverlay.hide();
                     this._whirlpoolBrawl?.reset();
+                    this._giantWave?.reset();
                     this._cannonBrawl?.reset();
                     this._cannonBrawlPresentation?.reset();
                     this._cannonBrawlHud?.reset();
@@ -1514,6 +1527,8 @@ export class GameManager extends Component {
     }
 
     private setupEntertainmentMode() {
+        this._giantWave?.dispose();
+        this._giantWave = null;
         resetEntertainmentEventRuntime();
         setRuntimeWhirlpoolSpawns(null);
         this._whirlpoolActivationPreviewPending = false;
@@ -2006,6 +2021,25 @@ export class GameManager extends Component {
             this._state === GameState.RACING,
         );
         this._eventPictureInPicture?.updateWhirlpool(this._state === GameState.RACING, dt);
+    }
+
+    private updateGiantWave(dt: number): void {
+        if (!this._aiDebugMode || this._netSession || getRaceDifficultyConfig().id !== 'giant-wave-brawl'
+            || this._modelDebugFlow?.active) {
+            if (this._giantWave) {
+                this._giantWave.dispose(); this._giantWave = null;
+                this.activePlayerAutopilot()?.setGiantWaveTargetZ(null);
+            }
+            return;
+        }
+        if (!this._giantWave && this._worldRoot?.isValid && this._raceHud?.isValid && this._playerSwimmer
+            && this._aiSwimmers.length === 7) {
+            this._giantWave = new GiantWaveController(this._worldRoot, this._raceHud, COURSE_LAYOUT,
+                [this._playerSwimmer, ...this._aiSwimmers], this._aiControllers,
+                getAiDebugSetup().seed, getAiDebugSetup().giantWavePreset ?? 'three',
+                this._entertainmentEventBanner, this._eventPictureInPicture);
+        }
+        this._giantWave?.update(dt, this._state === GameState.RACING, this.activePlayerAutopilot());
     }
 
     private setupEntertainmentRecovery() {
@@ -3583,6 +3617,8 @@ export class GameManager extends Component {
     }
 
     private buildDeferredAiSwimmers() {
+        this._giantWave?.dispose();
+        this._giantWave = null;
         if (this._aiDebugMode && !this._netSession) reseedSharedRandom(getAiDebugSetup().seed);
         if (this._modelDebugFlow?.active) {
             this._aiController = null;
@@ -4388,7 +4424,9 @@ export class GameManager extends Component {
             event: `${getRaceDistance()}米自由泳`,
             format: getRaceModeTitle(),
             details: `${entries.length}人竞速  ·  ${this._netSession ? '联机对战' : `${getRaceModeTitle()} · 角色AI`}`,
-            rule: isEntertainmentBrawlMode()
+            rule: getRaceDifficultyConfig().id === 'giant-wave-brawl'
+                ? '巨浪随机从两端出现；顺浪借力加速，迎浪减速，可侧移绕开'
+                : isEntertainmentBrawlMode()
                 ? '每局随机轮换三种娱乐事件；泳池广播会提前预告，部分障碍会留在场内'
                 : isStimulantBrawlMode()
                 ? '争抢赛道中的心跳苏打；恢复体力，但会提高心率并增加失控风险'
@@ -4470,7 +4508,8 @@ export class GameManager extends Component {
             this.buildEliminationSpectatorUi(this._raceHud, w, h);
             if (PERFORMANCE_CONFIG.eventPictureInPicture.enabled
                 && (isEntertainmentBrawlMode() || isSharkBrawlMode() || isCannonBrawlMode()
-                || isWhirlpoolBrawlMode() || isTimedBombBrawlMode() || isLitterBrawlMode())
+                || isWhirlpoolBrawlMode() || isTimedBombBrawlMode() || isLitterBrawlMode()
+                || getRaceDifficultyConfig().id === 'giant-wave-brawl')
                 && this._worldRoot?.isValid) {
                 this._eventPictureInPicture = new RaceEventPictureInPictureCamera({
                     worldRoot: this._worldRoot,

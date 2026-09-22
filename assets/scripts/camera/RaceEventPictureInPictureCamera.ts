@@ -10,6 +10,7 @@ import { styleProjectUiLabel } from '../ui/ProjectUiFonts';
 import { makeLabel, makeRoundedRect, makeUiNode, UI_DESIGN_HEIGHT, UI_DESIGN_WIDTH, uiColor } from '../ui/RuntimeUiFactory';
 import { platform } from '../platform/PlatformManager';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
+import type { GiantWaveState } from '../core/GiantWaveRules';
 
 const FEED_WIDTH = 256;
 const FEED_HEIGHT = 144;
@@ -35,7 +36,7 @@ const DANGER_COLOR = new Color(255, 82, 72, 255);
 const INFO_COLOR = new Color(107, 222, 255, 255);
 const FEED_CLEAR_COLOR = new Color(13, 48, 86, 255);
 
-type FeedMode = 'none' | 'shark' | 'cannon' | 'whirlpool' | 'timed-bomb' | 'litter';
+type FeedMode = 'none' | 'shark' | 'cannon' | 'whirlpool' | 'timed-bomb' | 'litter' | 'giant-wave';
 type TimedBombResolution = 'none' | 'exploded' | 'disarmed';
 
 export type RaceEventPictureInPictureOptions = {
@@ -249,6 +250,25 @@ export class RaceEventPictureInPictureCamera {
             INFO_COLOR,
         );
         this.setVisible(true);
+    }
+
+    showGiantWavePreview(state: GiantWaveState, impact = false): void {
+        if (this.mode === 'shark' || this.mode === 'cannon' || this.mode === 'timed-bomb') return;
+        this.mode = 'giant-wave'; this.holdSeconds = impact ? state.impactTime + state.fadeTime : Math.min(3.5, state.growthTime);
+        this.setCeilingVisible(false);
+        this.setCopy('巨浪冲浪', impact ? '浪头拍岸 · 泡沫回落' : '顺浪借力 · 迎浪减速', INFO_COLOR);
+        this.setVisible(true);
+    }
+
+    updateGiantWave(racing: boolean, dt: number, state: GiantWaveState): void {
+        if (this.mode !== 'giant-wave') return;
+        this.holdSeconds = Math.max(0, this.holdSeconds - safeStep(dt));
+        if (!racing || state.phase !== 'active' || this.holdSeconds <= 0) { this.hide(); return; }
+        if (!this.shouldRender(safeStep(dt))) return;
+        this.focus.set(state.x, this.options.course.waterY, state.z);
+        this.cameraPosition.set(state.x - state.direction * 5,
+            this.options.course.waterY + Math.max(10, state.width * 0.8), state.z + 4);
+        this.applyCameraPose(48); this.finishRender();
     }
 
     updateWhirlpool(racing: boolean, dt: number): void {

@@ -26,6 +26,7 @@ const MODE_TEST_MODES: readonly RaceModeId[] = [
     'timed-bomb-brawl',
     'minefield-brawl',
     'litter-brawl',
+    'giant-wave-brawl',
 ];
 const MODE_TEST_DIFFICULTY = AI_DEBUG_DIFFICULTY_TIERS[2].value;
 
@@ -251,11 +252,29 @@ export function buildAiDebugSetupPicker(
         whirlpoolSelectionViews.set(option.id, selected);
     });
     setActive(whirlpoolOptions, modeTestMode === 'whirlpool-brawl');
+    const waveOptions = makeUiNode('GiantWaveOptions', modeContent);
+    const waveViews: Node[] = [];
+    setup.giantWavePreset = setup.giantWavePreset === 'single' ? 'single' : 'three';
+    (['three', 'single'] as const).forEach((preset, index) => {
+        const choice = button(waveOptions, `WavePreset${index}`, index === 0 ? '常规三波' : '单波定位',
+            -120 + index * 240, -50, 210, () => {
+                if (setup.giantWavePreset === preset) return;
+                setup.giantWavePreset = preset;
+                setActive(waveViews[0], preset === 'three');
+                setActive(waveViews[1], preset === 'single');
+            }, 40);
+        const selected = makeRect('Selected', choice.node, 194, 4, uiColor(66, 222, 255, 255));
+        selected.setPosition(0, -18, 0);
+        setActive(selected, setup.giantWavePreset === preset);
+        waveViews.push(selected);
+    });
+    setActive(waveOptions, modeTestMode === 'giant-wave-brawl');
     const updateModeSelection = (previous: RaceModeId | null, current: RaceModeId) => {
         if (previous === current) return;
         if (previous) setActive(modeViews.get(previous)?.selected ?? null, false);
         setActive(modeViews.get(current)?.selected ?? null, true);
         setActive(whirlpoolOptions, current === 'whirlpool-brawl');
+        setActive(waveOptions, current === 'giant-wave-brawl');
         write(modeStart.label, `开始测试：${getRaceModeTitle(current)}`);
     };
     for (let index = 0; index < MODE_TEST_MODES.length; index++) {

@@ -5,6 +5,7 @@ import type { WhirlpoolSpawnSelection } from './WhirlpoolBrawlRules';
 export type MainGameLaunchMode = 'race' | 'model-debug' | 'ai-debug' | 'underwater-debug';
 
 export interface AiDebugSetup {
+    giantWavePreset?: 'three' | 'single';
     characterId: PlayerCharacterId;
     level: number;
     mode: RaceModeId;
@@ -17,6 +18,7 @@ const pendingAiDebugSetup: AiDebugSetup = { characterId: 'cartonSwimmer6', level
     opponentCount: 7, mixedCharacters: true, whirlpoolSelection: 'random' };
 export function getAiDebugSetup(): Readonly<AiDebugSetup> { return pendingAiDebugSetup; }
 export function setAiDebugSetup(setup: AiDebugSetup) {
+    pendingAiDebugSetup.giantWavePreset = setup.giantWavePreset === 'single' ? 'single' : 'three';
     pendingAiDebugSetup.characterId = setup.characterId;
     pendingAiDebugSetup.level = Number.isFinite(setup.level) ? Math.max(1, Math.min(30, Math.floor(setup.level))) : 1;
     pendingAiDebugSetup.mode = setup.mode;

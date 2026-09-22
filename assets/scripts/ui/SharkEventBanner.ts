@@ -30,6 +30,7 @@ export type EntertainmentBannerIcon =
     | 'shark'
     | 'broadcast';
 export type EntertainmentBannerCategory =
+    | '巨浪冲浪'
     | '广播通知'
     | '补给投放'
     | '炸弹接力'

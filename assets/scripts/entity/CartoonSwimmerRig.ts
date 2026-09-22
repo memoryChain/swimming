@@ -1214,6 +1214,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._tmpCollisionPitchDelta,
             this._tmpCollisionPitchInverseRotation,
         );
+        if (this._giantWaveLift > 0) {
+            this._tmpCollisionPitchDelta.set(0, this._giantWaveLift, 0);
+            Vec3.transformQuat(this._tmpCollisionPitchDelta, this._tmpCollisionPitchDelta,
+                this._tmpCollisionPitchInverseRotation);
+            Vec3.add(this._collisionPitchVisualOffset, this._collisionPitchVisualOffset, this._tmpCollisionPitchDelta);
+        }
 
         const targetX = this._collisionPitchVisualOffset.x;
         const targetY = baseY + this._collisionPitchVisualOffset.y;
@@ -1225,6 +1231,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             model.setPosition(targetX, targetY, targetZ);
         }
     }
+
+    private _giantWaveLift = 0;
+    setGiantWaveLift(value: number): void { this._giantWaveLift = Math.max(0, value); }
 
     // Camera reconstruction works in swimmer-node local space. Remove the model
     // translation above before rebuilding the no-collision-pitch camera anchor,

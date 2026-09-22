@@ -14,6 +14,7 @@ import { AxialRollModel } from './AxialRollModel';
 import { CollisionPitchModel } from './CollisionPitchModel';
 import { CollisionSoftnessModel } from './CollisionSoftnessModel';
 import { COLLISION_PITCH_TUNING } from '../core/CollisionPitchTuning';
+import { advanceWaveBoost, GIANT_WAVE_TUNING } from '../core/GiantWaveRules';
 
 const CYCLE_AMOUNT = Math.PI * 2;
 const MAX_QUEUED_MOTION = CYCLE_AMOUNT * 2;
@@ -142,6 +143,24 @@ export class SwimmerMotor {
     private _glidePhaseActive = false;
     private _glideDrag = SWIMMER_BALANCE.glideDrag;
     private _environmentDrag = 0;
+    private _giantWaveTarget = 0;
+    private _giantWaveMaximum = 0;
+    private _giantWaveSlowdown = 0;
+    private readonly _giantWave = { speed: 0, average: 0, positiveAverage: 0, negativeAverage: 0 };
+
+    /** 正值为助推速度；负值是阻力强度槽，按 maximum 归一化后作用于自身前进。 */
+    get giantWaveSpeed(): number { return this._giantWave.speed; }
+    setGiantWaveTarget(target: number, maximum: number, slowdown = GIANT_WAVE_TUNING.oppositionSlowdown): void {
+        this._giantWaveMaximum = Math.max(0, maximum);
+        this._giantWaveTarget = Math.max(-this._giantWaveMaximum, Math.min(this._giantWaveMaximum, target));
+        this._giantWaveSlowdown = Math.max(0, Math.min(0.6, slowdown));
+    }
+    clearGiantWave(): void {
+        this._giantWaveTarget = 0; this._giantWaveMaximum = 0;
+        this._giantWaveSlowdown = 0;
+        this._giantWave.speed = 0; this._giantWave.average = 0;
+        this._giantWave.positiveAverage = 0; this._giantWave.negativeAverage = 0;
+    }
     // Kick propulsion is driven by the CURRENT tap frequency, not per-tap pulses.
     // _kickCadenceHz is estimated from the interval between taps (and decays when
     // tapping stops); each frame it produces a continuous acceleration that fades
@@ -184,6 +203,7 @@ export class SwimmerMotor {
     }
 
     stopRace() {
+        this.clearGiantWave();
         this._isRacing = false;
         this.ability.reset();
         this._glidePhaseActive = false;
@@ -233,6 +253,7 @@ export class SwimmerMotor {
             this._axialRoll.reset();
         }
         if (active) {
+            this.clearGiantWave();
             this.ability.suspend();
             this._collisionPitch.reset();
             this.collisionSoftness.reset();
@@ -569,7 +590,15 @@ export class SwimmerMotor {
             * Math.max(0, Math.cos(this._heading))
             * this._axialRoll.forwardScale
             * this._collisionPitch.forwardScale;
-        this._distance = Math.min(raceDistance, this._distance + forwardSpeed * dt);
+        let waveSpeed = 0, waveSlowdown = 0;
+        if (this._giantWaveTarget !== 0 || this._giantWave.speed !== 0) {
+            advanceWaveBoost(this._giantWave.speed, this._giantWaveTarget, this._giantWaveMaximum, dt, this._giantWave);
+            waveSpeed = this._giantWave.positiveAverage;
+            waveSlowdown = this._giantWaveSlowdown * Math.min(1,
+                this._giantWave.negativeAverage / Math.max(0.01, this._giantWaveMaximum));
+        }
+        // 迎浪只按比例削弱自身前进，不倒退、不改写原游速，也不吞掉碰撞反冲。
+        this._distance = Math.min(raceDistance, this._distance + (forwardSpeed * (1 - waveSlowdown) + waveSpeed) * dt);
         // Lateral drift accumulates the sideways component, clamped to the pool.
         const requestedLateralOffset = this._lateralOffset + this._currentSpeed * Math.sin(this._heading) * dt;
         this._lateralOffset = clamp(requestedLateralOffset, this._lateralOffsetMin, this._lateralOffsetMax);
@@ -1504,6 +1533,7 @@ export class SwimmerMotor {
     }
 
     clearKnockback() {
+        this.clearGiantWave();
         this._knockbackDistance = 0;
         this._knockbackLateral = 0;
     }
