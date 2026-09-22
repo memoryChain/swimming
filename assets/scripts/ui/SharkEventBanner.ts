@@ -15,7 +15,7 @@ import {
 } from 'cc';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
-import type { StimulantItemKind } from '../core/StimulantBrawlRules';
+import { STIMULANT_BRAWL_TUNING, type StimulantItemKind } from '../core/StimulantBrawlRules';
 import { makeLabel, makeUiNode } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 
@@ -410,6 +410,12 @@ export class EntertainmentEventBanner {
         titleSprite.sizeMode = Sprite.SizeMode.CUSTOM;
         titleSprite.trim = false;
 
+        // 两种道具共用固定说明；只在建卡时写入，不改变标题、数值槽或动效。
+        const effectNote = makeLabel('GameItemEffect', stimulantRoot, '游戏道具效果', 14, WHITE);
+        effectNote.getComponent(UITransform)!.setContentSize(150, 18);
+        effectNote.setPosition(STIMULANT_TITLE_X, -46, 2);
+        styleProjectUiLabel(effectNote.getComponent(Label)!, 'regular', 16);
+
         const energyNode = makeLabel('Energy', stimulantRoot, '', 22, ENERGY_CYAN);
         energyNode.getComponent(UITransform)!.setContentSize(
             STIMULANT_ENERGY_TEXT_WIDTH,
@@ -737,7 +743,10 @@ export class EntertainmentEventBanner {
         infiniteStamina: boolean,
         kind: StimulantItemKind = 'heartbeat-soda',
     ): string {
-        if (kind === 'calm-slush') return '推进 90%';
+        if (kind === 'calm-slush') {
+            const scale = Math.max(0, Math.min(1, STIMULANT_BRAWL_TUNING.calmSlushPropulsionScale));
+            return `推进 ${Math.round(scale * 100)}%`;
+        }
         return infiniteStamina ? '体力 无限' : `体力 ${value}%`;
     }
 

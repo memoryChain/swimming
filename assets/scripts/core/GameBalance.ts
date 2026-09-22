@@ -43,7 +43,7 @@ export const RACE_MODE_OPTIONS: readonly RaceModeConfig[] = [
     { id: 'last-place-brawl', label: '水球点名', category: 'entertainment', distance: 200, ruleset: 'cannon', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
     { id: 'timed-bomb-brawl', label: '定时水球传递', category: 'entertainment', distance: 200, ruleset: 'timed-bomb', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
     { id: 'minefield-brawl', label: '喷水浮标', category: 'entertainment', distance: 200, ruleset: 'minefield', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
-    { id: 'litter-brawl', label: '垃圾漂流大乱斗', category: 'entertainment', distance: 200, ruleset: 'litter', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
+    { id: 'litter-brawl', label: '杂物漂流大乱斗', category: 'entertainment', distance: 200, ruleset: 'litter', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
     { id: 'giant-wave-brawl', label: '巨浪冲浪', category: 'entertainment', distance: 200, ruleset: 'giant-wave', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
 ];
 export const PUBLIC_RACE_MODE_OPTIONS: readonly RaceModeConfig[] = RACE_MODE_OPTIONS.filter(

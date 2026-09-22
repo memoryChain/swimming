@@ -233,7 +233,8 @@ test('冷静冰沙资源保持单网格单材质并接入独立蓝色表现', ()
     );
     assert.doesNotMatch(resourcePaths, /calm-slush-pickup-base/);
     assert.match(ui, /this\.artFrames\.get\('stimulant-card'\)/);
-    assert.match(ui, /推进 90%/);
+    assert.match(ui, /STIMULANT_BRAWL_TUNING\.calmSlushPropulsionScale/);
+    assert.match(ui, /`推进 \$\{Math\.round\(scale \* 100\)\}%`/);
 });
 
 test('公共争抢在一批种子中覆盖全部泳道', () => {

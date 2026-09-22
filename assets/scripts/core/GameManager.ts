@@ -1884,8 +1884,8 @@ export class GameManager extends Component {
                     if (isEntertainmentBrawlMode() && wave === 1) return;
                     this._entertainmentEventBanner.showEvent(
                         kind === 'calm-slush'
-                            ? `第 ${wave} 波冷静冰沙出现 · 争抢开始`
-                            : `第 ${wave} 波心跳苏打出现 · 争抢开始`,
+                            ? `第 ${wave} 波冰沙道具 · 稳转向但暂减推进`
+                            : `第 ${wave} 波苏打道具 · 补体力也升心率`,
                         'warning',
                         1500,
                         kind === 'calm-slush' ? 'calm-slush' : 'stimulant',
@@ -1972,8 +1972,8 @@ export class GameManager extends Component {
                     if (this._state !== GameState.RACING) return;
                     this._entertainmentEventBanner.showEvent(
                         isSuperWhirlpool(spawn)
-                            ? '超级漩涡逼近泳池中心 · 远离核心或顺流冲浪'
-                            : '前方漩涡 · 贴外圈借力',
+                            ? '超级漩涡 · 绕开大核心，顺流侧借力'
+                            : '前方漩涡 · 避核心，顺流侧借力',
                         'warning',
                         1500,
                         'whirlpool',
@@ -3008,7 +3008,7 @@ export class GameManager extends Component {
         const playerDrag = controller.environmentDragForLane(this._playerLaneIndex);
         const playerSlowed = playerDrag > 0.08 && this._state === GameState.RACING;
         if (playerSlowed && !this._playerLitterSlowed) {
-            this._entertainmentEventBanner.showPersonal('穿过软垃圾·持续划水可以挣脱减速', 'warning', 1100);
+            this._entertainmentEventBanner.showPersonal('穿过软餐盒·划出范围后解除减速', 'warning', 1100);
         }
         this._playerLitterSlowed = playerSlowed;
         for (let index = 0; index < this._aiControllers.length; index++) {
@@ -3029,7 +3029,7 @@ export class GameManager extends Component {
             impact.away * LITTER_BRAWL_TUNING.rigidLateralImpulse,
         );
         if (swimmer === this._playerSwimmer) {
-            this._entertainmentEventBanner.showPersonal('撞上硬垃圾·被弹开并瞬间减速', 'danger', 1050);
+            this._entertainmentEventBanner.showPersonal('撞上硬瓶·被弹开并瞬间减速', 'danger', 1050);
         }
     }
 
@@ -4353,11 +4353,11 @@ export class GameManager extends Component {
             rule: getRaceDifficultyConfig().id === 'giant-wave-brawl'
                 ? '巨浪随机从两端出现；顺浪借力加速，迎浪减速，可侧移绕开'
                 : isEntertainmentBrawlMode()
-                ? '每局随机轮换三种娱乐事件；泳池广播会提前预告，部分障碍会留在场内'
+                ? '七类事件随机轮换；留意广播和障碍'
                 : isStimulantBrawlMode()
-                ? '争抢赛道中的心跳苏打；恢复体力，但会提高心率并增加失控风险'
+                ? '游戏道具：苏打补体力、升心率；冰沙降心率、稳转向但暂减推进'
                 : isWhirlpoolBrawlMode()
-                    ? '贴外圈借水流加速，避开漩涡核心'
+                    ? '避开核心，外圈顺流借力、逆流受阻；卷入时持续划水向外转'
                     : isSharkBrawlMode()
                         ? '充气玩具鲨也会咬人；变向躲开，挨一口后扶圈缓缓'
                         : isCannonBrawlMode()
