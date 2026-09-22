@@ -20,6 +20,50 @@ class Color {
     equals(c) { return this.r === c.r && this.g === c.g && this.b === c.b && this.a === c.a; }
 }
 class Component { get isValid() { return this.node?.isValid; } }
+class UIOpacity extends Component { opacity = 255; }
+class Vec3 { constructor(x = 0, y = 0, z = 0) { Object.assign(this, { x, y, z }); } }
+// 默认完成入场供静态排版测试使用，动效用例改为手动推进时间。
+let deferRoomMotion = false, roomMotionTime = 0, createdRoomTweens = 0;
+const runningRoomTweens = new Set();
+class RoomTween {
+    steps = [];
+    constructor(target) { this.target = target; createdRoomTweens++; }
+    delay(seconds) { this.steps.push({ seconds }); return this; }
+    to(seconds, props, options) { this.steps.push({ seconds, props, options }); return this; }
+    call(fn) { this.steps.push({ seconds: 0, fn }); return this; }
+    start() {
+        this.time = roomMotionTime; this.index = 0;
+        if (deferRoomMotion) runningRoomTweens.add(this);
+        else for (const step of this.steps) {
+            if (step.props) Object.assign(this.target, step.props);
+            step.fn?.();
+        }
+        return this;
+    }
+    stop() { runningRoomTweens.delete(this); return this; }
+    tick() {
+        while (runningRoomTweens.has(this) && this.index < this.steps.length) {
+            const step = this.steps[this.index];
+            const fraction = step.seconds ? Math.min(1, (roomMotionTime - this.time) / step.seconds) : 1;
+            const ratio = step.options?.easing === 'cubicOut' ? 1 - (1 - fraction) ** 3
+                : step.options?.easing === 'quadOut' ? 1 - (1 - fraction) ** 2 : fraction;
+            if (step.props) {
+                step.from ??= Object.fromEntries(Object.keys(step.props).map(key => [key,
+                    typeof this.target[key] === 'object' ? { ...this.target[key] } : this.target[key]]));
+                for (const [key, to] of Object.entries(step.props)) {
+                    const from = step.from[key];
+                    this.target[key] = typeof to === 'object'
+                        ? new Vec3(from.x + (to.x - from.x) * ratio, from.y + (to.y - from.y) * ratio, from.z + (to.z - from.z) * ratio)
+                        : from + (to - from) * ratio;
+                }
+            }
+            if (fraction < 1) break;
+            this.time += step.seconds; this.index++; step.fn?.();
+        }
+        if (this.index >= this.steps.length) runningRoomTweens.delete(this);
+    }
+}
+function advanceRoomMotion(seconds) { roomMotionTime += seconds; for (const animation of [...runningRoomTweens]) animation.tick(); }
 class UITransform extends Component {
     contentSize = { width: 0, height: 0 };
     setContentSize(width, height) { this.contentSize = { width, height }; }
@@ -69,7 +113,7 @@ class Node {
     destroy() { this.isValid = false; for (const c of this.children) c.destroy(); for (const fn of this.handlers['node-destroyed'] ?? []) fn(); }
 }
 const resizeListeners = new Map();
-const cc = { Node, UITransform, Label, Sprite, Button, Graphics, Color, Canvas, Widget,
+const cc = { Node, UITransform, UIOpacity, Vec3, tween: target => new RoomTween(target), Label, Sprite, Button, Graphics, Color, Canvas, Widget,
     Layers: { Enum: { UI_2D: 1 } }, view: { getVisibleSize: () => visibleSize,
         on: (event, fn) => { if (!resizeListeners.has(event)) resizeListeners.set(event, new Set()); resizeListeners.get(event).add(fn); },
         off: (event, fn) => resizeListeners.get(event)?.delete(fn) },
@@ -113,6 +157,62 @@ function find(n, name) { return nodes(n).find(n => n.name === name); }
 const host = { pos: 0, self: false, owner: true, ready: true, avatarId: 'coral', nickName: '小龟9460', character: '肌肉男', level: 2, careerLeague: 0 };
 const guest = { ...host, pos: 2, self: true, owner: false, ready: false, nickName: '海风07', avatarId: 'lime', careerLeague: 3 };
 function state(overrides = {}) { return { members: [host, guest], isHost: false, ready: false, busy: false, canStart: false, roomNumber: '826419', hint: '', mode: 'competitive', ...overrides }; }
+test('联机左右面板连同文字头像和点击区域向中间滑入，背景固定且状态刷新不重播', () => {
+    deferRoomMotion = true;
+    const v = new OnlineRoomView(new Node('root'), { exit() {}, primary() {}, invite() {}, mode() {}, kick() {} });
+    try {
+        const left = find(v.root, 'HostEntrance'), right = find(v.root, 'MembersEntrance');
+        const bg = find(v.root, 'Background'), header = find(v.root, 'RoomHeader');
+        const backgroundPosition = { ...bg.position }, backgroundScale = { ...bg.scale }, headerPosition = { ...header.position };
+        for (const name of ['HostPanel', 'HostName', 'HostAvatar', 'ModeHit']) assert.equal(find(v.root, name).parent, left);
+        for (const name of ['MembersPanel', 'SeatBackground0', 'Nickname0', 'SeatHit0', 'PrimaryHit']) assert.equal(find(v.root, name).parent, right);
+        assert.ok(left.position.x < 0 && right.position.x > 0);
+        assert.equal(left.getComponent(UIOpacity).opacity, 0);
+        const count = nodes(v.root).length, animations = createdRoomTweens;
+        let previousLeft = left.position.x, previousRight = right.position.x;
+        for (let i = 0; i < 32; i++) {
+            advanceRoomMotion(0.01);
+            v.update(state({ ready: i % 2 === 0, mode: i % 2 ? 'beginner' : 'championship' }));
+            assert.ok(left.position.x >= previousLeft && left.position.x <= 0);
+            assert.ok(right.position.x <= previousRight && right.position.x >= 0);
+            previousLeft = left.position.x; previousRight = right.position.x;
+            assert.deepEqual(bg.position, backgroundPosition); assert.deepEqual(bg.scale, backgroundScale);
+            assert.deepEqual(header.position, headerPosition);
+            assert.equal(nodes(v.root).length, count); assert.equal(createdRoomTweens, animations);
+        }
+        assert.equal(left.position.x, 0); assert.equal(right.position.x, 0);
+        assert.equal(left.getComponent(UIOpacity).opacity, 255); assert.equal(right.getComponent(UIOpacity).opacity, 255);
+        assert.equal(runningRoomTweens.size, 0);
+    } finally { v.root.destroy(); deferRoomMotion = false; }
+});
+test('联机入场中提前操作立即落位，快速离开或房间不可用会取消动效', () => {
+    deferRoomMotion = true;
+    try {
+        for (let i = 0; i < 20; i++) {
+            let clicks = 0;
+            const v = new OnlineRoomView(new Node('root'), { exit() {}, primary() { clicks++; }, invite() {}, mode() {}, kick() {} });
+            try {
+                v.update(state({ isHost: true, canStart: true }));
+                advanceRoomMotion(0.05);
+                if (i % 3 === 0) {
+                    find(v.root, 'ModeHit').click();
+                    assert.ok(v.drawer.active);
+                    assert.equal(find(v.root, 'HostEntrance').position.x, 0);
+                    assert.equal(find(v.root, 'MembersEntrance').position.x, 0);
+                    assert.equal(runningRoomTweens.size, 0);
+                    find(v.root, 'PrimaryHit').click(); assert.equal(clicks, 1);
+                    v.update(state({ busy: true }));
+                    find(v.root, 'PrimaryHit').click(); assert.equal(clicks, 1);
+                } else if (i % 3 === 1) {
+                    v.showUnavailable('房间不可用');
+                    assert.equal(v.content.active, false); assert.equal(runningRoomTweens.size, 0);
+                }
+            } finally { v.root.destroy(); }
+            assert.equal(runningRoomTweens.size, 0);
+            advanceRoomMotion(1);
+        }
+    } finally { deferRoomMotion = false; }
+});
 test('宽屏侧栏避让安全区，标题、箭头和点击区域随三角装饰整体适配', () => {
     const { makeScreenEdgeGroup } = load(path.join(root, 'assets/scripts/ui/RuntimeUiFactory.ts'));
     const worldX = n => n.position.x + (n.parent ? worldX(n.parent) : 0);
@@ -173,7 +273,7 @@ test('双侧与单侧安全区均不叠加视觉边距，窗口变化后重新�
     visibleSize.width = 1280; safeLeft = 0; safeRight = 0;
 });
 
-test('真实大厅保持贴边布局，角色页保留横屏间距且翻转不改变留白', () => {
+test('真实大厅与角色页保留横屏间距且翻转不改变留白', () => {
     const { makeScreenEdgeGroup } = load(path.join(root, 'assets/scripts/ui/RuntimeUiFactory.ts'));
     const file = path.join(root, 'assets/scripts/ui/PrepareRaceFlow.ts');
     const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
@@ -195,6 +295,7 @@ test('真实大厅保持贴边布局，角色页保留横屏间距且翻转不�
             const canvas = new Node('Canvas'); canvas.addComponent(Canvas);
             canvas.addComponent(UITransform).setContentSize(1280, 720);
             const flow = new Harness(); flow._width = 1280; flow._height = 720;
+            flow._motion = new (load(path.join(root, 'assets/scripts/ui/LobbyUiMotion.ts')).LobbyUiMotion)();
             const owners = {};
             for (const name of ['buildReadyCharacterPanel', 'buildPreviewPresentation', 'buildReadyActions',
                 'buildCharacterHeader', 'buildCharacterRoster', 'buildCharacterInspector']) {
@@ -206,13 +307,15 @@ test('真实大厅保持贴边布局，角色页保留横屏间距且翻转不�
             const leftMargin = node => node.position.x - 640 + width / 2;
             const rightMargin = node => width / 2 - node.position.x - 640;
             const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `${actual} != ${expected}`);
-            near(leftMargin(owners.buildReadyCharacterPanel), 0);
-            near(rightMargin(careerParent), 0);
+            near(leftMargin(owners.buildReadyCharacterPanel), width === 1280 ? 0 : 48);
+            assert.equal(careerParent.name, 'LobbyCareerMotion');
+            const careerAnchor = careerParent.parent;
+            near(rightMargin(careerAnchor), width === 1280 ? 0 : 48);
             near(leftMargin(owners.buildCharacterRoster), width === 1280 ? 0 : 48);
             near(rightMargin(owners.buildCharacterInspector), width === 1280 ? 0 : 60);
             near(leftMargin(owners.buildCharacterHeader), 0);
             assert.equal(owners.buildPreviewPresentation, canvas);
-            const groups = [owners.buildReadyCharacterPanel, careerParent,
+            const groups = [owners.buildReadyCharacterPanel, careerAnchor,
                 owners.buildCharacterRoster, owners.buildCharacterInspector];
             const positions = groups.map(node => node.position.x);
             const count = nodes(canvas).length;
@@ -223,6 +326,7 @@ test('真实大厅保持贴边布局，角色页保留横屏间距且翻转不�
                 assert.equal(nodes(canvas).length, count);
             }
             canvas.destroy();
+            flow._motion.dispose();
         }
     } finally {
         cc.sys.getSafeAreaRect = safeApi;
@@ -477,17 +581,56 @@ test('踢人前复查成员身份，座位换人不能误踢', async () => {
     net.getRoomInfo = async () => ({ members: [{ pos: 2, extInfo: 'lime|海风07', owner: false }] });
     h.refreshRoomInfo = () => {}; await h.kickMember({ ...guest, self: false }); assert.equal(kicked, 1); h.dispose();
 });
-test('资源都在分包，返回、背景、绿色主按钮保持原资源引用', () => {
+test('资源都在分包，联机复用大厅全景，返回和绿色主按钮保持原资源引用', () => {
     const { RESOURCE_PATHS: p } = load(path.join(root, 'assets/scripts/core/ResourcePaths.ts'));
     for (const value of Object.values(p.onlineRoomUi)) {
         const file = path.join(root, 'assets/race', value.replace('/texture', '.png'));
         assert.ok(fs.existsSync(file), file);
         const bytes = fs.readFileSync(file); assert.equal(bytes[25], 6, '必须是 RGBA');
     }
+    const listenersBefore = resizeListeners.get('canvas-resize')?.size ?? 0;
+    const designListenersBefore = resizeListeners.get('design-resolution-changed')?.size ?? 0;
     const v = new OnlineRoomView(new Node('root'), { exit() {}, primary() {}, invite() {}, mode() {}, kick() {} });
-    assert.equal(find(v.root, 'Background').getComponent(Sprite).spriteFrame.path, p.characterUi.background);
+    const background = find(v.root, 'Background');
+    assert.equal(background.getComponent(Sprite).spriteFrame.path, p.lobbyB.background);
     assert.equal(find(v.root, 'BackIcon').getComponent(Sprite).spriteFrame.path, p.characterUi.backIcon);
     assert.equal(v.primaryArt.spriteFrame.path, p.lobbyUi.startButton);
+    const bytes = fs.readFileSync(path.join(root, 'assets/race', p.lobbyB.background.replace('/texture', '.png')));
+    const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
+    const count = nodes(v.root).length;
+    const { computePrepareSceneLayout } = load(path.join(root, 'assets/scripts/ui/PrepareSceneLayout.ts'));
+    const hallLayout = {};
+    try {
+        for (const size of [{ width: 1280, height: 720 }, { width: 2532 / 1170 * 720, height: 720 },
+            { width: 2400, height: 720 }, { width: 960, height: 720 }]) {
+            Object.assign(visibleSize, size);
+            for (const event of ['canvas-resize', 'design-resolution-changed']) {
+                for (const fn of resizeListeners.get(event)) fn();
+                assert.equal(background.getComponent(UITransform).contentSize.width, width);
+                assert.equal(background.getComponent(UITransform).contentSize.height, height);
+                assert.equal(background.scale.x, background.scale.y, '全景不能拉伸变形');
+                assert.ok(width * background.scale.x >= size.width - 1e-7);
+                assert.ok(height * background.scale.y >= size.height - 1e-7);
+                computePrepareSceneLayout(hallLayout, size.width, size.height, 0);
+                assert.equal(background.position.x, hallLayout.backgroundX, '联机固定使用大厅背景横向位置');
+                assert.equal(background.position.y, hallLayout.backgroundY, '联机固定使用大厅背景纵向位置');
+                assert.equal(background.scale.x, hallLayout.scale, '联机与大厅取景缩放完全一致');
+                assert.ok(background.position.x - width * background.scale.x / 2 <= -size.width / 2 + 1e-7);
+                assert.ok(background.position.x + width * background.scale.x / 2 >= size.width / 2 - 1e-7);
+                assert.equal(nodes(v.root).length, count, '适配不重建页面');
+            }
+            v.update(state({ ready: true }));
+            v.update(state({ ready: false, isHost: true, mode: 'championship' }));
+            assert.equal(background.position.x, hallLayout.backgroundX, '房间状态变化不移动背景');
+            assert.equal(background.position.y, hallLayout.backgroundY);
+            assert.equal(background.scale.x, hallLayout.scale);
+        }
+    } finally {
+        Object.assign(visibleSize, { width: 1280, height: 720 });
+        v.root.destroy();
+    }
+    assert.equal(resizeListeners.get('canvas-resize').size, listenersBefore);
+    assert.equal(resizeListeners.get('design-resolution-changed').size, designListenersBefore);
 });
 
 module.exports = { OnlineRoomView, Node, Label, Sprite, nodes, state, host, guest };

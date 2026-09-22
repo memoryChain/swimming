@@ -81,7 +81,7 @@ test('十一种现有角色能力均有独立图标资源与 Creator 元数据�
         const meta = JSON.parse(fs.readFileSync(file + '.meta', 'utf8'));
         assert.ok(Object.values(meta.subMetas).some(m => m.importer === 'texture' && m.name === 'texture'));
     }
-    assert.equal(RESOURCE_PATHS.characterSkillIcons.breathControl, RESOURCE_PATHS.lobbyB.skillBreath);
+    assert.equal(RESOURCE_PATHS.characterSkillIcons.breathControl, 'ui/lobby-b/skill-breath/texture');
 });
 
 test('快速换角色的乱序回调不覆盖当前技能，重复刷新不加载或改写', () => {

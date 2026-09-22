@@ -22,7 +22,8 @@ function out(name,id,hide,box){
  d.crop(box);d.saveAs(new File(dest.fsName+'/'+name+'.png'),new PNGSaveOptions(),true,Extension.LOWERCASE);
  }finally{d.close(SaveOptions.DONOTSAVECHANGES);app.activeDocument=source;}
 }
-out('background',3,[],[0,0,1280,720]);
+// 大厅与选角共用全景背景，改用 export-prepare-panorama.cjs 从独立源图导出。
+// 旧大厅PSD内的1280×720背景不再覆盖全景资源。
 out('career-card',377,[360,357,392,399,387],[809,160,1258,410]);
 out('career-badge',357,[],[1028,117,1234,309]);
 out('career-button',392,[389],[809,409,1250,500]);

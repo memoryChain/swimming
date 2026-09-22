@@ -9,6 +9,7 @@ export class LobbyUiMotion {
     private readonly _nodeTweens = new Map<Node, Tween<Node>>();
     private readonly _alphaTweens = new Map<UIOpacity, Tween<UIOpacity>>();
     private readonly _unbind: (() => void)[] = [];
+    private readonly _resetButtons: (() => void)[] = [];
     private readonly _popButtons: Node[] = [];
     private readonly _cardTargets = new Map<Node, { x: number; y: number; scale: number }>();
     private _completion: Tween<object> | null = null;
@@ -22,7 +23,20 @@ export class LobbyUiMotion {
         return node;
     }
 
+    /** 整页交叉过渡由上层控制时，将内部入场组恢复至最终位置。 */
+    showImmediately(): void {
+        this.suspend();
+        for (const part of this._entrances) {
+            if (!part.node.isValid) continue;
+            if (part.node.position.x !== 0 || part.node.position.y !== 0) part.node.setPosition(0, 0, 0);
+            const opacity = part.node.getComponent(UIOpacity)!;
+            if (opacity.opacity !== 255) opacity.opacity = 255;
+        }
+        this._enabled = true;
+    }
+
     enter(short: boolean): void {
+        this._enabled = true;
         for (const part of this._entrances) {
             const opacity = part.node.getComponent(UIOpacity)!;
             part.node.setPosition(part.x, part.y, 0);
@@ -97,6 +111,12 @@ export class LobbyUiMotion {
         button.transition = Button.Transition.NONE;
         const base = node.scale.clone();
         let touchId: number | null = null;
+        this._resetButtons.push(() => {
+            touchId = null;
+            if (node.isValid && (node.scale.x !== base.x || node.scale.y !== base.y || node.scale.z !== base.z)) {
+                node.setScale(base.x, base.y, base.z);
+            }
+        });
         const press = (event: EventTouch) => {
             if (!this._enabled || !button.interactable || touchId !== null) return;
             touchId = event.getID();
@@ -129,7 +149,8 @@ export class LobbyUiMotion {
         });
     }
 
-    dispose(): void {
+    /** 暂存页面时停止自有动效并复原按压，保留节点与一次性绑定的监听。 */
+    suspend(): void {
         this._enabled = false;
         this._completion?.stop();
         this._completion = null;
@@ -137,8 +158,14 @@ export class LobbyUiMotion {
         for (const animation of this._alphaTweens.values()) animation.stop();
         this._nodeTweens.clear();
         this._alphaTweens.clear();
+        for (const reset of this._resetButtons) reset();
+    }
+
+    dispose(): void {
+        this.suspend();
         for (const unbind of this._unbind) unbind();
         this._unbind.length = 0;
+        this._resetButtons.length = 0;
         this._entrances.length = 0;
         this._popButtons.length = 0;
         this._cardTargets.clear();

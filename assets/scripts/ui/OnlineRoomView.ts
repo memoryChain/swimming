@@ -1,8 +1,10 @@
-import { Button, Color, Label, Node, Sprite, UITransform } from 'cc';
-import { RESOURCE_PATHS } from '../core/ResourcePaths';
+import { Button, Color, Label, Node, Sprite, UITransform, view } from 'cc';
+import { PREPARE_PANORAMA_HEIGHT, PREPARE_PANORAMA_WIDTH, RESOURCE_PATHS } from '../core/ResourcePaths';
 import { RaceDifficulty, getRaceDistance, getRaceModeTitle } from '../core/GameBalance';
 import { avatarTexturePath, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
-import { fitFullScreenBackgroundCover, makeLabel, makeRoundedRect, makeScreenEdgeGroup, makeTouchArea, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { makeLabel, makeRoundedRect, makeScreenEdgeGroup, makeTouchArea, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { computePrepareSceneLayout, PrepareSceneLayout } from './PrepareSceneLayout';
+import { LobbyUiMotion } from './LobbyUiMotion';
 import { PROJECT_UI_ENGLISH_BOLD_FAMILY, styleProjectUiLabel } from './ProjectUiFonts';
 
 const ART = RESOURCE_PATHS.onlineRoomUi;
@@ -34,6 +36,7 @@ type Card = { background: Sprite; avatar: Sprite; ring: Sprite; nickname: Label;
 export class OnlineRoomView {
     readonly root: Node;
     private readonly content: Node;
+    private readonly motion = new LobbyUiMotion();
     private readonly cards: Card[] = [];
     private readonly textureKeys = new Map<Sprite, string>();
     private readonly hostAvatar: Sprite;
@@ -70,8 +73,26 @@ export class OnlineRoomView {
         exit(): void; primary(): void; invite(): void; mode(value: RaceDifficulty): void; kick(member: OnlineMember): void;
     }) {
         this.root = makeUiNode('OnlineRoom', parent);
-        const bg = this.picture(this.root, 'Background', RESOURCE_PATHS.characterUi.background, 0, 0, 1280, 720);
-        fitFullScreenBackgroundCover(bg.node);
+        this.root.once(Node.EventType.NODE_DESTROYED, () => this.motion.dispose());
+        const bg = this.picture(this.root, 'Background', RESOURCE_PATHS.lobbyB.background,
+            0, 0, PREPARE_PANORAMA_WIDTH, PREPARE_PANORAMA_HEIGHT);
+        const backgroundLayout: PrepareSceneLayout = { x: 0, backgroundX: 0, backgroundY: 0, scale: 1, hallX: 0 };
+        const fitBackground = () => {
+            const size = view.getVisibleSize();
+            computePrepareSceneLayout(backgroundLayout, size.width, size.height, 0);
+            const { backgroundX, backgroundY, scale } = backgroundLayout;
+            if (bg.node.position.x !== backgroundX || bg.node.position.y !== backgroundY) {
+                bg.node.setPosition(backgroundX, backgroundY, 1);
+            }
+            if (bg.node.scale.x !== scale || bg.node.scale.y !== scale) bg.node.setScale(scale, scale, 1);
+        };
+        fitBackground();
+        view.on('canvas-resize', fitBackground);
+        view.on('design-resolution-changed', fitBackground);
+        bg.node.once(Node.EventType.NODE_DESTROYED, () => {
+            view.off('canvas-resize', fitBackground);
+            view.off('design-resolution-changed', fitBackground);
+        });
         const header = makeScreenEdgeGroup('RoomHeader', this.root, 'left', 1280, 720, 0, false);
         this.picture(header, 'CharacterHeader', RESOURCE_PATHS.characterUi.headerBackground, 0, 0, 497, 111);
         this.picture(header, 'BackIcon', RESOURCE_PATHS.characterUi.backIcon, 27, 19, 61, 40);
@@ -79,44 +100,46 @@ export class OnlineRoomView {
         this.touch(header, 'Back', 16, 9, 90, 68, actions.exit);
         this.content = makeUiNode('Content', this.root);
         const p = this.content;
-        this.picture(p, 'HostPanel', ART.hostPanel, 64, 84, 404, 522);
-        this.picture(p, 'MembersPanel', ART.membersPanel, 468, 98, 760, 508);
-        this.text(p, 'HostHeading', '房主', 112, 130, 130, 50, 34, false);
-        this.hostCareerBadge = this.picture(p, 'HostCareerBadge', '', 366, 119, 64, 64);
-        this.hostAvatar = this.picture(p, 'HostAvatar', '', 116, 201, 112, 112);
-        this.hostName = this.text(p, 'HostName', '', 253, 207, 174, 40, 31, false, 'dynamic');
-        this.hostCharacter = this.text(p, 'HostCharacter', '', 253, 254, 119, 30, 21, false);
+        const hostPanel = this.motion.group(p, 'HostEntrance', -120);
+        const membersPanel = this.motion.group(p, 'MembersEntrance', 160);
+        this.picture(hostPanel, 'HostPanel', ART.hostPanel, 64, 84, 404, 522);
+        this.text(hostPanel, 'HostHeading', '房主', 112, 130, 130, 50, 34, false);
+        this.hostCareerBadge = this.picture(hostPanel, 'HostCareerBadge', '', 366, 119, 64, 64);
+        this.hostAvatar = this.picture(hostPanel, 'HostAvatar', '', 116, 201, 112, 112);
+        this.hostName = this.text(hostPanel, 'HostName', '', 253, 207, 174, 40, 31, false, 'dynamic');
+        this.hostCharacter = this.text(hostPanel, 'HostCharacter', '', 253, 254, 119, 30, 21, false);
         this.hostCharacter.color = MUTED;
-        this.hostLevel = this.text(p, 'HostLevel', '', 373, 256, 54, 30, 22, true, 'latin');
+        this.hostLevel = this.text(hostPanel, 'HostLevel', '', 373, 256, 54, 30, 22, true, 'latin');
         this.hostLevel.horizontalAlign = Label.HorizontalAlign.RIGHT;
         this.hostLevel.color = uiColor(19, 66, 151);
-        this.text(p, 'RoomNumberHeading', '房间号', 112, 361, 160, 30, 20, false).color = MUTED;
-        this.roomNumber = this.text(p, 'RoomNumber', '', 111, 394, 193, 54, 42, false, 'latin');
-        this.roomNumberLocal = this.text(p, 'RoomNumberLocal', '', 112, 394, 193, 54, 40, false);
-        this.count = this.text(p, 'MemberCount', '', 342, 370, 82, 51, 42, false, 'latin');
+        this.text(hostPanel, 'RoomNumberHeading', '房间号', 112, 361, 160, 30, 20, false).color = MUTED;
+        this.roomNumber = this.text(hostPanel, 'RoomNumber', '', 111, 394, 193, 54, 42, false, 'latin');
+        this.roomNumberLocal = this.text(hostPanel, 'RoomNumberLocal', '', 112, 394, 193, 54, 40, false);
+        this.count = this.text(hostPanel, 'MemberCount', '', 342, 370, 82, 51, 42, false, 'latin');
         this.count.color = JOINED;
-        this.text(p, 'Joined', '已加入', 342, 413, 88, 32, 24, false).color = JOINED;
-        this.text(p, 'RulesHeading', '赛制', 112, 477, 90, 28, 18, false).color = MUTED;
-        this.modePermission = this.text(p, 'RulesPermission', '', 272, 478, 151, 28, 17);
+        this.text(hostPanel, 'Joined', '已加入', 342, 413, 88, 32, 24, false).color = JOINED;
+        this.text(hostPanel, 'RulesHeading', '赛制', 112, 477, 90, 28, 18, false).color = MUTED;
+        this.modePermission = this.text(hostPanel, 'RulesPermission', '', 272, 478, 151, 28, 17);
         this.modePermission.horizontalAlign = Label.HorizontalAlign.RIGHT;
         this.modePermission.color = MUTED;
-        this.picture(p, 'ModeBackground', ART.modePanel, 102, 514, 328, 66);
-        this.modeText = this.text(p, 'Mode', '', 166, 525, 123, 34, 22, false);
-        this.distanceText = this.text(p, 'Distance', '', 310, 526, 50, 34, 23, false, 'latin');
-        this.text(p, 'DistanceUnit', '米', 360, 526, 24, 34, 23, false);
-        this.modeArrow = this.text(p, 'Expand', '▲', 394, 525, 26, 34, 14);
-        this.touch(p, 'ModeHit', 105, 518, 320, 54, () => {
+        this.picture(hostPanel, 'ModeBackground', ART.modePanel, 102, 514, 328, 66);
+        this.modeText = this.text(hostPanel, 'Mode', '', 166, 525, 123, 34, 22, false);
+        this.distanceText = this.text(hostPanel, 'Distance', '', 310, 526, 50, 34, 23, false, 'latin');
+        this.text(hostPanel, 'DistanceUnit', '米', 360, 526, 24, 34, 23, false);
+        this.modeArrow = this.text(hostPanel, 'Expand', '▲', 394, 525, 26, 34, 14);
+        this.touch(hostPanel, 'ModeHit', 105, 518, 320, 54, () => {
             if (this.state?.isHost && !this.state.busy) { this.closePopup(); visible(this.drawer, !this.drawer.active); }
         });
-        this.text(p, 'MemberHeading', '房间成员', 506, 112, 240, 40, 27, false);
-        const inviteHint = this.text(p, 'InviteHint', '点击空位邀请好友', 992, 119, 201, 28, 17);
+        this.picture(membersPanel, 'MembersPanel', ART.membersPanel, 468, 98, 760, 508);
+        this.text(membersPanel, 'MemberHeading', '房间成员', 506, 112, 240, 40, 27, false);
+        const inviteHint = this.text(membersPanel, 'InviteHint', '点击空位邀请好友', 992, 119, 201, 28, 17);
         inviteHint.horizontalAlign = Label.HorizontalAlign.RIGHT;
         inviteHint.color = MUTED;
-        for (let i = 0; i < 8; i++) this.cards.push(this.buildCard(p, i));
-        this.primaryArt = this.picture(p, 'PrimaryBackground', RESOURCE_PATHS.lobbyUi.startButton, 922, 608, 332, 102);
-        this.primaryText = this.text(p, 'PrimaryText', '', 951, 630, 272, 49, 38);
-        this.primary = this.touch(p, 'PrimaryHit', 938, 615, 300, 82, actions.primary);
-        this.hint = this.text(p, 'RoomHint', '', 938, 588, 300, 26, 14);
+        for (let i = 0; i < 8; i++) this.cards.push(this.buildCard(membersPanel, i));
+        this.primaryArt = this.picture(membersPanel, 'PrimaryBackground', RESOURCE_PATHS.lobbyUi.startButton, 922, 608, 332, 102);
+        this.primaryText = this.text(membersPanel, 'PrimaryText', '', 951, 630, 272, 49, 38);
+        this.primary = this.touch(membersPanel, 'PrimaryHit', 938, 615, 300, 82, actions.primary);
+        this.hint = this.text(membersPanel, 'RoomHint', '', 938, 588, 300, 26, 14);
         this.hint.color = uiColor(37, 67, 99);
 
         // 抽屉和玩家弹窗只创建一次，放在内容最上层；点空白关闭。
@@ -158,6 +181,7 @@ export class OnlineRoomView {
             } else { this.closePopup(); actions.kick(m); }
         });
         this.popup.active = false;
+        this.motion.enter(false);
     }
 
     update(state: OnlineRoomState): void {
@@ -263,6 +287,7 @@ export class OnlineRoomView {
 
     private closePopup(): void { visible(this.popup, false); this.popupPos = -1; this.confirmingKick = false; }
     showUnavailable(message: string): void {
+        this.motion.suspend();
         visible(this.content, false);
         const panel = makeRoundedRect('Unavailable', this.root, 590, 210, WHITE, 24);
         this.text(panel, 'Notice', message, 382, 290, 516, 70, 25);
@@ -305,7 +330,12 @@ export class OnlineRoomView {
     }
     private touch(p: Node, name: string, x: number, y: number, w: number, h: number, fn: () => void): Node {
         const n = makeTouchArea(name, p, w, h); n.setPosition(x + w / 2 - 640, 360 - y - h / 2);
-        n.on(Button.EventType.CLICK, fn); return n;
+        n.on(Button.EventType.CLICK, () => {
+            // 提前操作时先落位，让抽屉、玩家弹窗和点击目标保持相同坐标。
+            this.motion.showImmediately();
+            fn();
+        });
+        return n;
     }
 }
 function visible(node: Node, value: boolean): void { if (node.active !== value) node.active = value; }

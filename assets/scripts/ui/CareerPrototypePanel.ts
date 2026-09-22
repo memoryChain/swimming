@@ -32,6 +32,7 @@ export class CareerPrototypePanel {
     private reviewCupTier: number | null = null;
     private reviewCharacterId = '';
     private disposed = false;
+    private suspended = false;
     private readonly visible = [false];
     private title: Label;
     private detail: Label;
@@ -156,6 +157,21 @@ export class CareerPrototypePanel {
     }
     openQuick(): void { if (!this.busy) this.open('quick'); }
 
+    /** 选角期间保留赛事导航及节点；隐藏页不响应资料刷新，也不露出独立 Popup 层。 */
+    setSuspended(suspended: boolean, keepCardVisible = false): void {
+        if (this.disposed) return;
+        if (suspended && !keepCardVisible && this.root.active) this.root.active = false;
+        if (this.suspended === suspended) return;
+        this.suspended = suspended;
+        if (suspended) {
+            this.page.hide();
+            if (this.page.root.active) this.page.root.active = false;
+            this.pageVisible = false; this.pageModal = false;
+        } else {
+            this.refresh();
+        }
+    }
+
     private navigation(): CareerNavigation {
         return { screen: this.screen === 'quick' ? 'quick' : 'career', tier: this.tier, source: this.source,
             reviewCupTier: this.reviewCupTier, characterId: getPlayerCharacterSelection().characterId,
@@ -168,7 +184,7 @@ export class CareerPrototypePanel {
     }
 
     private open(screen: 'home' | 'quick' | 'career', source: 'league' | 'cup' = 'league'): void {
-        if (this.busy || this.disposed) return;
+        if (this.busy || this.disposed || this.suspended) return;
         this.screen = screen; this.source = source; this.confirmAbandon = false;
         this.reviewCupTier = null;
         if (screen === 'career') {
@@ -178,7 +194,7 @@ export class CareerPrototypePanel {
         this.status = ''; this.refresh();
     }
     refresh(): void {
-        if (this.disposed) return;
+        if (this.disposed || this.suspended) return;
         const p = PlayerData.profile, c = p.career, id = getPlayerCharacterSelection().characterId;
         if (this.reviewCharacterId !== id) this.reviewCupTier = null;
         const cp = c.cups[id];

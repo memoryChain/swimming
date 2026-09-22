@@ -358,6 +358,10 @@ export const SKYBOX_VARIANTS: SkyboxVariant[] = [
 
 export const DEFAULT_SKYBOX_VARIANT: SkyboxVariant = SKYBOX_VARIANTS[0];
 
+// 大厅、角色和联机页共用全景原图，显示层保持这一宽高比。
+export const PREPARE_PANORAMA_WIDTH = 2115;
+export const PREPARE_PANORAMA_HEIGHT = 743;
+
 export const RESOURCE_PATHS = {
     raceStartUi: {
         'ready': 'ui/race-start-v1/ready/texture',
@@ -563,7 +567,6 @@ export const RESOURCE_PATHS = {
         ] as const,
     },
     characterUi: {
-        background: 'ui/character-v1/background/texture',
         headerBackground: 'ui/character-v1/header-bg/texture',
         backIcon: 'ui/character-v1/back-icon/texture',
         detailPanelBackground: 'ui/character-v1/detail-panel-bg/texture',

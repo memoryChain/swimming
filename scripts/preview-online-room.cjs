@@ -16,13 +16,15 @@ function resource(p) {
     return pathToFileURL(file).href;
 }
 function escaped(s) { return String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;'); }
-function render(node, x = 640, y = 360) {
+function render(node, x = 640, y = 360, parentScaleX = 1, parentScaleY = 1) {
     if (!node.active) return '';
-    x += node.position.x; y -= node.position.y;
+    x += node.position.x * parentScaleX; y -= node.position.y * parentScaleY;
+    const scaleX = parentScaleX * node.scale.x, scaleY = parentScaleY * node.scale.y;
     let html = '';
     const tr = node.components.find(c => c.contentSize)?.contentSize;
     if (tr) {
-        const common = `position:absolute;left:${x - tr.width / 2}px;top:${y - tr.height / 2}px;width:${tr.width}px;height:${tr.height}px;`;
+        const width = tr.width * scaleX, height = tr.height * scaleY;
+        const common = `position:absolute;left:${x - width / 2}px;top:${y - height / 2}px;width:${width}px;height:${height}px;`;
         const sprite = node.getComponent(Sprite), label = node.getComponent(Label);
         if (sprite?.spriteFrame) html += `<img style="${common}" src="${resource(sprite.spriteFrame.path)}">`;
         if (label) {
@@ -32,7 +34,7 @@ function render(node, x = 640, y = 360) {
             html += `<div data-fit style="${common}display:flex;align-items:center;justify-content:${align};font-family:${family};font-weight:${label.weight === 'regular' ? '400' : label.isBold ? '700' : '600'};font-size:${label.fontSize}px;line-height:${label.lineHeight}px;color:rgba(${c.r},${c.g},${c.b},${c.a / 255});white-space:nowrap"><span>${escaped(label.string)}</span></div>`;
         }
     }
-    return html + node.children.map(c => render(c, x, y)).join('');
+    return html + node.children.map(c => render(c, x, y, scaleX, scaleY)).join('');
 }
 for (const mode of ['host', 'member-ready', 'member-idle', 'host-popup', 'host-drawer']) {
     const v = new OnlineRoomView(new Node('root'), { exit() {}, primary() {}, invite() {}, mode() {}, kick() {} });
@@ -45,5 +47,6 @@ for (const mode of ['host', 'member-ready', 'member-idle', 'host-popup', 'host-d
     const regularFont = pathToFileURL(path.join(root, 'assets/race/fonts/ShuiMasterUI-Regular.ttf')).href;
     const html = `<!doctype html><meta charset="utf-8"><style>@font-face{font-family:Shui;src:url('${font}')}body{margin:0;background:#092033}.screen{position:relative;width:1280px;height:720px;overflow:hidden}</style><div class="screen">${render(v.root)}</div><script>document.fonts.ready.then(()=>{for(const e of document.querySelectorAll('[data-fit]')){const s=e.firstElementChild;if(s.scrollWidth>e.clientWidth)s.style.fontSize=parseFloat(getComputedStyle(e).fontSize)*e.clientWidth/s.scrollWidth+'px'}window.ready=true})</script>`;
     fs.writeFileSync(path.join(output, mode + '.html'), html.replace('<style>', `<style>@font-face{font-family:ShuiRegular;font-weight:400;src:url('${regularFont}')}`));
+    v.root.destroy();
 }
 console.log('离线排版预览输出到 output/online-room-runtime；不代表引擎或真机验收。');

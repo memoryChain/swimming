@@ -59,7 +59,7 @@ export class PopupUiMotion {
             .call(() => { this._dimTween = null; }).start();
     }
 
-    hide(): void {
+    hide(done?: () => void): void {
         if (!this.interactive) return;
         this.stopTransition();
         this._phase = 'closing';
@@ -71,10 +71,27 @@ export class PopupUiMotion {
             this.stopTransition();
             this.resetFeedback();
             this._phase = 'hidden';
-            if (this._root.isValid && this._root.active) this._root.active = false;
+            if (this._root.isValid) {
+                if (this._root.active) this._root.active = false;
+                done?.();
+            }
         }).start();
         this._fadeTween = tween(this._panelOpacity).to(0.16, { opacity: 0 }).start();
         this._dimTween = tween(this._dimOpacity).to(0.16, { opacity: 0 }).start();
+    }
+
+    /** 跨页、暂存或销毁时立即撤下，不执行已取消的关闭导航。 */
+    hideImmediately(): void {
+        this.stopTransition();
+        this.resetFeedback();
+        this._phase = 'hidden';
+        if (this._blocker.isValid && this._blocker.active) this._blocker.active = false;
+        if (this._root.isValid && this._root.active) this._root.active = false;
+    }
+
+    fitBlockerToScreen(): void {
+        const size = this._root.getComponent(UITransform)!.contentSize;
+        fitFullScreenBackgroundCover(this._blocker, size.width, size.height);
     }
 
     bindButton(node: Node, allowed: () => boolean): void {

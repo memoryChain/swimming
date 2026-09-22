@@ -2,13 +2,41 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { createHarness } = require('./helpers/cocos-math-harness.cjs');
-class Component {}
+class Component { get isValid() { return this.node?.isValid ?? false; } }
 class UIOpacity extends Component { opacity = 255; }
+let deferMotion = false, createdTweens = 0;
+const pendingTweens = new Set();
+function uiTween(target) {
+    const steps = [];
+    let active = false;
+    const animation = {
+        target, steps,
+        delay(seconds) { steps.push({ delay: seconds }); return this; },
+        to(seconds, props, options) { steps.push({ seconds, props, options }); return this; },
+        call(callback) { steps.push({ callback }); return this; },
+        start() { active = true; if (deferMotion) pendingTweens.add(this); else this.finish(); return this; },
+        finish() { if (!active) return; pendingTweens.delete(this); for (const step of steps) { if (!active) break; if (step.props) Object.assign(target, step.props); step.callback?.(); } active = false; },
+        stop() { active = false; pendingTweens.delete(this); },
+    };
+    createdTweens++;
+    return animation;
+}
 class Scale { constructor(x=1,y=1,z=1){this.set(x,y,z);} set(x,y,z){this.x=x;this.y=y;this.z=z;return this;} clone(){return new Scale(this.x,this.y,this.z);} }
 class UITransform extends Component { setAnchorPoint(x,y){this.anchorPoint={x,y};} setContentSize(width, height) { this.contentSize = { width, height }; } }
 class Label extends Component { static HorizontalAlign = {LEFT: 0, CENTER: 1, RIGHT: 2}; static VerticalAlign={TOP:0,CENTER:1}; static Overflow = { NONE: 0, SHRINK: 1 }; _string = ''; get string(){return this._string;} set string(value){this._string=value;if(this.overflow===0 && this.node){this.node.getComponent(UITransform).setContentSize(value.length*this.fontSize,this.fontSize+7);for(const fn of this.node.handlers['size-changed']??[])fn();}} }
 class Button extends Component { static EventType = { CLICK: 'click' }; static Transition = {NONE:0}; interactable = true; }
 class BlockInputEvents extends Component {}
+class Canvas extends Component {}
+class Widget extends Component {
+    static AlignMode = { ON_WINDOW_RESIZE: 2 };
+    updateAlignment() {
+        const size = this.target.getComponent(UITransform).contentSize;
+        const own = this.node.getComponent(UITransform).contentSize;
+        let x = 0, y = 0;
+        for (let n = this.node.parent; n && n !== this.target; n = n.parent) { x += n.position.x; y += n.position.y; }
+        this.node.setPosition((own.width - size.width) / 2 + this.left - x, (size.height - own.height) / 2 - this.top - y, 0);
+    }
+}
 class Graphics extends Component {
     clears=0;
     clear(){this.clears++;this.shape=null;}
@@ -18,17 +46,23 @@ class Graphics extends Component {
 class Mask extends Component {static Type={GRAPHICS_RECT:1,GRAPHICS_ELLIPSE:2};}
 class ScrollView extends Component {enabled=true;stopAutoScroll(){} scrollToOffset(offset,duration){this.offset=offset;this.duration=duration;const h=this.content.getComponent(UITransform).contentSize.height;this.content.setPosition(0,(490-h)/2+offset.y,0);}}
 
+function uiPosition(x, y, z) {
+    const value = { x, y, z };
+    Object.defineProperty(value, 'clone', { value: () => uiPosition(value.x, value.y, value.z) });
+    return value;
+}
 class Node {
     static EventType = { NODE_DESTROYED: 'destroy', SIZE_CHANGED: 'size-changed' };
     children = []; components = []; handlers = {}; active = true; isValid = true;
-    constructor(name) { this.name = name; this.position = {x:0,y:0,z:0}; this.scale = new Scale(); }
+    constructor(name) { this.name = name; this.position = uiPosition(0,0,0); this.scale = new Scale(); }
     get activeInHierarchy() { return this.active && (!this.parent || this.parent.activeInHierarchy); }
     setScale(x,y,z) { this.scale = new Scale(x,y,z); }
-    setPosition(x, y, z) { this.position = { x, y, z }; }
+    setPosition(x, y, z) { this.position = uiPosition(x, y, z); }
     setParent(parent) { this.parent = parent; parent.children.push(this); }
     setSiblingIndex(index) { const children=this.parent.children;children.splice(children.indexOf(this),1);children.splice(index,0,this); }
     addComponent(C) { const c = new C(); c.node = this; this.components.push(c); return c; }
     getComponent(C) { return this.components.find(c => c instanceof C); }
+    getComponentsInChildren(C) { return [...this.components.filter(c => c instanceof C), ...this.children.flatMap(n => n.getComponentsInChildren(C))]; }
     getChildByName(name) { return this.children.find(c => c.name === name); }
     on(e, f) { (this.handlers[e] ??= []).push(f); }
     once(e, f) { this.on(e, f); }
@@ -63,11 +97,17 @@ const h = createHarness({ '../core/RaceBundleLoader':{loadRaceAsset(asset,type,d
         label.node.getComponent(UITransform).setContentSize(0, 0);
 } },
     '../backend/PlayerData': { PlayerData: store },
+    '../app/PrepareRaceCharacterPreview': {},
+    './UILayers': { getUILayer: canvas => canvas, UILayer: { Popup: 1 } },
+    'cc/env': { WECHAT: false },
     '../platform/PlatformManager': { platform: () => ({ name: 'default', showRewardedAd: async () => adResult === 'pending' ? new Promise(r => { resolveAd = r; }) : adResult }) },
     '../platform/AdConfig': { rewardedAdUnitId: () => '测试广告位' },
 });
-Object.assign(h.cc, { Vec2: class { constructor(x,y){this.x=x;this.y=y;} }, ScrollView, Mask, Graphics, view: {on(){},off(){},getVisibleSize(){return {width:1280,height:720};},getVisibleOrigin(){return {x:0,y:0};}}, UIOpacity, tween: target => { let props; const t = {to(seconds,p){props=p;return t;},start(){Object.assign(target,props);return t;},stop(){}};return t;}, Node, Button, Label, Sprite, SpriteFrame, UITransform, BlockInputEvents, sys: { getSafeAreaRect(){return {x:0,y:0,width:1280,height:720};}, localStorage: { getItem: () => null } } });
+Object.assign(h.cc, { Vec2: class { constructor(x,y){this.x=x;this.y=y;} }, ScrollView, Mask, Graphics, view: {on(){},off(){},getVisibleSize(){return {width:1280,height:720};},getVisibleOrigin(){return {x:0,y:0};}}, UIOpacity, tween: uiTween, Node, Button, Label, Sprite, SpriteFrame, UITransform, BlockInputEvents, sys: { getSafeAreaRect(){return {x:0,y:0,width:1280,height:720};}, localStorage: { getItem: () => null } } });
 const load = name => h.load(path.join(h.root, 'assets/scripts', name + '.ts'));
+Object.assign(h.cc, { Canvas, Widget, Layers: { Enum: { UI_2D: 1 } } });
+// 生涯页通过真实适配工具创建返回组，不让测试替身把错误锚点当成正常位置。
+factory.makeScreenEdgeGroup = load('ui/RuntimeUiFactory').makeScreenEdgeGroup;
 const profile = load('backend/PlayerProfile');
 const rules = load('progression/CareerRules');
 const chars = load('app/PlayerCharacterConfig');
@@ -78,6 +118,191 @@ function descendants(n) { return [n, ...n.children.flatMap(descendants)]; }
 const find = (root, name) => descendants(root).find(n => n.name === name);
 const textOf = (root, name) => find(root, name).getComponent(Label).string;
 const tick = () => new Promise(resolve => setImmediate(resolve));
+
+test('生涯首次打开按区域错开入场，刷新积分与段位不重播，背景返回区不移动', () => {
+    reset(); deferMotion = true;
+    const root = new Node('Root'), panel = new CareerPrototypePanel(root, () => {}, () => {});
+    try {
+        assert.equal(pendingTweens.size, 0, '隐藏生涯不提前运行动效');
+        find(panel.root, 'Action0').click();
+        const page = panel.page, bg = find(page.root, 'Background'), header = find(page.root, 'CareerHeader');
+        const fixed = [bg, header].map(n => ({ position: { ...n.position }, scale: { ...n.scale } }));
+        const groupNames = ['CareerRouteEntrance', 'CareerHonorEntrance', 'CareerCharacterEntrance', 'CareerLeagueEntrance', 'CareerCupEntrance'];
+        const groups = groupNames.map(name => find(page.root, name));
+        assert.ok(groups[0].position.y > 0); assert.ok(groups[1].position.x < 0);
+        assert.ok(groups[2].position.x > 0); assert.ok(groups[3].position.y < 0); assert.ok(groups[4].position.x > 0);
+        const owners = [['RouteLine', 'LeagueTier0'], ['HonorBadge', 'Podium', 'RulesButton'],
+            ['CharacterBar', 'CharacterName', 'ChangeCharacter'], ['LeaguePanel', 'LeaguePoints', 'StartLeague'], ['CupPanel', 'CupRound0', 'StartCup']];
+        owners.forEach((names, i) => names.forEach(name => assert.equal(find(page.root, name).parent, groups[i])));
+        const delays = groups.map(group => [...pendingTweens].find(t => t.target === group).steps[0].delay);
+        assert.ok(delays.every((value, i) => i === 0 || value > delays[i - 1]));
+        const count = descendants(root).length, created = createdTweens;
+        for (let i = 0; i < 20; i++) {
+            panel.tier = i % 6; store.profile.career.points = i * 4; panel.refresh();
+            assert.equal(createdTweens, created); assert.equal(descendants(root).length, count);
+        }
+        for (const animation of [...pendingTweens]) animation.finish();
+        assert.equal(pendingTweens.size, 0);
+        for (const group of groups) {
+            assert.equal(group.position.x, 0); assert.equal(group.position.y, 0);
+            assert.equal(group.getComponent(UIOpacity).opacity, 255);
+        }
+        [bg, header].forEach((n, i) => { assert.deepEqual({ ...n.position }, fixed[i].position); assert.deepEqual({ ...n.scale }, fixed[i].scale); });
+        assert.equal(find(page.root, 'RulesOverlay').parent, find(page.root, 'CareerDesign'));
+    } finally { root.destroy(); deferMotion = false; }
+});
+
+test('生涯入场期间按钮立即响应，暂存、快速切页与销毁取消动效，重新进入保留节点', () => {
+    reset(); deferMotion = true;
+    const root = new Node('Root'), panel = new CareerPrototypePanel(root, () => {}, () => {});
+    try {
+        const count = descendants(root).length;
+        for (let i = 0; i < 20; i++) {
+            panel.open('career'); assert.ok(pendingTweens.size > 0);
+            if (i % 3 === 0) {
+                find(panel.page.root, 'RulesButton').click();
+                assert.equal(pendingTweens.size, 0); assert.equal(find(panel.page.root, 'RulesOverlay').active, true);
+            } else if (i % 3 === 1) {
+                panel.setSuspended(true); assert.equal(pendingTweens.size, 0);
+                panel.setSuspended(false); assert.ok(pendingTweens.size > 0);
+            } else {
+                const careerTweens = [...pendingTweens];
+                panel.openQuick(); assert.ok(careerTweens.every(animation => !pendingTweens.has(animation)));
+            }
+            panel.open('home'); assert.equal(pendingTweens.size, 0);
+            assert.equal(descendants(root).length, count);
+        }
+        panel.open('career'); assert.ok(pendingTweens.size > 0);
+        find(panel.page.root, 'CareerHonorEntrance').destroy();
+    } finally {
+        root.destroy(); deferMotion = false;
+        assert.equal(pendingTweens.size, 0);
+    }
+});
+
+test('生涯返回组沿用角色页屏幕左上锚点，安全区翻转只移动主体且遮罩仍盖住返回区', () => {
+    reset();
+    const oldView={...h.cc.view},oldSafe=h.cc.sys.getSafeAreaRect,events=new Map();
+    h.cc.view.on=(event,fn)=>{if(!events.has(event))events.set(event,new Set());events.get(event).add(fn);};
+    h.cc.view.off=(event,fn)=>events.get(event)?.delete(fn);
+    const canvas=new Node('Canvas');canvas.addComponent(Canvas);canvas.addComponent(UITransform).setContentSize(1280,720);
+    const panel=new CareerPrototypePanel(canvas,()=>{},()=>{});find(panel.root,'Action0').click();
+    const page=panel.page,header=find(page.root,'CareerHeader'),design=find(page.root,'CareerDesign');
+    const back=find(header,'BackToLobby'),art=find(header,'Header'),title=find(header,'PageTitle');
+    const count=descendants(canvas).length;
+    const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-6,`${a} != ${b}`);
+    try {
+        for(const width of [1280,1600,2532/1170*720,1000])for(const [left,right] of [[0,0],[82,0],[0,82],[82,82]]){
+            h.cc.view.getVisibleSize=()=>({width,height:720});
+            h.cc.sys.getSafeAreaRect=()=>({x:left,y:0,width:width-left-right,height:720});
+            for(const fn of events.get('canvas-resize'))fn();
+            near(header.position.x+art.position.x-497/2,-width/2);
+            near(header.position.x+back.position.x,-width/2+57.5);
+            near(header.position.y+back.position.y,321);
+            near(title.position.x,-475);near(title.position.y,323.5);
+            assert.equal(header.scale.x,1);assert.equal(header.parent,page.root);
+            assert.deepEqual(back.getComponent(UITransform).contentSize,{width:76,height:60});
+            assert.ok(page.root.children.indexOf(header)<page.root.children.indexOf(design));
+            assert.equal(find(page.root,'RulesOverlay').parent,design);
+            assert.equal(descendants(canvas).length,count);
+        }
+    } finally {
+        canvas.destroy();assert.ok([...events.values()].every(list=>list.size===0));
+        Object.assign(h.cc.view,oldView);h.cc.sys.getSafeAreaRect=oldSafe;
+    }
+});
+
+test('生涯及快速弹窗暂存后恢复原节点和导航，隐藏期间资料变化延迟显示且退出释放监听', () => {
+    for(const screen of ['career','quick']){
+        reset();const host=new Node('大厅'),popup=new Node('弹窗层'),visibility=[];
+        const panel=new CareerPrototypePanel(host,()=>{},()=>{},{parent:host,popupParent:popup,
+            visibility:(...value)=>visibility.push(value),characters(){}});
+        if(screen==='quick'){panel.openQuick();find(popup,'Distance400').click();}
+        else {store.profile.career.league=2;find(panel.root,'Action0').click();find(panel.page.root,'LeagueTier1').click();}
+        const page=panel.page,quick=find(popup,'QuickRacePopup'),count=descendants(host).length+descendants(popup).length;
+        const subscriptions=listeners.size;
+        for(let i=0;i<20;i++){
+            panel.setSuspended(true);
+            assert.equal(page.root.active,false);assert.equal(quick.active,false);assert.equal(panel.root.active,false);
+            store.profile.characters[ids[0]].level=2+i;
+            for(const callback of listeners)callback(store.profile);
+            assert.equal(page.root.active,false);assert.equal(quick.active,false);
+            panel.setSuspended(false);
+            assert.equal(panel.screen,screen);assert.equal(panel.page,page);
+            assert.equal(page.root.active,true);assert.equal(quick.active,screen==='quick');
+            assert.equal(textOf(screen==='quick'?quick:page.root,screen==='quick'?'QuickLevel':'CharacterLevel'),`LV.${2+i}`);
+            assert.equal(screen==='quick'?panel.distance:panel.tier,screen==='quick'?400:1);
+            assert.deepEqual(visibility.at(-1),[true,screen==='quick']);
+            assert.equal(descendants(host).length+descendants(popup).length,count);assert.equal(listeners.size,subscriptions);
+        }
+        panel.setSuspended(true);panel.dispose();panel.dispose();
+        assert.equal(page.root.isValid,false);assert.equal(quick.isValid,false);
+        assert.equal(listeners.size,subscriptions-1);host.destroy();popup.destroy();
+    }
+});
+
+test('快速比赛复用头像弹窗动效，选项刷新不重播，关闭完成前保留遮罩并拒绝操作', () => {
+    reset(); deferMotion = true;
+    const host = new Node('大厅'), popup = new Node('弹窗层');
+    const events = []; let starts = 0;
+    const panel = new CareerPrototypePanel(host, () => starts++, () => {},
+        { parent: host, popupParent: popup, visibility: (...args) => events.push(args) });
+    const oldView = h.cc.view.getVisibleSize, oldSafe = h.cc.sys.getSafeAreaRect;
+    try {
+        panel.openQuick();
+        const quick = find(popup, 'QuickRacePopup'), motion = find(quick, 'QuickMotion');
+        const design = find(quick, 'QuickDesign'), dim = find(quick, 'QuickBackdrop'), blocker = find(quick, 'PopupClosingBlocker');
+        assert.equal(motion.scale.x, 0.92); assert.equal(motion.position.y, -16);
+        assert.equal(motion.getComponent(UIOpacity).opacity, 0); assert.equal(dim.getComponent(UIOpacity).opacity, 0);
+        assert.equal(blocker.parent, quick); assert.equal(dim.parent, quick);
+        const count = descendants(popup).length, created = createdTweens;
+        for (let i = 0; i < 20; i++) {
+            find(quick, i % 2 ? 'Distance200' : 'Distance400').click();
+            panel.refresh(); assert.equal(createdTweens, created);
+        }
+        find(quick, 'Distance400').click(); find(quick, 'RuleStandard').click();
+        h.cc.view.getVisibleSize = () => ({ width: 960, height: 720 });
+        h.cc.sys.getSafeAreaRect = () => ({ x: 40, y: 0, width: 880, height: 720 });
+        panel.page.quick.resize(); assert.equal(motion.scale.x, 0.92); assert.ok(design.scale.x < 1);
+        for (const animation of [...pendingTweens]) animation.finish();
+        assert.equal(motion.scale.x, 1); assert.equal(motion.position.y, 0); assert.ok(design.scale.x < 1);
+        assert.equal(dim.getComponent(UIOpacity).opacity, 255);
+        find(quick, 'CloseQuick').click();
+        assert.equal(quick.active, true); assert.equal(blocker.active, true); assert.equal(panel.screen, 'quick');
+        const closingCreated = createdTweens;
+        find(quick, 'Distance200').click(); find(quick, 'StartEvent').click(); find(quick, 'QuickBackdrop').click();
+        panel.refresh();
+        assert.equal(panel.distance, 400); assert.equal(starts, 0); assert.equal(createdTweens, closingCreated);
+        for (const animation of [...pendingTweens]) animation.finish();
+        assert.equal(quick.active, false); assert.equal(panel.screen, 'home'); assert.equal(pendingTweens.size, 0);
+        assert.deepEqual(events.at(-1), [false, false]);
+        panel.openQuick(); assert.equal(panel.distance, 400); assert.equal(panel.rule, 'standard');
+        assert.equal(descendants(popup).length, count);
+    } finally {
+        host.destroy(); popup.destroy(); deferMotion = false;
+        h.cc.view.getVisibleSize = oldView; h.cc.sys.getSafeAreaRect = oldSafe;
+        assert.equal(pendingTweens.size, 0);
+    }
+});
+
+test('快速弹窗退场途中暂存或销毁取消旧返回回调，恢复时仅播放一次', () => {
+    reset(); deferMotion = true;
+    const host = new Node('大厅'), popup = new Node('弹窗层');
+    const panel = new CareerPrototypePanel(host, () => {}, () => {}, { parent: host, popupParent: popup, visibility() {} });
+    try {
+        for (let i = 0; i < 20; i++) {
+            panel.openQuick(); const quick = find(popup, 'QuickRacePopup');
+            find(quick, 'CloseQuick').click(); const old = [...pendingTweens];
+            panel.setSuspended(true); assert.equal(quick.active, false); assert.equal(pendingTweens.size, 0);
+            panel.setSuspended(false); const created = createdTweens;
+            for (const animation of old) animation.finish();
+            panel.refresh(); assert.equal(createdTweens, created); assert.equal(panel.screen, 'quick'); assert.equal(quick.active, true);
+            panel.open('home'); assert.equal(pendingTweens.size, 0);
+        }
+        panel.openQuick(); find(popup, 'CloseQuick').click(); const old = [...pendingTweens];
+        panel.dispose(); for (const animation of old) animation.finish(); assert.equal(pendingTweens.size, 0);
+    } finally { host.destroy(); popup.destroy(); deferMotion = false; }
+});
 
 test('快速比赛仅两组选择，反复切换节点与监听稳定，重复开赛只提交一次', async () => {
     reset(); const root = new Node('Root'); let starts = 0;
@@ -235,6 +460,58 @@ test('联赛与杯赛按钮独立开赛，满积分仍可打联赛且均为狂�
         find(panel.page.root,source==='league'?'StartLeague':'StartCup').click();await tick();
         assert.equal(store.profile.career.pending.source,source);assert.equal(store.profile.career.pending.rule,'wild');assert.equal(starts,1);
         root.destroy();
+    }
+});
+
+test('生涯保存成功后经过真实大厅导航开始比赛，隐藏大厅不阻塞联赛、杯赛及选角返回开赛', async () => {
+    const { PrepareRaceFlow } = load('ui/PrepareRaceFlow');
+    const session = load('progression/SoloRaceSession');
+    for (const [source, restored] of [['league', false], ['cup', false], ['league', true], ['cup', true], ['quick', false]]) {
+        reset(); store.profile.career.points = 100; deferMotion = true;
+        const root = new Node('Canvas'); root.addComponent(Canvas); root.addComponent(UITransform).setContentSize(1280, 720);
+        let starts = 0, saves = 0, finishSave;
+        const execute = store.executeCareer;
+        store.executeCareer = command => {
+            saves++;
+            return new Promise(resolve => { finishSave = () => resolve(execute(command)); });
+        };
+        const flow = new PrepareRaceFlow(root, root, 1280, 720, {
+            onStartRace() {
+                assert.equal(session.getSoloRaceTicket()?.source, source);
+                assert.equal(store.profile.career.pending.source, source, '存档完成后才加载比赛');
+                starts++;
+            },
+            onOpenRoom() { assert.fail('单人比赛不应进入联机房间'); },
+        });
+        flow._root = root; flow._content = node('大厅', root); flow._previewRoot = node('角色预览', root);
+        for (const name of ['buildReadyCharacterPanel', 'buildPreviewPresentation', 'buildReadyActions', 'refreshReadyCharacterInfo']) flow[name] = () => {};
+        if (restored) flow._eventReturn = { screen: 'career', tier: 0, source, reviewCupTier: null, characterId: ids[0] };
+        try {
+            flow.buildReadyScreen(flow._content);
+            const panel = flow._careerPanel;
+            if (!restored) {
+                flow._motion.enter(false);
+                if (source === 'quick') panel.openQuick();
+                else find(panel.root, 'Action0').click();
+            }
+            assert.equal(flow._content.active, source === 'quick');
+            if (source === 'quick') for (const animation of [...pendingTweens]) animation.finish();
+            const button = find(root, source === 'quick' ? 'StartEvent' : source === 'league' ? 'StartLeague' : 'StartCup');
+            button.click(); button.click(); await tick();
+            assert.equal(starts, 0); assert.equal(saves, 1); assert.equal(panel.busy, true);
+            assert.equal(store.profile.career.pending, null, '保存未完成时不能跳过等待');
+            finishSave(); await tick();
+            if (source === 'quick') {
+                assert.equal(starts, 0, '可见大厅保留正常退场');
+                for (const animation of [...pendingTweens]) animation.finish();
+            }
+            assert.equal(starts, 1, `${source} ${restored ? '选角返回' : '首次进入'}必须进入比赛`);
+            button.click(); await tick();
+            assert.equal(starts, 1, '加载期间不能重复开赛');
+        } finally {
+            store.executeCareer = execute; flow._motion.dispose(); root.destroy(); deferMotion = false;
+        }
+        assert.equal(pendingTweens.size, 0); assert.equal(listeners.size, 0);
     }
 });
 

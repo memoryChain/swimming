@@ -7,10 +7,10 @@ import {
 import { loadSampledAction } from '../character/SampledActionLoader';
 import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 import { findPlayerCharacter, PlayerCharacterId, selectedPlayerColorScheme, selectedPlayerSkinTone } from './PlayerCharacterConfig';
+import { CHARACTER_PREVIEW_RIGHT_SHIFT } from '../ui/PrepareSceneLayout';
 
 const { ccclass } = _decorator;
 const PREVIEW_CHARACTER_SCALE = 1.3;
-export const CHARACTER_PREVIEW_RIGHT_SHIFT = 30;
 const LOBBY_CHARACTER_SCALE = 1.58;
 const PREVIEW_CHARACTER_Y_OFFSET = -0.99;
 // Small lift of the showcase model so the central preview reads slightly higher
@@ -50,6 +50,7 @@ export class PrepareRaceCharacterPreview extends Component {
     private _showcaseAction = CharacterAction.ArmStretching;
     private _lobbyPresentation = false;
     private _hallOffsetEnabled = false;
+    private _screenOffset: number | null = null;
     private _shadowCaptureEnabled = true;
     private readonly _modelPivot = new Vec3();
     private readonly _modelPivotInRotationRoot = new Vec3();
@@ -75,7 +76,8 @@ export class PrepareRaceCharacterPreview extends Component {
             // 先以原始位置确定朝向，再沿相机右轴平移；不能对平移后的相机重新朝中心看。
             this._cameraNode?.setPosition(PREVIEW_CAMERA_POSITION);
             this._cameraNode?.lookAt(enabled ? LOBBY_CAMERA_TARGET : PREVIEW_CAMERA_TARGET);
-            this.setHallOffset(this._hallOffsetEnabled);
+            if (this._screenOffset !== null) this.setScreenOffset(this._screenOffset);
+            else this.setHallOffset(this._hallOffsetEnabled);
         }
         if (this._shadowCamera) this._shadowCamera.enabled = this._shadowCaptureEnabled;
         if (this._shadowCaptureEnabled && this._rig && !this._shadowCamera) this.ensureShadowCapture();
@@ -84,18 +86,24 @@ export class PrepareRaceCharacterPreview extends Component {
     /** 平移取景位置而非负视口，避免后续UI渲染继承偏移与裁剪；不重载角色。 */
     setHallOffset(enabled: boolean): void {
         this._hallOffsetEnabled = enabled;
-        const camera = this._cameraNode?.getComponent(Camera);
-        if (!camera) return;
         const size = view.getVisibleSize();
         const scale = Math.max(size.width / 1280, size.height / 720);
         const pixels = enabled ? 45 - 174 * scale : CHARACTER_PREVIEW_RIGHT_SHIFT;
+        this.setScreenOffset(pixels, size.height);
+    }
+
+    /** 与背景共用设计像素偏移，连续平移取景；保持完整视口及当前角色动作。 */
+    setScreenOffset(pixels: number, visibleHeight = view.getVisibleSize().height): void {
+        this._screenOffset = pixels;
+        const camera = this._cameraNode?.getComponent(Camera);
+        if (!camera) return;
         const target = this._lobbyPresentation ? LOBBY_CAMERA_TARGET : PREVIEW_CAMERA_TARGET;
         const dx = PREVIEW_CAMERA_POSITION.x - target.x;
         const dy = PREVIEW_CAMERA_POSITION.y - target.y;
         const dz = PREVIEW_CAMERA_POSITION.z - target.z;
         const depth = Math.sqrt(dx * dx + dy * dy + dz * dz);
         const horizontal = Math.sqrt(dx * dx + dz * dz);
-        const shift = -pixels * 2 * depth * Math.tan(camera.fov * Math.PI / 360) / size.height;
+        const shift = -pixels * 2 * depth * Math.tan(camera.fov * Math.PI / 360) / visibleHeight;
         const x = PREVIEW_CAMERA_POSITION.x + dz / horizontal * shift;
         const z = PREVIEW_CAMERA_POSITION.z - dx / horizontal * shift;
         if (camera.rect.x !== 0 || camera.rect.y !== 0 || camera.rect.width !== 1 || camera.rect.height !== 1) {

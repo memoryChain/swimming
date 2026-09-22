@@ -2,9 +2,10 @@ import { BlockInputEvents, Button, Label, Mask, Node, Sprite, UITransform, sys, 
 import type { PlayerProfile } from '../backend/PlayerProfile';
 import { LEAGUES, RaceRule, SoloSource } from '../progression/CareerRules';
 import { findPlayerCharacter, PlayerCharacterId } from '../app/PlayerCharacterConfig';
-import { makeRect, makeUiNode, uiColor, fitFullScreenBackgroundCover } from './RuntimeUiFactory';
+import { makeRect, makeUiNode, makeScreenEdgeGroup, uiColor, fitFullScreenBackgroundCover } from './RuntimeUiFactory';
 import { styleCurrencyNumberLabel } from './ProjectUiFonts';
 import { QuickRacePopup } from './QuickRacePopup';
+import { LobbyUiMotion } from './LobbyUiMotion';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { careerPageModel, CareerRoundStyle } from './CareerPageModel';
 import { CareerControl, CareerImage, careerImage, careerLabel, careerText, careerColor, showCareerNode,
@@ -38,6 +39,9 @@ export class CareerEventPage {
     readonly root: Node;
     private readonly design: Node;
     private readonly career: Node;
+    private readonly motion = new LobbyUiMotion();
+    private careerVisible = false;
+    private quickVisible = false;
     private readonly quick: QuickRacePopup;
     private readonly header: Node;
     private readonly background: CareerImage;
@@ -96,60 +100,67 @@ export class CareerEventPage {
         this.root.getComponent(UITransform)!.setContentSize(4000, 2400);
         this.root.addComponent(BlockInputEvents); this.root.active = false;
         this.background = careerImage(this.root, 'Background', ART.background, 0, 0, 1280, 720);
+        // 返回装饰、图标与热区沿用角色页的屏幕锚点，不跟随主体安全区缩放。
+        // 放在主体之前，确保主体内的规则/确认遮罩仍能盖住返回区。
+        this.header = makeScreenEdgeGroup('CareerHeader', this.root, 'left', 1280, 720, 0, false);
         this.design = makeUiNode('CareerDesign', this.root);
         this.design.getComponent(UITransform)!.setContentSize(1280, 720);
         this.career = makeUiNode('CareerMap', this.design);
-        this.header = makeUiNode('CareerHeader', this.design);
         careerImage(this.header, 'Header', RESOURCE_PATHS.characterUi.headerBackground, 0, 0, 497, 111);
-        this.back = new CareerControl(this.header, 'BackToLobby', '', 16, 8, 80, 64, () => actions.home());
+        this.back = new CareerControl(this.header, 'BackToLobby', '', 19.5, 9, 76, 60, () => actions.home());
         new CareerImage(this.back.root, 'BackIcon', RESOURCE_PATHS.characterUi.backIcon, 61, 40, 0, 0);
-        this.title = careerLabel(this.header, 'PageTitle', '生涯', 105, 13, 350, 50, 36);
-        careerImage(this.career, 'RouteLine', ART.route, 146, 140, 990, 10);
+        this.title = careerLabel(this.header, 'PageTitle', '生涯', 105, 12.5, 120, 48, 36);
+        const route = this.motion.group(this.career, 'CareerRouteEntrance', 0, 24);
+        const honor = this.motion.group(this.career, 'CareerHonorEntrance', -80, 0, 0.03);
+        const character = this.motion.group(this.career, 'CareerCharacterEntrance', 60, 0, 0.05);
+        careerImage(route, 'RouteLine', ART.route, 146, 140, 990, 10);
         for (let i = 0; i < 6; i++) {
             const selectionWidth = LEAGUES[i].name.length * 18 + 20;
-            const selection = careerImage(this.career, `LeagueSelection${i}`, ART.panelWhite,
+            const selection = careerImage(route, `LeagueSelection${i}`, ART.panelWhite,
                 CENTERS[i] - selectionWidth / 2, 182, selectionWidth, 30, false, true);
             careerColor(selection.sprite, CAREER_YELLOW);
             showCareerNode(selection.node, false);
-            const control = new CareerControl(this.career, `LeagueTier${i}`, LEAGUES[i].name, CENTERS[i] - 80, 79, 160, 141,
-                () => { if (!this.snapshot?.busy) actions.tier(i); }, false, 18);
+            const control = new CareerControl(route, `LeagueTier${i}`, LEAGUES[i].name, CENTERS[i] - 80, 79, 160, 141,
+                () => { if (!this.snapshot?.busy) { this.motion.showImmediately(); actions.tier(i); } }, false, 18);
             control.label.node.setPosition(0, -47.5);
             control.label.node.getComponent(UITransform)!.setContentSize(155, 30);
             const widths = [74,114,120,130,133,144];
             const badge = new CareerImage(control.root, 'Badge', ART.lockedBadges[i], widths[i], 112, 0, 17, true);
             this.tiers.push({control, badge, selection});
         }
-        this.hero = careerImage(this.career, 'HonorBadge', ART.badges[0], 28, 238, 327, 249, true);
-        careerImage(this.career, 'Podium', ART.podium, 28, 485, 327, 132);
-        this.heroTitle = careerLabel(this.career, 'SelectedLeague', '', 52, 525, 280, 43, 29, CAREER_INK, true);
-        this.rulesButton = new CareerControl(this.career, 'RulesButton', '赛事规则', 119, 616, 144, 43, () => this.openRules(), false, 23);
+        this.hero = careerImage(honor, 'HonorBadge', ART.badges[0], 28, 238, 327, 249, true);
+        careerImage(honor, 'Podium', ART.podium, 28, 485, 327, 132);
+        this.heroTitle = careerLabel(honor, 'SelectedLeague', '', 52, 525, 280, 43, 29, CAREER_INK, true);
+        this.rulesButton = new CareerControl(honor, 'RulesButton', '赛事规则', 119, 616, 144, 43, () => this.openRules(), false, 23);
         careerColor(this.rulesButton.label, CAREER_WHITE);
-        const underline = careerImage(this.career, 'RulesUnderline', ART.panel, 145, 652, 92, 2);
+        const underline = careerImage(honor, 'RulesUnderline', ART.panel, 145, 652, 92, 2);
         careerColor(underline.sprite, CAREER_WHITE);
-        careerImage(this.career, 'CharacterBar', ART.characterBar, 392, 218, 862, 74);
-        const avatarClip = makeUiNode('CharacterAvatarClip', this.career);
+        careerImage(character, 'CharacterBar', ART.characterBar, 392, 218, 862, 74);
+        const avatarClip = makeUiNode('CharacterAvatarClip', character);
         avatarClip.setPosition(439 - 640, 360 - 256);
         avatarClip.getComponent(UITransform)!.setContentSize(56, 56);
         avatarClip.addComponent(Mask).type = Mask.Type.GRAPHICS_ELLIPSE;
         this.avatar = new CareerImage(avatarClip, 'CharacterAvatar', '', 56, 56, 0, 0, true);
-        this.tag(this.career, '出场', '当前出场', 484, 239, 88, 30, ART.tagActive, GREEN);
-        this.characterName = careerLabel(this.career, 'CharacterName', '', 584, 233, 170, 44, 24);
+        this.tag(character, '出场', '当前出场', 484, 239, 88, 30, ART.tagActive, GREEN);
+        this.characterName = careerLabel(character, 'CharacterName', '', 584, 233, 170, 44, 24);
         this.characterName.node.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
         this.characterName.node.setPosition(584 - 640, 360 - 255);
         this.characterName.overflow = Label.Overflow.NONE;
         this.characterName.node.on(Node.EventType.SIZE_CHANGED, this.layoutCharacterLevel);
-        this.levelPill = careerImage(this.career, 'LevelPill', ART.panel, 767, 241, 70, 28, false, true);
+        this.levelPill = careerImage(character, 'LevelPill', ART.panel, 767, 241, 70, 28, false, true);
         careerColor(this.levelPill.sprite, CAREER_INK);
-        this.characterLevel = careerLabel(this.career, 'CharacterLevel', '', 767, 240, 70, 30, 16, CAREER_WHITE, true);
-        this.changeCharacter = new CareerControl(this.career, 'ChangeCharacter', '更换', 1129, 230, 84, 50,
-            () => actions.characters?.(), false, 23);
-        careerImage(this.career, 'ChangeArrow', ART.arrow, 1209, 243, 27, 24);
+        this.characterLevel = careerLabel(character, 'CharacterLevel', '', 767, 240, 70, 30, 16, CAREER_WHITE, true);
+        this.changeCharacter = new CareerControl(character, 'ChangeCharacter', '更换', 1129, 230, 84, 50,
+            () => { this.motion.showImmediately(); actions.characters?.(); }, false, 23);
+        careerImage(character, 'ChangeArrow', ART.arrow, 1209, 243, 27, 24);
         styleCurrencyNumberLabel(this.characterLevel, 23);
-        const detail = makeUiNode('SelectedEventPanel', this.career);
+        const eventPanel = makeUiNode('SelectedEventPanel', this.career);
+        const detail = this.motion.group(eventPanel, 'CareerLeagueEntrance', 0, -36, 0.07);
+        const cup = this.motion.group(eventPanel, 'CareerCupEntrance', 48, -24, 0.11);
         careerImage(detail, 'LeaguePanel', ART.panel, 392, 306, 416, 368);
-        careerImage(detail, 'CupPanel', ART.panel, 822, 306, 432, 368, false, true);
+        careerImage(cup, 'CupPanel', ART.panel, 822, 306, 432, 368, false, true);
         this.tag(detail, '账号', '账号共享', 418, 326, 103, 36, ART.tagAccount);
-        this.tag(detail, '角色', '角色专属', 848, 326, 106, 36, ART.tagCharacter);
+        this.tag(cup, '角色', '角色专属', 848, 326, 106, 36, ART.tagCharacter);
         careerLabel(detail, 'LeagueTitle', '联赛挑战', 420, 366, 320, 52, 38);
         const modeNumber = careerLabel(detail, 'LeagueDistance', '200', 421, 420, 50, 30, 21, CAREER_MUTED);
         styleCurrencyNumberLabel(modeNumber, 28);
@@ -167,10 +178,11 @@ export class CareerEventPage {
         this.progress.node.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
         this.progress.node.setPosition(426 - 640, 360 - 523);
         this.hint = careerLabel(detail, 'LeagueHint', '', 426, 537, 352, 32, 17, CAREER_MUTED, false, false);
-        this.leagueStart = new CareerControl(detail, 'StartLeague', '开始联赛', 407, 590, 384, 70, () => actions.start('league'), true, 31);
-        this.cupTitle = careerLabel(detail, 'CupName', '', 850, 366, 225, 52, 36);
+        this.leagueStart = new CareerControl(detail, 'StartLeague', '开始联赛', 407, 590, 384, 70,
+            () => { this.motion.showImmediately(); actions.start('league'); }, true, 31);
+        this.cupTitle = careerLabel(cup, 'CupName', '', 850, 366, 225, 52, 36);
         for (let i = 0; i < 3; i++) {
-            const r = makeUiNode(`CupRound${i}`, detail);
+            const r = makeUiNode(`CupRound${i}`, cup);
             const bg = new CareerImage(r, 'RoundSurface', ART.panelWhite, 112, 94, 0, 0, false, true);
             const make = (name: string, y: number, size: number, bold = true) => careerLabel(r, name, '', 640 - 76, 360 + y - 12, 152, 24, size, CAREER_INK, false, bold);
             const distance = make('Distance', 12, 20, false);
@@ -178,9 +190,9 @@ export class CareerEventPage {
             const unit = make('DistanceUnit', 12, 20, false); careerText(unit, '米'); careerColor(unit, CAREER_MUTED);
             this.rounds.push({ root: r, bg, status: make('Status', -47, 14), name: make('Name', -19, 24),
                 distance, unit, condition: make('Condition', 39, 18, false) });
-            if (i < 2) this.roundArrows.push(careerImage(detail, `RoundArrow${i}`, ART.arrow, 964 + i * 136, 474, 14, 14));
+            if (i < 2) this.roundArrows.push(careerImage(cup, `RoundArrow${i}`, ART.arrow, 964 + i * 136, 474, 14, 14));
         }
-        this.cupStart = new CareerControl(detail, 'StartCup', '', 839, 598, 397, 62, () => this.onCup(), true, 31);
+        this.cupStart = new CareerControl(cup, 'StartCup', '', 839, 598, 397, 62, () => this.onCup(), true, 31);
         this.footer = careerLabel(this.design, 'EventStatus', '', 392, 681, 862, 30, 17, CAREER_WHITE, true);
         this.rules = this.overlay('RulesOverlay', true);
         careerLabel(this.rules, 'RulesTitle', '赛事规则', 310, 174, 660, 50, 32, CAREER_INK, true);
@@ -199,7 +211,10 @@ export class CareerEventPage {
         this.confirmYes = new CareerControl(this.confirm, 'ConfirmAbandon', '确认放弃', 670, 470, 330, 65, () => actions.abandon(), true, 27);
         this.quick = new QuickRacePopup(popupParent ?? this.root, actions);
         this.resize(); view.on('canvas-resize', this.resize); view.on('design-resolution-changed', this.resize);
-        this.root.once(Node.EventType.NODE_DESTROYED, () => { view.off('canvas-resize', this.resize); view.off('design-resolution-changed', this.resize); });
+        this.root.once(Node.EventType.NODE_DESTROYED, () => {
+            this.motion.dispose();
+            view.off('canvas-resize', this.resize); view.off('design-resolution-changed', this.resize);
+        });
     }
     private tag(parent: Node, name: string, value: string, x: number, y: number, w: number, h: number,
         asset: string, ink = CAREER_INK): void {
@@ -213,10 +228,13 @@ export class CareerEventPage {
         else careerImage(root, 'Sheet', ART.panel, 230, 110, 820, 500, false, true);
         root.active = false; return root;
     }
-    private openRules(): void { if (!this.snapshot?.busy) showCareerNode(this.rules, true); }
+    private openRules(): void {
+        if (!this.snapshot?.busy) { this.motion.showImmediately(); showCareerNode(this.rules, true); }
+    }
     private onCup(): void {
         const m = this.cupAction;
         if (!m || this.snapshot?.busy) return;
+        this.motion.showImmediately();
         if (m.action === 'next') this.actions.finishReview?.();
         else if (m.action === 'locate') this.actions.tier(m.actionTier);
         else if (m.action === 'start') this.actions.start('cup');
@@ -224,13 +242,17 @@ export class CareerEventPage {
     refresh(s: EventPageState): void {
         this.snapshot = s;
         const isCareer = s.screen === 'career';
-        showCareerNode(this.career, isCareer); showCareerNode(this.quick.root, !isCareer);
+        showCareerNode(this.career, isCareer);
         showCareerNode(this.background.node, isCareer); showCareerNode(this.header, isCareer);
         showCareerNode(this.footer.node, isCareer);
         if (!isCareer) {
+            if (this.careerVisible) { this.motion.suspend(); this.careerVisible = false; }
             showCareerNode(this.rules, false); showCareerNode(this.confirm, false);
-            this.quick.refresh(s); return;
+            this.quick.refresh(s);
+            if (!this.quickVisible) { this.quickVisible = true; this.quick.show(); }
+            return;
         }
+        if (this.quickVisible) { this.quickVisible = false; this.quick.hide(); }
         this.back.update('', !s.busy); this.rulesClose.update('返回赛事', !s.busy);
         this.confirmYes.update(s.busy ? '正在保存…' : '确认放弃', !s.busy);
         this.confirmNo.update('保留进度', !s.busy);
@@ -238,6 +260,8 @@ export class CareerEventPage {
         this.refreshCareer(s);
         careerText(this.rulesText, '• 顶部徽章可切换赛事；联赛与杯赛均为狂野模式。\n• 联赛前四名获得20 / 14 / 10 / 6积分，上限100分。\n• 本级满100分开放杯赛，夺冠晋级；最高级可重复挑战。\n• 前三级两轮，后三级三轮；三轮制决赛为400米。\n• 联赛进度账号共享；杯赛按角色保存，轮间可培养。\n• 回打旧联赛可获金币，不增加当前联赛积分。');
         careerText(this.footer, s.status || (s.busy ? '正在保存并准备比赛…' : ''));
+        // refresh也会被积分、段位及存档事件调用；只在重新进入生涯时启动。
+        if (!this.careerVisible) { this.careerVisible = true; this.motion.enter(false); }
     }
     private refreshCareer(s: EventPageState): void {
         const m = careerPageModel(s.profile.career, s.characterId, s.tier, s.reviewCupTier); this.cupAction = m;
@@ -310,7 +334,11 @@ export class CareerEventPage {
         }
         this.cupStart.update(s.busy ? '正在准备…' : m.button, !s.busy && m.action !== 'locked', m.action === 'locked');
     }
-    hide(): void { showCareerNode(this.rules, false); showCareerNode(this.confirm, false); showCareerNode(this.quick.root, false); }
+    hide(): void {
+        this.careerVisible = false; this.motion.suspend();
+        this.quickVisible = false; this.quick.hide();
+        showCareerNode(this.rules, false); showCareerNode(this.confirm, false);
+    }
     dispose(): void {
         this.hide(); this.root.active = false;
         if (this.quick.root.isValid) this.quick.root.destroy();

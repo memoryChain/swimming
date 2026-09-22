@@ -6,6 +6,7 @@ import { CareerControl, CareerImage, careerColor, careerImage, careerLabel, care
     showCareerNode, CAREER_INK, CAREER_MUTED, CAREER_WHITE } from './CareerPageWidgets';
 import { makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { styleCurrencyNumberLabel } from './ProjectUiFonts';
+import { PopupUiMotion } from './PopupUiMotion';
 
 const ART = RESOURCE_PATHS.careerUi;
 const SELECTED = uiColor(43, 183, 73), SELECTED_FILL = uiColor(234, 249, 238);
@@ -22,6 +23,7 @@ function alignQuickText(label: Label): void {
 export class QuickRacePopup {
     readonly root: Node;
     private readonly design: Node;
+    private readonly motion: PopupUiMotion;
     private readonly choices: Choice[] = [];
     private readonly close: CareerControl;
     private readonly start: CareerControl;
@@ -49,26 +51,29 @@ export class QuickRacePopup {
         const vertical = safe.height ? Math.max(0, safe.y - origin.y, origin.y + size.height - safe.y - safe.height) : 0;
         const scale = Math.max(0.1, Math.min(1, (size.width - horizontal * 2) / 1290, (size.height - vertical * 2) / 720));
         if (this.design.scale.x !== scale) this.design.setScale(scale, scale, 1);
+        this.motion.fitBlockerToScreen();
     };
 
     constructor(parent: Node, private readonly actions: EventPageActions) {
         this.root = makeUiNode('QuickRacePopup', parent);
+        this.root.getComponent(UITransform)!.setContentSize(4000, 2400);
         this.root.active = false;
         const dim = makeRect('QuickBackdrop', this.root, 4000, 2400, uiColor(0, 22, 46, 150));
         dim.addComponent(BlockInputEvents);
         this.backdropButton = dim.addComponent(Button);
         this.backdropButton.transition = Button.Transition.NONE;
-        dim.on(Button.EventType.CLICK, () => { if (!this.busy) actions.home(); });
+        dim.on(Button.EventType.CLICK, () => this.requestClose());
         this.design = makeUiNode('QuickDesign', this.root);
         this.design.getComponent(UITransform)!.setContentSize(1290, 720);
         // 复用生涯控件的1280坐标助手，补偿5px后按1290画布排版。
-        const body = makeUiNode('QuickContent', this.design);
+        const motionRoot = makeUiNode('QuickMotion', this.design);
+        const body = makeUiNode('QuickContent', motionRoot);
         body.setPosition(-5, 0);
         // 源图696×436，保持近乎等比的820×514，顶部波点不会被压扁。
         const sheet = careerImage(body, 'QuickSheet', RESOURCE_PATHS.avatarPickerUi.panel, 235, 98, 820, 514);
         sheet.node.addComponent(BlockInputEvents);
         alignQuickText(careerLabel(body, 'QuickTitle', '快速比赛', 355, 137, 580, 54, 38, CAREER_INK, true));
-        this.close = new CareerControl(body, 'CloseQuick', '×', 985, 130, 54, 54, () => actions.home(), false, 40);
+        this.close = new CareerControl(body, 'CloseQuick', '×', 985, 130, 54, 54, () => this.requestClose(), false, 40);
         alignQuickText(this.close.label);
         careerColor(this.close.label, CAREER_MUTED);
 
@@ -91,7 +96,7 @@ export class QuickRacePopup {
         alignQuickText(this.level);
         this.name.node.on(Node.EventType.SIZE_CHANGED, this.layoutLevel);
         this.change = new CareerControl(body, 'QuickChangeCharacter', '更换', 911, 197, 100, 50,
-            () => actions.characters?.(), false, 24);
+            () => { if (this.canAct()) actions.characters?.(); }, false, 24);
         this.change.label.node.setPosition(-14, 0);
         alignQuickText(this.change.label);
         careerImage(body, 'QuickChangeArrow', ART.arrow, 994, 210, 27, 24);
@@ -109,18 +114,27 @@ export class QuickRacePopup {
         this.status = careerLabel(body, 'QuickStatus', '', 290, 518, 710, 25, 17, uiColor(170, 67, 58), true, false);
         alignQuickText(this.status);
         this.start = new CareerControl(body, 'StartEvent', '开始比赛', 470, 552, 350, 77,
-            () => actions.start('quick'), false, 30);
+            () => { if (this.canAct()) actions.start('quick'); }, false, 30);
         const surface = new CareerImage(this.start.root, 'QuickStartSurface', RESOURCE_PATHS.avatarPickerUi.confirmButton,
             350, 77, 0, 0, true);
         surface.node.setSiblingIndex(0);
         this.start.label.node.setPosition(-20, 0);
         alignQuickText(this.start.label);
         this.startArrow = new CareerImage(this.start.root, 'QuickStartArrow', ART.arrow, 29, 26, 90, 0);
+        this.motion = new PopupUiMotion(this.root, dim, motionRoot);
         this.resize();
         view.on('canvas-resize', this.resize); view.on('design-resolution-changed', this.resize);
         this.root.once(Node.EventType.NODE_DESTROYED, () => {
+            this.motion.dispose();
             view.off('canvas-resize', this.resize); view.off('design-resolution-changed', this.resize);
         });
+    }
+
+    show(): void { this.motion.show(); }
+    hide(): void { this.motion.hideImmediately(); }
+    private canAct(): boolean { return !this.busy && this.motion.interactive; }
+    private requestClose(): void {
+        if (this.canAct()) this.motion.hide(() => this.actions.home());
     }
 
     private heading(parent: Node, name: string, text: string, y: number): void {
@@ -135,7 +149,8 @@ export class QuickRacePopup {
     }
 
     private choice(parent: Node, name: string, title: string, x: number, y: number, action: () => void): void {
-        const control = new CareerControl(parent, name, title, x, y, 360, 66, action, false, 29);
+        const control = new CareerControl(parent, name, title, x, y, 360, 66,
+            () => { if (this.canAct()) action(); }, false, 29);
         const shape = makeUiNode(`${name}Surface`, control.root);
         shape.getComponent(UITransform)!.setContentSize(360, 66);
         shape.setSiblingIndex(0);

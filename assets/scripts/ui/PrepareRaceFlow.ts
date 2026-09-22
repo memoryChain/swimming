@@ -1,4 +1,5 @@
 import {
+    BlockInputEvents,
     Button,
     Color,
     EventTouch,
@@ -12,12 +13,15 @@ import {
     Sprite,
     SpriteFrame,
     Texture2D,
+    tween,
+    Tween,
+    UIOpacity,
     UITransform,
     view,
 } from 'cc';
 import { DEBUG_UI_ENABLED } from '../core/DebugUiPolicy';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
-import { RESOURCE_PATHS } from '../core/ResourcePaths';
+import { PREPARE_PANORAMA_HEIGHT, PREPARE_PANORAMA_WIDTH, RESOURCE_PATHS } from '../core/ResourcePaths';
 import {
     findPlayerCharacter,
     getPlayerCharacterSelection,
@@ -32,7 +36,8 @@ import {
     setPlayerColorScheme,
     setPlayerSkinTone,
 } from '../app/PlayerCharacterConfig';
-import { CHARACTER_PREVIEW_RIGHT_SHIFT, PrepareRaceCharacterPreview } from '../app/PrepareRaceCharacterPreview';
+import { PrepareRaceCharacterPreview } from '../app/PrepareRaceCharacterPreview';
+import { CHARACTER_PREVIEW_RIGHT_SHIFT, computePrepareSceneLayout, PrepareSceneLayout } from './PrepareSceneLayout';
 import { getProgressionManager } from '../progression/ProgressionManager';
 import { PROGRESSION_BALANCE } from '../progression/ProgressionBalance';
 import { resolveCharacterDisplayStats } from '../progression/PlayerBalanceOverrides';
@@ -60,6 +65,8 @@ export type PrepareRaceFlowCallbacks = {
 
 type PrepareRaceView = 'ready' | 'characters';
 type CharacterInspectorTab = 'attributes' | 'appearance';
+type CachedPreparePage = { content: Node; motion: LobbyUiMotion; rotateArea: Node | null };
+type PreparePageTransition = { outgoing: Node; oldOpacity: UIOpacity; newOpacity: UIOpacity; from: number; to: number };
 
 type CharacterCardView = {
     characterId: PlayerCharacterId | null;
@@ -111,6 +118,16 @@ export class PrepareRaceFlow {
     private _previewRotateTouchId: number | null = null;
     private _upgradePending = false;
     private _motion = new LobbyUiMotion();
+    private readonly _pages = new Map<PrepareRaceView, CachedPreparePage>();
+    private readonly _leaveDisabledButtons: Button[] = [];
+    private readonly _presentation = { detail: 0 };
+    private readonly _sceneLayout: PrepareSceneLayout = { x: 0, backgroundX: 0, backgroundY: 0, scale: 1, hallX: 0 };
+    private _presentationWidth = 1280;
+    private _presentationHeight = 720;
+    private _presentationTween: Tween<{ detail: number }> | null = null;
+    private _pageTransition: PreparePageTransition | null = null;
+    private _transitionBlocker: Node | null = null;
+    private readonly _applyPresentation = (): void => this.applyPresentation();
     private _leaving = false;
     private _attributeTips: CharacterAttributeTips | null = null;
     private _skillTips: CharacterAttributeTips | null = null;
@@ -173,45 +190,68 @@ export class PrepareRaceFlow {
     ) {}
 
     showReadyScreen(): void {
-        if (this._content?.isValid && this._view === 'ready') return;
+        if (this._pageTransition || (this._content?.isValid && this._view === 'ready')) return;
         this.ensureRoot();
-        this._view = 'ready';
+        const previous = this._content;
+        const animate = !!previous?.isValid && !this._eventReturn && !this._eventPageActive;
+        const created = this.activateContent('ready', 'PrepareRaceReadyContent', animate);
         this.updateBackground();
         this._draftCharacterId = null;
         setNodeActive(this._lobbyBackgroundImage, true);
-        this.replaceContent('PrepareRaceReadyContent');
-        this.buildReadyScreen(this._content!);
+        if (created) this.buildReadyScreen(this._content!);
+        else {
+            this._careerPanel?.setSuspended(false);
+            this.refreshReadyCharacterInfo();
+        }
+        this._eventReturn = null;
         if (!this._eventPageActive || this._eventPageModal) this.presentCharacter(getPlayerCharacterSelection().characterId);
         this._callbacks.onCharacterManagementChanged?.(this._eventPageActive && !this._eventPageModal);
         this.layoutPresentation();
-        this._motion.enter(this._hasShownReady);
+        this.presentPageTransition(animate ? previous : null, 0, this._hasShownReady);
         this._hasShownReady = true;
     }
 
     showCharacterManagement(): void {
-        if (this._content?.isValid && this._view === 'characters') return;
+        if (this._pageTransition || (this._content?.isValid && this._view === 'characters')) return;
         this.ensureRoot();
-        this._view = 'characters';
+        const previous = this._content;
+        const animate = !!previous?.isValid && !this._eventPageActive;
+        const created = this.activateContent('characters', 'PrepareRaceCharacterManagementContent', animate);
         this.updateBackground();
         this._draftCharacterId = getPlayerCharacterSelection().characterId;
         this._activeInspectorTab = 'attributes';
         setNodeActive(this._lobbyBackgroundImage, true);
-        this.replaceContent('PrepareRaceCharacterManagementContent');
-        this.buildCharacterManagement(this._content!);
+        if (created) this.buildCharacterManagement(this._content!);
+        else {
+            this._characterCareerBadge?.set(RESOURCE_PATHS.careerUi.badges[PlayerData.profile.career.league]);
+            this.refreshCharacterCards();
+            this.refreshCharacterInspector();
+            this.refreshAppearanceSupport();
+            this.refreshAppearanceSwatches();
+            this.refreshCharacterConfirmState();
+            this.selectInspectorTab('attributes', true);
+        }
         this.presentCharacter(this._draftCharacterId);
         this._callbacks.onCharacterManagementChanged?.(true);
         this.layoutPresentation();
-        this._motion.enter(true);
+        this.presentPageTransition(animate ? previous : null, 1, true);
     }
 
     dispose(): void {
+        this._leaving = true;
+        this._presentationTween?.stop(); this._presentationTween = null;
+        this._pageTransition = null;
+        if (this._transitionBlocker?.isValid) this._transitionBlocker.destroy();
+        this._transitionBlocker = null;
         this._careerPanel?.dispose(); this._careerPanel = null;
         this._attributeTips?.dispose();
         this._attributeTips = null;
         this._skillTips?.dispose();
         this._skillTips = null;
         this._motion.dispose();
-        this._leaving = true;
+        for (const page of this._pages.values()) if (page.motion !== this._motion) page.motion.dispose();
+        this._pages.clear();
+        this._leaveDisabledButtons.length = 0;
         PlayerData.offChange(this._onProfileChange);
         view.off('canvas-resize', this._onResize);
         view.off('design-resolution-changed', this._onResize);
@@ -236,33 +276,89 @@ export class PrepareRaceFlow {
         view.on('design-resolution-changed', this._onResize);
     }
 
-    private replaceContent(name: string): void {
+    /** 两页各创建一次；往返只切显隐，避免同步重建角色卡、Mask、Label及赛事弹窗。 */
+    private activateContent(next: PrepareRaceView, name: string, keepPrevious = false): boolean {
         this._attributeTips?.hide();
         this._skillTips?.hide();
-        // 切换页面才替换结构；选择状态变化不进入这里，3D 预览单独保留。
-        this._motion.dispose();
-        this._motion = new LobbyUiMotion();
+        const previous = this._pages.get(this._view);
+        if (previous) previous.rotateArea = this._previewRotateArea;
+        this._motion.suspend();
+        if (!keepPrevious) setNodeActive(this._content, false);
+        // 只恢复退场前可用的控件，不能把业务禁用的升级/开赛按钮一起启用。
+        for (const button of this._leaveDisabledButtons) setButtonInteractable(button, true);
+        this._leaveDisabledButtons.length = 0;
+        this._careerPanel?.setSuspended(true, keepPrevious && this._view === 'ready');
         this._leaving = false;
-        // 页面级切换显式释放赛事页；不等待Cocos延迟destroy回调影响新页面。
-        this._careerPanel?.dispose(); this._careerPanel = null;
         this._eventPageActive = false;
         this._eventPageModal = false;
-        setNodeActive(this._previewRoot, true);
-        this._content?.destroy();
-        this.resetViewReferences();
-        this._content = makeUiNode(name, this._root!);
-        this._content.getComponent(UITransform)!.setContentSize(this._width, this._height);
+        this._previewRotateTouchId = null;
+        this._view = next;
+        const cached = this._pages.get(next);
+        const page = cached ?? { content: makeUiNode(name, this._root!), motion: new LobbyUiMotion(), rotateArea: null };
+        if (!cached) {
+            page.content.getComponent(UITransform)!.setContentSize(this._width, this._height);
+            this._pages.set(next, page);
+        }
+        this._content = page.content;
+        this._motion = page.motion;
+        this._previewRotateArea = page.rotateArea;
+        setNodeActive(this._content, true);
+        return !cached;
+    }
+
+    private presentPageTransition(previous: Node | null, detail: number, short: boolean): void {
+        if (!previous || !this._content?.active) {
+            this._presentation.detail = detail;
+            this.applyPresentation();
+            if (this._content?.active) this._motion.enter(short);
+            else this._motion.suspend();
+            return;
+        }
+        this._motion.showImmediately();
+        const oldOpacity = previous.getComponent(UIOpacity) ?? previous.addComponent(UIOpacity);
+        const newOpacity = this._content.getComponent(UIOpacity) ?? this._content.addComponent(UIOpacity);
+        this._pageTransition = { outgoing: previous, oldOpacity, newOpacity, from: this._presentation.detail, to: detail };
+        if (!this._transitionBlocker?.isValid) {
+            this._transitionBlocker = makeUiNode('PreparePageTransitionBlocker', getUILayer(this._canvasNode, UILayer.Popup));
+            this._transitionBlocker.addComponent(BlockInputEvents);
+        }
+        this._transitionBlocker.getComponent(UITransform)!.setContentSize(this._presentationWidth, this._presentationHeight);
+        setNodeActive(this._transitionBlocker, true);
+        this.applyPresentation();
+        // 同一个进度驱动背景、角色取景与UI透明度，避免两条Tween产生视觉滑步。
+        this._presentationTween = tween(this._presentation)
+            .to(0.42, { detail }, { easing: 'cubicInOut', onUpdate: this._applyPresentation })
+            .call(() => {
+                this._presentationTween = null;
+                const transition = this._pageTransition;
+                this._pageTransition = null;
+                if (transition?.outgoing.isValid) {
+                    setNodeActive(transition.outgoing, false);
+                    if (transition.oldOpacity.opacity !== 255) transition.oldOpacity.opacity = 255;
+                }
+                if (transition && transition.newOpacity.opacity !== 255) transition.newOpacity.opacity = 255;
+                if (this._view === 'characters') this._careerPanel?.setSuspended(true);
+                setNodeActive(this._transitionBlocker, false);
+            }).start();
     }
 
     private leaveCurrentScreen(done: () => void): void {
-        if (this._leaving || !this._content?.isValid) return;
+        if (this._leaving || this._pageTransition || !this._content?.isValid) return;
         this._leaving = true;
         this._attributeTips?.hide();
         this._skillTips?.hide();
         this._previewRotateTouchId = null;
         const content = this._content;
+        // 生涯全屏时大厅已隐藏并暂停动效，开赛不能等待它的退场回调。
+        if (!content.active) {
+            done();
+            return;
+        }
         for (const button of content.getComponentsInChildren(Button)) {
-            setButtonInteractable(button, false);
+            if (button.interactable) {
+                this._leaveDisabledButtons.push(button);
+                setButtonInteractable(button, false);
+            }
         }
         this._motion.exit(() => {
             if (content.isValid && this._content === content) done();
@@ -303,20 +399,33 @@ export class PrepareRaceFlow {
         this._activeCharacterNotice = null;
     }
 
-    private _backgroundRequest = 0;
+    private _backgroundPath = '';
+    private readonly _backgroundFrames = new Map<string, SpriteFrame>();
+    private readonly _backgroundPending = new Set<string>();
 
     private updateBackground(): void {
         const image = this._lobbyBackgroundImage;
         if (!image?.isValid) return;
-        const token = ++this._backgroundRequest;
-        const path = this._view === 'ready' ? RESOURCE_PATHS.lobbyB.background : RESOURCE_PATHS.characterUi.background;
-        loadRaceAsset(path, Texture2D, (error, texture) => {
-            if (error || !texture || !image.isValid || token !== this._backgroundRequest) return;
+        const path = RESOURCE_PATHS.lobbyB.background;
+        this._backgroundPath = path;
+        const cached = this._backgroundFrames.get(path);
+        if (cached) {
             const sprite = image.getComponent(Sprite) ?? image.addComponent(Sprite);
-            const old = sprite.spriteFrame;
+            if (sprite.spriteFrame !== cached) sprite.spriteFrame = cached;
+            if (sprite.sizeMode !== Sprite.SizeMode.CUSTOM) sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+            if (sprite.trim) sprite.trim = false;
+            return;
+        }
+        if (this._backgroundPending.has(path)) return;
+        this._backgroundPending.add(path);
+        loadRaceAsset(path, Texture2D, (error, texture) => {
+            this._backgroundPending.delete(path);
+            if (error || !texture || !image.isValid || this._lobbyBackgroundImage !== image) return;
             const frame = new SpriteFrame(); frame.texture = texture;
+            this._backgroundFrames.set(path, frame);
+            if (this._backgroundPath !== path) return;
+            const sprite = image.getComponent(Sprite) ?? image.addComponent(Sprite);
             sprite.spriteFrame = frame; sprite.sizeMode = Sprite.SizeMode.CUSTOM; sprite.trim = false;
-            old?.destroy();
         });
     }
 
@@ -325,17 +434,22 @@ export class PrepareRaceFlow {
         fitFullScreenBackgroundCover(fallback);
         const image = makeUiNode('PrepareRaceBackgroundImage', root);
         image.setPosition(0, 0, 1);
-        fitFullScreenBackgroundCover(image);
+        image.getComponent(UITransform)!.setContentSize(PREPARE_PANORAMA_WIDTH, PREPARE_PANORAMA_HEIGHT);
         this._lobbyBackgroundImage = image;
-        image.once(Node.EventType.NODE_DESTROYED, () => image.getComponent(Sprite)?.spriteFrame?.destroy());
+        image.once(Node.EventType.NODE_DESTROYED, () => {
+            for (const frame of this._backgroundFrames.values()) frame.destroy();
+            this._backgroundFrames.clear(); this._backgroundPending.clear();
+        });
     }
 
     private buildReadyScreen(parent: Node): void {
-        const left = makeScreenEdgeGroup('LobbyLeft', parent, 'left', this._width, this._height, 0, false);
-        const right = makeScreenEdgeGroup('LobbyRight', parent, 'right', this._width, this._height, 0, false);
+        // 沿用选角页的宽屏留白，整组内收；16:9 由布局工具保留原稿位置。
+        const left = makeScreenEdgeGroup('LobbyLeft', parent, 'left', this._width, this._height, 48, false);
+        const right = makeScreenEdgeGroup('LobbyRight', parent, 'right', this._width, this._height, 48, false);
         this.buildReadyCharacterPanel(left);
         this.buildPreviewPresentation(parent);
-        this._careerPanel = new CareerPrototypePanel(right,
+        const career = this._motion.group(right, 'LobbyCareerMotion', 24, 0, 0.05);
+        this._careerPanel = new CareerPrototypePanel(career,
             () => this.leaveCurrentScreen(this._callbacks.onStartRace),
             () => { setSoloRaceTicket(null); setSoloRaceDistance(null); this.leaveCurrentScreen(this._callbacks.onOpenRoom); },
             { parent: this._root!, popupParent: getUILayer(this._canvasNode, UILayer.Popup), navigation: this._eventReturn,
@@ -358,10 +472,14 @@ export class PrepareRaceFlow {
         this._attributeTips?.hide();
         this._skillTips?.hide();
         const fullScreen = visible && !modal;
+        if (fullScreen && !wasFullScreen) this._motion.suspend();
         setNodeActive(this._content, !fullScreen);
         setNodeActive(this._previewRoot, !fullScreen);
         if (wasFullScreen && !fullScreen && this._view === 'ready' && !this._leaving && this._content?.isValid) {
             this.presentCharacter(getPlayerCharacterSelection().characterId);
+            // 生涯返回复用大厅，只重播控件入场；转为快速弹窗时直接恢复底层。
+            if (!visible) this._motion.enter(false);
+            else this._motion.showImmediately();
         }
         this._callbacks.onCharacterManagementChanged?.(fullScreen);
     }
@@ -400,7 +518,7 @@ export class PrepareRaceFlow {
         const manageLabel = makeBoundLabel('Label', manage, '角色与培养', 24, DARK_TEXT, 150, 36, 28, 0);
         stylePsdTitleLabel(manageLabel, 32);
         this._motion.bindButton(manage);
-        manage.on(Button.EventType.CLICK, () => this.leaveCurrentScreen(() => this.showCharacterManagement()));
+        manage.on(Button.EventType.CLICK, () => { if (!this._leaving) this.showCharacterManagement(); });
         if (DEBUG_UI_ENABLED && this._callbacks.onAiDebug) {
             const ai = makeTouchArea('AiDebugButton', parent, 120, 44); ai.setPosition(-520, -290, 3);
             const label = makeBoundLabel('Label', ai, 'AI 测试', 18, DARK_TEXT, 120, 30, 0, 0);
@@ -484,7 +602,7 @@ export class PrepareRaceFlow {
         backButton.zoomScale = 0.97;
         backButton.duration = 0.08;
         this._motion.bindButton(backHit);
-        backHit.on(Button.EventType.CLICK, () => this.leaveCurrentScreen(() => this.showReadyScreen()));
+        backHit.on(Button.EventType.CLICK, () => { if (!this._leaving) this.showReadyScreen(); });
 
         // The label position is its bounding-box centre. Keep the visible title at
         // the PSD x=105 edge instead of centring that box on the glyph midpoint.
@@ -908,7 +1026,7 @@ export class PrepareRaceFlow {
         void PlayerData.setCharacterSelection(getPlayerCharacterSelection()).catch((error) => {
             console.warn('[PrepareRaceFlow] character selection save failed', error);
         });
-        this.leaveCurrentScreen(() => this.showReadyScreen());
+        this.showReadyScreen();
     }
 
     private buildPreviewPresentation(parent: Node): void {
@@ -926,23 +1044,42 @@ export class PrepareRaceFlow {
     private layoutPresentation(): void {
         if (!this._root?.isValid) return;
         const size = view.getVisibleSize();
-        const scale = Math.max(size.width / 1280, size.height / 720);
-        const lobby = this._view === 'ready';
+        this._presentationWidth = size.width;
+        this._presentationHeight = size.height;
+        if (this._transitionBlocker?.active) {
+            this._transitionBlocker.getComponent(UITransform)!.setContentSize(size.width, size.height);
+        }
+        this.applyPresentation();
+    }
+
+    private applyPresentation(): void {
+        const layout = this._sceneLayout;
+        computePrepareSceneLayout(layout, this._presentationWidth, this._presentationHeight, this._presentation.detail);
         if (this._lobbyBackgroundImage?.isValid) {
-            fitFullScreenBackgroundCover(this._lobbyBackgroundImage);
-            // 宽屏裁切以展示台接触线为焦点，避免背景缩放把台面压到角色脚下方。
-            const y = lobby ? 240 * (scale - 1) : 0;
-            if (this._lobbyBackgroundImage.position.y !== y) this._lobbyBackgroundImage.setPosition(0, y, 1);
+            const background = this._lobbyBackgroundImage;
+            if (background.scale.x !== layout.scale) background.setScale(layout.scale, layout.scale, 1);
+            if (background.position.x !== layout.backgroundX || background.position.y !== layout.backgroundY) {
+                background.setPosition(layout.backgroundX, layout.backgroundY, 1);
+            }
         }
         if (this._readyManageButton?.isValid) {
-            const x = -190.5 * scale;
+            const x = layout.hallX - 16.5;
             if (this._readyManageButton.position.x !== x) this._readyManageButton.setPosition(x, -275, 3);
         }
         if (this._previewRotateArea?.isValid) {
-            const x = lobby ? -174 * scale : -45 + CHARACTER_PREVIEW_RIGHT_SHIFT;
+            const x = layout.x;
             if (this._previewRotateArea.position.x !== x) this._previewRotateArea.setPosition(x, -4, 2);
         }
-        this._preview?.setHallOffset(lobby);
+        this._preview?.setScreenOffset(45 + layout.x, this._presentationHeight);
+        const transition = this._pageTransition;
+        if (transition) {
+            const span = transition.to - transition.from;
+            const progress = span === 0 ? 1 : (this._presentation.detail - transition.from) / span;
+            const oldAlpha = Math.round(255 * Math.max(0, 1 - progress / 0.4));
+            const newAlpha = Math.round(255 * Math.min(1, Math.max(0, (progress - 0.25) / 0.75)));
+            if (transition.oldOpacity.opacity !== oldAlpha) transition.oldOpacity.opacity = oldAlpha;
+            if (transition.newOpacity.opacity !== newAlpha) transition.newOpacity.opacity = newAlpha;
+        }
     }
 
     private presentCharacter(characterId: PlayerCharacterId | null): void {
@@ -951,7 +1088,7 @@ export class PrepareRaceFlow {
         // Both non-race views use the authored platform lighting only; the former
         // extra render-texture contact shadow is deliberately disabled.
         this._preview?.setLobbyPresentation(true, false);
-        this._preview?.setHallOffset(this._view === 'ready');
+        this.applyPresentation();
         setNodeActive(this._previewRoot, true);
         this._preview?.refresh(characterId);
     }
@@ -965,7 +1102,7 @@ export class PrepareRaceFlow {
     }
 
     private beginPreviewRotation(event: EventTouch): void {
-        if (!this._leaving && !this._eventPageActive && this._previewRotateTouchId === null) this._previewRotateTouchId = event.getID();
+        if (!this._leaving && !this._pageTransition && !this._eventPageActive && this._previewRotateTouchId === null) this._previewRotateTouchId = event.getID();
     }
 
     private updatePreviewRotation(event: EventTouch): void {
