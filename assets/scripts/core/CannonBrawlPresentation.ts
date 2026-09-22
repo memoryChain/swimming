@@ -1,6 +1,8 @@
 import { Color, gfx, Material, Mesh, MeshRenderer, Node, primitives, utils, Vec3 } from 'cc';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { CANNON_BRAWL_TUNING, CannonImpact, CannonLaunch } from './CannonBrawlController';
+import { RESOURCE_PATHS } from './ResourcePaths';
+import { WaterPlayObstacleModels, WATER_CANNON_MUZZLE } from './WaterPlayObstacleModel';
 import {
     ENTERTAINMENT_SPLASH_OWNER,
     ENTERTAINMENT_SPLASH_PROFILE,
@@ -28,14 +30,16 @@ export class CannonBrawlPresentation {
     private readonly cannons: Node[] = [];
     private marker: Node | null = null;
     private projectile: Node | null = null;
-    private cannonMesh: Mesh | null = null;
+    private models: WaterPlayObstacleModels | null = null;
+    private readonly nozzles: (Node | null)[] = [];
+    private readonly recoilElapsed = [1, 1];
     private markerMesh: Mesh | null = null;
     private projectileMesh: Mesh | null = null;
-    private cannonMaterial: Material | null = null;
     private markerMaterial: Material | null = null;
     private projectileMaterial: Material | null = null;
     private activeStrikeId = -1;
     private lastStrikeId = -1;
+    private lastImpactStrikeId = -1;
     private activeCannonIndex = 0;
     private targetX = 0;
     private targetZ = 0;
@@ -51,6 +55,8 @@ export class CannonBrawlPresentation {
     private exitStartTravelProgress = 0;
     private standWorldX = 0;
     private readonly impactWorldPosition = new Vec3();
+    private readonly muzzleLocal = new Vec3(WATER_CANNON_MUZZLE.x, WATER_CANNON_MUZZLE.y, WATER_CANNON_MUZZLE.z);
+    private readonly muzzleWorld = new Vec3();
 
     constructor(
         private readonly parent: Node,
@@ -66,8 +72,10 @@ export class CannonBrawlPresentation {
         if (this.disposed) return;
         this.activeStrikeId = -1;
         this.lastStrikeId = -1;
+        this.lastImpactStrikeId = -1;
         this.elapsed = PRESENTATION_INTERVAL;
         this.clock = 0;
+        this.clearRecoil();
         this.setActive(this.marker, false);
         this.setActive(this.projectile, false);
         this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.CANNON);
@@ -106,14 +114,22 @@ export class CannonBrawlPresentation {
         this.exitStartTravelProgress = this.deploymentTravelProgress;
         this.deploymentPhase = CannonDeploymentPhase.EXITING;
         this.deploymentElapsed = 0;
+        this.syncLaunch(null);
+        this.lastImpactStrikeId = this.lastStrikeId;
+        this.clearRecoil();
     }
 
     sourceWorldX(): number {
         return this.standWorldX;
     }
 
+    get projectileNode(): Node | null { return this.projectile?.active ? this.projectile : null; }
+
+    get launchSource(): Readonly<Vec3> { return this.muzzleWorld; }
+
     showLaunch(launch: CannonLaunch): void {
-        if (this.disposed || !launch) return;
+        if (this.disposed || !launch || launch.strikeId <= this.lastStrikeId) return;
+        if (this.deploymentPhase !== CannonDeploymentPhase.DEPLOYED) this.snapDeployed();
         this.activeStrikeId = launch.strikeId;
         this.lastStrikeId = launch.strikeId;
         this.activeCannonIndex = launch.strikeId & 1;
@@ -125,22 +141,27 @@ export class CannonBrawlPresentation {
         const cannon = this.cannons[this.activeCannonIndex];
         if (cannon?.isValid) {
             this.setActive(cannon, true);
+            cannon.setRotationFromEuler(0, Math.atan2(target.x - this.sourceWorldX(), target.z - edgeZ) * 180 / Math.PI, 0);
+            this.nozzles[this.activeCannonIndex]?.setPosition(0, 0, 0);
+            Vec3.transformMat4(this.muzzleWorld, this.muzzleLocal, cannon.worldMatrix);
         }
-        // 礼炮在整轮事件中固定于进场位置；只让炮弹飞向新的落点，避免每炮沿看台瞬移。
-        this.sourceX = this.sourceWorldX();
-        this.sourceY = this.course.waterY + 1.2;
-        this.sourceZ = edgeZ + (side > 0 ? -0.9 : 0.9);
+        // 固定底座只转向；弹道从可见喷口端面出发，回弹不改变已发出的水球轨迹。
+        this.sourceX = this.muzzleWorld.x;
+        this.sourceY = this.muzzleWorld.y;
+        this.sourceZ = this.muzzleWorld.z;
+        this.recoilElapsed[this.activeCannonIndex] = 0;
         this.marker?.setWorldPosition(target.x, this.course.waterY + 0.045, target.z);
         this.marker?.setScale(1, 1, 1);
         this.projectile?.setWorldPosition(this.sourceX, this.sourceY, this.sourceZ);
-        this.projectile?.setScale(0.58, 0.58, 0.58);
+        this.projectile?.setScale(1, 1, 1);
         this.setActive(this.marker, true);
         this.setActive(this.projectile, true);
     }
 
     showImpact(impact: CannonImpact): void {
-        if (this.disposed || !impact
+        if (this.disposed || !impact || impact.strikeId <= this.lastImpactStrikeId
             || (impact.strikeId !== this.activeStrikeId && impact.strikeId !== this.lastStrikeId)) return;
+        this.lastImpactStrikeId = impact.strikeId;
         this.setActive(this.marker, false);
         this.setActive(this.projectile, false);
         this.impactWorldPosition.set(this.targetX, this.course.waterY + 0.035, this.targetZ);
@@ -175,6 +196,7 @@ export class CannonBrawlPresentation {
             this.setActive(this.projectile, false);
             return;
         }
+        if (!launch && this.deploymentPhase === CannonDeploymentPhase.STOWED) return;
         this.syncLaunch(launch);
         const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
         this.elapsed += step;
@@ -183,6 +205,20 @@ export class CannonBrawlPresentation {
         this.elapsed = 0;
         this.clock += presentationStep;
         this.updateDeployment(presentationStep);
+        if (launch) {
+            // 晚快照恢复当前飞行阶段，不再补播已过去的短回弹。
+            const shotAge = Math.max(0, launch.warningSeconds - remainingSeconds);
+            this.recoilElapsed[this.activeCannonIndex] = Math.max(this.recoilElapsed[this.activeCannonIndex], shotAge - presentationStep);
+            if (shotAge >= 0.28 && this.nozzles[this.activeCannonIndex]?.position.z !== 0) {
+                this.nozzles[this.activeCannonIndex]?.setPosition(0, 0, 0);
+            }
+        }
+        for (let i = 0; i < this.nozzles.length; i++) {
+            if (this.recoilElapsed[i] >= 0.28) continue;
+            this.recoilElapsed[i] = Math.min(0.28, this.recoilElapsed[i] + presentationStep);
+            const t = this.recoilElapsed[i] / 0.28;
+            this.nozzles[i]?.setPosition(0, 0, t >= 1 ? 0 : -Math.sin(t * Math.PI) * 0.10);
+        }
 
         if (launch && this.activeStrikeId === launch.strikeId) {
             const total = Math.max(0.01, CANNON_BRAWL_TUNING.warningSeconds);
@@ -206,40 +242,48 @@ export class CannonBrawlPresentation {
         if (this.marker?.isValid) this.marker.destroy();
         if (this.projectile?.isValid) this.projectile.destroy();
         this.marker = this.projectile = null;
-        this.cannonMesh?.destroy();
+        this.models?.dispose();
         this.markerMesh?.destroy();
         this.projectileMesh?.destroy();
-        this.cannonMaterial?.destroy();
         this.markerMaterial?.destroy();
         this.projectileMaterial?.destroy();
     }
 
     private build(): void {
         if (!this.parent?.isValid) return;
-        this.cannonMesh = utils.createMesh(buildCannonGeometry());
         this.markerMesh = utils.createMesh(buildMarkerGeometry());
         this.projectileMesh = utils.createMesh(buildLowPolyBallGeometry());
-        this.cannonMaterial = makeVertexMaterial('CannonBrawlPropMaterial', true);
         this.markerMaterial = makeVertexMaterial('CannonBrawlMarkerMaterial', false);
         this.projectileMaterial = new Material();
         this.projectileMaterial.initialize({ effectName: 'builtin-unlit' });
         this.projectileMaterial.name = 'CannonBrawlProjectileMaterial';
-        this.projectileMaterial.setProperty('mainColor', new Color(31, 35, 41, 255));
+        this.projectileMaterial.setProperty('mainColor', new Color(32, 214, 244, 255));
 
         const midpoint = (this.course.startX + this.course.finishX) * 0.5;
         this.standWorldX = midpoint;
         for (let i = 0; i < 2; i++) {
             const side = i === 0 ? -1 : 1;
-            const cannon = this.makeMeshNode(`PoolsideCannon_${i + 1}`, this.cannonMesh, this.cannonMaterial);
+            const cannon = new Node(`PoolsideCannon_${i + 1}`);
+            cannon.setParent(this.parent);
+            cannon.layer = this.parent.layer;
             this.setActive(cannon, !this.startStowed);
             cannon.setWorldPosition(midpoint, this.course.waterY + 0.12, side * (this.course.poolWidth * 0.5 + CANNON_EDGE_OFFSET));
             cannon.setRotationFromEuler(0, side > 0 ? 180 : 0, 0);
             this.cannons.push(cannon);
         }
+        this.models = new WaterPlayObstacleModels('WaterBallCannon', this.cannons, RESOURCE_PATHS.waterBallCannonPrefabCandidates);
+        for (let i = 0; i < this.cannons.length; i++) this.nozzles.push(this.models.part(i, 'CannonNozzle'));
         this.marker = this.makeMeshNode('CannonImpactWarning', this.markerMesh, this.markerMaterial);
         this.projectile = this.makeMeshNode('CannonProjectile', this.projectileMesh, this.projectileMaterial);
         this.marker.active = false;
         this.projectile.active = false;
+    }
+
+    private clearRecoil(): void {
+        for (let i = 0; i < this.nozzles.length; i++) {
+            if (this.recoilElapsed[i] < 0.28) this.nozzles[i]?.setPosition(0, 0, 0);
+            this.recoilElapsed[i] = 1;
+        }
     }
 
     private makeMeshNode(name: string, mesh: Mesh, material: Material): Node {
@@ -310,59 +354,6 @@ function makeVertexMaterial(name: string, opaque: boolean): Material {
     return material;
 }
 
-function buildCannonGeometry(): primitives.IGeometry {
-    const positions: number[] = [];
-    const colors: number[] = [];
-    const indices: number[] = [];
-    const iron: ColorTuple = [0.12, 0.15, 0.20, 1];
-    const ironLight: ColorTuple = [0.22, 0.28, 0.35, 1];
-    const ironDark: ColorTuple = [0.055, 0.065, 0.085, 1];
-    const carriage: ColorTuple = [0.53, 0.17, 0.09, 1];
-    const carriageLight: ColorTuple = [0.68, 0.27, 0.11, 1];
-    const brass: ColorTuple = [0.72, 0.45, 0.14, 1];
-
-    // 贴地底盘和两根炮架纵梁保持明确接触，远景先读出稳重的梯形承重轮廓。
-    appendBox(positions, colors, indices, 0, 0.14, -0.02, 1.72, 0.28, 1.38, iron);
-    appendBox(positions, colors, indices, -0.49, 0.43, -0.08, 0.25, 0.34, 1.24, carriage);
-    appendBox(positions, colors, indices, 0.49, 0.43, -0.08, 0.25, 0.34, 1.24, carriage);
-    appendBox(positions, colors, indices, 0, 0.39, -0.57, 1.18, 0.34, 0.24, carriageLight);
-
-    // 轮轴贯穿两侧车轮；外胎、轮面和轮毂分层但仍属于同一合并网格。
-    appendCylinder(positions, colors, indices, 0, 0.46, 0.08, 0.12, 1.66, 'x', ironDark);
-    for (const side of [-1, 1]) {
-        // 三层共用轴向中心，并让轮面、轮毂依次加宽。这样两侧端盖都会逐层
-        // 外凸，不再全部落在同一平面产生深度闪烁（看起来像轮子一直在转）。
-        const wheelCenterX = side * 0.76;
-        appendCylinder(positions, colors, indices, wheelCenterX, 0.46, 0.08, 0.52, 0.22, 'x', ironDark);
-        appendCylinder(positions, colors, indices, wheelCenterX, 0.46, 0.08, 0.39, 0.25, 'x', carriage);
-        appendCylinder(positions, colors, indices, wheelCenterX, 0.46, 0.08, 0.18, 0.30, 'x', brass);
-    }
-
-    // 两根斜撑从纵梁上表面接到炮耳下方，避免炮管像悬浮在方盒上。
-    appendBeamYZ(positions, colors, indices, -0.49, 0.55, -0.33, 0.94, -0.07, 0.18, 0.16, carriageLight);
-    appendBeamYZ(positions, colors, indices, 0.49, 0.55, -0.33, 0.94, -0.07, 0.18, 0.16, carriageLight);
-    appendCylinder(positions, colors, indices, 0, 0.98, -0.05, 0.31, 1.12, 'x', brass);
-
-    // 炮身由后膛、加强箍、渐细炮管和双层炮口组成，保留硬朗十边低模轮廓。
-    appendTaperedCylinder(positions, colors, indices,
-        0, 0.94, -0.70, 0, 0.98, -0.18, 0.36, 0.30, ironLight);
-    appendTaperedCylinder(positions, colors, indices,
-        0, 0.975, -0.24, 0, 1.01, 0.02, 0.36, 0.32, brass);
-    appendTaperedCylinder(positions, colors, indices,
-        0, 1.00, -0.02, 0, 1.18, 1.34, 0.27, 0.17, ironLight);
-    appendTaperedCylinder(positions, colors, indices,
-        0, 1.16, 1.24, 0, 1.20, 1.53, 0.25, 0.29, iron);
-    appendTaperedCylinder(positions, colors, indices,
-        0, 1.195, 1.47, 0, 1.22, 1.66, 0.34, 0.34, brass);
-    // 略微前置的暗色圆面覆盖炮口端盖，比赛镜头下能明确读成空膛而不是实心柱。
-    appendTaperedCylinder(positions, colors, indices,
-        0, 1.222, 1.662, 0, 1.223, 1.675, 0.235, 0.235, ironDark);
-
-    // 后膛把手让背面也有清晰轮廓，同时与后膛末端保持小幅穿插连接。
-    appendBox(positions, colors, indices, 0, 0.88, -0.78, 0.40, 0.16, 0.26, brass);
-    return geometry(positions, colors, indices, new Vec3(-0.96, 0, -0.91), new Vec3(0.96, 1.57, 1.70));
-}
-
 function buildMarkerGeometry(): primitives.IGeometry {
     const positions: number[] = [];
     const colors: number[] = [];
@@ -383,11 +374,7 @@ function buildMarkerGeometry(): primitives.IGeometry {
 }
 
 function buildLowPolyBallGeometry(): primitives.IGeometry {
-    const positions = [0, 0.65, 0, 0.65, 0, 0, 0, 0, 0.65, -0.65, 0, 0, 0, 0, -0.65, 0, -0.65, 0];
-    const colors: number[] = [];
-    for (let i = 0; i < 6; i++) colors.push(1, 1, 1, 1);
-    const indices = [0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 1, 5, 2, 1, 5, 3, 2, 5, 4, 3, 5, 1, 4];
-    return geometry(positions, colors, indices, new Vec3(-0.65, -0.65, -0.65), new Vec3(0.65, 0.65, 0.65));
+    return primitives.sphere(0.25, { segments: 12 });
 }
 
 type ColorTuple = readonly [number, number, number, number];
@@ -398,137 +385,6 @@ function geometry(positions: number[], colors: number[], indices: number[], minP
 
 function pushColor(colors: number[], color: ColorTuple, count: number): void {
     for (let i = 0; i < count; i++) colors.push(color[0], color[1], color[2], color[3]);
-}
-
-function appendBox(
-    positions: number[], colors: number[], indices: number[],
-    cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, color: ColorTuple,
-): void {
-    const base = positions.length / 3;
-    const x = sx * 0.5, y = sy * 0.5, z = sz * 0.5;
-    positions.push(
-        cx - x, cy - y, cz - z, cx + x, cy - y, cz - z, cx + x, cy + y, cz - z, cx - x, cy + y, cz - z,
-        cx - x, cy - y, cz + z, cx + x, cy - y, cz + z, cx + x, cy + y, cz + z, cx - x, cy + y, cz + z,
-    );
-    pushColor(colors, color, 8);
-    const faces = [0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 4, 7, 0, 7, 3,
-        1, 2, 6, 1, 6, 5, 3, 7, 6, 3, 6, 2, 0, 1, 5, 0, 5, 4];
-    for (const index of faces) indices.push(base + index);
-}
-
-function appendCylinder(
-    positions: number[], colors: number[], indices: number[],
-    cx: number, cy: number, cz: number, radius: number, length: number, axis: 'x' | 'z', color: ColorTuple,
-): void {
-    const segments = 10;
-    const base = positions.length / 3;
-    for (let end = -1; end <= 1; end += 2) {
-        for (let i = 0; i < segments; i++) {
-            const a = i / segments * Math.PI * 2;
-            const u = Math.cos(a) * radius;
-            const v = Math.sin(a) * radius;
-            positions.push(
-                axis === 'x' ? cx + end * length * 0.5 : cx + u,
-                cy + v,
-                axis === 'z' ? cz + end * length * 0.5 : cz + u,
-            );
-        }
-    }
-    pushColor(colors, color, segments * 2);
-    for (let i = 0; i < segments; i++) {
-        const next = (i + 1) % segments;
-        indices.push(base + i, base + segments + i, base + next, base + next, base + segments + i, base + segments + next);
-    }
-    const capA = positions.length / 3;
-    positions.push(axis === 'x' ? cx - length * 0.5 : cx, cy, axis === 'z' ? cz - length * 0.5 : cz);
-    const capB = capA + 1;
-    positions.push(axis === 'x' ? cx + length * 0.5 : cx, cy, axis === 'z' ? cz + length * 0.5 : cz);
-    pushColor(colors, color, 2);
-    for (let i = 0; i < segments; i++) {
-        const next = (i + 1) % segments;
-        indices.push(capA, base + next, base + i, capB, base + segments + i, base + segments + next);
-    }
-}
-
-function appendTaperedCylinder(
-    positions: number[], colors: number[], indices: number[],
-    ax: number, ay: number, az: number,
-    bx: number, by: number, bz: number,
-    radiusA: number, radiusB: number, color: ColorTuple,
-): void {
-    const segments = 10;
-    const dx = bx - ax, dy = by - ay, dz = bz - az;
-    const length = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-    const nx = dx / length, ny = dy / length, nz = dz / length;
-    // 炮管接近 Z 轴，优先用世界 Y 构造稳定横截面；退化时改用世界 X。
-    const refX = Math.abs(ny) > 0.92 ? 1 : 0;
-    const refY = Math.abs(ny) > 0.92 ? 0 : 1;
-    let ux = ny * 0 - nz * refY;
-    let uy = nz * refX - nx * 0;
-    let uz = nx * refY - ny * refX;
-    const uLength = Math.sqrt(ux * ux + uy * uy + uz * uz) || 1;
-    ux /= uLength; uy /= uLength; uz /= uLength;
-    const vx = ny * uz - nz * uy;
-    const vy = nz * ux - nx * uz;
-    const vz = nx * uy - ny * ux;
-    const base = positions.length / 3;
-    for (let i = 0; i < segments; i++) {
-        const angle = i / segments * Math.PI * 2;
-        const cos = Math.cos(angle), sin = Math.sin(angle);
-        positions.push(
-            ax + (ux * cos + vx * sin) * radiusA,
-            ay + (uy * cos + vy * sin) * radiusA,
-            az + (uz * cos + vz * sin) * radiusA,
-        );
-    }
-    for (let i = 0; i < segments; i++) {
-        const angle = i / segments * Math.PI * 2;
-        const cos = Math.cos(angle), sin = Math.sin(angle);
-        positions.push(
-            bx + (ux * cos + vx * sin) * radiusB,
-            by + (uy * cos + vy * sin) * radiusB,
-            bz + (uz * cos + vz * sin) * radiusB,
-        );
-    }
-    pushColor(colors, color, segments * 2);
-    for (let i = 0; i < segments; i++) {
-        const next = (i + 1) % segments;
-        // 横截面基向量满足 u × v = 轴向；按外侧逆时针绕序构造侧壁。
-        indices.push(base + i, base + next, base + segments + i,
-            base + next, base + segments + next, base + segments + i);
-    }
-    const capA = positions.length / 3;
-    positions.push(ax, ay, az, bx, by, bz);
-    pushColor(colors, color, 2);
-    for (let i = 0; i < segments; i++) {
-        const next = (i + 1) % segments;
-        indices.push(capA, base + next, base + i,
-            capA + 1, base + segments + i, base + segments + next);
-    }
-}
-
-function appendBeamYZ(
-    positions: number[], colors: number[], indices: number[],
-    cx: number, ay: number, az: number, by: number, bz: number,
-    widthX: number, thickness: number, color: ColorTuple,
-): void {
-    const dy = by - ay, dz = bz - az;
-    const length = Math.sqrt(dy * dy + dz * dz) || 1;
-    const py = -dz / length * thickness * 0.5;
-    const pz = dy / length * thickness * 0.5;
-    const hx = widthX * 0.5;
-    const base = positions.length / 3;
-    positions.push(
-        cx - hx, ay - py, az - pz, cx + hx, ay - py, az - pz,
-        cx + hx, ay + py, az + pz, cx - hx, ay + py, az + pz,
-        cx - hx, by - py, bz - pz, cx + hx, by - py, bz - pz,
-        cx + hx, by + py, bz + pz, cx - hx, by + py, bz + pz,
-    );
-    pushColor(colors, color, 8);
-    const faces = [0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6,
-        0, 4, 5, 0, 5, 1, 3, 2, 6, 3, 6, 7,
-        0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2];
-    for (const index of faces) indices.push(base + index);
 }
 
 function appendDisc(

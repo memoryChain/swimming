@@ -134,7 +134,7 @@ test('炮火 HUD 限制十赫兹采样且不逐帧重绘图形', () => {
     assert.match(source, /SAMPLE_SECONDS = 0\.1/);
     assert.match(source, /consumeSample/);
     assert.match(source, /new EntertainmentStatusStrip/);
-    assert.match(source, /message = '落弹倒计时'/);
+    assert.match(source, /message = '水球落点倒计时'/);
     assert.match(source, /message = '下一发待命'/);
     assert.doesNotMatch(source, /核心危险|冲击区|已离开危险区/);
     assert.match(statusStrip, /message !== this\.lastMessage/);
@@ -146,30 +146,16 @@ test('炮火 HUD 限制十赫兹采样且不逐帧重绘图形', () => {
         'utf8',
     );
     assert.match(presentation, /PRESENTATION_INTERVAL = 1 \/ 20/);
-    assert.match(presentation, /buildCannonGeometry/);
+    assert.match(presentation, /WaterPlayObstacleModels/);
     assert.doesNotMatch(presentation, /Graphics|\.clear\(\)/);
 });
 
-test('看台大炮使用分层炮架、轮毂、斜撑和渐细炮管并保持单网格共享材质', () => {
-    const presentation = readFileSync(
-        new URL('../assets/scripts/core/CannonBrawlPresentation.ts', import.meta.url),
-        'utf8',
-    );
-    const model = presentation.match(/function buildCannonGeometry[\s\S]*?\n}/)?.[0] ?? '';
-    assert.match(model, /appendBeamYZ/);
-    assert.match(model, /appendTaperedCylinder/);
-    assert.match(model, /轮轴贯穿两侧车轮/);
-    assert.match(model, /双层炮口/);
-    assert.match(model, /暗色圆面覆盖炮口端盖/);
-    const wheelLayers = [...model.matchAll(
-        /appendCylinder\(positions, colors, indices, wheelCenterX, 0\.46, 0\.08, 0\.(\d+), 0\.(\d+), 'x'/g,
-    )].map(match => ({ radius: Number(`0.${match[1]}`), length: Number(`0.${match[2]}`) }));
-    assert.equal(wheelLayers.length, 3);
-    assert.ok(wheelLayers[0].length < wheelLayers[1].length);
-    assert.ok(wheelLayers[1].length < wheelLayers[2].length);
-    assert.match(presentation, /this\.cannonMesh = utils\.createMesh\(buildCannonGeometry\(\)\)/);
-    assert.match(presentation, /this\.cannonMesh, this\.cannonMaterial/);
-    assert.doesNotMatch(presentation, /resources\.load|assetManager\.load/);
+test('水炮使用源模型和固定同源回退，底座与喷口可独立运动', () => {
+    const source = readFileSync(new URL('../assets/scripts/core/CannonBrawlPresentation.ts', import.meta.url), 'utf8');
+    assert.match(source, /WaterPlayObstacleModels/);
+    assert.match(source, /waterBallCannonPrefabCandidates/);
+    assert.match(source, /CannonNozzle/);
+    assert.doesNotMatch(source, /buildCannonGeometry|appendBeamYZ|ironDark|carriage/);
 });
 
 test('六合一炮火预告推动礼炮进场，整轮固定位置并在结束后退场', () => {
@@ -199,7 +185,7 @@ test('六合一炮火预告推动礼炮进场，整轮固定位置并在结束�
     assert.match(manager, /transition\.previewEvent === EntertainmentEventId\.CANNON/);
     assert.match(manager, /this\._cannonBrawlPresentation\?\.beginExit\(\)/);
     assert.doesNotMatch(manager, /cannonStandWorldX/);
-    assert.match(pictureInPicture, /const projectileX = this\.cannonSourceX/);
+    assert.match(pictureInPicture, /let projectileX = this\.cannonSourceX/);
     assert.match(pictureInPicture, /const focusX = projectileX/);
 });
 

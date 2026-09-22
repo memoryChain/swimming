@@ -1,0 +1,112 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "d013dad2-607a-43d7-b488-6782dd679bbf",
+  "files": [],
+  "subMetas": {
+    "664b4": {
+      "importer": "gltf-mesh",
+      "uuid": "d013dad2-607a-43d7-b488-6782dd679bbf@664b4",
+      "displayName": "",
+      "id": "664b4",
+      "name": "CannonBaseMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 348
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "224fe": {
+      "importer": "gltf-mesh",
+      "uuid": "d013dad2-607a-43d7-b488-6782dd679bbf@224fe",
+      "displayName": "",
+      "id": "224fe",
+      "name": "CannonNozzleMesh.mesh",
+      "userData": {
+        "gltfIndex": 1,
+        "triangleCount": 664
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "536bd": {
+      "importer": "gltf-material",
+      "uuid": "d013dad2-607a-43d7-b488-6782dd679bbf@536bd",
+      "displayName": "",
+      "id": "536bd",
+      "name": "PoolPlasticVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "a49db": {
+      "importer": "gltf-scene",
+      "uuid": "d013dad2-607a-43d7-b488-6782dd679bbf@a49db",
+      "displayName": "",
+      "id": "a49db",
+      "name": "WaterBallCannon.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "d013dad2-607a-43d7-b488-6782dd679bbf@664b4",
+        "d013dad2-607a-43d7-b488-6782dd679bbf@224fe"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "d013dad2-607a-43d7-b488-6782dd679bbf@536bd"
+      ],
+      "scenes": [
+        "d013dad2-607a-43d7-b488-6782dd679bbf@a49db"
+      ]
+    }
+  }
+}

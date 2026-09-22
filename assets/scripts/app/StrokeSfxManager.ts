@@ -12,6 +12,37 @@ export class StrokeSfxManager {
     private static _loading = false;
     private static _nextClip = 0;
     private static _volumeScale = 1;
+    private static _buoyPop: AudioClip | null = null;
+    private static _buoyPopLoading = false;
+    private static _lastBuoyPopMs = -Infinity;
+
+    /** 复用现有音效输出与设置音量；加载完成不补播已经过去的触发。 */
+    static preloadBuoyPop() {
+        this.ensureSource();
+        if (this._buoyPop || this._buoyPopLoading) return;
+        this._buoyPopLoading = true;
+        const load = (bundle: AssetManager.Bundle) => {
+            bundle.load(RESOURCE_PATHS.music.buoyPop, AudioClip, (error, clip) => {
+                this._buoyPopLoading = false;
+                if (!error && clip) this._buoyPop = clip;
+            });
+        };
+        const bundle = assetManager.getBundle(RESOURCE_PATHS.music.bundle);
+        if (bundle) load(bundle);
+        else assetManager.loadBundle(RESOURCE_PATHS.music.bundle, (error, loaded) => {
+            if (!error && loaded) load(loaded);
+            else this._buoyPopLoading = false;
+        });
+    }
+
+    static playBuoyPop() {
+        if (this._volumeScale <= 0 || !this._buoyPop || !this._source?.isValid) return;
+        const now = Date.now();
+        // 音频 0.18 秒，同类至少间隔 0.12 秒，最多两声重叠。
+        if (now - this._lastBuoyPopMs < 120) return;
+        this._lastBuoyPopMs = now;
+        this._source.playOneShot(this._buoyPop, 0.48 * this._volumeScale);
+    }
 
     static preload() {
         this.ensureSource();

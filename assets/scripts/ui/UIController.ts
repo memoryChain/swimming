@@ -769,7 +769,7 @@ export class UIController extends Component {
                     : row.sharkEliminated
                         ? '碰撞退赛'
                         : row.cannonEliminated
-                            ? '炮击淘汰'
+                            ? '水球出局'
                             : '未完成',
                 color,
                 row.isPlayer,

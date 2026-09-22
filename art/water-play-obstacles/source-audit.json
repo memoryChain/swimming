@@ -1,0 +1,72 @@
+{
+  "WaterBallCannon": {
+    "parts": [
+      {
+        "name": "CannonBase",
+        "triangles": 348,
+        "vertices": 180,
+        "volume": 0.9382615627828027,
+        "closed": true
+      },
+      {
+        "name": "CannonNozzle",
+        "triangles": 664,
+        "vertices": 340,
+        "volume": 0.4841106450370427,
+        "closed": true
+      }
+    ],
+    "actions": [
+      "E_Cannon_Entry_Ready_Exit",
+      "E_Cannon_Soft_Recoil"
+    ],
+    "fps": 20,
+    "frameEnd": 120,
+    "note": "GLB 导出静态资源，游戏使用权威阶段驱动固定节点动作。"
+  },
+  "SprayBuoy": {
+    "parts": [
+      {
+        "name": "BuoyBalloon",
+        "triangles": 672,
+        "vertices": 358,
+        "volume": 0.13861415893905488,
+        "closed": true
+      },
+      {
+        "name": "BuoyBody",
+        "triangles": 656,
+        "vertices": 340,
+        "volume": 0.30041575245089014,
+        "closed": true
+      }
+    ],
+    "actions": [
+      "E_Buoy_Balloon_Unfold_Sway_Pop",
+      "E_Buoy_Disturb_Rise_Float_Press_Exit"
+    ],
+    "fps": 20,
+    "frameEnd": 70,
+    "note": "GLB 导出静态资源，游戏使用权威阶段驱动固定节点动作。",
+    "connectionAudit": {
+      "tetherRootError": 1.0328127968184185e-08,
+      "socketAnchorCocos": [
+        -0.32,
+        0.195,
+        0.05
+      ],
+      "socketYRange": [
+        0.188,
+        0.21
+      ],
+      "tetherStartY": 0.195,
+      "knotYRange": [
+        0.585,
+        0.65
+      ],
+      "tetherEndY": 0.625,
+      "balloonStartsY": 0.61,
+      "verified": true
+    }
+  }
+}

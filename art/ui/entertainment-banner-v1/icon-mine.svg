@@ -1,11 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <g fill="#48596A" stroke="#07182D" stroke-width="7" stroke-linejoin="round">
-    <path d="M59 7H70L74 28H55Z"/><path d="M59 121H70L74 100H55Z"/>
-    <path d="M8 58V70L30 74V54Z"/><path d="M121 58V70L99 74V54Z"/>
-    <path d="M22 20L31 12 47 30 34 43Z"/><path d="M107 20L98 12 82 30 95 43Z"/>
-  </g>
-  <circle cx="64" cy="64" r="39" fill="#34485A" stroke="#07182D" stroke-width="8"/>
-  <path d="M34 55C42 36 61 27 81 34L68 49Z" fill="#60768A"/>
-  <path d="M28 71H100" stroke="#FF8A24" stroke-width="7"/>
-  <circle cx="64" cy="64" r="8" fill="#FFB51B" stroke="#07182D" stroke-width="5"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><title>气球喷水浮标</title><desc>作者源 art/water-play-obstacles/SprayBuoy.blend；由 render_obstacles.py 离线渲染，无按钮文字。</desc><image href="icon-mine-generated-source.png" width="256" height="256"/></svg>

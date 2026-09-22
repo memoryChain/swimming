@@ -104,8 +104,8 @@ test('事件图标和顶部栏目固定锚定横幅左端，正文在独立内�
 
 test('广播栏目使用受控四字词库，并随排队消息一起保存', () => {
     for (const category of [
-        '广播通知', '补给投放', '炸弹接力', '漩涡警报', '水雷警报', '鲨鱼警报',
-        '炮火警报', '炮击命中', '炸弹爆炸', '拆弹成功', '警报解除', '赛道异物', '咬伤播报',
+        '广播通知', '补给投放', '水球接力', '漩涡警报', '浮标提醒', '玩具巡场',
+        '水球点名', '水球命中', '水球喷水', '带球冲线', '警报解除', '赛道异物',
     ]) {
         assert.match(banner, new RegExp(`\\| '${category}'`));
     }
@@ -114,9 +114,12 @@ test('广播栏目使用受控四字词库，并随排队消息一起保存', ()
     assert.match(banner, /next\.text, next\.tone, next\.durationMs, next\.icon, next\.category/);
     assert.match(gameManager, /entertainmentPreviewCopy\([\s\S]*?'广播通知'/);
     assert.match(gameManager, /entertainmentActiveBannerCategory\(transition\.activatedEvent\)/);
-    assert.match(gameManager, /被鲨鱼咬伤[\s\S]*?'咬伤播报'/);
-    assert.match(gameManager, /被炮弹核心命中[\s\S]*?'炮击命中'/);
-    assert.match(gameManager, /被定时炸弹炸倒[\s\S]*?'炸弹爆炸'/);
+    assert.doesNotMatch(gameManager, /被鲨鱼咬伤|咬伤播报/);
+    assert.match(gameManager, /_sharkArtPresentation\.notifyContact/);
+    assert.match(gameManager, /被水球中心喷水击中[\s\S]*?'水球命中'/);
+    const resolution = gameManager.match(/private applyMineRelayExplosion\([\s\S]*?\n    }/)?.[0] ?? '';
+    assert.match(resolution, /EntertainmentRecoveryReason\.TIMED_BOMB/);
+    assert.doesNotMatch(resolution, /showPersonal|showEvent/);
 });
 
 test('六合一激活时用原广播位置显示三秒红色行动提示', () => {
@@ -193,5 +196,5 @@ test('六合一事件静默收尾，只关闭持续状态条并保留独立玩�
     assert.doesNotMatch(gameManager, /本轮炮击结束 · 下一事件准备中/);
     assert.doesNotMatch(gameManager, /本轮炸弹结束 · 下一事件准备中/);
     assert.match(gameManager, /state === SharkState\.WANDER[\s\S]*?if \(!isEntertainmentBrawlMode\(\)\)[\s\S]*?pickSharkBannerLine\('retreat'\)/);
-    assert.match(gameManager, /state === SharkState\.SATIATED[\s\S]*?if \(!isEntertainmentBrawlMode\(\)\)[\s\S]*?鲨鱼已经吃饱/);
+    assert.match(gameManager, /state === SharkState\.SATIATED[\s\S]*?if \(!isEntertainmentBrawlMode\(\)\)[\s\S]*?玩具鲨收工啦/);
 });

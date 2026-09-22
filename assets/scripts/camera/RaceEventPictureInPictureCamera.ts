@@ -76,6 +76,9 @@ export class RaceEventPictureInPictureCamera {
     private cannonSourceX = 0;
     private cannonSourceY = 0;
     private cannonSourceZ = 0;
+    private cannonStrikeId = -1;
+    private cannonProjectile: Node | null = null;
+    private readonly cannonProjectilePosition = new Vec3();
     private whirlpoolX = 0;
     private whirlpoolZ = 0;
     private whirlpoolSuper = false;
@@ -193,7 +196,7 @@ export class RaceEventPictureInPictureCamera {
         this.biteHoldFocus.set(this.focus);
     }
 
-    showCannonLaunch(launch: CannonLaunch, sourceWorldX = Number.NaN): void {
+    showCannonLaunch(launch: CannonLaunch, sourceWorldX = Number.NaN, muzzle?: Readonly<Vec3>): void {
         const target = this.options.course.swimPosition(launch.targetDistance, launch.targetZ);
         const side = (launch.strikeId & 1) === 0 ? -1 : 1;
         this.cannonTargetX = target.x;
@@ -201,12 +204,18 @@ export class RaceEventPictureInPictureCamera {
         this.cannonSourceX = Number.isFinite(sourceWorldX) ? sourceWorldX : target.x;
         this.cannonSourceY = this.options.course.waterY + 1.2;
         this.cannonSourceZ = side * (this.options.course.poolWidth * 0.5 + 0.5);
+        if (muzzle) {
+            this.cannonSourceX = muzzle.x;
+            this.cannonSourceY = muzzle.y;
+            this.cannonSourceZ = muzzle.z;
+        }
+        this.cannonStrikeId = launch.strikeId;
         // 鲨鱼危险镜头优先级最高；炮火仍缓存落点，待鲨鱼镜头退出后再接管。
         if (this.mode === 'shark') return;
         this.mode = 'cannon';
         this.setCeilingVisible(true);
         this.holdSeconds = 0;
-        this.setCopy('炮火镜头', '炮弹已锁定落点', DANGER_COLOR);
+        this.setCopy('水球镜头', '小水球已锁定落点', DANGER_COLOR);
         this.setVisible(true);
     }
 
@@ -215,8 +224,8 @@ export class RaceEventPictureInPictureCamera {
         this.holdSeconds = CANNON_IMPACT_HOLD_SECONDS;
         const status = impact.knockedLane >= 0
             ? `${impact.knockedLane + 1}号泳道被核心命中`
-            : impact.hitMask !== 0 ? '冲击波掀翻附近选手' : '炮弹落空';
-        this.setCopy('炮火镜头', status, impact.knockedLane >= 0 ? DANGER_COLOR : WARNING_COLOR);
+            : impact.hitMask !== 0 ? '水花推开附近选手' : '水球落水';
+        this.setCopy('水球镜头', status, impact.knockedLane >= 0 ? DANGER_COLOR : WARNING_COLOR);
     }
 
     updateCannon(
@@ -225,14 +234,17 @@ export class RaceEventPictureInPictureCamera {
         racing: boolean,
         dt: number,
         sourceWorldX = Number.NaN,
+        muzzle?: Readonly<Vec3>,
+        projectile: Node | null = null,
     ): void {
+        this.cannonProjectile = projectile;
         if (!racing) {
             if (this.mode === 'cannon') this.hide();
             return;
         }
         const safeDt = safeStep(dt);
         if (launch) {
-            if (this.mode !== 'cannon') this.showCannonLaunch(launch, sourceWorldX);
+            if (this.mode !== 'cannon' || this.cannonStrikeId !== launch.strikeId) this.showCannonLaunch(launch, sourceWorldX, muzzle);
             if (this.mode !== 'cannon') return;
             const total = Math.max(0.01, launch.warningSeconds);
             const progress = clamp01(1 - remainingSeconds / total);
@@ -519,24 +531,42 @@ export class RaceEventPictureInPictureCamera {
     }
 
     private updateCannonCameraPose(progress: number, targetDistance: number): void {
-        const projectileX = this.cannonSourceX + (this.cannonTargetX - this.cannonSourceX) * progress;
-        const projectileZ = this.cannonSourceZ + (this.cannonTargetZ - this.cannonSourceZ) * progress;
-        const projectileY = this.cannonSourceY
+        let projectileX = this.cannonSourceX + (this.cannonTargetX - this.cannonSourceX) * progress;
+        let projectileZ = this.cannonSourceZ + (this.cannonTargetZ - this.cannonSourceZ) * progress;
+        let projectileY = this.cannonSourceY
             + (this.options.course.waterY + 0.12 - this.cannonSourceY) * progress
-            + Math.sin(progress * Math.PI) * 5.2;
-        const focusWeight = 0.42 + progress * 0.28;
+            + Math.sin(progress * Math.PI) * 5.8;
+        if (this.cannonProjectile?.isValid && this.cannonProjectile.active) {
+            this.cannonProjectile.getWorldPosition(this.cannonProjectilePosition);
+            projectileX = this.cannonProjectilePosition.x;
+            projectileY = this.cannonProjectilePosition.y;
+            projectileZ = this.cannonProjectilePosition.z;
+        }
+        const focusWeight = 0.28 + progress * 0.38;
         const focusX = projectileX + (this.cannonTargetX - projectileX) * focusWeight;
         this.focus.set(
             focusX,
-            this.options.course.waterY + 0.45 + projectileY * 0.08,
+            projectileY + (this.options.course.waterY + 0.15 - projectileY) * focusWeight,
             projectileZ + (this.cannonTargetZ - projectileZ) * focusWeight,
         );
         const direction = this.options.course.directionAtDistance(targetDistance);
         this.cameraPosition.set(
             focusX - direction * 7.4,
-            this.options.course.waterY + 5.4,
+            Math.max(this.options.course.waterY + 5.4, projectileY + 2.4),
             (this.cannonSourceZ + this.cannonTargetZ) * 0.5,
         );
+        // 将水球和落点包进同一个视锥；远侧长投不再把落点挤出画面。
+        const projectileRadius = Math.hypot(projectileX - this.focus.x, projectileY - this.focus.y, projectileZ - this.focus.z);
+        const targetRadius = Math.hypot(this.cannonTargetX - this.focus.x, this.options.course.waterY + 0.05 - this.focus.y, this.cannonTargetZ - this.focus.z);
+        const requiredDistance = Math.max(8.5, (Math.max(projectileRadius, targetRadius) + 0.35) / 0.4383711468);
+        const offsetX = this.cameraPosition.x - this.focus.x;
+        const offsetY = this.cameraPosition.y - this.focus.y;
+        const offsetZ = this.cameraPosition.z - this.focus.z;
+        const cameraDistance = Math.max(0.01, Math.hypot(offsetX, offsetY, offsetZ));
+        if (cameraDistance < requiredDistance) {
+            const scale = requiredDistance / cameraDistance;
+            this.cameraPosition.set(this.focus.x + offsetX * scale, this.focus.y + offsetY * scale, this.focus.z + offsetZ * scale);
+        }
         this.applyCameraPose(52);
     }
 

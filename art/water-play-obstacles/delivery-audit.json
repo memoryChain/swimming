@@ -1,0 +1,110 @@
+{
+  "date": "2026-09-22",
+  "models": {
+    "WaterBallCannon": {
+      "bytes": 71528,
+      "sha256": "ca95a27f5caf3aef7ca8ad25d1f1c34658fe679ae787ca3a555f8ac546c1e24e",
+      "meshes": 2,
+      "materials": 1,
+      "textures": 0,
+      "triangles": 1012,
+      "nodes": [
+        "CannonBase",
+        "CannonNozzle",
+        "Muzzle",
+        "WaterBallCannon"
+      ],
+      "imported": true,
+      "importer": "gltf",
+      "subResources": 4,
+      "uuid": "d013dad2-607a-43d7-b488-6782dd679bbf"
+    },
+    "SprayBuoy": {
+      "bytes": 104248,
+      "sha256": "bd5ae72c542448febecdea70fba21542721cc13d7f5ebdddf804a1935063413d",
+      "meshes": 2,
+      "materials": 1,
+      "textures": 0,
+      "triangles": 1328,
+      "nodes": [
+        "BuoyBalloon",
+        "BuoyBody",
+        "SprayBuoy"
+      ],
+      "imported": true,
+      "importer": "gltf",
+      "subResources": 4,
+      "uuid": "4513d5fd-af7a-47a1-9a4e-ea76dc01d37c"
+    }
+  },
+  "icons": {
+    "cannon": {
+      "width": 256,
+      "height": 256,
+      "depth": 8,
+      "type": 6,
+      "alpha": [
+        0,
+        255
+      ],
+      "borderMax": 0,
+      "bounds": [
+        58,
+        47,
+        219,
+        208
+      ],
+      "bytes": 54247,
+      "uuid": "a92d81e3-1f73-4c6f-a320-6f1d00d1d107",
+      "uuidPreserved": true,
+      "byteDelta": 47474,
+      "sourceMatches": true
+    },
+    "mine": {
+      "width": 256,
+      "height": 256,
+      "depth": 8,
+      "type": 6,
+      "alpha": [
+        0,
+        255
+      ],
+      "borderMax": 0,
+      "bounds": [
+        51,
+        31,
+        223,
+        247
+      ],
+      "bytes": 62183,
+      "uuid": "550b2b21-d173-4d5c-af32-bc469faa3ff5",
+      "uuidPreserved": true,
+      "byteDelta": 55799,
+      "sourceMatches": true
+    }
+  },
+  "sourceRuntimeEquality": {
+    "WaterBallCannon": true,
+    "SprayBuoy": true
+  },
+  "codeBytes": 87705,
+  "engineVisual": "待验",
+  "devices": "待验",
+  "rawAssetByteDelta": 287031,
+  "sound": {
+    "source": "本项目确定性原创合成，无外部录音",
+    "recipe": "build_pop_sound.py",
+    "sampleRate": 22050,
+    "channels": 1,
+    "bits": 16,
+    "duration": 0.18,
+    "bytes": 7982,
+    "peak": 0.72,
+    "rms": 0.06564631441338195,
+    "uuid": "29d6bddd-0a28-4379-8b04-f1e8a1e9f005",
+    "imported": true,
+    "sha256": "ced6d1ed730f8e097b9a693568437dea56e68349bf78a100f16b47af6b86c65d",
+    "sourceMatches": true
+  },
+  "note": "原始文件字节变化不等于微信构建包体；GLB 无内嵌纹理，纹理策略扫描数量可保持不变。"
+}

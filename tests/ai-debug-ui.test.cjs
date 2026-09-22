@@ -196,7 +196,7 @@ test('模式测试页签列出八个单项娱乐模式，切换不重建并以�
     const choices = modeContent.children.filter(node => node.name.startsWith('ModeChoice'));
     assert.equal(choices.length, 8);
     assert.deepEqual(choices.map(node => node.getChildByName('Label').getComponent(Label).string), [
-        '心跳苏打大乱斗', '充气玩具鲨', '漩涡冲浪赛', '炮火逃生赛', '定时水球传递', '水雷模式', '垃圾漂流大乱斗', '巨浪冲浪',
+        '心跳苏打大乱斗', '充气玩具鲨', '漩涡冲浪赛', '水球点名', '定时水球传递', '喷水浮标', '垃圾漂流大乱斗', '巨浪冲浪',
     ]);
     assert.equal(choices.some(node => node.getChildByName('Label').getComponent(Label).string === '娱乐模式'), false);
     for (const choice of choices) {

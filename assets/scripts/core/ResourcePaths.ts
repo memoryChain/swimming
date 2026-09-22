@@ -404,6 +404,14 @@ export const RESOURCE_PATHS = {
         'items/TimedWaterBalloon/TimedWaterBalloon',
         'items/TimedWaterBalloon',
     ],
+    waterBallCannonPrefabCandidates: [
+        'items/WaterBallCannon/WaterBallCannon',
+        'items/WaterBallCannon',
+    ],
+    sprayBuoyPrefabCandidates: [
+        'items/SprayBuoy/SprayBuoy',
+        'items/SprayBuoy',
+    ],
     recoveryFloatRingPrefabCandidates: [
         'items/RecoveryFloatRing/RecoveryFloatRing',
         'items/RecoveryFloatRing',
@@ -678,6 +686,7 @@ export const RESOURCE_PATHS = {
         login: 'login_ripples',
         race: 'race_current',
         result: 'result_sunlit_podium',
+        buoyPop: 'sfx/buoy_balloon_pop',
         strokeSfx: [
             'sfx/stroke_water_01',
         ],

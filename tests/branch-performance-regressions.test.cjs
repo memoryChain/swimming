@@ -180,14 +180,15 @@ test('连续换肤并触发发光后只更新当前实例，渲染器独立释�
 });
 
 function cannonFixture(entertainment) {
-    const h = harness();
-    const { CannonBrawlPresentation } = h.load('assets/scripts/core/CannonBrawlPresentation.ts');
+    const h = require('./helpers/water-play-harness.cjs').fixture('cannon');
+    const CannonBrawlPresentation = h.p.constructor;
+    h.p.dispose();
     const course = { startX: 0, finishX: 50, poolWidth: 20, waterY: 0, swimPosition: (x, z) => ({ x, z }) };
     const Fixture = method('assets/scripts/core/GameManager.ts', 'GameManager', 'ensureCannonBrawlPresentation', {
         CannonBrawlPresentation, COURSE_LAYOUT: course, isEntertainmentBrawlMode: () => entertainment,
     });
     const manager = new Fixture();
-    manager._worldRoot = new Node();
+    manager._worldRoot = new h.Node();
     manager.entertainmentWaterSplashes = () => null;
     const presentation = manager.ensureCannonBrawlPresentation();
     assert.equal(manager.ensureCannonBrawlPresentation(), presentation);

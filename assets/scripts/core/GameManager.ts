@@ -108,6 +108,7 @@ import { RaceFinishResult, RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
 import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isCannonBrawlMode, isEntertainmentBrawlMode, isLitterBrawlMode, isMinefieldBrawlMode, isSharkBrawlMode, isStimulantBrawlMode, isTimedBombBrawlMode, isWhirlpoolBrawlMode, raceDistanceToCourseX, SWIMMER_BALANCE } from './GameBalance';
 import { preloadStimulantBrawlModels, StimulantBrawlController } from './StimulantBrawlController';
+import { StrokeSfxManager } from '../app/StrokeSfxManager';
 import { EntertainmentWaterSplashPool } from './EntertainmentWaterSplash';
 import { buildEntertainmentStimulantSchedule } from './StimulantBrawlRules';
 import {
@@ -220,8 +221,8 @@ function entertainmentActiveBannerCategory(event: EntertainmentEventId): Enterta
         case EntertainmentEventId.STIMULANT: return '补给投放';
         case EntertainmentEventId.TIMED_BOMB: return '水球接力';
         case EntertainmentEventId.WHIRLPOOL: return '漩涡警报';
-        case EntertainmentEventId.CANNON: return '炮火警报';
-        case EntertainmentEventId.MINEFIELD: return '水雷警报';
+        case EntertainmentEventId.CANNON: return '水球点名';
+        case EntertainmentEventId.MINEFIELD: return '浮标提醒';
         case EntertainmentEventId.SHARK: return '玩具巡场';
         case EntertainmentEventId.LITTER: return '赛道异物';
         default: return '广播通知';
@@ -2274,6 +2275,8 @@ export class GameManager extends Component {
             this._state === GameState.RACING,
             dt,
             launch ? this._cannonBrawlPresentation?.sourceWorldX() : undefined,
+            this._cannonBrawlPresentation?.launchSource,
+            this._cannonBrawlPresentation?.projectileNode,
         );
         for (let i = 0; i < this._aiControllers.length; i++) {
             const ai = this._aiControllers[i];
@@ -2326,14 +2329,15 @@ export class GameManager extends Component {
         this._eventPictureInPicture?.showCannonLaunch(
             launch,
             this._cannonBrawlPresentation?.sourceWorldX(),
+            this._cannonBrawlPresentation?.launchSource,
         );
         if (launch.strikeId === 0 && !isEntertainmentBrawlMode()) {
             this._entertainmentEventBanner.showEvent(
-                '炮击来袭 · 观察落点并横移躲避',
+                '水球点名 · 观察落点并横移躲避',
                 'warning',
                 2000,
                 'cannon',
-                '炮火警报',
+                '水球点名',
             );
         }
         if (broadcast && this._netRaceController?.isHost) {
@@ -2392,11 +2396,11 @@ export class GameManager extends Component {
         if (splashNode?.isValid) setLayerRecursive(splashNode, SWIMMER_LAYER);
         swimmer.cartoonRig?.triggerBigSplash(2.8);
         this._entertainmentEventBanner.showEvent(
-            `${swimmer.swimmerName}被炮弹核心命中`,
+            `${swimmer.swimmerName}被水球中心喷水击中`,
             'danger',
             1800,
             'cannon',
-            '炮击命中',
+            '水球命中',
         );
     }
 
@@ -2715,6 +2719,7 @@ export class GameManager extends Component {
         this._netRaceController?.setMinefieldImpactListener(null);
         this._netRaceController?.setMinefieldStateListener(null);
         if (!isMinefieldBrawlMode() || !this._raceManager) return;
+        StrokeSfxManager.preloadBuoyPop();
         this._minefieldBrawl = new MinefieldBrawlController(
             LANE_LAYOUT.laneCount,
             getSharedRandomSeed(),
@@ -2753,6 +2758,7 @@ export class GameManager extends Component {
                 COURSE_LAYOUT,
                 isEntertainmentBrawlMode() ? 5 : MINEFIELD_TUNING.mineCount,
                 this.entertainmentWaterSplashes(),
+                () => StrokeSfxManager.playBuoyPop(),
             );
         }
         this._netRaceController?.setMinefieldImpactListener((mineId, hitLane, courseX, lateral, hitMask, revision, elapsedSeconds) => {
@@ -2760,7 +2766,9 @@ export class GameManager extends Component {
             if (this._minefieldBrawl?.applyImpact(impact)) this.handleMinefieldImpact(impact, false);
         });
         this._netRaceController?.setMinefieldStateListener(state => {
-            this._minefieldBrawl?.applySnapshotState(state);
+            if (this._minefieldBrawl?.applySnapshotState(state)) {
+                this._minefieldPresentation?.restoreSnapshot(this._minefieldBrawl.mines());
+            }
         });
     }
 
@@ -2792,7 +2800,11 @@ export class GameManager extends Component {
     }
 
     private handleMinefieldImpact(impact: MinefieldImpact, broadcast: boolean) {
-        this._minefieldPresentation?.showImpact(impact);
+        this._minefieldPresentation?.showImpact(
+            impact,
+            this._minefieldBrawl?.mines()[impact.mineId],
+            this._minefieldBrawl?.snapshotState().revision,
+        );
         const swimmer = this.swimmerForLane(impact.hitLane);
         if (swimmer?.node?.active) {
             const away = swimmer.node.position.z === impact.lateral
@@ -2814,9 +2826,7 @@ export class GameManager extends Component {
                 swimmer.distance,
                 impact.revision,
             );
-            if (swimmer === this._playerSwimmer) {
-                this._entertainmentEventBanner.showPersonal('撞上水雷 · 急救中', 'danger', 1200);
-            }
+            // B1 恢复卡已经显示调整状态，不重复叠加个人大提示。
         }
         for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
             if (lane === impact.hitLane || (impact.hitMask & (1 << lane)) === 0) continue;
@@ -3237,6 +3247,7 @@ export class GameManager extends Component {
             this._sharkEntryPresentation?.reset();
             this._sharkSplashFocus = null;
             this._sharkSplashFocusSeconds = 0;
+
             for (const controller of this._aiControllers) controller?.setSharkTargetZ(null);
             this.activePlayerAutopilot()?.setSharkTargetZ(null);
             return;
@@ -4339,11 +4350,11 @@ export class GameManager extends Component {
                     : isSharkBrawlMode()
                         ? '观察玩具鲨锁定并绕行；被顶后扶圈调整再出发'
                         : isCannonBrawlMode()
-                            ? '观察水面预警躲避炮弹；核心命中会击倒并重新入水'
+                            ? '观察水面预警躲避小水球；中心命中后搭浮圈调整'
                             : isTimedBombBrawlMode()
                                 ? '水球随机发放；贴近对手转交，最后锁定后无法转交；到时喷水并由浮圈托住调整'
                                 : isMinefieldBrawlMode()
-                                    ? '水雷在泳池中缓慢漂移；直接触雷会被击倒，附近选手会被冲击波推开'
+                                    ? '喷水浮标缓慢漂移；触碰后喷水并搭圈调整，水花会推开附近选手'
                                     : isLitterBrawlMode()
                                         ? '观众会将垃圾扔入水中；硬垃圾会弹开并瞬间减速，软垃圾可穿过但会持续拖慢'
                                     : '率先完成全程者获胜',

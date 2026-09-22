@@ -1,11 +1,9 @@
-import { Material, Mesh, MeshRenderer, Node, utils, Vec3 } from 'cc';
+import { Node, Vec3 } from 'cc';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { MinefieldImpact, MinefieldMineState } from './MinefieldBrawlController';
 import { sampleWaterFloatOffset, WATER_FLOAT_PROFILES } from './WaterFloatMotion';
-import {
-    buildMineGeometry,
-    makeMineVertexMaterial,
-} from './MineRelayBrawlPresentation';
+import { RESOURCE_PATHS } from './ResourcePaths';
+import { WaterPlayObstacleModels, SPRAY_BUOY_NOZZLE_HEIGHT, SPRAY_BUOY_TETHER_ANCHOR } from './WaterPlayObstacleModel';
 import {
     ENTERTAINMENT_SPLASH_OWNER,
     ENTERTAINMENT_SPLASH_PROFILE,
@@ -31,36 +29,41 @@ const ENTRY_BREACH_SECONDS = ENTRY_DISTURB_SECONDS + ENTRY_RISE_SECONDS * 0.74;
 const MINE_ROTATION_Y_DEGREES = 14;
 const MINE_TILT_X_DEGREES = 9;
 const MINE_TILT_Z_DEGREES = 7;
+const EXIT_SECONDS = 0.3;
 
-/** 共享网格和材质的低面数水雷池；运行时只更新节点显隐和变换。 */
+/** 气球喷水浮标池；爆开、下压和下潜仅消费权威命中的短期视觉状态。 */
 export class MinefieldBrawlPresentation {
     private readonly mineNodes: Node[] = [];
+    private readonly balloonNodes: Array<Node | null> = [];
     private readonly entryElapsed: number[] = [];
     private readonly entryWasArmed: boolean[] = [];
     private readonly entryGeneration: number[] = [];
     private readonly entryDisturbanceShown: boolean[] = [];
     private readonly entryBreachShown: boolean[] = [];
-    private mineMesh: Mesh | null = null;
-    private mineMaterial: Material | null = null;
+    private models: WaterPlayObstacleModels | null = null;
+    private readonly exitElapsed: number[] = [];
+    private readonly exitStartY: number[] = [];
+    private readonly lastImpactRevision: number[] = [];
     private elapsed = PRESENTATION_INTERVAL;
     private clock = 0;
     private visible = true;
     private disposed = false;
     private readonly splashWorldPosition = new Vec3();
     private readonly explosionCoreWorldPosition = new Vec3();
+    private readonly sprayLocal = new Vec3(0, SPRAY_BUOY_NOZZLE_HEIGHT, 0);
 
     constructor(
         private readonly worldRoot: Node,
         private readonly course: RaceCourseLayout,
         mineCount: number,
         private readonly waterSplashes: EntertainmentWaterSplashPool | null,
+        private readonly playPop: (() => void) | null = null,
     ) {
         if (!worldRoot?.isValid) return;
-        this.mineMesh = utils.createMesh(buildMineGeometry());
-        this.mineMaterial = makeMineVertexMaterial('MinefieldBodyMaterial', true);
         for (let id = 0; id < mineCount; id++) {
-            const node = this.makeMeshNode(`MinefieldMine${id}`, this.mineMesh, this.mineMaterial);
-            node.setScale(1.08, 1.08, 1.08);
+            const node = new Node(`SprayBuoy${id}`);
+            node.setParent(this.worldRoot);
+            node.layer = this.worldRoot.layer;
             node.active = false;
             this.mineNodes.push(node);
             this.entryElapsed.push(0);
@@ -68,6 +71,17 @@ export class MinefieldBrawlPresentation {
             this.entryGeneration.push(-1);
             this.entryDisturbanceShown.push(false);
             this.entryBreachShown.push(false);
+            this.exitElapsed.push(EXIT_SECONDS);
+            this.exitStartY.push(0);
+            this.lastImpactRevision.push(-1);
+        }
+        this.models = new WaterPlayObstacleModels('SprayBuoy', this.mineNodes, RESOURCE_PATHS.sprayBuoyPrefabCandidates);
+        for (let id = 0; id < mineCount; id++) {
+            const balloon = this.models.part(id, 'BuoyBalloon');
+            if (balloon) {
+                balloon.setPosition(SPRAY_BUOY_TETHER_ANCHOR.x, SPRAY_BUOY_TETHER_ANCHOR.y, SPRAY_BUOY_TETHER_ANCHOR.z);
+            }
+            this.balloonNodes.push(balloon);
         }
     }
 
@@ -84,7 +98,31 @@ export class MinefieldBrawlPresentation {
             this.entryGeneration[id] = -1;
             this.entryDisturbanceShown[id] = false;
             this.entryBreachShown[id] = false;
+            this.exitElapsed[id] = EXIT_SECONDS;
+            this.lastImpactRevision[id] = -1;
+            this.mineNodes[id].setScale(1, 1, 1);
+            this.resetBalloon(id);
         }
+    }
+
+    /** 网络快照只恢复当前外观，不补播气球爆开或声音。 */
+    restoreSnapshot(mines: readonly MinefieldMineState[]): void {
+        if (this.disposed) return;
+        for (let id = 0; id < this.mineNodes.length; id++) {
+            const mine = mines[id];
+            if (!mine?.active || !mine.armed) continue;
+            if (mine.generation !== this.entryGeneration[id]) {
+                this.entryGeneration[id] = mine.generation;
+                this.exitElapsed[id] = EXIT_SECONDS;
+                this.mineNodes[id].setScale(1, 1, 1);
+                this.resetBalloon(id);
+            }
+            this.entryWasArmed[id] = true;
+            this.entryElapsed[id] = ENTRY_TOTAL_SECONDS;
+            this.entryDisturbanceShown[id] = true;
+            this.entryBreachShown[id] = true;
+        }
+        this.elapsed = PRESENTATION_INTERVAL;
     }
 
     update(dt: number, mines: readonly MinefieldMineState[], visible: boolean): void {
@@ -92,7 +130,11 @@ export class MinefieldBrawlPresentation {
         if (visible !== this.visible) {
             this.visible = visible;
             if (!visible) {
-                for (const node of this.mineNodes) this.setActive(node, false);
+                for (let id = 0; id < this.mineNodes.length; id++) {
+                    this.setActive(this.mineNodes[id], false);
+                    this.exitElapsed[id] = EXIT_SECONDS;
+                    this.resetBalloon(id);
+                }
                 this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.MINEFIELD);
             } else {
                 this.elapsed = PRESENTATION_INTERVAL;
@@ -117,9 +159,21 @@ export class MinefieldBrawlPresentation {
                 this.entryElapsed[id] = 0;
                 this.entryDisturbanceShown[id] = false;
                 this.entryBreachShown[id] = false;
+                this.exitElapsed[id] = EXIT_SECONDS;
+                node.setScale(1, 1, 1);
+                this.resetBalloon(id);
             }
             const armed = !!mine?.active && !!mine?.armed;
-            if (!armed) {
+            if (!mine?.active) {
+                if (this.exitElapsed[id] < EXIT_SECONDS) {
+                    const t = Math.min(1, (this.exitElapsed[id] + presentationStep) / EXIT_SECONDS);
+                    this.exitElapsed[id] = t * EXIT_SECONDS;
+                    node.setWorldPosition(node.worldPosition.x, this.exitStartY[id] - 0.85 * t * t, node.worldPosition.z);
+                    node.setScale(1 + Math.sin(t * Math.PI) * 0.035, 1 - Math.sin(t * Math.PI) * 0.16, 1 + Math.sin(t * Math.PI) * 0.035);
+                    this.updateBalloonPop(id, this.exitElapsed[id]);
+                    if (t >= 1) this.setActive(node, false);
+                    continue;
+                }
                 this.setActive(node, false);
                 this.entryWasArmed[id] = false;
                 this.entryElapsed[id] = 0;
@@ -134,7 +188,8 @@ export class MinefieldBrawlPresentation {
                 this.entryBreachShown[id] = false;
             }
             const previousEntryElapsed = this.entryElapsed[id];
-            const entryElapsed = Math.min(ENTRY_TOTAL_SECONDS, previousEntryElapsed + presentationStep);
+            const entryElapsed = Math.min(ENTRY_TOTAL_SECONDS,
+                Math.max(armed ? 0 : -ENTRY_TOTAL_SECONDS, previousEntryElapsed + presentationStep));
             this.entryElapsed[id] = entryElapsed;
             if (entryElapsed < 0) {
                 this.setActive(node, false);
@@ -190,6 +245,8 @@ export class MinefieldBrawlPresentation {
             } else {
                 height += Math.sin(this.clock * 5.2 + id) * 0.025;
             }
+            // 已可接触时至少露出软边与气球，不能等待完整入场才显示障碍。
+            if (armed) height = Math.max(height, this.course.waterY - 0.04);
             node.setWorldPosition(this.course.distanceToWorldX(mine.courseX), height, mine.lateral);
             const rotationPhase = this.clock + id * 0.73;
             node.setRotationFromEuler(
@@ -197,22 +254,44 @@ export class MinefieldBrawlPresentation {
                 rotationPhase * (MINE_ROTATION_Y_DEGREES + id * 0.65) + id * 31,
                 Math.cos(rotationPhase * 0.43 + 0.8) * MINE_TILT_Z_DEGREES - entryTilt * 0.55,
             );
+            const balloon = this.balloonNodes[id];
+            if (balloon?.isValid) {
+                this.setActive(balloon, true);
+                const unfold = smoothStep(clamp01((entryElapsed - ENTRY_DISTURB_SECONDS) / ENTRY_RISE_SECONDS));
+                const scale = 0.35 + 0.65 * unfold;
+                const scaleY = 0.22 + 0.78 * unfold;
+                if (balloon.scale.x !== scale || balloon.scale.y !== scaleY || balloon.scale.z !== scale) {
+                    balloon.setScale(scale, scaleY, scale);
+                }
+                balloon.setRotationFromEuler(Math.sin(rotationPhase * 0.8 - 0.5) * 4 * unfold, 0,
+                    Math.cos(rotationPhase * 0.66 - 0.8) * 5 * unfold + (1 - unfold) * 12);
+            }
         }
     }
 
-    showImpact(impact: MinefieldImpact): void {
+    showImpact(impact: MinefieldImpact, currentMine?: Readonly<MinefieldMineState>, currentRevision = impact.revision): void {
         if (this.disposed || !this.visible) return;
+        const id = impact.mineId;
+        // 迟到结果仍由控制器结算；不允许旧事件隐藏新一代或重播已结束的喷水。
+        if (!this.mineNodes[id] || impact.revision < currentRevision
+            || impact.revision <= this.lastImpactRevision[id] || currentMine?.active) return;
+        this.lastImpactRevision[id] = impact.revision;
         const mineNode = this.mineNodes[impact.mineId];
-        let coreHeight = this.course.waterY + 0.09;
-        if (mineNode?.isValid && mineNode.active) {
-            mineNode.getWorldPosition(this.explosionCoreWorldPosition);
-            coreHeight = this.explosionCoreWorldPosition.y;
-        }
+        const sameGeneration = !currentMine || currentMine.generation === this.entryGeneration[id];
         this.explosionCoreWorldPosition.set(
             this.course.distanceToWorldX(impact.courseX),
-            coreHeight,
+            this.course.waterY + 0.09 + SPRAY_BUOY_NOZZLE_HEIGHT,
             impact.lateral,
         );
+        if (sameGeneration && mineNode?.isValid && mineNode.active) {
+            Vec3.transformMat4(this.explosionCoreWorldPosition, this.sprayLocal, mineNode.worldMatrix);
+            this.exitStartY[id] = mineNode.worldPosition.y;
+            this.exitElapsed[id] = 0;
+            // 同一触发帧即可读到轻压；不等待动画或 Tween 回调结算命中。
+            mineNode.setScale(1.02, 0.92, 1.02);
+            this.updateBalloonPop(id, 0);
+        }
+        this.playPop?.();
         this.showWaterVisual(
             impact.courseX,
             impact.lateral,
@@ -223,6 +302,25 @@ export class MinefieldBrawlPresentation {
             false,
             this.explosionCoreWorldPosition,
         );
+    }
+
+    private resetBalloon(id: number): void {
+        const balloon = this.balloonNodes[id];
+        if (!balloon?.isValid) return;
+        this.setActive(balloon, true);
+        balloon.setScale(1, 1, 1);
+        balloon.setRotationFromEuler(0, 0, 0);
+    }
+
+    private updateBalloonPop(id: number, elapsed: number): void {
+        const balloon = this.balloonNodes[id];
+        if (!balloon?.isValid) return;
+        if (elapsed >= 0.10) {
+            this.setActive(balloon, false);
+            return;
+        }
+        const t = Math.max(0, elapsed / 0.10);
+        balloon.setScale(1.16 + 0.10 * t, 0.90 - 0.65 * t, 1.16 + 0.10 * t);
     }
 
     private showWaterVisual(
@@ -260,18 +358,7 @@ export class MinefieldBrawlPresentation {
         this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.MINEFIELD);
         for (const node of this.mineNodes) if (node.isValid) node.destroy();
         this.mineNodes.length = 0;
-        this.mineMesh?.destroy();
-        this.mineMaterial?.destroy();
-    }
-
-    private makeMeshNode(name: string, mesh: Mesh, material: Material): Node {
-        const node = new Node(name);
-        node.setParent(this.worldRoot);
-        node.layer = this.worldRoot.layer;
-        const renderer = node.addComponent(MeshRenderer);
-        renderer.mesh = mesh;
-        renderer.setMaterial(material, 0);
-        return node;
+        this.models?.dispose();
     }
 
     private setActive(node: Node, active: boolean): void {

@@ -5,7 +5,7 @@ import { EntertainmentStatusStrip, EntertainmentStatusTone } from './Entertainme
 const SAMPLE_SECONDS = 0.1;
 const COMPLETION_SECONDS = 2;
 
-/** 炮火逃生赛状态条；一次构建，10Hz 采样，只在最终显示值变化时写 UI。 */
+/** 水球点名状态条；一次构建，10Hz 采样，只在最终显示值变化时写 UI。 */
 export class CannonBrawlHud {
     readonly root: Node;
     private readonly strip: EntertainmentStatusStrip;
@@ -63,12 +63,12 @@ export class CannonBrawlHud {
             this.completionRemainingSeconds = 0;
         }
         if (playerRecovering) {
-            message = '炮弹核心命中';
-            value = '重新入水';
+            message = '水球点名';
+            value = '搭圈调整';
             tone = 'danger';
         } else if (activeRemainingSeconds > 0) {
             const seconds = Math.max(0.1, Math.ceil(activeRemainingSeconds * 10) / 10).toFixed(1);
-            message = '落弹倒计时';
+            message = '水球落点倒计时';
             value = `${seconds}秒`;
             tone = 'warning';
         } else if (remainingStrikes > 0) {
@@ -79,7 +79,7 @@ export class CannonBrawlHud {
                 this.hadPendingStrike = false;
                 this.completionRemainingSeconds = COMPLETION_SECONDS;
             }
-            message = '炮击阶段结束';
+            message = '水球点名结束';
             value = '向终点冲刺';
         } else {
             this.hide();

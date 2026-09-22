@@ -1,0 +1,109 @@
+{
+  "date": "2026-09-22",
+  "model": {
+    "bytes": 104248,
+    "sha256": "bd5ae72c542448febecdea70fba21542721cc13d7f5ebdddf804a1935063413d",
+    "meshes": 2,
+    "materials": 1,
+    "textures": 0,
+    "triangles": 1328,
+    "nodes": [
+      "BuoyBalloon",
+      "BuoyBody",
+      "SprayBuoy"
+    ],
+    "imported": true,
+    "importer": "gltf",
+    "subResources": 4,
+    "uuid": "4513d5fd-af7a-47a1-9a4e-ea76dc01d37c"
+  },
+  "icon": {
+    "width": 256,
+    "height": 256,
+    "depth": 8,
+    "type": 6,
+    "alpha": [
+      0,
+      255
+    ],
+    "borderMax": 0,
+    "bounds": [
+      51,
+      31,
+      223,
+      247
+    ],
+    "bytes": 62183,
+    "uuid": "550b2b21-d173-4d5c-af32-bc469faa3ff5",
+    "uuidPreserved": true,
+    "byteDelta": 55799,
+    "sourceMatches": true
+  },
+  "sound": {
+    "source": "本项目确定性原创合成，无外部录音",
+    "recipe": "build_pop_sound.py",
+    "sampleRate": 22050,
+    "channels": 1,
+    "bits": 16,
+    "duration": 0.18,
+    "bytes": 7982,
+    "peak": 0.72,
+    "rms": 0.06564631441338195,
+    "uuid": "29d6bddd-0a28-4379-8b04-f1e8a1e9f005",
+    "imported": true,
+    "sha256": "ced6d1ed730f8e097b9a693568437dea56e68349bf78a100f16b47af6b86c65d",
+    "sourceMatches": true
+  },
+  "rawRevisionByteDelta": 74525,
+  "protectedFiles": [
+    {
+      "path": "assets/scripts/core/MineRelayBrawlPresentation.ts",
+      "unchanged": true
+    },
+    {
+      "path": "assets/scripts/core/MineRelayBrawlController.ts",
+      "unchanged": true
+    },
+    {
+      "path": "assets/scripts/core/CannonBrawlController.ts",
+      "unchanged": true
+    },
+    {
+      "path": "assets/scripts/core/CannonBrawlPresentation.ts",
+      "unchanged": true
+    },
+    {
+      "path": "assets/scripts/core/MinefieldBrawlController.ts",
+      "unchanged": true
+    },
+    {
+      "path": "assets/race/items/TimedWaterBalloon.glb",
+      "unchanged": true
+    },
+    {
+      "path": "assets/race/items/WaterBallCannon.glb",
+      "unchanged": true
+    },
+    {
+      "path": "art/water-play-obstacles/WaterBallCannon.blend",
+      "unchanged": true
+    },
+    {
+      "path": "assets/race/models/SharkModel.glb",
+      "unchanged": true
+    }
+  ],
+  "checks": {
+    "entertainment": "247/247",
+    "performance": "98/98",
+    "net": "45/45",
+    "focused": "13/13",
+    "settings": "5/5",
+    "typecheck": true,
+    "fontGlyphs": 1581,
+    "fontFiles": 276,
+    "textures": 281
+  },
+  "deviceValidation": "待验",
+  "note": "原始 GLB／图标／音频字节增量，不含生成代码、字体变化或构建转换，不能代替微信包体"
+}

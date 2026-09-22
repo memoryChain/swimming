@@ -140,7 +140,7 @@ test('定时炸弹仅写共享事件画中画，障碍水雷仍只使用世界�
     assert.match(camera, /Math\.ceil\(this\.timedBombRemainingSeconds\)/);
     assert.match(camera, /wholeSeconds === this\.lastTimedBombCopySeconds/);
     assert.match(camera, /if \(this\.mode === 'timed-bomb'\) this\.hide\(\)/);
-    assert.match(camera, /this\.timedBombLocked[\s\S]*?this\.setCopy\('炸弹追踪'/);
+    assert.match(camera, /this\.timedBombLocked[\s\S]*?this\.setCopy\('水球追踪'/);
 });
 
 test('比赛更新路径不为相机采样创建逐帧回调闭包', () => {
@@ -153,5 +153,5 @@ test('鲨鱼危险镜头占用期间炮火只缓存落点，不反复抢占画�
     const cannonLaunch = camera.match(/showCannonLaunch\([\s\S]*?\n    }/)?.[0] ?? '';
     const cannonUpdate = camera.match(/updateCannon\([\s\S]*?\n    }/)?.[0] ?? '';
     assert.match(cannonLaunch, /this\.cannonTargetX = target\.x[\s\S]*?if \(this\.mode === 'shark'\) return[\s\S]*?this\.mode = 'cannon'/);
-    assert.match(cannonUpdate, /showCannonLaunch\(launch, sourceWorldX\)[\s\S]*?if \(this\.mode !== 'cannon'\) return/);
+    assert.match(cannonUpdate, /showCannonLaunch\(launch, sourceWorldX, muzzle\)[\s\S]*?if \(this\.mode !== 'cannon'\) return/);
 });

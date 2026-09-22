@@ -1,0 +1,55 @@
+{
+  "WaterBallCannon": {
+    "meshes": 2,
+    "materials": 1,
+    "textures": 0,
+    "triangles": 1012,
+    "bytes": 71528,
+    "muzzle": [
+      0,
+      1.04,
+      1.02
+    ],
+    "contacts": {
+      "pedestalBaseOverlap": 0.04,
+      "pedestalHeadVerticalOverlap": 0.23,
+      "nozzleBodyOverlap": 0.11,
+      "rimPipeOverlap": 0.04,
+      "mouthInsetClearance": 0.01
+    }
+  },
+  "SprayBuoy": {
+    "meshes": 2,
+    "materials": 1,
+    "textures": 0,
+    "triangles": 1328,
+    "bytes": 104248,
+    "sprayOrigin": [
+      0,
+      0.25,
+      0
+    ],
+    "tetherAnchor": [
+      -0.32,
+      0.195,
+      0.05
+    ],
+    "balloonCenter": [
+      -0.22,
+      1.0,
+      0
+    ],
+    "visibleRadii": [
+      0.66,
+      0.6501
+    ],
+    "contacts": {
+      "rimBodyOverlap": 0.045,
+      "nozzleBodyOverlap": 0.02,
+      "tetherSocketOverlap": 0.015,
+      "tetherKnotOverlap": 0.025,
+      "knotBalloonOverlap": 0.04
+    },
+    "balloonHeight": 1.355
+  }
+}

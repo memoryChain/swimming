@@ -1,0 +1,36 @@
+{
+  "old": {
+    "cannonTriangles": 644,
+    "projectileTriangles": 8,
+    "markerTriangles": 72,
+    "buoyTriangles": 396,
+    "cannonRenderers": 2,
+    "buoyRenderers": 7
+  },
+  "current": {
+    "cannonTriangles": 1012,
+    "projectileTriangles": 288,
+    "markerTriangles": 72,
+    "buoyTriangles": 1328,
+    "cannonRenderers": 4,
+    "buoyRenderers": 14
+  },
+  "sharedSplash": "B2 固定池、网格、材质和容量不变",
+  "note": "只统计道具，不含既有预警、水花、角色及引擎额外绘制；不是 GPU 帧耗实测",
+  "roundDisc": {
+    "cannonTriangles": 1012,
+    "projectileTriangles": 288,
+    "markerTriangles": 72,
+    "buoyTriangles": 704,
+    "cannonRenderers": 4,
+    "buoyRenderers": 7
+  },
+  "balloonRevision": {
+    "oldSevenTriangles": 4928,
+    "newSevenTriangles": 9296,
+    "extraRenderers": 7,
+    "balloonPopBytes": 7982,
+    "sharedMaterialCount": 1,
+    "twentyRoundsStable": true
+  }
+}

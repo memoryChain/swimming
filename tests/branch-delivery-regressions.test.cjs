@@ -77,6 +77,7 @@ function recoveryQuitFixture() {
     swimmer._motor = { distance: 20, setLateralOffset() {},
         resumeAfterEntertainmentHit(distance) { this.distance = distance; swimmer.racing = true; swimmer.respawns++; } };
     swimmer.eliminate = method(swimmerFile, 'Swimmer', 'eliminate');
+    swimmer.syncEntertainmentRecoveryBodyVisibility = method(swimmerFile, 'Swimmer', 'syncEntertainmentRecoveryBodyVisibility');
     swimmer.respawnAfterEntertainmentHit = method(swimmerFile, 'Swimmer', 'respawnAfterEntertainmentHit', { Tween: { stopAllByTarget() {} } });
     const race = {
         _state: GameState.RACING, _eliminated: new Set(), _quit: new Set(), _finishTimes: new Map(),

@@ -1,0 +1,352 @@
+{
+  "date": "2026-09-22",
+  "note": "独立浏览器离线检查；非 Creator／微信真机",
+  "results": [
+    {
+      "kind": "cannon",
+      "rows": [
+        {
+          "kind": "cannon",
+          "time": 0,
+          "index": 0,
+          "phase": "水炮入场",
+          "visible": 4
+        },
+        {
+          "kind": "cannon",
+          "time": 1,
+          "index": 20,
+          "phase": "水炮入场",
+          "visible": 4
+        },
+        {
+          "kind": "cannon",
+          "time": 1.9,
+          "index": 38,
+          "phase": "就位",
+          "visible": 4
+        },
+        {
+          "kind": "cannon",
+          "time": 2.05,
+          "index": 41,
+          "phase": "发射与回弹",
+          "visible": 6
+        },
+        {
+          "kind": "cannon",
+          "time": 2.5,
+          "index": 50,
+          "phase": "水球飞行",
+          "visible": 6
+        },
+        {
+          "kind": "cannon",
+          "time": 3.3,
+          "index": 66,
+          "phase": "落点喷水",
+          "visible": 6
+        },
+        {
+          "kind": "cannon",
+          "time": 4.6,
+          "index": 92,
+          "phase": "退场",
+          "visible": 4
+        },
+        {
+          "kind": "cannon",
+          "time": 5.8,
+          "index": 116,
+          "phase": "已隐藏",
+          "visible": 0
+        },
+        {
+          "kind": "cannon",
+          "time": 0,
+          "index": 0,
+          "phase": "水炮入场",
+          "visible": 4
+        },
+        {
+          "kind": "cannon",
+          "time": 1,
+          "index": 20,
+          "phase": "水炮入场",
+          "visible": 4
+        },
+        {
+          "kind": "cannon",
+          "time": 1.9,
+          "index": 38,
+          "phase": "就位",
+          "visible": 4
+        },
+        {
+          "kind": "cannon",
+          "time": 2.05,
+          "index": 41,
+          "phase": "发射与回弹",
+          "visible": 6
+        },
+        {
+          "kind": "cannon",
+          "time": 2.5,
+          "index": 50,
+          "phase": "水球飞行",
+          "visible": 6
+        },
+        {
+          "kind": "cannon",
+          "time": 3.3,
+          "index": 66,
+          "phase": "落点喷水",
+          "visible": 6
+        },
+        {
+          "kind": "cannon",
+          "time": 4.6,
+          "index": 92,
+          "phase": "退场",
+          "visible": 4
+        },
+        {
+          "kind": "cannon",
+          "time": 5.8,
+          "index": 116,
+          "phase": "已隐藏",
+          "visible": 0
+        },
+        {
+          "kind": "cannon",
+          "time": 0,
+          "index": 0,
+          "phase": "水炮入场",
+          "visible": 4
+        },
+        {
+          "kind": "cannon",
+          "time": 1,
+          "index": 20,
+          "phase": "水炮入场",
+          "visible": 4
+        },
+        {
+          "kind": "cannon",
+          "time": 1.9,
+          "index": 38,
+          "phase": "就位",
+          "visible": 4
+        },
+        {
+          "kind": "cannon",
+          "time": 2.05,
+          "index": 41,
+          "phase": "发射与回弹",
+          "visible": 6
+        },
+        {
+          "kind": "cannon",
+          "time": 2.5,
+          "index": 50,
+          "phase": "水球飞行",
+          "visible": 6
+        },
+        {
+          "kind": "cannon",
+          "time": 3.3,
+          "index": 66,
+          "phase": "落点喷水",
+          "visible": 6
+        },
+        {
+          "kind": "cannon",
+          "time": 4.6,
+          "index": 92,
+          "phase": "退场",
+          "visible": 4
+        },
+        {
+          "kind": "cannon",
+          "time": 5.8,
+          "index": 116,
+          "phase": "已隐藏",
+          "visible": 0
+        }
+      ],
+      "webglError": 0,
+      "external": [],
+      "mobile": {
+        "width": 360,
+        "scroll": 345
+      }
+    },
+    {
+      "kind": "buoy",
+      "rows": [
+        {
+          "kind": "buoy",
+          "time": 0,
+          "index": 0,
+          "phase": "水下扰动",
+          "visible": 3
+        },
+        {
+          "kind": "buoy",
+          "time": 0.3,
+          "index": 6,
+          "phase": "破水上浮",
+          "visible": 3
+        },
+        {
+          "kind": "buoy",
+          "time": 0.8,
+          "index": 16,
+          "phase": "破水上浮",
+          "visible": 4
+        },
+        {
+          "kind": "buoy",
+          "time": 1.6,
+          "index": 32,
+          "phase": "共享漂浮",
+          "visible": 2
+        },
+        {
+          "kind": "buoy",
+          "time": 3.05,
+          "index": 61,
+          "phase": "触碰喷水与下潜",
+          "visible": 4
+        },
+        {
+          "kind": "buoy",
+          "time": 3.25,
+          "index": 65,
+          "phase": "触碰喷水与下潜",
+          "visible": 3
+        },
+        {
+          "kind": "buoy",
+          "time": 4.2,
+          "index": 84,
+          "phase": "已退出",
+          "visible": 0
+        },
+        {
+          "kind": "buoy",
+          "time": 0,
+          "index": 0,
+          "phase": "水下扰动",
+          "visible": 3
+        },
+        {
+          "kind": "buoy",
+          "time": 0.3,
+          "index": 6,
+          "phase": "破水上浮",
+          "visible": 3
+        },
+        {
+          "kind": "buoy",
+          "time": 0.8,
+          "index": 16,
+          "phase": "破水上浮",
+          "visible": 4
+        },
+        {
+          "kind": "buoy",
+          "time": 1.6,
+          "index": 32,
+          "phase": "共享漂浮",
+          "visible": 2
+        },
+        {
+          "kind": "buoy",
+          "time": 3.05,
+          "index": 61,
+          "phase": "触碰喷水与下潜",
+          "visible": 4
+        },
+        {
+          "kind": "buoy",
+          "time": 3.25,
+          "index": 65,
+          "phase": "触碰喷水与下潜",
+          "visible": 3
+        },
+        {
+          "kind": "buoy",
+          "time": 4.2,
+          "index": 84,
+          "phase": "已退出",
+          "visible": 0
+        },
+        {
+          "kind": "buoy",
+          "time": 0,
+          "index": 0,
+          "phase": "水下扰动",
+          "visible": 3
+        },
+        {
+          "kind": "buoy",
+          "time": 0.3,
+          "index": 6,
+          "phase": "破水上浮",
+          "visible": 3
+        },
+        {
+          "kind": "buoy",
+          "time": 0.8,
+          "index": 16,
+          "phase": "破水上浮",
+          "visible": 4
+        },
+        {
+          "kind": "buoy",
+          "time": 1.6,
+          "index": 32,
+          "phase": "共享漂浮",
+          "visible": 2
+        },
+        {
+          "kind": "buoy",
+          "time": 3.05,
+          "index": 61,
+          "phase": "触碰喷水与下潜",
+          "visible": 4
+        },
+        {
+          "kind": "buoy",
+          "time": 3.25,
+          "index": 65,
+          "phase": "触碰喷水与下潜",
+          "visible": 3
+        },
+        {
+          "kind": "buoy",
+          "time": 4.2,
+          "index": 84,
+          "phase": "已退出",
+          "visible": 0
+        }
+      ],
+      "webglError": 0,
+      "external": [],
+      "crowd": {
+        "meshes": 14,
+        "soundBytes": 7982
+      },
+      "audio": {
+        "duration": 0.18,
+        "channels": 1,
+        "decoded": true
+      },
+      "mobile": {
+        "width": 360,
+        "scroll": 345
+      }
+    }
+  ]
+}
