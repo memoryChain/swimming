@@ -76,7 +76,7 @@ function setup() {
     const imageRequests=[],selection={characterId:'coach'};
     function load(file,imports){const m={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{module:m,exports:m.exports,require:key=>imports[key]??{},console});return m.exports;}
     const {LobbyUiMotion}=load('assets/scripts/ui/LobbyUiMotion.ts',{'cc':cc,'./RuntimeUiFactory':factory});
-    const sceneLayout=load('assets/scripts/ui/PrepareSceneLayout.ts',{'../core/ResourcePaths':load('assets/scripts/core/ResourcePaths.ts',{})});
+    const sceneLayout=load('assets/scripts/ui/PrepareSceneLayout.ts',{'../core/ResourcePaths':load('assets/scripts/core/ResourcePaths.ts',{'../../startup/StartupResources':load('assets/startup/StartupResources.ts',{})})});
     const {computePrepareSceneLayout}=sceneLayout;
     const {PrepareRaceFlow}=load('assets/scripts/ui/PrepareRaceFlow.ts',{
         './PrepareSceneLayout':sceneLayout,
@@ -84,7 +84,7 @@ function setup() {
         '../backend/PlayerData':{PlayerData:{offChange(){}}},
         '../app/PlayerCharacterConfig':{getPlayerCharacterSelection:()=>selection},
         './UILayers':{getUILayer:canvas=>canvas,UILayer:{Popup:1}},
-        '../core/ResourcePaths':{...load('assets/scripts/core/ResourcePaths.ts',{}),RESOURCE_PATHS:{lobbyB:{background:'大厅背景'},careerUi:{badges:[]}}},
+        '../core/ResourcePaths':{...load('assets/scripts/core/ResourcePaths.ts',{'../../startup/StartupResources':load('assets/startup/StartupResources.ts',{})}),RESOURCE_PATHS:{lobbyB:{background:'大厅背景'},careerUi:{badges:[]}}},
         '../core/RaceBundleLoader':{loadRaceAsset:(path,type,done)=>imageRequests.push({path,done})},
     });
     const parent=new Node('页面'),flow=new PrepareRaceFlow(parent,parent,1280,720,{});
@@ -355,7 +355,7 @@ test('大厅AI开赛前释放预览与动效，加载失败恢复可操作大厅
                 s.parent.destroy();owner.onDestroy();runs++;
             }},
         });
-        owner=new Login();owner._prepareRaceFlow=f;
+        owner=new Login();owner.cancelLobbyLoading=()=>{};owner._prepareRaceFlow=f;
         owner.toast=()=>{};
         owner.openPrepareRace=()=>{
             const next=new f.constructor(s.parent,s.parent,1280,720,{});

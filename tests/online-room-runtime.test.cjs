@@ -641,13 +641,14 @@ function navigationHarness() {
     const file = path.join(root, 'assets/scripts/app/LoginManager.ts');
     const ast = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
     const cls = ast.statements.find(s => ts.isClassDeclaration(s) && s.name.text === 'LoginManager');
-    const names = ['openPrepareRace', 'openRoom', 'exitRoom', 'buildLoginScreen'];
+    const names = ['openPrepareRace', 'buildPrepareRace', 'openRoom', 'exitRoom', 'buildLoginScreen', 'cancelLobbyLoading'];
     const methods = cls.members.filter(m => names.includes(m.name?.getText(ast))).map(m => m.getText(ast)).join('\n');
     const code = ts.transpileModule(`class Navigation { ${methods} } exports.Navigation = Navigation;`, {
         compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
     }).outputText;
     let loaded, roomMode = true, opened = 0;
     const context = { exports: {}, console,
+        StartupLoadingCover: class { setLoading() {} dispose() {} }, UiAssetBarrier: class { cancel() {} },
         getUILayer: n => n, UILayer: { Screen: 1 }, setRoomMode: value => { roomMode = value; },
         PrepareRaceFlow: class { showReadyScreen() { opened++; } },
         RoomFlow: class { dispose() {} },
@@ -655,6 +656,12 @@ function navigationHarness() {
     };
     vm.runInNewContext(code, context);
     const manager = new context.exports.Navigation();
+    // 本组检查导航目的地；异步等待、失败和取消由 lobby-loading 专项覆盖。
+    manager.buildHeadBar = () => {};
+    manager.prepareLobby = () => {
+        manager.buildPrepareRace(); manager._lobbyLoading = null;
+        if (manager._loginUiRoot?.isValid) manager._loginUiRoot.active = false;
+    };
     manager._canvasNode = new Node('Canvas'); manager._canvasNode.getChildByName = () => null;
     manager._designWidth = 1280; manager._designHeight = 720;
     return { manager, loaded: root => loaded(null, { root }), opened: () => opened, roomMode: () => roomMode };

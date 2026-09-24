@@ -1,10 +1,8 @@
 import { _decorator, Camera, Color, Component, DirectionalLight, Layers, Material, Node, Rect, RenderTexture, Vec3, view } from 'cc';
 import {
     CharacterAction,
-    sampledActionIdFor,
     selectActionFromPool,
 } from '../character/CharacterActionConfig';
-import { loadSampledAction } from '../character/SampledActionLoader';
 import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 import { findPlayerCharacter, PlayerCharacterId, selectedPlayerColorScheme, selectedPlayerSkinTone } from './PlayerCharacterConfig';
 import { CHARACTER_PREVIEW_RIGHT_SHIFT } from '../ui/PrepareSceneLayout';
@@ -45,7 +43,6 @@ export class PrepareRaceCharacterPreview extends Component {
     private _rig: CartoonSwimmerRig | null = null;
     private _yawDegrees = 0;
     private _centered = false;
-    private _showcaseActionLoadToken = 0;
     private _selectedCharacterId = '';
     private _showcaseAction = CharacterAction.ArmStretching;
     private _lobbyPresentation = false;
@@ -59,6 +56,9 @@ export class PrepareRaceCharacterPreview extends Component {
     get shadowTexture(): RenderTexture | null {
         return this._shadowTexture;
     }
+
+    get presentationError(): Error | null { return this._rig?.raceLoadError ?? null; }
+    get presentationReady(): boolean { return this._centered && !!this._rig?.raceReady; }
 
     setLobbyPresentation(enabled: boolean, shadowCaptureEnabled = !enabled) {
         const presentationChanged = this._lobbyPresentation !== enabled;
@@ -163,6 +163,7 @@ export class PrepareRaceCharacterPreview extends Component {
             true,
             true,
             false,
+            this._showcaseAction,
         );
         rig.setSplashCulled(true);
         rig.setWaterlineEffectEnabled(false);
@@ -174,7 +175,6 @@ export class PrepareRaceCharacterPreview extends Component {
         this.applyAppearance();
         if (this._shadowCaptureEnabled) this.ensureShadowCapture();
         this._centered = false;
-        this.loadShowcaseAction(rig, this._showcaseAction);
     }
 
     rotateBy(deltaDegrees: number) {
@@ -254,7 +254,6 @@ export class PrepareRaceCharacterPreview extends Component {
     }
 
     onDestroy() {
-        this._showcaseActionLoadToken += 1;
         this._cameraNode?.destroy();
         this._lightNode?.destroy();
         this._shadowCameraNode?.destroy();
@@ -315,24 +314,4 @@ export class PrepareRaceCharacterPreview extends Component {
         }
     }
 
-    private loadShowcaseAction(rig: CartoonSwimmerRig, action: CharacterAction) {
-        const token = ++this._showcaseActionLoadToken;
-        const actionId = sampledActionIdFor(action);
-        // Store the requested id on the rig immediately so model-specific action
-        // overrides that finish first can activate the same randomly chosen pose.
-        rig.setShowcaseAction(action);
-        loadSampledAction(actionId, (error) => {
-            if (error) {
-                console.warn(`[SpeedSwimming] prepare-race showcase action failed to load action=${actionId}`, error);
-                return;
-            }
-            // Character switching can replace the rig while the race bundle is
-            // streaming. Only apply the action to the still-visible preview.
-            if (token !== this._showcaseActionLoadToken || this._rig !== rig || !rig.node?.isValid) {
-                return;
-            }
-            rig.setShowcaseAction(action);
-            rig.setShowcaseStanding();
-        });
-    }
 }

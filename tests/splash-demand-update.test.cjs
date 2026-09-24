@@ -112,6 +112,39 @@ test('无发射期间保留每次手掌检测，八个发射器零位置更新�
     for (const system of s.systems) { assert.equal(system.enabled, false); assert.equal(system.enableWrites, 1); assert.equal(system.pauses, 1); }
 });
 
+test('出水首拍未达到重复布防高度时，仍在首次真实触水时唤醒水片和水滴', () => {
+    for (const side of ['LeftHand', 'RightHand']) {
+        const s = setup();
+        s.state.legSplashSuppressed = true;
+        s.pose[side].y = -.3; s.step();
+        assert.equal(s.births.length, 0);
+        s.state.legSplashSuppressed = false;
+        // 对应实测出水首轮：手腕高于接触带，但低于再次拍水需要的 12 厘米。
+        s.pose[side].y = .09; s.step();
+        assert.equal(s.births.length, 0, '悬空不发射');
+        s.pose[side].y = .03; s.step();
+        const births = s.births.filter(b => b.name.startsWith(side === 'LeftHand' ? 'left-hand' : 'right-hand'));
+        assert.deepEqual(births.map(b => b.name.split('-').at(-1)).sort(), ['plume', 'spray', 'spray']);
+        assert(s.systems.filter(sys => sys.getParticleCount() > 0).every(sys => sys.enabled && sys.isPlaying));
+        const count = s.births.length;
+        for (const y of [.08, .02, .09, .03]) { s.pose[side].y = y; s.step(); }
+        assert.equal(s.births.length, count, '已经拍过后仍要求完整抬手，水面抖动不会重复触发');
+        s.pose[side].y = .2; s.step(); s.pose[side].y = .03; s.step();
+        assert.equal(s.births.length, count + 3, '再次完整抬手仍正常触发');
+    }
+});
+
+test('首次在水下和裁剪恢复不补发；之后首次浅抬手下穿仍能触发', () => {
+    const s = setup(); s.pose.LeftHand.y = -.1; s.step();
+    assert.equal(s.births.length, 0);
+    s.h.setCulled(true); s.h.setCulled(false); s.step();
+    assert.equal(s.births.length, 0);
+    s.pose.LeftHand.y = .08; s.step();
+    assert.equal(s.births.length, 0, '向上出水不发射');
+    s.pose.LeftHand.y = .03; s.step();
+    assert.equal(s.births.length, 3, '首次下穿时水片与两批水滴一起发射');
+});
+
 test('骨骼按调用复用，双脚中点复用足部采样，缺失骨骼与同帧姿态改变不会读到旧值', () => {
     const { SplashBoneSamples } = moduleFor(); let left = true, right = true, height = 1; const calls = {};
     const cache = new SplashBoneSamples((name, out) => {

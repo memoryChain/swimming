@@ -78,6 +78,7 @@ function managerHarness({ wechat = true, invite = null, screenFails = false } = 
     cc.js = { getClassByName: () => Runtime };
     cc.sys = { localStorage: { getItem: () => '{"musicVolume":0.25}' } };
     const load = loader({ cc, 'cc/env': { WECHAT: wechat },
+        './StartupLoadingCover': { StartupLoadingCover: class { constructor() { calls.covers = (calls.covers ?? 0) + 1; } setLoading() {} setRetry(callback) { this.retry = callback; } dispose() { this.disposed = true; } } },
         './MusicManager': { MusicManager: { playLogin: () => calls.music++, setVolume: value => calls.volume = value } },
         './DeferredCodeLoader': { loadGameplayCode: () => { calls.loads++; return new Promise((resolve, reject) => pending.push({ resolve, reject })); } },
         './StartupPlatform': { startupInvite: () => invite, observeStartupInvites: callback => { onInvite = callback; return () => calls.off++; }, showStartupRetry: callback => calls.modals.push(callback) },
@@ -213,7 +214,7 @@ test('真实登录初始化消费首屏交接，邀请优先最新房号，重�
             buildLoginScreen: () => { destination = '登录'; },
         });
         manager.onLoad(); await flush();
-        assert.equal(destination, scenario.destination); assert.equal(headbars, 1);
+        assert.equal(destination, scenario.destination); assert.equal(headbars, 0, '头像栏交由大厅资源准备或房间入口创建');
         if (scenario.room) { assert.equal(openedRoom, scenario.room); assert.equal(reconnect, false); }
         if (scenario.returningRoom) { assert.equal(manager._pendingOpenRoom, true); assert.equal(manager._pendingReconnect, true); assert.equal(manager._pendingJoinRoomId, undefined); }
         if (scenario.returningLobby) { assert.equal(manager._pendingOpenLobby, true); assert.equal(manager._pendingOpenRoom, false); }

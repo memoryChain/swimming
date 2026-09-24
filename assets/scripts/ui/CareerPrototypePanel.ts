@@ -11,6 +11,8 @@ import { careerArt, careerButtonFeedback } from './CareerUiArt';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { CareerEventPage } from './CareerEventPage';
 import { CareerImage } from './CareerPageWidgets';
+import { UiAssetBarrier } from './UiAssetBarrier';
+import { StartupLoadingCover } from '../../startup/StartupLoadingCover';
 
 export interface CareerNavigation {
     screen: 'quick' | 'career'; tier: number; source: 'league' | 'cup';
@@ -43,10 +45,12 @@ export class CareerPrototypePanel {
     private readonly badge: CareerImage;
     private progressValue = -1;
     private buttons: { node: Node; label: Label; action: () => void }[] = [];
-    private readonly page: CareerEventPage;
+    private page: CareerEventPage | null = null;
+    private pageLoading: UiAssetBarrier | null = null;
+    private pageCover: StartupLoadingCover | null = null;
     private pageVisible = false;
     private pageModal = false;
-    private readonly changed = () => { if (this.root.isValid && (this.root.active || this.page.root.active)) this.refresh(); };
+    private readonly changed = () => { if (this.root.isValid && (this.root.active || this.page?.root.active)) this.refresh(); };
 
     constructor(parent: Node, private readonly start: () => void, private readonly friends: () => void,
         private readonly pageHost?: { parent: Node; popupParent?: Node; visibility: (visible: boolean, modal?: boolean) => void;
@@ -113,7 +117,14 @@ export class CareerPrototypePanel {
         const entry = { node, label, action: () => {} };
         node.on(Button.EventType.CLICK, () => { if (!this.busy) entry.action(); });
         this.buttons.push(entry);
-        this.page = new CareerEventPage(pageHost?.parent ?? parent, {
+        PlayerData.onChange(this.changed);
+        this.root.once(Node.EventType.NODE_DESTROYED, () => this.dispose());
+        this.refresh();
+    }
+
+    private ensurePage(): CareerEventPage {
+        if (this.page) return this.page;
+        this.page = new CareerEventPage(this.pageHost?.parent ?? this.root.parent!, {
             home: () => this.open('home'),
             tier: value => { if (!this.busy && value >= 0 && value < LEAGUES.length && (this.tier !== value || this.reviewCupTier !== null)) {
                 this.tier = value; this.reviewCupTier = null; this.confirmAbandon = false; this.status = ''; this.refresh();
@@ -121,8 +132,8 @@ export class CareerPrototypePanel {
             distance: value => { if (!this.busy && this.distance !== value) { this.distance = value; this.status = ''; this.refresh(); } },
             rule: value => this.setRule(value),
             start: source => { void this.begin(source ?? (this.screen === 'quick' ? 'quick' : 'league')); },
-            characters: pageHost?.characters ? () => {
-                if (!this.busy) pageHost.characters?.(this.navigation());
+            characters: this.pageHost?.characters ? () => {
+                if (!this.busy) this.pageHost.characters?.(this.navigation());
             } : undefined,
             finishReview: () => {
                 if (this.busy) return;
@@ -134,10 +145,8 @@ export class CareerPrototypePanel {
                 if (!this.confirmAbandon) { this.confirmAbandon = true; this.refresh(); }
                 else void this.abandon(getPlayerCharacterSelection().characterId);
             },
-        }, pageHost?.popupParent);
-        PlayerData.onChange(this.changed);
-        this.root.once(Node.EventType.NODE_DESTROYED, () => this.dispose());
-        this.refresh();
+        }, this.pageHost?.popupParent);
+        return this.page;
     }
 
     private at(name: string, text: string, x: number, y: number, w: number, h: number, size: number,
@@ -164,8 +173,8 @@ export class CareerPrototypePanel {
         if (this.suspended === suspended) return;
         this.suspended = suspended;
         if (suspended) {
-            this.page.hide();
-            if (this.page.root.active) this.page.root.active = false;
+            this.page?.hide();
+            if (this.page?.root.active) this.page.root.active = false;
             this.pageVisible = false; this.pageModal = false;
         } else {
             this.refresh();
@@ -179,12 +188,18 @@ export class CareerPrototypePanel {
     }
     dispose(): void {
         if (this.disposed) return;
-        this.disposed = true; PlayerData.offChange(this.changed); this.page.dispose();
+        const loading = this.pageLoading; this.pageLoading = null; loading?.cancel();
+        this.pageCover?.dispose(); this.pageCover = null;
+        this.disposed = true; PlayerData.offChange(this.changed); this.page?.dispose();
         if (this.pageVisible) { this.pageVisible = false; this.pageHost?.visibility(false); }
     }
 
     private open(screen: 'home' | 'quick' | 'career', source: 'league' | 'cup' = 'league'): void {
-        if (this.busy || this.disposed || this.suspended) return;
+        if (this.busy || this.disposed || this.suspended || this.pageLoading) return;
+        if (screen !== 'home' && !this.page) {
+            void this.preparePage(screen, source);
+            return;
+        }
         this.screen = screen; this.source = source; this.confirmAbandon = false;
         this.reviewCupTier = null;
         if (screen === 'career') {
@@ -192,6 +207,32 @@ export class CareerPrototypePanel {
             this.tier = source === 'cup' && cup?.state === 'active' ? cup.tier : PlayerData.profile.career.league;
         }
         this.status = ''; this.refresh();
+    }
+
+    private async preparePage(screen: 'quick' | 'career', source: 'league' | 'cup'): Promise<void> {
+        const loading = this.pageLoading = new UiAssetBarrier();
+        this.pageCover ??= new StartupLoadingCover(null);
+        this.pageCover.setLoading();
+        try {
+            loading.run(() => {
+                this.ensurePage();
+                // 完整刷新也纳入等待，包含当前头像、段位等动态图片。
+                this.pageLoading = null;
+                try { this.open(screen, source); } finally { this.pageLoading = loading; }
+            });
+            await loading.waitFor(() => !!this.page?.root.isValid);
+            if (this.pageLoading !== loading || this.disposed) return;
+            this.pageLoading = null;
+            this.pageCover?.dispose(); this.pageCover = null;
+        } catch (error) {
+            loading.cancel();
+            if (this.pageLoading !== loading || this.disposed) return;
+            this.pageLoading = null;
+            this.page?.dispose(); this.page = null;
+            this.screen = 'home'; this.refresh();
+            console.warn('[大厅] 赛事页面加载失败，可点击重试', error);
+            this.pageCover?.setRetry(() => this.open(screen, source));
+        }
     }
     refresh(): void {
         if (this.disposed || this.suspended) return;
@@ -217,16 +258,16 @@ export class CareerPrototypePanel {
                 : points < 100 ? `再获${100 - points}积分，开放晋级杯` : '晋级杯已开放，前往挑战');
         }
         if (this.screen !== 'home') {
-            this.page.refresh({ screen: this.screen, source: this.source, tier: this.tier,
+            this.ensurePage().refresh({ screen: this.screen, source: this.source, tier: this.tier,
                 characterId: id, distance: this.distance, rule: this.rule, busy: this.busy,
                 confirmAbandon: this.confirmAbandon, status: this.status, profile: p, reviewCupTier: this.reviewCupTier });
         }
         const visible = this.screen !== 'home';
         const modal = this.screen === 'quick';
         if (this.root.active !== (this.screen !== 'career')) this.root.active = this.screen !== 'career';
-        if (this.page.root.active !== visible) this.page.root.active = visible;
+        if (this.page && this.page.root.active !== visible) this.page.root.active = visible;
         if (this.pageVisible !== visible || this.pageModal !== modal) {
-            if (!visible) this.page.hide();
+            if (!visible) this.page?.hide();
             this.pageVisible = visible; this.pageModal = modal; this.pageHost?.visibility(visible, modal);
         }
         for (let i = 0; i < this.buttons.length; i++) {

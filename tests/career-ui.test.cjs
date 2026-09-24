@@ -87,7 +87,10 @@ class SpriteFrame {isValid=true;rect={width:100,height:100};set texture(v){this.
 class Sprite extends Component {static SizeMode={CUSTOM:1};static Type={SLICED:1};color=factory.uiColor(255,255,255);set spriteFrame(v){this.frame=v;this.node.asset=v?.texture?.path;}get spriteFrame(){return this.frame;} }
 const imageCallbacks=[];let deferImages=false;
 function uiFrame(asset,done){const frame=new SpriteFrame();let width=512,height=512;const file=path.join(__dirname,'../assets/race',asset.replace(/\/texture$/,'.png'));if(require('node:fs').existsSync(file)){const bytes=require('node:fs').readFileSync(file);width=bytes.readUInt32BE(16);height=bytes.readUInt32BE(20);}frame.texture={path:asset,width,height};if(deferImages)imageCallbacks.push(()=>done(frame));else done(frame);}
-const h = createHarness({ '../core/RaceBundleLoader':{loadRaceAsset(asset,type,done){uiFrame(asset,frame=>done(null,frame.texture));}}, './AvatarUiAssets':{loadAvatarUiSpriteFrame:uiFrame}, './CareerUiArt': {
+const pageLoads = [];
+const h = createHarness({
+    '../../startup/StartupLoadingCover': { StartupLoadingCover: class { setLoading() {} setRetry(retry) { this.retry = retry; } dispose() { this.disposed = true; } } },
+    './UiAssetBarrier': { UiAssetBarrier: class { run(work) { return work(); } waitFor() { return new Promise((resolve,reject) => { this.reject = reject; pageLoads.push({resolve,reject}); }); } cancel() { this.reject?.(new Error('取消')); } } }, '../core/RaceBundleLoader':{loadRaceAsset(asset,type,done){uiFrame(asset,frame=>done(null,frame.texture));}}, './AvatarUiAssets':{loadAvatarUiSpriteFrame:uiFrame}, './CareerUiArt': {
     careerArt(parent,name,asset,w,h,x=0,y=0,sliced=false){const n = factory.makeRect(name,parent,w,h); n.setPosition(x,y,0); n.asset=asset;n.sliced=sliced;return n;},
     careerButtonFeedback() {}
 }, './RuntimeUiFactory': factory, './ProjectUiFonts': { styleCurrencyNumberLabel(label, lineHeight) { label.currencyNumberFont = true; label.lineHeight = lineHeight; }, styleProjectUiLabel(label, weight, lineHeight) {
@@ -112,6 +115,8 @@ const profile = load('backend/PlayerProfile');
 const rules = load('progression/CareerRules');
 const chars = load('app/PlayerCharacterConfig');
 const { CareerPrototypePanel } = load('ui/CareerPrototypePanel');
+// 既有交互、布局与动效回归使用已加载页面；冷加载行为另有专项。
+function warmPanel(...args) { const panel = new CareerPrototypePanel(...args); panel.ensurePage(); return panel; }
 const ids = Object.keys(profile.createDefaultProfile().characters);
 function reset() { store.profile = profile.createDefaultProfile(); chars.selectPlayerCharacter(ids[0]); }
 function descendants(n) { return [n, ...n.children.flatMap(descendants)]; }
@@ -121,7 +126,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 
 test('生涯首次打开按区域错开入场，刷新积分与段位不重播，背景返回区不移动', () => {
     reset(); deferMotion = true;
-    const root = new Node('Root'), panel = new CareerPrototypePanel(root, () => {}, () => {});
+    const root = new Node('Root'), panel = warmPanel(root, () => {}, () => {});
     try {
         assert.equal(pendingTweens.size, 0, '隐藏生涯不提前运行动效');
         find(panel.root, 'Action0').click();
@@ -154,7 +159,7 @@ test('生涯首次打开按区域错开入场，刷新积分与段位不重播�
 
 test('生涯入场期间按钮立即响应，暂存、快速切页与销毁取消动效，重新进入保留节点', () => {
     reset(); deferMotion = true;
-    const root = new Node('Root'), panel = new CareerPrototypePanel(root, () => {}, () => {});
+    const root = new Node('Root'), panel = warmPanel(root, () => {}, () => {});
     try {
         const count = descendants(root).length;
         for (let i = 0; i < 20; i++) {
@@ -186,7 +191,7 @@ test('生涯返回组沿用角色页屏幕左上锚点，安全区翻转只移�
     h.cc.view.on=(event,fn)=>{if(!events.has(event))events.set(event,new Set());events.get(event).add(fn);};
     h.cc.view.off=(event,fn)=>events.get(event)?.delete(fn);
     const canvas=new Node('Canvas');canvas.addComponent(Canvas);canvas.addComponent(UITransform).setContentSize(1280,720);
-    const panel=new CareerPrototypePanel(canvas,()=>{},()=>{});find(panel.root,'Action0').click();
+    const panel=warmPanel(canvas,()=>{},()=>{});find(panel.root,'Action0').click();
     const page=panel.page,header=find(page.root,'CareerHeader'),design=find(page.root,'CareerDesign');
     const back=find(header,'BackToLobby'),art=find(header,'Header'),title=find(header,'PageTitle');
     const count=descendants(canvas).length;
@@ -215,7 +220,7 @@ test('生涯返回组沿用角色页屏幕左上锚点，安全区翻转只移�
 test('生涯及快速弹窗暂存后恢复原节点和导航，隐藏期间资料变化延迟显示且退出释放监听', () => {
     for(const screen of ['career','quick']){
         reset();const host=new Node('大厅'),popup=new Node('弹窗层'),visibility=[];
-        const panel=new CareerPrototypePanel(host,()=>{},()=>{},{parent:host,popupParent:popup,
+        const panel=warmPanel(host,()=>{},()=>{},{parent:host,popupParent:popup,
             visibility:(...value)=>visibility.push(value),characters(){}});
         if(screen==='quick'){panel.openQuick();find(popup,'Distance400').click();}
         else {store.profile.career.league=2;find(panel.root,'Action0').click();find(panel.page.root,'LeagueTier1').click();}
@@ -245,7 +250,7 @@ test('快速比赛复用头像弹窗动效，选项刷新不重播，关闭完�
     reset(); deferMotion = true;
     const host = new Node('大厅'), popup = new Node('弹窗层');
     const events = []; let starts = 0;
-    const panel = new CareerPrototypePanel(host, () => starts++, () => {},
+    const panel = warmPanel(host, () => starts++, () => {},
         { parent: host, popupParent: popup, visibility: (...args) => events.push(args) });
     const oldView = h.cc.view.getVisibleSize, oldSafe = h.cc.sys.getSafeAreaRect;
     try {
@@ -288,7 +293,7 @@ test('快速比赛复用头像弹窗动效，选项刷新不重播，关闭完�
 test('快速弹窗退场途中暂存或销毁取消旧返回回调，恢复时仅播放一次', () => {
     reset(); deferMotion = true;
     const host = new Node('大厅'), popup = new Node('弹窗层');
-    const panel = new CareerPrototypePanel(host, () => {}, () => {}, { parent: host, popupParent: popup, visibility() {} });
+    const panel = warmPanel(host, () => {}, () => {}, { parent: host, popupParent: popup, visibility() {} });
     try {
         for (let i = 0; i < 20; i++) {
             panel.openQuick(); const quick = find(popup, 'QuickRacePopup');
@@ -306,7 +311,7 @@ test('快速弹窗退场途中暂存或销毁取消旧返回回调，恢复时�
 
 test('快速比赛仅两组选择，反复切换节点与监听稳定，重复开赛只提交一次', async () => {
     reset(); const root = new Node('Root'); let starts = 0;
-    const panel = new CareerPrototypePanel(root, () => starts++, () => {});
+    const panel = warmPanel(root, () => starts++, () => {});
     const before = descendants(root).length;
     panel.openQuick();
     for (let i = 0; i < 30; i++) for (const name of ['Distance200', 'Distance400', 'RuleStandard', 'RuleWild']) find(panel.page.root, name).click();
@@ -328,7 +333,7 @@ test('快速比赛仅两组选择，反复切换节点与监听稳定，重复�
 
 test('快速弹窗覆盖独立弹窗层，关闭保持大厅与选择，底部按钮有充足间距', () => {
     reset(); const host=new Node('页面层'), popup=new Node('弹窗层'), events=[];
-    const panel=new CareerPrototypePanel(host,()=>{},()=>{},{parent:host,popupParent:popup,
+    const panel=warmPanel(host,()=>{},()=>{},{parent:host,popupParent:popup,
         visibility:(visible,modal)=>events.push([visible,modal])});
     panel.openQuick();const quick=find(popup,'QuickRacePopup');
     assert.equal(quick.active,true);assert.equal(panel.root.active,true);
@@ -368,12 +373,12 @@ test('快速弹窗覆盖独立弹窗层，关闭保持大厅与选择，底部�
 
 test('更换角色恢复快速弹窗，赛后返回大厅不弹窗，再次打开保留配置', () => {
     reset();const host=new Node('页面层');let navigation;
-    const panel=new CareerPrototypePanel(host,()=>{},()=>{},{parent:host,visibility(){},characters:n=>navigation=n});
+    const panel=warmPanel(host,()=>{},()=>{},{parent:host,visibility(){},characters:n=>navigation=n});
     panel.openQuick();find(panel.page.root,'Distance400').click();find(panel.page.root,'RuleStandard').click();
     find(panel.page.root,'QuickChangeCharacter').click();
     assert.equal(navigation.screen,'quick');assert.equal(navigation.distance,400);assert.equal(navigation.rule,'standard');
     panel.dispose();panel.root.destroy();chars.selectPlayerCharacter(ids[1]);store.profile.characters[ids[1]].level=7;
-    const next=new CareerPrototypePanel(host,()=>{},()=>{},{parent:host,visibility(){},characters(){},navigation});
+    const next=warmPanel(host,()=>{},()=>{},{parent:host,visibility(){},characters(){},navigation});
     assert.equal(next.screen,'quick');assert.equal(next.distance,400);assert.equal(next.rule,'standard');
     assert.equal(textOf(next.page.root,'QuickCharacterName'),chars.findPlayerCharacter(ids[1]).name);
     assert.equal(textOf(next.page.root,'QuickLevel'),'LV.7');
@@ -385,7 +390,7 @@ test('更换角色恢复快速弹窗，赛后返回大厅不弹窗，再次打�
     store.profile.career.quick={distance:400,rule:'standard'};
     session.setSoloRaceTicket({id:'quick-return',source:'quick',tier:0,characterId:ids[1]});session.markSoloReturn();
     const popup=new Node('独立弹窗层'),events=[];
-    const returned=new CareerPrototypePanel(host,()=>{},()=>{},
+    const returned=warmPanel(host,()=>{},()=>{},
         {parent:host,popupParent:popup,visibility:(visible,modal)=>events.push([visible,modal])});
     assert.equal(returned.screen,'home');assert.equal(returned.root.active,true);
     assert.equal(returned.page.root.active,false);assert.equal(find(popup,'QuickRacePopup').active,false);
@@ -399,7 +404,7 @@ test('更换角色恢复快速弹窗，赛后返回大厅不弹窗，再次打�
 });
 
 test('快速比赛保存失败显示就地错误并恢复操作，窄屏安全区不裁切弹窗', async () => {
-    reset();const host=new Node('页面层'),panel=new CareerPrototypePanel(host,()=>assert.fail('失败不能开赛'),()=>{});
+    reset();const host=new Node('页面层'),panel=warmPanel(host,()=>assert.fail('失败不能开赛'),()=>{});
     panel.openQuick();find(panel.page.root,'Distance400').click();
     const execute=store.executeCareer;store.executeCareer=async()=>{throw new Error('存储失败');};
     const oldSize=h.cc.view.getVisibleSize,oldSafe=h.cc.sys.getSafeAreaRect;
@@ -419,7 +424,7 @@ test('快速比赛保存失败显示就地错误并恢复操作，窄屏安全�
 });
 
 test('可视区域原点非零时快速弹窗仍居中，安全区只改变可用尺度',()=>{
-    reset();const host=new Node('页面层'),panel=new CareerPrototypePanel(host,()=>{},()=>{});panel.openQuick();
+    reset();const host=new Node('页面层'),panel=warmPanel(host,()=>{},()=>{});panel.openQuick();
     const oldSize=h.cc.view.getVisibleSize,oldSafe=h.cc.sys.getSafeAreaRect,oldOrigin=h.cc.view.getVisibleOrigin;
     try{
         h.cc.view.getVisibleSize=()=>({width:1600,height:720});
@@ -434,7 +439,7 @@ test('可视区域原点非零时快速弹窗仍居中，安全区只改变可�
 
 test('横向六级路线默认选中当前联赛，重复切换不重建节点或监听', () => {
     reset();store.profile.career.league=3;store.profile.career.points=64;
-    const root=new Node('Root'),panel=new CareerPrototypePanel(root,()=>{},()=>{});
+    const root=new Node('Root'),panel=warmPanel(root,()=>{},()=>{});
     panel.root.getChildByName('Action0').click();const page=panel.page.root;
     assert.equal(find(page,'LeagueTab'),undefined);assert.equal(find(page,'CupTab'),undefined);
     assert.equal(panel.tier,3);assert.equal(textOf(page,'LeaguePoints'),'64');
@@ -456,7 +461,7 @@ test('横向六级路线默认选中当前联赛，重复切换不重建节点�
 test('联赛与杯赛按钮独立开赛，满积分仍可打联赛且均为狂野', async () => {
     for(const source of ['league','cup']) {
         reset();store.profile.career.points=100;const root=new Node('Root');let starts=0;
-        const panel=new CareerPrototypePanel(root,()=>starts++,()=>{});panel.root.getChildByName('Action0').click();
+        const panel=warmPanel(root,()=>starts++,()=>{});panel.root.getChildByName('Action0').click();
         find(panel.page.root,source==='league'?'StartLeague':'StartCup').click();await tick();
         assert.equal(store.profile.career.pending.source,source);assert.equal(store.profile.career.pending.rule,'wild');assert.equal(starts,1);
         root.destroy();
@@ -518,7 +523,7 @@ test('生涯保存成功后经过真实大厅导航开始比赛，隐藏大厅�
 test('地图内显示角色杯赛各轮，换角色不继承轮次，开发者数值不在面板显示', () => {
     reset();store.profile.career.league=3;store.profile.career.points=100;
     store.profile.career.cups[ids[0]]={id:'a',tier:3,round:1,seed:3,coins:20,state:'active'};
-    const root=new Node('Root'),panel=new CareerPrototypePanel(root,()=>{},()=>{});panel.root.getChildByName('Action0').click();const page=panel.page.root;
+    const root=new Node('Root'),panel=warmPanel(root,()=>{},()=>{});panel.root.getChildByName('Action0').click();const page=panel.page.root;
     assert.equal(textOf(find(page,'CupRound1'),'Status'),'当前轮次');assert.equal(textOf(find(page,'CupRound2'),'Distance'),'400');assert.equal(textOf(find(page,'CupRound2'),'Condition'),'第一名夺冠');
     assert.match(textOf(find(page,'StartCup'),'Label'),/半决赛/);
     const texts=descendants(find(page,'SelectedEventPanel')).map(n=>n.getComponent(Label)?.string??'').join('');
@@ -528,7 +533,7 @@ test('地图内显示角色杯赛各轮，换角色不继承轮次，开发者�
 });
 
 test('生涯与快速比赛不出现道具入口', () => {
-    reset();const root=new Node('Root'),panel=new CareerPrototypePanel(root,()=>{},()=>{});
+    reset();const root=new Node('Root'),panel=warmPanel(root,()=>{},()=>{});
     panel.root.getChildByName('Action0').click();
     assert.ok(!descendants(panel.page.root).some(n=>n.name==='InventoryButton'));
     root.destroy();
@@ -537,7 +542,7 @@ test('生涯与快速比赛不出现道具入口', () => {
 // 离线排版检查读取同一套实际页面节点，不启动或截图Creator。
 if (process.env.CAREER_LAYOUT_EXPORT) {
     const fs=require('node:fs'); reset();const host=new Node('Root');
-    const panel=new CareerPrototypePanel(host,()=>{},()=>{});
+    const panel=warmPanel(host,()=>{},()=>{});
     const serial=n=>({name:n.name,active:n.active,position:n.position,scale:n.scale,size:n.getComponent(UITransform)?.contentSize,
         shape:n.getComponent(Graphics)?.shape,stroke:n.getComponent(Graphics)?.strokeColor?.values,strokeWidth:n.getComponent(Graphics)?.lineWidth,shapeFill:n.getComponent(Graphics)?.fillColor?.values,anchor:n.getComponent(UITransform)?.anchorPoint,fill:n.fill?.values,asset:n.asset,inset:n.getComponent(Sprite)?.spriteFrame?.insetLeft,sliced:n.getComponent(Sprite)?.type===Sprite.Type.SLICED||n.sliced,
         text:n.getComponent(Label)?.string,font:n.getComponent(Label)?.fontSize,weight:n.getComponent(Label)?.projectWeight,lineHeight:n.getComponent(Label)?.lineHeight,verticalAlign:n.getComponent(Label)?.verticalAlign,numberFont:n.getComponent(Label)?.currencyNumberFont,color:n.getComponent(Label)?.color?.values,align:n.getComponent(Label)?.horizontalAlign,tint:n.getComponent(Sprite)?.color?.values,mask:!!n.getComponent(Mask),children:n.children.map(serial)});
@@ -577,7 +582,7 @@ test('复用美术的迟到加载不写销毁节点，独立帧释放且不销�
 
 test('大厅生涯卡按真实积分更新，重复刷新不新增节点或监听', () => {
     reset(); const root = new Node('Root');
-    const panel = new CareerPrototypePanel(root, () => {}, () => {});
+    const panel = warmPanel(root, () => {}, () => {});
     const count = descendants(root).length;
     for (const points of [0, 20, 80, 100, 80]) {
         store.profile.career.points = points;
@@ -599,7 +604,7 @@ test('大厅继续杯赛选择角色自己的赛程，换角色后恢复联赛�
     reset(); const root = new Node('Root');
     store.profile.career.league = 3;
     store.profile.career.cups[ids[0]] = {id:'ongoing',tier:1,round:1,seed:3,coins:0,state:'active'};
-    const panel = new CareerPrototypePanel(root, () => {}, () => {});
+    const panel = warmPanel(root, () => {}, () => {});
     assert.equal(textOf(find(panel.root, 'Action0'), 'Label'), '继续杯赛');
     find(panel.root, 'Action0').click(); assert.equal(panel.tier, 1);
     panel.open('home'); chars.selectPlayerCharacter(ids[1]); panel.refresh();
@@ -613,7 +618,7 @@ test('大厅积分分色分字号，热字体缓存下生涯按钮仍保持设�
     reset(); hotFontCache = true;
     const root = new Node('Root');
     try {
-        const panel = new CareerPrototypePanel(root, () => {}, () => {});
+        const panel = warmPanel(root, () => {}, () => {});
         const button = find(panel.root, 'Action0');
         const label = find(button, 'Label').getComponent(Label);
         assert.equal(label.horizontalAlign, Label.HorizontalAlign.LEFT);
@@ -654,7 +659,7 @@ test('六级两轮和三轮展示与规则一致，历史联赛、淘汰和最�
 test('杯赛不显示冗余文字和放弃入口，其他级别的未完成杯赛仍可定位', () => {
     reset();store.profile.career.league=3;store.profile.career.points=100;
     store.profile.career.cups[ids[0]]={id:'active',tier:3,round:1,seed:1,state:'active',coins:0};
-    const root=new Node('Root'),p=new CareerPrototypePanel(root,()=>{},()=>{});find(p.root,'Action0').click();const page=p.page.root;
+    const root=new Node('Root'),p=warmPanel(root,()=>{},()=>{});find(p.root,'Action0').click();const page=p.page.root;
     for (const name of ['CupSubtitle', 'CupState', 'AbandonCup']) assert.ok(!find(page, name));
     assert.equal(store.profile.career.cups[ids[0]].state,'active');
     find(page,'LeagueTier1').click();find(page,'StartCup').click();assert.equal(p.tier,3);assert.equal(store.profile.career.pending,null);
@@ -668,7 +673,7 @@ test('从历史赛事返回保留赛事来源，只有真实晋级回执显示�
         c.cups[ids[0]]={id:'won',tier:1,round:1,seed:1,state:'won',coins:1};
         c.receipts=[{id:'return',characterId:ids[0],message:promoted?'晋级成功 · 城市精英':'杯赛夺冠'}];
         session.setSoloRaceTicket({id:'return',source:'cup',tier:1,characterId:ids[0]});session.markSoloReturn();
-        const root=new Node('Root'),p=new CareerPrototypePanel(root,()=>{},()=>{});
+        const root=new Node('Root'),p=warmPanel(root,()=>{},()=>{});
         assert.equal(p.tier,promoted?2:1);assert.equal(p.reviewCupTier,promoted?1:null);
         if(promoted){assert.equal(textOf(find(p.page.root,'StartCup'),'Label'),'查看新联赛');find(p.page.root,'StartCup').click();assert.equal(p.reviewCupTier,null);assert.equal(textOf(find(p.page.root,'StartCup'),'Label'),'还差100积分');}
         root.destroy();session.setSoloRaceTicket(null);
@@ -679,10 +684,10 @@ test('更换角色返回保存所查看级别，不继承另一角色的杯赛�
     reset();store.profile.career.league=3;store.profile.career.points=100;
     store.profile.career.cups[ids[0]]={id:'active',tier:1,round:1,seed:1,state:'active',coins:0};
     const root=new Node('Root');let navigation;
-    const p=new CareerPrototypePanel(root,()=>{},()=>{},{parent:root,visibility(){},characters:n=>navigation=n});
+    const p=warmPanel(root,()=>{},()=>{},{parent:root,visibility(){},characters:n=>navigation=n});
     find(p.root,'Action0').click();find(p.page.root,'ChangeCharacter').click();assert.equal(navigation.tier,1);
     p.dispose();p.dispose();assert.equal(listeners.size,0);p.root.destroy();chars.selectPlayerCharacter(ids[1]);
-    const next=new CareerPrototypePanel(root,()=>{},()=>{},{parent:root,visibility(){},characters(){},navigation});
+    const next=warmPanel(root,()=>{},()=>{},{parent:root,visibility(){},characters(){},navigation});
     assert.equal(next.tier,1);assert.equal(next.page.root.active,true);assert.equal(textOf(find(next.page.root,'StartCup'),'Label'),'开始杯赛');
     assert.equal(store.profile.career.cups[ids[0]].round,1);assert.equal(store.profile.career.cups[ids[1]],undefined);
     root.destroy();assert.equal(listeners.size,0);
@@ -699,14 +704,14 @@ test('贴图快速切换只接受最新请求，销毁后的回调不改图、�
 });
 
 test('保存失败保留杯赛进度和页面，允许重试且错误可见', async () => {
-    reset();const root=new Node('Root'),p=new CareerPrototypePanel(root,()=>assert.fail('保存失败不能开赛'),()=>{});find(p.root,'Action0').click();
+    reset();const root=new Node('Root'),p=warmPanel(root,()=>assert.fail('保存失败不能开赛'),()=>{});find(p.root,'Action0').click();
     const execute=store.executeCareer;store.executeCareer=async()=>{throw new Error('存档写入失败');};
     try{find(p.page.root,'StartLeague').click();await tick();assert.equal(p.busy,false);assert.match(textOf(p.page.root,'EventStatus'),/保存失败/);assert.equal(store.profile.career.pending,null);}
     finally{store.executeCareer=execute;root.destroy();}
 });
 
 test('安全区变化只调整页面变换，宽屏与窄屏均保留全部内容且节点稳定', () => {
-    reset(); const root=new Node('Root'),panel=new CareerPrototypePanel(root,()=>{},()=>{});
+    reset(); const root=new Node('Root'),panel=warmPanel(root,()=>{},()=>{});
     panel.root.getChildByName('Action0').click(); const page=panel.page, count=descendants(root).length;
     const oldSize=h.cc.view.getVisibleSize,oldSafe=h.cc.sys.getSafeAreaRect;
     try {
@@ -748,7 +753,7 @@ test('动态合图后反复返回生涯，九宫格始终使用原始纹理且�
 
 
 test('头像不拉伸、名称变宽后等级跟随，徽章居中并逐级增大且无旧选中条', () => {
-    reset(); const root=new Node('Root'),panel=new CareerPrototypePanel(root,()=>{},()=>{});
+    reset(); const root=new Node('Root'),panel=warmPanel(root,()=>{},()=>{});
     find(panel.root,'Action0').click();const page=panel.page;
     const avatar=find(page.root,'CharacterAvatar').getComponent(UITransform).contentSize;
     assert.equal(avatar.width,avatar.height);
@@ -775,7 +780,7 @@ test('头像不拉伸、名称变宽后等级跟随，徽章居中并逐级增�
 
 
 test('积分条按像素宽度更新不缩放圆角，数值复用金币字体，未开始底框使用指定色', () => {
-    reset();const root=new Node('Root'),panel=new CareerPrototypePanel(root,()=>{},()=>{});find(panel.root,'Action0').click();
+    reset();const root=new Node('Root'),panel=warmPanel(root,()=>{},()=>{});find(panel.root,'Action0').click();
     const page=panel.page.root,fill=find(page,'ProgressFill');
     for(const points of [0,20,80,100]) {
         store.profile.career.points=points;panel.refresh();
@@ -792,4 +797,26 @@ test('积分条按像素宽度更新不缩放圆角，数值复用金币字体�
         assert.deepEqual(n.getComponent(Sprite).color.values,[229,244,253]);
     }
     root.destroy();
+});
+
+
+test('大厅首次构建不创建隐藏赛事页，首次打开等待，重复进入复用且销毁取消等待', async () => {
+    reset();
+    const root = new Node('Root'), panel = new CareerPrototypePanel(root, () => {}, () => {});
+    assert.equal(panel.page, null);
+    const count = descendants(root).length;
+    panel.refresh(); assert.equal(descendants(root).length, count);
+    panel.openQuick();
+    assert.ok(panel.page); assert.ok(panel.pageLoading);
+    const page = panel.page, cover = panel.pageCover;
+    panel.openQuick(); assert.equal(panel.page, page);
+    pageLoads.at(-1).resolve(); await tick();
+    assert.equal(panel.pageLoading, null); assert.equal(cover.disposed, true);
+    panel.open('home'); panel.openQuick(); assert.equal(panel.page, page);
+    root.destroy();
+    const otherRoot = new Node('Root'), other = new CareerPrototypePanel(otherRoot, () => {}, () => {});
+    other.openQuick(); const oldCover = other.pageCover;
+    otherRoot.destroy(); await tick();
+    assert.equal(oldCover.disposed, true); assert.equal(other.pageLoading, null);
+    pageLoads.length = 0;
 });

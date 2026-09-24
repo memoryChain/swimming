@@ -1,6 +1,7 @@
-import { assetManager, Asset, AssetManager, JsonAsset } from 'cc';
+import { assetManager, Asset, AssetManager, JsonAsset, Prefab } from 'cc';
 import { decodeSampledMotion } from '../character/SampledMotionStorage';
 import { trackRaceAsset } from './RaceLoading';
+import { trackUiCallback } from '../ui/UiAssetBarrier';
 
 export const RACE_BUNDLE_NAME = 'race';
 
@@ -32,6 +33,8 @@ export function loadRaceAsset<T extends Asset>(
     done: (error: Error | null, asset?: T) => void,
 ) {
     done = trackRaceAsset(done);
+    // 模型候选路径允许失败后尝试下一条，最终错误由角色就绪状态报告。
+    done = trackUiCallback(done, (type as AssetConstructor<Asset>) === Prefab ? undefined : (error, asset) => error ?? (!asset ? new Error(`界面资源缺失：${path}`) : null));
     loadRaceBundle((bundleError, bundle) => {
         if (bundleError || !bundle) {
             done(bundleError ?? new Error(`Race Asset Bundle is unavailable: ${path}`));

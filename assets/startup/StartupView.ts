@@ -7,7 +7,7 @@ function loadTexture(path: string): Promise<Texture2D> {
         if (error || !asset) reject(error ?? new Error(path)); else resolve(asset);
     }));
 }
-function loadFont(): Promise<Font> {
+export function loadStartupFont(): Promise<Font> {
     return new Promise((resolve, reject) => assetManager.loadBundle(STARTUP_RESOURCES.fontBundle, (error, bundle) => {
         if (error || !bundle) { reject(error ?? new Error('首屏字体加载失败')); return; }
         bundle.load(STARTUP_RESOURCES.font, Font, (fontError, font) => {
@@ -37,7 +37,7 @@ export class StartupView {
         const paths = STARTUP_RESOURCES.loginUi;
         const [background, logo, button, arrow, font] = await Promise.all([
             loadTexture(paths.background), loadTexture(paths.logo), loadTexture(paths.primaryButton),
-            loadTexture(paths.primaryArrow), loadFont(),
+            loadTexture(paths.primaryArrow), loadStartupFont(),
         ]);
         if (this.disposed || !this.root.isValid) return;
         this.background = this.sprite('Background', this.root, background, 1280, 720);
@@ -82,7 +82,7 @@ export class StartupView {
     }
     private node(name: string, parent: Node, w: number, h: number): Node {
         const node = new Node(name);
-        node.layer = Layers.Enum.UI_2D;
+        node.layer = parent.layer;
         node.setParent(parent);
         node.addComponent(UITransform).setContentSize(w, h);
         return node;

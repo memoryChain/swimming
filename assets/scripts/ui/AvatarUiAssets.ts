@@ -3,6 +3,7 @@ import { AVATARS } from '../backend/IdentityConfig';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { trackRaceAsset } from '../core/RaceLoading';
+import { trackUiCallback } from './UiAssetBarrier';
 
 type FrameCallback = (frame: SpriteFrame | null) => void;
 
@@ -21,6 +22,7 @@ export function loadAvatarSpriteFrame(avatarId: string, done: FrameCallback): vo
 export function loadAvatarUiSpriteFrame(path: string, done: FrameCallback): void {
     // 共用请求可能在大厅已发出；比赛阶段的新订阅也必须被等待。
     done = trackRaceAsset(done);
+    done = trackUiCallback(done, frame => frame ? null : new Error(`头像资源缺失：${path}`));
     const cached = FRAME_CACHE.get(path);
     if (cached?.isValid) {
         done(cached);

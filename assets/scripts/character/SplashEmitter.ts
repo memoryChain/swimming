@@ -143,11 +143,13 @@ class HandWaterContact {
     private readonly current = new Vec3();
     private ready = false;
     private armed = false;
+    private rearmRequired = false;
     triggered = false;
 
     reset() {
         this.ready = false;
         this.armed = false;
+        this.rearmRequired = false;
         this.triggered = false;
     }
 
@@ -161,15 +163,19 @@ class HandWaterContact {
         const raisedY = waterY + TUNING.handImpact.rearmHeight;
         const continuous = this.ready && Vec3.squaredDistance(this.previous, this.current) < 4;
         if (!continuous) {
-            this.armed = this.current.y > raisedY;
+            // 首次／出水恢复可能只有浅抬手：已有空中样本即可等待真实下穿。
+            // 12 厘米门槛只用于拍过之后的再次布防，不能吞掉第一拍。
+            this.rearmRequired = false;
+            this.armed = this.current.y > contactY;
         } else {
-            if (this.current.y > raisedY) this.armed = true;
+            if (this.current.y > (this.rearmRequired ? raisedY : contactY)) this.armed = true;
             if (this.armed && this.previous.y > contactY && this.current.y <= contactY) {
                 const t = (this.previous.y - contactY) / (this.previous.y - this.current.y);
                 Vec3.lerp(this.point, this.previous, this.current, t);
                 this.point.y = waterY;
                 this.triggered = true;
                 this.armed = false;
+                this.rearmRequired = true;
             }
         }
         this.previous.set(this.current);

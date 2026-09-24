@@ -18,6 +18,7 @@ import { FreestylePoseController, ProceduralPoseSnapshot } from '../character/Fr
 import { FLIP_TURN_KEYFRAME_1, FLIP_TURN_KEYFRAME_2 } from '../character/FlipTurnPoseCurve';
 import { findSampledDebugAction, SAMPLED_ACTION_IDS } from '../character/SampledActionMotionCurve';
 import type { SampledActionId, SampledActionMotion } from '../character/SampledActionMotionCurve';
+import { loadSampledAction } from '../character/SampledActionLoader';
 import { SplashEmitter } from '../character/SplashEmitter';
 import type { SplashEmitterState } from '../character/SplashEmitter';
 import { UnderwaterBubbleEmitter } from '../character/UnderwaterBubbleEmitter';
@@ -254,6 +255,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _actionLoadError: Error | null = null;
     private _colorLoadError: Error | null = null;
     private _actionsReady = false;
+    private _showcaseOnlyAction: SampledActionId | null = null;
     private _colorVariantId = defaultSwimmerColorVariant().id;
     private _colorOverride: { skin?: Color; suit?: Color; cap?: Color } | null = null;
     private _colorMask: Texture2D = null;
@@ -333,11 +335,14 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         playerOutline = false,
         reducedSplash = false,
         enableSplash = true,
+        showcaseAction?: CharacterAction,
     ) {
         if (this._loaded || this._model || this._modelLoading) {
             return;
         }
         this.storeSkinSettings(skinColor, suitColor, capColor, robotStyle, playerOutline);
+        this._showcaseOnlyAction = showcaseAction === undefined ? null : sampledActionIdFor(showcaseAction);
+        if (this._showcaseOnlyAction) this._showcaseActionId = this._showcaseOnlyAction;
 
         this._backgroundSwimmer = reducedSplash;
         this._motionThrottleStride = 1;
@@ -798,10 +803,43 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         );
     }
 
+    /** 大厅展示只读取当前动作；比赛和模型调试继续走完整动作集合。 */
+    private loadShowcaseOnlyAction(variant: ReturnType<typeof defaultSwimmerModelVariant>, token: number, actionId: SampledActionId): void {
+        const valid = () => this.node?.isValid && token === this._modelLoadToken;
+        const finish = (error: Error | null) => {
+            if (!valid()) return;
+            if (error) { this._actionLoadError = error; return; }
+            if (!this.refreshShowcaseAction()) {
+                this._actionLoadError = new Error(`展示动作不可用：${actionId}`);
+                return;
+            }
+            this._poseState.reapplyCurrentState();
+            this._actionsReady = true;
+        };
+        if (!variant.sampledActionOverrideDir || !variant.sampledActionOverrideFilePrefix) {
+            loadSampledAction(actionId, finish);
+            return;
+        }
+        loadRaceAsset(`${variant.sampledActionOverrideDir}/${variant.sampledActionOverrideFilePrefix}${actionId}`, JsonAsset, (error, asset) => {
+            if (!valid()) return;
+            const action = asset?.json as SampledActionMotion | undefined;
+            if (error || action?.id !== actionId || !Array.isArray(action.samples) || action.samples.length === 0) {
+                finish(error ?? new Error(`展示动作加载失败：${variant.id}/${actionId}`));
+                return;
+            }
+            this._sampledActionOverrides.set(actionId, action);
+            finish(null);
+        });
+    }
+
     private loadSampledActionOverrides(variant: ReturnType<typeof defaultSwimmerModelVariant>, modelLoadToken: number) {
         this._sampledActionOverrides.clear();
         this._pose.setBreaststrokeSamplesOverride(null);
         this._pose.setDivePrepPoseOverride(null);
+        if (this._showcaseOnlyAction) {
+            this.loadShowcaseOnlyAction(variant, modelLoadToken, this._showcaseOnlyAction);
+            return;
+        }
         const directory = variant.sampledActionOverrideDir;
         const filePrefix = variant.sampledActionOverrideFilePrefix;
         const divePrepPath = variant.divePrepOverridePath;

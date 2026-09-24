@@ -27,6 +27,9 @@ import { SettingsPanel } from '../ui/SettingsPanel';
 import { MusicManager } from './MusicManager';
 import { PrepareRaceFlow } from '../ui/PrepareRaceFlow';
 import { takeStartupHandoff } from '../../startup/StartupHandoff';
+import { StartupLoadingCover } from '../../startup/StartupLoadingCover';
+import { UiAssetBarrier } from '../ui/UiAssetBarrier';
+import { prepareProjectUiFonts } from '../ui/ProjectUiFonts';
 
 
 const { ccclass } = _decorator;
@@ -53,9 +56,12 @@ export class LoginManager extends Component {
     private _nextInvitedRoom: string | null = null;
     private _switchingInvite = false;
     private _destroyed = false;
+    private _lobbyLoading: UiAssetBarrier | null = null;
+    private _lobbyCover: StartupLoadingCover | null = null;
 
     onLoad() {
         const startup = takeStartupHandoff(this.node);
+        this._lobbyCover = startup?.cover ?? null;
         const canvasNode = this.findCanvasNode();
         canvasNode.layer = Layers.Enum.UI_2D;
 
@@ -100,12 +106,6 @@ export class LoginManager extends Component {
         // Unified resource headbar (游泳卡) mounted into the HUD layer so it always
         // renders above screen UI (login prefab, prepare-race) without any manual
         // z-order juggling. Load the profile so the count reflects saved data.
-        this._headBar = new ResourceHeadBar();
-        this._headBar.build(getUILayer(canvasNode, UILayer.Hud), width, height, {
-            onAddCoins: () => this.toast('单人比赛获得金币，角色页可消耗金币升级'),
-            onEditIdentity: () => this.openIdentityEdit(),
-            onOpenSettings: () => this.openSettings(),
-        });
         void PlayerData.load().then(() => getProgressionManager().migrateLegacySave());
         // 首屏已完成渲染：复用节点并直接进入大厅，不能重新创建整套登录/HUD。
         if (startup) {
@@ -198,6 +198,7 @@ export class LoginManager extends Component {
 
     onDestroy() {
         this._destroyed = true;
+        this.cancelLobbyLoading();
         this._nextInvitedRoom = null;
         this._offAppShow?.();
         this._offAppShow = null;
@@ -217,10 +218,70 @@ export class LoginManager extends Component {
     }
 
     private openPrepareRace() {
-        if (this._prepareRaceFlow || !this._canvasNode?.isValid) {
+        if (this._prepareRaceFlow || this._lobbyLoading || this._destroyed || !this._canvasNode?.isValid) {
             return;
         }
-        if (this._loginUiRoot?.isValid) this._loginUiRoot.active = false;
+        this._lobbyCover ??= new StartupLoadingCover(this._loginUiRoot);
+        this._lobbyCover.setLoading();
+        const loading = this._lobbyLoading = new UiAssetBarrier();
+        void this.prepareLobby(loading);
+    }
+
+    private async prepareLobby(loading: UiAssetBarrier): Promise<void> {
+        let mounted = false;
+        const ready = loading.waitFor(() => {
+            if (!mounted) return false;
+            const flow = this._prepareRaceFlow;
+            if (flow?.presentationError) throw flow.presentationError;
+            return !!flow?.presentationReady;
+        });
+        // 先还原存档，避免先建默认角色，存档返回后再销毁重建。
+        void PlayerData.load().then(() => {
+            if (this._lobbyLoading !== loading || this._destroyed || !this._canvasNode?.isValid) return;
+            if (!PlayerData.loaded) { loading.fail(new Error('存档加载失败')); return; }
+            try {
+                loading.run(() => {
+                    prepareProjectUiFonts();
+                    this.buildHeadBar();
+                    this.buildPrepareRace();
+                });
+                mounted = true;
+            } catch (error) { loading.fail(error); }
+        }, error => loading.fail(error));
+        try {
+            await ready;
+            if (this._lobbyLoading !== loading || this._destroyed) return;
+            this._lobbyLoading = null;
+            if (this._loginUiRoot?.isValid) this._loginUiRoot.active = false;
+            this._prepareRaceFlow?.playReadyEntrance();
+            this._lobbyCover?.dispose(); this._lobbyCover = null;
+        } catch (error) {
+            if (this._lobbyLoading !== loading || this._destroyed) return;
+            this._lobbyLoading = null;
+            this._prepareRaceFlow?.dispose(); this._prepareRaceFlow = null;
+            this._headBar?.dispose(); this._headBar = null;
+            console.warn('[大厅] 加载失败，可点击重试', error);
+            this._lobbyCover?.setRetry(() => this.openPrepareRace());
+        }
+    }
+
+    private cancelLobbyLoading(): void {
+        const loading = this._lobbyLoading; this._lobbyLoading = null;
+        loading?.cancel();
+        this._lobbyCover?.dispose(); this._lobbyCover = null;
+    }
+
+    private buildHeadBar(): void {
+        if (this._headBar) return;
+        this._headBar = new ResourceHeadBar();
+        this._headBar.build(getUILayer(this._canvasNode, UILayer.Hud), this._designWidth, this._designHeight, {
+            onAddCoins: () => this.toast('单人比赛获得金币，角色页可消耗金币升级'),
+            onEditIdentity: () => this.openIdentityEdit(),
+            onOpenSettings: () => this.openSettings(),
+        });
+    }
+
+    private buildPrepareRace(): void {
         this._prepareRaceFlow = new PrepareRaceFlow(getUILayer(this._canvasNode, UILayer.Screen), this._canvasNode, this._designWidth, this._designHeight, {
             onStartRace: () => this.startGame(),
             onOpenRoom: () => this.openRoomFromPrepare(),
@@ -230,7 +291,7 @@ export class LoginManager extends Component {
                 this._headBar?.setIdentityVisible(!active);
             },
         });
-        this._prepareRaceFlow.showReadyScreen();
+        this._prepareRaceFlow.showReadyScreen(true);
         // The approved lobby composition has no back button. Character management
         // supplies its own temporary return action through the callback above.
         this._headBar?.setBack(null);
@@ -287,6 +348,8 @@ export class LoginManager extends Component {
         if (this._roomFlow) {
             return;
         }
+        this.cancelLobbyLoading();
+        this.buildHeadBar();
         this._prepareRaceFlow?.dispose();
         this._prepareRaceFlow = null;
         // NOTE: do NOT gate on _loginUiRoot here. When launched from a friend's share

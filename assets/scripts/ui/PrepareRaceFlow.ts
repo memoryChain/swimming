@@ -189,7 +189,7 @@ export class PrepareRaceFlow {
         private readonly _callbacks: PrepareRaceFlowCallbacks,
     ) {}
 
-    showReadyScreen(): void {
+    showReadyScreen(deferEntrance = false): void {
         if (this._pageTransition || (this._content?.isValid && this._view === 'ready')) return;
         this.ensureRoot();
         const previous = this._content;
@@ -207,8 +207,19 @@ export class PrepareRaceFlow {
         if (!this._eventPageActive || this._eventPageModal) this.presentCharacter(getPlayerCharacterSelection().characterId);
         this._callbacks.onCharacterManagementChanged?.(this._eventPageActive && !this._eventPageModal);
         this.layoutPresentation();
-        this.presentPageTransition(animate ? previous : null, 0, this._hasShownReady);
+        if (deferEntrance) this._motion.showImmediately();
+        else this.presentPageTransition(animate ? previous : null, 0, this._hasShownReady);
         this._hasShownReady = true;
+    }
+
+    get presentationError(): Error | null { return this._preview?.presentationError ?? null; }
+
+    get presentationReady(): boolean {
+        return !!this._root?.isValid && ((this._eventPageActive && !this._eventPageModal) || !!this._preview?.presentationReady);
+    }
+
+    playReadyEntrance(): void {
+        if (this._content?.active && !this._leaving) this._motion.enter(false);
     }
 
     showCharacterManagement(): void {

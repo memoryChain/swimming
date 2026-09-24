@@ -60,9 +60,7 @@ function styleBundledUiLabel(label: Label, weight: ProjectUiFontWeight, lineHeig
     label.useSystemFont = true;
     label.fontFamily = 'sans-serif';
     label.isBold = false;
-    if (state.failed) {
-        return;
-    }
+    // 重新挂载页面时允许重试，不把一次断网永久缓存成系统字体。
     state.waiting.add(label);
     if (!state.loading) {
         loadFont(weight, state);
@@ -70,6 +68,7 @@ function styleBundledUiLabel(label: Label, weight: ProjectUiFontWeight, lineHeig
 }
 
 function loadFont(weight: ProjectUiFontWeight, state: FontState): void {
+    state.failed = false;
     state.loading = true;
     loadRaceAsset(RESOURCE_PATHS.uiFonts[weight], Font, (error, asset) => {
         state.loading = false;
@@ -87,6 +86,22 @@ function loadFont(weight: ProjectUiFontWeight, state: FontState): void {
         }
         state.waiting.clear();
     });
+}
+
+/** 等待已有字体请求，并在上次失败后重新加载。 */
+export function prepareProjectUiFonts(): void {
+    for (const weight of ['regular', 'semibold'] as const) {
+        const state = FONT_STATES[weight];
+        loadRaceAsset(RESOURCE_PATHS.uiFonts[weight], Font, (error, font) => {
+            if (error || !font) return;
+            state.asset = font;
+            state.failed = false;
+            for (const label of state.waiting) {
+                if (label.isValid && REQUESTED_WEIGHTS.get(label) === weight) applyFont(label, font);
+            }
+            state.waiting.clear();
+        });
+    }
 }
 
 function applyFont(label: Label, font: Font): void {
