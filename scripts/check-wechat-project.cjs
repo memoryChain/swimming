@@ -6,6 +6,7 @@ const { assertTextureCompressionPolicy } = require('../extensions/wechat-race-su
 const { assertUiFontPolicy } = require('./ui-font-policy');
 const { auditWechatPackageOutput } = require('../extensions/wechat-race-subpackage/wechat-package-budget');
 const { assertBuiltMotionRuntime, assertBuiltMotionStorage } = require('../extensions/wechat-race-subpackage/sampled-motion-storage');
+const { assertStartupCodeOutput, assertStartupSceneEntry } = require('../extensions/wechat-race-subpackage/startup-code-policy');
 
 const projectRoot = path.resolve(__dirname, '..');
 try {
@@ -14,6 +15,8 @@ try {
         throw new Error('用法：npm run wechat:check [-- --build [构建目录]]');
     }
     const config = readWechatConfig();
+    assertStartupSceneEntry(projectRoot);
+    console.log('[wechat-project] 登录场景的启动脚本绑定与 UUID 唯一性检查通过。');
     console.log(`[wechat-project] AppID ${config.packages.wechatgame.appid}，横屏，配置用途：开发与体验版。`);
     const textures = assertTextureCompressionPolicy(projectRoot);
     console.log(`[wechat-project] 贴图策略通过：${textures.eligible} 张压缩贴图。`);
@@ -22,6 +25,8 @@ try {
     if (args[0] === '--build') {
         const output = path.resolve(projectRoot, args[1] || 'build/wechatgame');
         const result = assertWechatProjectOutput(output);
+        const startup = assertStartupCodeOutput(output);
+        console.log(`[wechat-project] 主包脚本 ${(startup.mainJsBytes / 1024).toFixed(1)} KiB；延迟业务脚本 ${(startup.gameplayJsBytes / 1024).toFixed(1)} KiB。`);
         assertBuiltMotionRuntime(output);
         const motions = assertBuiltMotionStorage(projectRoot, output);
         const budget = auditWechatPackageOutput(output);

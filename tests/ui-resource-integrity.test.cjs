@@ -26,9 +26,13 @@ function strings(value) {
     return typeof value === 'string' ? [value] : value && typeof value === 'object' ? Object.values(value).flatMap(strings) : [];
 }
 const resourceModule = { exports: {} };
-new Function('exports', ts.transpileModule(fs.readFileSync(path.join(root, 'assets/scripts/core/ResourcePaths.ts'), 'utf8'), {
+const startupResources = { exports: {} };
+new Function('exports', ts.transpileModule(fs.readFileSync(path.join(root, 'assets/startup/StartupResources.ts'), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-}).outputText)(resourceModule.exports);
+}).outputText)(startupResources.exports);
+new Function('exports', 'require', ts.transpileModule(fs.readFileSync(path.join(root, 'assets/scripts/core/ResourcePaths.ts'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+}).outputText)(resourceModule.exports, () => startupResources.exports);
 const resourcePaths = resourceModule.exports.RESOURCE_PATHS;
 
 test('所有 UI 图片均有集中路径登记，所有登记路径都能解析到唯一现存资源', () => {

@@ -1284,13 +1284,12 @@ export class GameManager extends Component {
         this._aiControllers = [];
         this._aiSwimmers = [];
         this._aiConditions = [];
-        // Networked race: give the local player the same avatar-derived look every
-        // other client renders for this seat, so appearances match across clients.
+        // 联机外观使用房主确认的角色快照，与所有客户端的属性和模型保持一致。
         if (this._netSession) {
             const self = this._netSession.members.find((m) => m.pos === this._netSession!.localPos)
                 ?? this._netSession.members.find((m) => m.self);
             if (self) {
-                applyNetSwimmerLook(this._playerSwimmer.cartoonRig, self.avatarId);
+                applyNetSwimmerLook(this._playerSwimmer.cartoonRig, decodeModifierDigest(self.modifiersBlob));
             }
         }
         this.applySplashParticlesEnabled();
@@ -1310,12 +1309,14 @@ export class GameManager extends Component {
     }
 
     private applyPlayerProgression() {
-        const characterId = getPlayerCharacterSelection().characterId;
-        const level = getProgressionManager().getCharacterLevel(characterId);
+        const netSelf = this._netSession?.members.find(member => member.pos === this._netSession!.localPos);
+        const netDigest = netSelf ? decodeModifierDigest(netSelf.modifiersBlob) : null;
+        const characterId = (netDigest?.characterId ?? getPlayerCharacterSelection().characterId) as ReturnType<typeof getPlayerCharacterSelection>['characterId'];
+        const level = netDigest?.level ?? getProgressionManager().getCharacterLevel(characterId);
         // Resolve + apply through the shared seam so the local player uses EXACTLY what it
         // publishes to peers (and what peers apply to its remote copy) — same code path a
         // remote human takes in wireRemoteSwimmers.
-        const modifiers = resolveLocalRaceModifiers();
+        const modifiers = this._netSession ? resolveModifiersFromDigest(netDigest) : resolveLocalRaceModifiers();
         const overrides = modifiers.balance;
         this._playerBalanceOverrides = overrides;
         this._playerCondition.setInfiniteStamina(modifiers.abilityId === 'exoskeleton');
@@ -1474,10 +1475,9 @@ export class GameManager extends Component {
             // match how their own client races them — the same seam the local player uses
             // (applyPlayerProgression). Re-resolved from the digest via shared config.
             applyRaceModifiersToSwimmer(swimmer, resolveModifiersFromDigest(decodeModifierDigest(identity?.modifiersBlob)));
-            // Match this remote human's look to what its own client renders (derived
-            // from the shared avatarId) so appearances are identical everywhere.
-            if (identity?.avatarId) {
-                applyNetSwimmerLook(swimmer.cartoonRig, identity.avatarId);
+            // 模型与配色也来自同一份摘要，不能再由账号头像决定。
+            if (identity) {
+                applyNetSwimmerLook(swimmer.cartoonRig, decodeModifierDigest(identity.modifiersBlob));
             }
             this._remoteControllers.push(driver);
             this._netRaceController.registerRemote(remote.pos, remote.lane, driver);

@@ -36,7 +36,9 @@ def collect_glyphs(config: dict) -> tuple[str, list[str]]:
     files: list[Path] = []
     for relative_root in config["scan"]["roots"]:
         root = PROJECT_ROOT / relative_root
-        if root.exists():
+        if root.is_file() and root.suffix.lower() in extensions:
+            files.append(root)
+        elif root.exists():
             files.extend(path for path in root.rglob("*") if path.is_file() and path.suffix.lower() in extensions)
     files.sort()
 
@@ -129,13 +131,17 @@ def main() -> int:
 
     output_manifest = []
     for output in config["outputs"]:
-        build_subset(source, glyph_text, output)
+        output_glyphs = glyph_text
+        if "scanRoots" in output:
+            output_glyphs, _ = collect_glyphs({**config, "scan": {**config["scan"], "roots": output["scanRoots"]}})
+        build_subset(source, output_glyphs, output)
         path = PROJECT_ROOT / output["path"]
         output_manifest.append({
             "path": output["path"],
             "weight": output["weight"],
             "bytes": path.stat().st_size,
             "sha256": sha256(path),
+            "glyphHash": hashlib.sha256(output_glyphs.encode("utf-8")).hexdigest(),
         })
         print(f"[ui-font] 已生成 {output['path']}（{path.stat().st_size / 1024:.1f} KiB）")
 

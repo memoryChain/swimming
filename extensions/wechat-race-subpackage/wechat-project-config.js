@@ -48,7 +48,7 @@ function assertWechatProjectOutput(outputRoot) {
             throw new Error(`[wechat-project] 构建包缺少入口文件 ${entry}。`);
         }
     }
-    for (const name of ['race', 'music']) {
+    for (const name of ['race', 'music', 'gameplay', 'startup-ui']) {
         const root = `subpackages/${name}/`;
         if (!game.subpackages?.some(item => item.name === name && item.root === root)
             || !fs.existsSync(path.join(outputRoot, root, 'game.js'))) {

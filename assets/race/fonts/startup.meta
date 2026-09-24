@@ -2,14 +2,14 @@
   "ver": "1.2.0",
   "importer": "directory",
   "imported": true,
-  "uuid": "d9b3f54d-63f5-4d8b-ad84-10a1a08df123",
+  "uuid": "63038875-8daf-4323-8e75-4a697713b9eb",
   "files": [],
   "subMetas": {},
   "userData": {
     "isBundle": true,
     "bundleConfigID": "default",
-    "bundleName": "gameplay",
-    "priority": 5,
+    "bundleName": "startup-ui",
+    "priority": 9,
     "compressionType": {
       "wechatgame": "subpackage"
     },

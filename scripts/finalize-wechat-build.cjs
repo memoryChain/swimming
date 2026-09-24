@@ -5,6 +5,7 @@ const path = require('node:path');
 const { assertWechatProjectOutput } = require('../extensions/wechat-race-subpackage/wechat-project-config');
 const { assertBuiltMotionRuntime, compactBuiltMotions, assertBuiltMotionStorage } = require('../extensions/wechat-race-subpackage/sampled-motion-storage');
 const { auditWechatPackageOutput } = require('../extensions/wechat-race-subpackage/wechat-package-budget');
+const { assertStartupCodeOutput } = require('../extensions/wechat-race-subpackage/startup-code-policy');
 
 const projectRoot = path.resolve(__dirname, '..');
 try {
@@ -20,6 +21,7 @@ try {
         throw new Error('构建目录必须位于当前工程内，且不能是工程根目录或 assets。');
     }
     assertWechatProjectOutput(outputRoot);
+    assertStartupCodeOutput(outputRoot);
     assertBuiltMotionRuntime(outputRoot);
     const preview = compactBuiltMotions(projectRoot, outputRoot, { checkOnly: true });
     let backupRoot;

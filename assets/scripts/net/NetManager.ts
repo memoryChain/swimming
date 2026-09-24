@@ -11,6 +11,14 @@ import { DefaultNetRoom } from './DefaultNetRoom';
 import { WechatGameRoom } from './WechatGameRoom';
 
 let _netRoom: INetRoom | null = null;
+let roomOperation: Promise<unknown> = Promise.resolve();
+
+// 微信同一时刻只能占用一个房间；旧进房完成并清理后才能执行新的进退房。
+export function serializeRoomOperation<T>(operation: () => Promise<T>): Promise<T> {
+    const next = roomOperation.then(operation);
+    roomOperation = next.catch(() => undefined);
+    return next;
+}
 
 export function netRoom(): INetRoom {
     if (_netRoom) {

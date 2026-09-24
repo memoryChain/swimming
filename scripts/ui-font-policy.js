@@ -15,6 +15,10 @@ function walkTextFiles(root, extensions, files) {
     if (!fs.existsSync(root)) {
         return;
     }
+    if (fs.statSync(root).isFile()) {
+        if (extensions.has(path.extname(root).toLowerCase())) files.push(root);
+        return;
+    }
     for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
         const target = path.join(root, entry.name);
         if (entry.isDirectory()) {
@@ -25,11 +29,11 @@ function walkTextFiles(root, extensions, files) {
     }
 }
 
-function collectUiGlyphs(projectRoot) {
+function collectUiGlyphs(projectRoot, scanRoots) {
     const config = readConfig(projectRoot);
     const extensions = new Set(config.scan.extensions.map((extension) => extension.toLowerCase()));
     const files = [];
-    for (const relativeRoot of config.scan.roots) {
+    for (const relativeRoot of scanRoots || config.scan.roots) {
         walkTextFiles(path.join(config.projectRoot, relativeRoot), extensions, files);
     }
     files.sort();
@@ -77,6 +81,9 @@ function assertUiFontPolicy(projectRoot) {
             throw new Error(`[ui-font-policy] 缺少生成字体 ${output.path}。请运行 \`pnpm fonts:build\`。`);
         }
         const actualHash = sha256(fs.readFileSync(outputPath));
+        if (output.scanRoots && recorded.glyphHash !== collectUiGlyphs(projectRoot, output.scanRoots).glyphHash) {
+            throw new Error(`[ui-font-policy] ${output.path} 的首屏字形已变化，请运行 pnpm fonts:build。`);
+        }
         if (actualHash !== recorded.sha256) {
             throw new Error(`[ui-font-policy] ${output.path} 与字体清单不一致。请重新运行 \`pnpm fonts:build\`。`);
         }

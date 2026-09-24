@@ -24,6 +24,9 @@ export interface NetRoomMember {
 }
 
 export interface NetRoomInfo {
+    // 创建/加入响应中的本人座位及客户端标识，不能用随机昵称猜测身份。
+    localPos?: number;
+    localClientId?: number;
     // Opaque room id returned by createRoom; pass it to joinRoom.
     accessInfo: string;
     // Human-readable room number for display/verification (WeChat roomIdStr). Unlike

@@ -12,6 +12,7 @@
   "scan": {
     "roots": [
       "assets/scripts",
+      "assets/startup",
       "assets/resources",
       "assets/race"
     ],
@@ -24,6 +25,14 @@
     "alwaysInclude": " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
   },
   "outputs": [
+    {
+      "path": "assets/race/fonts/startup/ShuiMasterUI-Startup.ttf",
+      "weight": 600,
+      "family": "ShuiMaster UI Startup",
+      "subfamily": "SemiBold",
+      "postscriptName": "ShuiMasterUI-Startup",
+      "scanRoots": ["assets/startup/StartupCopy.ts"]
+    },
     {
       "path": "assets/race/fonts/ShuiMasterUI-Regular.ttf",
       "weight": 400,

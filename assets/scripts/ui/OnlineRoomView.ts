@@ -28,6 +28,7 @@ export type OnlineMember = {
 export type OnlineRoomState = {
     members: OnlineMember[]; isHost: boolean; ready: boolean; busy: boolean;
     canStart: boolean; roomNumber: string; hint: string; mode: RaceDifficulty;
+    primaryText?: string;
 };
 type Card = { background: Sprite; avatar: Sprite; ring: Sprite; nickname: Label; role: Label;
     badge: Label; badgeBg: Sprite; careerBadge: Sprite; plus: Label; empty: Label; member?: OnlineMember; signature: string };
@@ -212,9 +213,9 @@ export class OnlineRoomView {
         }
         for (let i = 0; i < this.cards.length; i++) this.updateCard(this.cards[i], state.members.find(m => m.pos === i));
         assign(this.hint, state.hint);
-        assign(this.primaryText, state.busy ? '请稍候…' : state.isHost ? '开始比赛' : state.ready ? '取消准备' : '准备');
+        assign(this.primaryText, state.busy ? '请稍候…' : state.primaryText ?? (state.isHost ? '开始比赛' : state.ready ? '取消准备' : '准备'));
         this.texture(this.primaryArt, !state.isHost && state.ready ? ART.cancelReady : RESOURCE_PATHS.lobbyUi.startButton);
-        const enabled = !state.busy && (!state.isHost || state.canStart);
+        const enabled = !state.busy && (!!state.primaryText || !state.isHost || state.canStart);
         const button = this.primary.getComponent(Button)!;
         if (button.interactable !== enabled) button.interactable = enabled;
         tint(this.primaryText, enabled ? INK : MUTED);

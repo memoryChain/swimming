@@ -118,7 +118,7 @@ const cc = { Node, UITransform, UIOpacity, Vec3, tween: target => new RoomTween(
         on: (event, fn) => { if (!resizeListeners.has(event)) resizeListeners.set(event, new Set()); resizeListeners.get(event).add(fn); },
         off: (event, fn) => resizeListeners.get(event)?.delete(fn) },
     sys: { getSafeAreaRect: () => ({ x: safeLeft, y: 0, width: visibleSize.width - safeLeft - safeRight, height: visibleSize.height }) } };
-const net = { isSupported: () => false, setCallbacks: () => {}, broadcast: () => {}, updateReady: async () => {}, isOwner: () => true, getRoomInfo: async () => null, kickMember: async () => {}, leaveRoom: async () => {} };
+const net = { isSupported: () => false, setCallbacks: () => {}, broadcast: () => {}, updateReady: async () => {}, isOwner: () => true, getRoomInfo: async () => null, kickMember: async () => {}, leaveRoom: async () => {}, currentAccessInfo: () => 'test-room' };
 const cache = {};
 function previewFrame(p) {
     const file = path.join(root, 'assets/race', p.replace('/texture', '.png'));
@@ -130,10 +130,10 @@ const stubs = {
     'core/GameBalance': require('./helpers/cocos-math-harness.cjs').createHarness().load(path.join(root, 'assets/scripts/core/GameBalance.ts')),
     'ui/AvatarUiAssets': { avatarTexturePath: id => `avatar/${id}`, loadAvatarUiSpriteFrame: (p, done) => done(previewFrame(p)) },
     'ui/ProjectUiFonts': { PROJECT_UI_ENGLISH_BOLD_FAMILY: 'Arial Black', styleProjectUiLabel: (label, weight, lineHeight) => { label.weight = weight; label.lineHeight = lineHeight; } },
-    'backend/PlayerData': { PlayerData: { avatarId: 'coral', nickName: '小龟9460', profile: { career: { league: 2 } } } },
-    'net/NetManager': { netRoom: () => net },
+    'backend/PlayerData': { PlayerData: { loaded: true, avatarId: 'coral', nickName: '小龟9460', profile: { career: { league: 2 } } } },
+    'net/NetManager': { netRoom: () => net, serializeRoomOperation: action => Promise.resolve().then(action) },
     'net/NetRaceSession': { setNetRaceSession: () => {} },
-    'progression/RaceModifiers': { resolveLocalModifierDigest: () => ({ characterId: 'muscleMan', level: 2 }) },
+    'progression/RaceModifiers': { resolveLocalModifierDigest: () => ({ characterId: 'muscleMan', level: 2, skinToneId: 'warm', colorSchemeId: 'red' }) },
     'platform/PlatformManager': { platform: () => ({ share: () => {} }) },
 };
 function load(file) {
@@ -378,6 +378,7 @@ function flow(isHost = false) {
     f._members = [{ ...host, self: isHost }, { ...guest, self: !isHost }];
     f._accessInfo = 'test-room'; f._rulesId = '1800000000000'; f._rulesRevision = 1; f._rulesOwnerPos = 0;
     f._memberProtocolVersions[0] = NET_RACE_PROTOCOL_VERSION; f._memberProtocolVersions[2] = NET_RACE_PROTOCOL_VERSION;
+    f._memberModifiers[0] = f._memberModifiers[2] = 'muscleMan,2,warm,red';
     return f;
 }
 
@@ -556,10 +557,11 @@ test('准备失败保留原状态，重试成功后主按钮才切换', async ()
 test('赛制改变使旧准备失效，旧版本及乱序 ACK 不能恢复准备', async () => {
     const h = flow(true); h._members[1].ready = true;
     const key = h.ruleKey();
-    h.handleRules({ t: 'rulesReady', pos: 2, key, seq: 5, ready: true }); assert.equal(h.allMembersReady(), true);
-    h.handleRules({ t: 'rulesReady', pos: 2, key, seq: 6, ready: false });
-    h.handleRules({ t: 'rulesReady', pos: 2, key, seq: 5, ready: true }); assert.equal(h.allMembersReady(), false);
-    h.changeMode('beginner'); h.handleRules({ t: 'rulesReady', pos: 2, key, seq: 7, ready: true }); assert.equal(h.allMembersReady(), false);
+    const member = h.memberKey(h._members[1]);
+    h.handleRules({ t: 'rulesReady', pos: 2, key, member, mods: 'muscleMan,2,warm,red', seq: 5, ready: true }); assert.equal(h.allMembersReady(), true);
+    h.handleRules({ t: 'rulesReady', pos: 2, key, member, mods: 'muscleMan,2,warm,red', seq: 6, ready: false });
+    h.handleRules({ t: 'rulesReady', pos: 2, key, member, mods: 'muscleMan,2,warm,red', seq: 5, ready: true }); assert.equal(h.allMembersReady(), false);
+    h.changeMode('beginner'); h.handleRules({ t: 'rulesReady', pos: 2, key, member, mods: 'muscleMan,2,warm,red', seq: 7, ready: true }); assert.equal(h.allMembersReady(), false);
     const g = flow(); g._localReady = true;
     g.handleRules({ t: 'rules', owner: 0, id: h._rulesId, rev: h._rulesRevision, mode: 'beginner' });
     await Promise.resolve(); assert.equal(g._localReady, false); assert.equal(g._mode, 'beginner');
@@ -703,6 +705,37 @@ test('缺少平台准备接口不得静默报告成功', async () => {
     const { WechatGameRoom } = load(path.join(root, 'assets/scripts/net/WechatGameRoom.ts'));
     const room = new WechatGameRoom(); room._gsm = {};
     await assert.rejects(room.updateReady(true));
+});
+
+test('进房只返回座位时保留平台身份，重赛刷新能区分同名同头像玩家', async () => {
+    const { WechatGameRoom } = load(path.join(root, 'assets/scripts/net/WechatGameRoom.ts'));
+    const room = new WechatGameRoom();
+    room._gsm = {
+        joinRoom: async () => ({ data: { myPos: 3, clientId: 42 } }),
+        getRoomInfo: options => options.success({ data: { roomInfo: { memberList: [
+            { posNum: 0, clientId: 11, role: 0, memberExtInfo: 'aqua|同名' },
+            { posNum: 3, clientId: 42, role: 1, memberExtInfo: 'aqua|同名' },
+        ] } } }),
+    };
+    const joined = await room.joinRoom('token', 'aqua|同名');
+    assert.equal(joined.localPos, 3); assert.equal(joined.localClientId, 42); assert.equal(joined.members.length, 0);
+    const refreshed = await room.getRoomInfo();
+    assert.equal(refreshed.localPos, 3); assert.equal(refreshed.localClientId, 42); assert.equal(room.isOwner(), true);
+});
+
+test('换房后的旧名单回调无效，连续广播只启动一条开赛轮询链', async () => {
+    const { WechatGameRoom } = load(path.join(root, 'assets/scripts/net/WechatGameRoom.ts'));
+    const room = new WechatGameRoom(); let callback, requests = 0;
+    room._accessInfo = 'old'; room._localClientId = 42;
+    room._gsm = { getRoomInfo: options => { requests++; callback = options.success; },
+        memberLeaveRoom: options => options.success(), broadcastInRoom: () => Promise.reject(new Error('断网')) };
+    const pending = room.getRoomInfo(); const stale = callback;
+    await room.leaveRoom(); room._accessInfo = 'new'; room._localClientId = 99;
+    stale({ data: { myPos: 3, clientId: 42, memberList: [{ clientId: 42, posNum: 3, role: 1 }] } });
+    assert.equal(await pending, null); assert.equal(room._localClientId, 99); assert.equal(room.isOwner(), false);
+    room.broadcast('MOD'); room.broadcast('PV'); room.broadcast('rules'); assert.equal(requests, 2);
+    room._gameStartNotified = true; callback({ data: { roomState: 0 } }); await Promise.resolve();
+    assert.equal(room._pollingGameStart, false);
 });
 
 function attributeTipsHarness() {

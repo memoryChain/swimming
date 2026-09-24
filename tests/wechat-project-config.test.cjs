@@ -34,12 +34,14 @@ test('拒绝错误 AppID、错误类型、竖屏和缺失分包的构建包', t 
     const game = { deviceOrientation: 'landscapeRight', subpackages: [
         { name: 'race', root: 'subpackages/race/' },
         { name: 'music', root: 'subpackages/music/' },
+        { name: 'gameplay', root: 'subpackages/gameplay/' },
+        { name: 'startup-ui', root: 'subpackages/startup-ui/' },
     ] };
     const write = () => {
         fs.writeFileSync(path.join(root, 'project.config.json'), JSON.stringify(project));
         fs.writeFileSync(path.join(root, 'game.json'), JSON.stringify(game));
     };
-    for (const file of ['game.js', 'src/settings.json', 'subpackages/race/game.js', 'subpackages/music/game.js']) {
+    for (const file of ['game.js', 'src/settings.json', ...game.subpackages.map(item => item.root + 'game.js')]) {
         const target = path.join(root, file);
         fs.mkdirSync(path.dirname(target), { recursive: true });
         fs.writeFileSync(target, '{}');

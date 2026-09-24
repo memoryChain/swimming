@@ -14,13 +14,14 @@ import { OnlineRoomView, OnlineMember, ROOM_MODES } from './OnlineRoomView';
 import { RaceDifficulty, setRaceDifficulty } from '../core/GameBalance';
 import { PLAYER_CHARACTER_DEFINITIONS, getSelectedRaceDifficulty } from '../app/PlayerCharacterConfig';
 import { PlayerData } from '../backend/PlayerData';
-import { netRoom } from '../net/NetManager';
+import { AVATARS } from '../backend/IdentityConfig';
+import { netRoom, serializeRoomOperation } from '../net/NetManager';
 import { NetRoomInfo } from '../net/INetRoom';
 import { NetRaceMember, setNetRaceSession } from '../net/NetRaceSession';
 import { SeededRandom } from '../core/SharedRNG';
 import { platform } from '../platform/PlatformManager';
 import { resolveLocalModifierDigest } from '../progression/RaceModifiers';
-import { decodeModifierDigest, encodeModifierDigest } from '../net/NetRaceModifierCodec';
+import { decodeModifierDigest, encodeModifierDigest, hasCompleteModifierDigest } from '../net/NetRaceModifierCodec';
 import {
     NET_RACE_PROTOCOL_VERSION,
     decodeProtocolHello,
@@ -54,6 +55,16 @@ type SlotMember = {
 };
 
 export class RoomFlow {
+    private static _networkOwner: RoomFlow | null = null;
+    private _disposed = false;
+    private _initializing = false;
+    private _entryFailed = false;
+    private _entryTimedOut = false;
+    private _entryTimer: ReturnType<typeof setTimeout> | null = null;
+    private _entryTask: Promise<void> | null = null;
+    private _joined = false;
+    private _localClientId: number | undefined;
+    private _refreshTimer: ReturnType<typeof setTimeout> | null = null;
     private _root: Node | null = null;
     private _view: OnlineRoomView | null = null;
     private _readyPending = false;
@@ -67,6 +78,9 @@ export class RoomFlow {
     private _readyVersion = 0;
     private readonly _ruleReadyVersions: Record<number, number> = {};
     private readonly _ruleReady: Record<number, string> = {};
+    private readonly _ruleReadyModifiers: Record<number, string> = {};
+    private _startMembers: NetRaceMember[] | null = null;
+    private _lastStartSeed = 0;
     private _rulesTimer: ReturnType<typeof setInterval> | null = null;
     private _members: SlotMember[] = [];
     private _netReal = false;
@@ -132,7 +146,7 @@ export class RoomFlow {
     private build() {
         this._view = new OnlineRoomView(this._parent, {
             exit: () => this.exit(),
-            primary: () => this._isHost ? this.startRace() : this.toggleReady(),
+            primary: () => this._entryTimedOut ? void this.exit() : this._entryFailed ? this.setupNet() : this._isHost ? this.startRace() : this.toggleReady(),
             invite: () => this.invite(),
             mode: value => this.changeMode(value),
             kick: member => { void this.kickMember(member); },
@@ -140,133 +154,116 @@ export class RoomFlow {
         this._root = this._view.root;
     }
 
-    private setupNet() {
-        const self = this.selfMember();
-        // Show yourself immediately so the lobby is NEVER blank, no matter whether the
-        // game service connects, hangs, or throws synchronously on this device. On a
-        // real phone the async login/createRoom below may take a moment (or fail if the
-        // 联机对战 service is not enabled) — the grid must still render first.
-        this._members = [self];
-        this.render();
+    private live(): boolean {
+        return !this._disposed && !!this._root?.isValid && !this._roomUnavailable && !this._raceEntered;
+    }
 
-        const net = netRoom();
-        let supported = false;
-        try {
-            supported = net.isSupported();
-        } catch (error) {
-            supported = false;
-        }
-        this._netReal = supported;
+    private entryActive(): boolean { return this.live() && !this._leaving && !this._entryFailed; }
+
+    private setupNet() {
+        if (!this.live() || this._entryTask || this._leaving) return;
+        this._initializing = true;
+        this._entryFailed = false;
+        this._entryTimedOut = false;
+        this._statusHint = '正在读取角色资料…';
         this.render();
-        if (!supported) {
-            // Editor / web / unsupported: stay in the local preview room (just you).
+        // 已加载存档的本地预览不需要任何联机操作。
+        if (PlayerData.loaded && !netRoom().isSupported()) {
+            this._members = [this.selfMember()];
+            this._initializing = false;
+            this._statusHint = null;
+            this.render();
             return;
         }
-
-        // 仅房间存活时低频重发：广播可能丢失，ACK 绑定赛制版本及准备状态。
-        this._rulesTimer = setInterval(() => {
-            if (this._root?.isValid && !this._roomUnavailable && !this._raceEntered && !this._leaving) this.broadcastRules();
-        }, 1500);
-        // Any of setCallbacks/login/createRoom can throw synchronously if the game
-        // service is unavailable; keep it from breaking the whole screen.
-        try {
-            net.setCallbacks({
-                onRoomInfoChange: (info) => {
+        this._entryTimer = setTimeout(() => {
+            this._entryTimer = null;
+            if (!this.live() || !this._entryTask || this._leaving) return;
+            this._entryTimedOut = this._entryFailed = true;
+            this._initializing = false;
+            this._statusHint = '连接超时，请返回大厅后重试';
+            this.render();
+        }, 15000);
+        this._entryTask = PlayerData.load().then(async () => {
+            if (!this.entryActive()) return;
+            if (!PlayerData.loaded) throw new Error('角色资料读取失败');
+            if (!this._reconnect) { this._localPos = this._isHost ? 0 : -1; this._localClientId = undefined; }
+            this._members = [this.selfMember()];
+            const net = netRoom();
+            this._netReal = net.isSupported();
+            if (!this._netReal) return;
+            this._statusHint = '正在连接房间…';
+            this.render();
+            await serializeRoomOperation(async () => {
+                if (!this.entryActive()) return;
+                // 处理上一次取消后仍留在平台上的房间；重赛保留现有会话。
+                if (!this._reconnect && net.currentAccessInfo()) await net.leaveRoom();
+                if (!this.entryActive()) return;
+                RoomFlow._networkOwner = this;
+                net.setCallbacks({
+                    onRoomInfoChange: info => {
+                        if (!this.entryActive() || this._initializing || this._startRequested) return;
+                        this._members = this.membersFromInfo(info);
+                        this.reconcileProtocolRoster(); this.render(); this.broadcastSelfModifiers();
+                    },
+                    onBroadcast: msg => { if (this.entryActive() && !this._initializing) this.handleBroadcast(msg); },
+                    onGameStart: () => { if (this.entryActive() && !this._initializing) this.onNetGameStart(); },
+                    onKicked: () => { if (this.live()) this.showRoomUnavailable('你已被房主移出房间'); },
+                });
+                if (this._reconnect) {
+                    this._accessInfo = net.currentAccessInfo();
+                    if (!this._accessInfo) throw new Error('原房间已不可用');
+                    this._joined = true;
+                    this._localReady = false;
+                    await net.updateReady(false);
+                } else {
+                    await net.login();
+                    if (!this.entryActive()) return;
+                    const self = this.selfMember();
+                    const extInfo = encodeIdentity(self.avatarId, self.nickName);
+                    const info = this._joinRoomId
+                        ? await net.joinRoom(this._joinRoomId, extInfo)
+                        : await net.createRoom({ maxMembers: MAX_SLOTS, memberExtInfo: extInfo });
+                    this._joined = true;
+                    this._accessInfo = info.accessInfo || this._joinRoomId || net.currentAccessInfo();
                     this._members = this.membersFromInfo(info);
                     this.reconcileProtocolRoster();
-                    this.render();
-                    // Roster changed (e.g. a newcomer joined): re-broadcast our digest so
-                    // they collect it too.
-                    this.broadcastSelfModifiers();
-                },
-                onBroadcast: (msg) => this.handleBroadcast(msg),
-                onGameStart: () => this.onNetGameStart(),
-                onKicked: () => this.showRoomUnavailable('你已被房主移出房间'),
-            });
-            const extInfo = encodeIdentity(self.avatarId, self.nickName);
-            if (this._reconnect) {
-                // Returning after a race: the WeChat room still exists and we are still
-                // a member — do NOT create/join a new one (that would fork the room, so
-                // the host ends up alone while the guest sees a stale roster). Re-attach
-                // callbacks (they were replaced by NetRaceController during the race),
-                // have the owner END the previous game so the room returns to the lobby,
-                // reset our ready flag, and re-pull the roster.
-                this._accessInfo = net.currentAccessInfo();
-                // KEEP-ALIVE rematch (WeChat rooms are strictly one-game): do NOT endGame.
-                // PROVEN on device — after endGame the room is stuck at roomState=3
-                // (gameEnd); a second startGame returns 4014 for a member and a fake "ok"
-                // (no real start) for the owner, so the room can never be reused. Instead
-                // we keep the ORIGINAL lock-step session alive (the server heartbeat keeps
-                // it running while we sit in the lobby) and enter the next race DIRECTLY
-                // (see startRace / handleBroadcast). Just re-attach callbacks (done above),
-                // reset our ready flag, and re-pull the roster.
-                this._localReady = false;
-                net.updateReady(false).catch(() => undefined);
+                }
+                if (!this.entryActive()) {
+                    // 取消时平台请求可能已成功；在新进房开始前清理，不能留下幽灵成员。
+                    await net.leaveRoom(); this._joined = false; return;
+                }
+                this._initializing = false;
+                this._statusHint = null;
+                if (this._isHost) { await net.updateReady(true); this._localReady = true; }
+                if (!this.entryActive()) { await net.leaveRoom(); this._joined = false; return; }
+                this.stopRulesTimer();
+                this._rulesTimer = setInterval(() => {
+                    if (this.live() && !this._leaving) { this.broadcastSelfModifiers(); this.broadcastRules(); }
+                }, 1500);
                 this.refreshRoomInfo(0);
-                this.render();
-                return;
-            }
-            const enter = this._joinRoomId
-                ? net.login().then(() => net.joinRoom(this._joinRoomId!, extInfo))
-                : net.login().then(() => net.createRoom({ maxMembers: MAX_SLOTS, memberExtInfo: extInfo }));
-            enter
-                .then((info) => {
-                    this._accessInfo = info.accessInfo || this._joinRoomId || this._accessInfo;
-                    this._statusHint = null;
-                    // WeChat's joinRoom result is just { myPos, clientId } with NO
-                    // roster, so mapping it yields a self-only list. Don't let it
-                    // clobber the fuller roster we may already have received via
-                    // onRoomInfoChange (which DOES reach the joiner on device).
-                    const mapped = this.membersFromInfo(info);
-                    if (mapped.length >= this._members.length) {
-                        this._members = mapped;
-                        this.reconcileProtocolRoster();
-                    }
-                    this.render();
-                    // Backup pull of the authoritative roster (a few retries) in case
-                    // onRoomInfoChange didn't reach us on this device.
-                    this.refreshRoomInfo(0);
-                    // The host auto-readies: the official demo requires ALL members
-                    // (including the owner) to be ready before starting, and unready
-                    // members don't seem to receive onGameStart. Guests ready manually.
-                    if (this._isHost) {
-                        this._localReady = true;
-                        netRoom().updateReady(true).catch(() => undefined);
-                    }
-                    this.broadcastSelfModifiers();
-                })
-                .catch((error) => {
-                    const reason = (error && (error.errMsg || error.message)) || String(error);
-                    console.warn('[Room] net enter failed:', reason, error);
-                    if (this._joinRoomId) {
-                        // A guest tapping an invite whose room no longer accepts us: the
-                        // host left and dissolved it, or the race already started (WeChat
-                        // returns "invalid room state"). Don't drop into a fake local room
-                        // with a raw error — show a clean "dissolved" notice + back button.
-                        this.showRoomUnavailable('房间已解散或已开始比赛');
-                        return;
-                    }
-                    // Host create failed (editor / service down): local preview fallback.
-                    this._netReal = false;
-                    this._statusHint = `建房失败：${reason}`;
-                    this._members = [self];
-                    this.render();
-                });
-        } catch (error) {
-            const reason = (error && ((error as any).errMsg || (error as any).message)) || String(error);
-            console.warn('[Room] game service threw, local preview:', reason, error);
-            this._netReal = false;
-            this._statusHint = `联机服务异常：${reason}`;
-            this._members = [self];
-            this.render();
-        }
+                this.broadcastSelfModifiers(); this.broadcastRules();
+            });
+        }).catch(error => {
+            if (!this.entryActive()) return;
+            this._entryFailed = true;
+            this._statusHint = PlayerData.loaded ? '连接房间失败，请检查网络或邀请后重试' : '角色资料读取失败，请重试';
+            console.warn('[房间] 初始化失败', error);
+        }).then(() => {
+            this._entryTask = null;
+            if (this._entryTimer !== null) clearTimeout(this._entryTimer);
+            this._entryTimer = null;
+            this._initializing = false;
+            if (this.live() && !this._leaving) { if (!this._netReal && !this._entryFailed) this._statusHint = null; this.render(); }
+        });
     }
 
     private selfMember(): SlotMember {
+        const identity = parseIdentity(encodeIdentity(PlayerData.avatarId, PlayerData.nickName));
         return {
+            clientId: this._localClientId,
             self: true,
-            avatarId: PlayerData.avatarId,
-            nickName: PlayerData.nickName,
+            avatarId: identity.avatarId,
+            nickName: identity.nickName,
             ready: this._localReady,
             owner: this._isHost,
             pos: this._localPos,
@@ -307,7 +304,8 @@ export class RoomFlow {
         if (!payload) {
             return;
         }
-        netRoom().broadcast(`MOD|${this._localPos}|${payload}`);
+        const member = this._members.find(m => m.pos === this._localPos);
+        if (member) netRoom().broadcast(`MOD|${this._localPos}|${encodeURIComponent(this.memberKey(member))}|${payload}`);
     }
 
     // 徽章仅供房间展示，独立于比赛养成摘要；复用房间定时器补偿广播丢包。
@@ -339,16 +337,19 @@ export class RoomFlow {
 
     // Collect a peer's lobby digest broadcast, keyed by seat (the host builds the map here).
     private collectMemberModifiers(msg: string) {
-        // "MOD|<pos>|<payload>"
+        // MOD|座位|成员标识|角色摘要
         const body = msg.slice(4);
         const sep = body.indexOf(IDENTITY_SEP);
         if (sep < 0) {
             return;
         }
-        const pos = parseInt(body.slice(0, sep), 10);
-        const payload = body.slice(sep + 1);
-        if (Number.isFinite(pos) && payload) {
-            if (!this._members.some(m => m.pos === pos) || !decodeModifierDigest(payload)) return;
+        const pos = Number(body.slice(0, sep));
+        const identityEnd = body.indexOf(IDENTITY_SEP, sep + 1);
+        if (identityEnd < 0) return;
+        const member = this._members.find(m => m.pos === pos);
+        const payload = body.slice(identityEnd + 1);
+        if (Number.isInteger(pos) && pos !== this._localPos && member && payload) {
+            if (body.slice(sep + 1, identityEnd) !== encodeURIComponent(this.memberKey(member)) || !hasCompleteModifierDigest(payload)) return;
             if (this._memberModifiers[pos] === payload) return;
             this._memberModifiers[pos] = payload;
             this.render();
@@ -381,12 +382,13 @@ export class RoomFlow {
                 continue;
             }
             active[member.pos] = true;
-            const fingerprint = `${member.clientId ?? ''}|${member.avatarId}|${member.nickName}`;
+            const fingerprint = this.memberKey(member);
             if (this._memberProtocolFingerprints[member.pos] !== fingerprint) {
                 delete this._memberProtocolVersions[member.pos];
                 delete this._memberModifiers[member.pos];
                 delete this._memberCareerLeagues[member.pos];
                 delete this._ruleReady[member.pos];
+                delete this._ruleReadyModifiers[member.pos];
                 delete this._ruleReadyVersions[member.pos];
                 this._memberProtocolFingerprints[member.pos] = fingerprint;
             }
@@ -407,6 +409,7 @@ export class RoomFlow {
                 delete this._memberModifiers[pos];
                 delete this._memberCareerLeagues[pos];
                 delete this._ruleReady[pos];
+                delete this._ruleReadyModifiers[pos];
                 delete this._ruleReadyVersions[pos];
             }
         }
@@ -426,21 +429,31 @@ export class RoomFlow {
     // Adopt the host's consolidated digest map from the start message. Authoritative:
     // every client uses the SAME map, so each swimmer's balance is identical everywhere,
     // and it arrives atomically with the seed (no seed-vs-digest broadcast race).
-    private mergeBroadcastModifiers(mods: unknown) {
-        if (!mods || typeof mods !== 'object') {
-            return;
-        }
-        const map = mods as Record<string, unknown>;
-        for (const key of Object.keys(map)) {
-            const pos = parseInt(key, 10);
-            const payload = map[key];
-            if (Number.isFinite(pos) && typeof payload === 'string' && payload) {
-                this._memberModifiers[pos] = payload;
-            }
-        }
+    private mergeBroadcastModifiers(mods: unknown): boolean {
+        if (!mods || typeof mods !== 'object' || Array.isArray(mods)) return false;
+        const map = mods as Record<string, string>;
+        if (Object.keys(map).length !== this._members.length || !this.completeModifiers(map)
+            || map[this._localPos] !== encodeModifierDigest(resolveLocalModifierDigest())) return false;
+        for (const member of this._members) this._memberModifiers[member.pos] = map[member.pos];
+        return true;
+    }
+
+    private memberKey(member: SlotMember): string { return `${member.clientId ?? ''}|${member.avatarId}|${member.nickName}`; }
+
+    private completeModifiers(map = this._memberModifiers): boolean {
+        return this._members.length >= 2 && new Set(this._members.map(member => member.pos)).size === this._members.length
+            && this._members.some(member => member.self && member.pos === this._localPos)
+            && this._members.every(member => Number.isInteger(member.pos) && member.pos >= 0 && member.pos < MAX_SLOTS && hasCompleteModifierDigest(map[member.pos]));
+    }
+
+    private captureStartMembers(): void {
+        this._startMembers = this._members.map(member => ({ avatarId: member.avatarId, nickName: member.nickName,
+            self: member.pos === this._localPos, pos: member.pos, modifiersBlob: this._memberModifiers[member.pos] }));
     }
 
     private membersFromInfo(info: NetRoomInfo): SlotMember[] {
+        if (Number.isInteger(info.localPos) && info.localPos! >= 0 && info.localPos! < MAX_SLOTS) this._localPos = info.localPos!;
+        if (Number.isInteger(info.localClientId)) this._localClientId = info.localClientId;
         // Capture room metadata (display number + join token) wherever roster info
         // arrives, so the room number stays up to date on every client.
         if (info.roomId) {
@@ -468,11 +481,14 @@ export class RoomFlow {
         // Identify our own slot. Prefer the seat index (posNum) when we know it — two
         // players can roll the SAME random avatar+nickname, so an identity-only match
         // can highlight the wrong person ("房间显示的人不对"). Fall back to identity.
-        const selfId = PlayerData.avatarId;
-        const selfName = PlayerData.nickName;
-        let mine = this._localPos >= 0 ? list.find((m) => m.pos === this._localPos) : undefined;
-        if (!mine) {
-            mine = list.find((m) => m.avatarId === selfId && m.nickName === selfName);
+        const localIdentity = this.selfMember();
+        const selfId = localIdentity.avatarId;
+        const selfName = localIdentity.nickName;
+        let mine = this._localClientId !== undefined ? list.find(m => m.clientId === this._localClientId)
+            : this._localPos >= 0 ? list.find((m) => m.pos === this._localPos) : undefined;
+        if (!mine && this._localClientId === undefined && this._localPos < 0) {
+            const matches = list.filter(m => m.avatarId === selfId && m.nickName === selfName);
+            if (matches.length === 1) mine = matches[0];
         }
         if (mine) {
             mine.self = true;
@@ -514,13 +530,13 @@ export class RoomFlow {
     // roster may take a moment to propagate. Ongoing changes still arrive via
     // onRoomInfoChange once we're an existing member.
     private refreshRoomInfo(attempt: number) {
-        if (!this._netReal || !this._root?.isValid) {
+        if (!this._netReal || !this.live() || this._leaving || this._startRequested) {
             return;
         }
         netRoom()
             .getRoomInfo()
             .then((info) => {
-                if (!this._root?.isValid || !this._netReal) {
+                if (!this.live() || this._leaving || this._startRequested || !this._netReal) {
                     return;
                 }
                 if (info && info.members.length > 0) {
@@ -534,14 +550,20 @@ export class RoomFlow {
                     this.broadcastSelfModifiers();
                 }
                 if (attempt < 4) {
-                    setTimeout(() => this.refreshRoomInfo(attempt + 1), 700);
+                    this.scheduleRoomRefresh(attempt + 1);
                 }
             })
             .catch(() => {
                 if (attempt < 4) {
-                    setTimeout(() => this.refreshRoomInfo(attempt + 1), 700);
+                    this.scheduleRoomRefresh(attempt + 1);
                 }
             });
+    }
+
+    private scheduleRoomRefresh(attempt: number): void {
+        if (!this.live() || this._leaving || this._startRequested) return;
+        if (this._refreshTimer !== null) clearTimeout(this._refreshTimer);
+        this._refreshTimer = setTimeout(() => { this._refreshTimer = null; this.refreshRoomInfo(attempt); }, 700);
     }
 
     // A guest's invited room is gone (host dissolved it) or already in a race, so joining
@@ -559,7 +581,7 @@ export class RoomFlow {
     }
 
     private render() {
-        if (this._roomUnavailable || !this._root?.isValid) return;
+        if (this._disposed || this._roomUnavailable || !this._root?.isValid) return;
         const localDigest = resolveLocalModifierDigest();
         const members: OnlineMember[] = this._members.map(m => {
             const digest = m.self ? localDigest : decodeModifierDigest(this._memberModifiers[m.pos]);
@@ -571,7 +593,7 @@ export class RoomFlow {
                 careerLeague: m.self ? PlayerData.profile.career.league : this._memberCareerLeagues[m.pos],
             };
         });
-        const canStart = !this._netReal || (this.allMembersReady() && this.protocolCompatible());
+        const canStart = !this._initializing && !this._entryFailed && (!this._netReal || (this.allMembersReady() && this.protocolCompatible() && this.completeModifiers()));
         const hint = this._statusHint ?? (!this._netReal
             ? '本地预览 · 真机联机可邀请好友'
             : this._isHost
@@ -579,7 +601,8 @@ export class RoomFlow {
                 : this._localReady ? '已准备 · 等待房主开始' : '准备好后点击右下方按钮');
         this._view?.update({
             members, isHost: this._isHost, ready: this._localReady,
-            busy: this._startRequested || this._readyPending || this._kickPending || this._leaving,
+            busy: this._initializing || this._startRequested || this._readyPending || this._kickPending || this._leaving,
+            primaryText: this._entryTimedOut ? '返回大厅' : this._entryFailed ? '重试连接' : undefined,
             canStart, roomNumber: this._netReal ? this._roomId || '获取中…' : '本地预览',
             hint, mode: this._mode,
         });
@@ -594,17 +617,17 @@ export class RoomFlow {
     private allMembersReady(): boolean {
         const key = this.ruleKey();
         return this._members.length >= 2 && this._members.every(m =>
-            m.owner || (m.ready && this._ruleReady[m.pos] === key));
+            m.owner || (m.ready && this._ruleReady[m.pos] === key && this._ruleReadyModifiers[m.pos] === this._memberModifiers[m.pos]));
     }
 
     // Guest toggles their own ready state (shown on every client's avatar badge via
     // updateReadyStatus -> onRoomInfoChange).
     private toggleReady() {
-        if (this._isHost || this._readyPending || this._startRequested || this._leaving) return;
-        if (!this._localReady && (!this.protocolCompatible() || !this._rulesId)) {
+        if (!this.live() || this._initializing || this._entryFailed || this._isHost || this._readyPending || this._startRequested || this._leaving) return;
+        if (!this._localReady && (!this.protocolCompatible() || !this._rulesId || !this.completeModifiers())) {
             this.requestProtocolDeclarations();
             this.broadcastRules();
-            this.setHint('正在确认玩家版本和房主赛制，请稍后准备');
+            this.setHint('正在同步玩家角色和赛制，请稍后准备');
             return;
         }
         void this.setReady(!this._localReady);
@@ -621,18 +644,19 @@ export class RoomFlow {
         this.render();
         try {
             await netRoom().updateReady(ready);
-            if (!this._root?.isValid || this._roomUnavailable) return;
+            if (!this.live() || this._leaving) return;
             this._localReady = ready && rules === this.ruleKey();
             this._localReadyRule = this._localReady ? rules : '';
             // 请求过程中房主换了赛制，旧的准备确认不能复活。
             if (ready && !this._localReady) await netRoom().updateReady(false);
         } catch {
+            if (!this.live() || this._leaving) return;
             this._localReady = rules === this.ruleKey() ? previous : false;
             this._statusHint = '准备状态更新失败，请重试';
         } finally {
             this._readyPending = false;
             this._readyVersion++;
-            if (this._root?.isValid && !this._roomUnavailable) {
+            if (this.live() && !this._leaving) {
                 this.broadcastRules();
                 this.render();
             }
@@ -642,7 +666,7 @@ export class RoomFlow {
     private ruleKey(): string { return `${this._rulesId}:${this._rulesRevision}`; }
 
     private changeMode(mode: RaceDifficulty) {
-        if (!this._isHost || this._startRequested || this._kickPending || this._leaving || mode === this._mode) return;
+        if (!this.entryActive() || this._initializing || !this._isHost || this._startRequested || this._kickPending || this._leaving || mode === this._mode) return;
         this._mode = mode;
         this._rulesRevision++;
         for (const pos of Object.keys(this._ruleReady)) delete this._ruleReady[Number(pos)];
@@ -658,17 +682,22 @@ export class RoomFlow {
             if (!this._rulesId) this._rulesId = String(Date.now());
             netRoom().broadcast(JSON.stringify({ t: 'rules', owner: this._localPos, id: this._rulesId, rev: this._rulesRevision, mode: this._mode }));
         } else if (this._rulesId) {
-            netRoom().broadcast(JSON.stringify({ t: 'rulesReady', pos: this._localPos, key: this.ruleKey(), seq: this._readyVersion, ready: this._localReady && !this._readyPending }));
+            const member = this._members.find(m => m.pos === this._localPos && m.self);
+            if (!member) return;
+            netRoom().broadcast(JSON.stringify({ t: 'rulesReady', pos: this._localPos, key: this.ruleKey(), seq: this._readyVersion,
+                member: this.memberKey(member), mods: this.storeSelfModifiers(), ready: this._localReady && !this._readyPending }));
         }
     }
 
     private handleRules(data: any): boolean {
         if (data?.t === 'rulesReady') {
-            if (this._isHost && this._members.some(m => m.pos === data.pos && !m.owner) && data.key === this.ruleKey() &&
+            if (this._isHost && this._members.some(m => m.pos === data.pos && !m.owner && data.member === this.memberKey(m)) && data.key === this.ruleKey() &&
                 Number.isSafeInteger(data.seq) && data.seq >= (this._ruleReadyVersions[data.pos] ?? -1)) {
                 this._ruleReadyVersions[data.pos] = data.seq;
-                if (data.ready === true) this._ruleReady[data.pos] = data.key;
-                else delete this._ruleReady[data.pos];
+                if (data.ready === true && hasCompleteModifierDigest(data.mods)) {
+                    this._ruleReady[data.pos] = data.key;
+                    this._ruleReadyModifiers[data.pos] = data.mods;
+                } else { delete this._ruleReady[data.pos]; delete this._ruleReadyModifiers[data.pos]; }
                 this.render();
             }
             return true;
@@ -698,7 +727,7 @@ export class RoomFlow {
     }
 
     private async kickMember(member: OnlineMember) {
-        if (!this._netReal || !this._isHost || member.self || member.owner || this._startRequested || this._kickPending || this._leaving) return;
+        if (!this.entryActive() || this._initializing || !this._netReal || !this._isHost || member.self || member.owner || this._startRequested || this._kickPending || this._leaving) return;
         this._kickPending = true; this._statusHint = null; this.render();
         try {
             // 弹窗打开后名单可能变化；再查服务端，不能踢掉占用同一座位的新成员。
@@ -720,10 +749,12 @@ export class RoomFlow {
     private stopRulesTimer() {
         if (this._rulesTimer !== null) clearInterval(this._rulesTimer);
         this._rulesTimer = null;
+        if (this._refreshTimer !== null) clearTimeout(this._refreshTimer);
+        this._refreshTimer = null;
     }
 
     private startRace() {
-        if (this._startRequested || this._kickPending || this._leaving || this._roomUnavailable) return;
+        if (!this.live() || this._initializing || this._entryFailed || this._startRequested || this._kickPending || this._leaving) return;
         if (!this._netReal) {
             setRaceDifficulty(this._mode);
             lastRoomMode = this._mode;
@@ -749,6 +780,8 @@ export class RoomFlow {
             this.setHint('玩家版本不一致或仍在确认，无法开始联机比赛');
             return;
         }
+        this.storeSelfModifiers();
+        if (!this.completeModifiers()) { this.requestProtocolDeclarations(); this.setHint('角色资料尚未同步完整，请稍后开始'); return; }
         if (this._startRequested) {
             return;
         }
@@ -760,7 +793,7 @@ export class RoomFlow {
         // poll returned undefined on device, leaving the host stuck at 开始中 while the
         // guest started and timed out into becoming host. onGameStart / roomState / the
         // startGame-success fallback (WechatGameRoom) then delivers the start signal.
-        this._pendingSeed = SeededRandom.entropySeed();
+        this._pendingSeed = SeededRandom.entropySeed() || 1;
         this.setHint('开始中…');
         // Consolidated start: carry the shared seed AND the full 养成 digest map (collected
         // from lobby broadcasts, plus our own) in ONE message. This removes the seed-vs-
@@ -768,13 +801,16 @@ export class RoomFlow {
         // atomically with the seed. Since the start message is a precondition for entering,
         // a swimmer can never slip in with the wrong balance. Host-authoritative + consistent.
         this.storeSelfModifiers();
-        netRoom().broadcast(JSON.stringify({
+        this.captureStartMembers();
+        this.broadcastStart(JSON.stringify({
             t: 'start',
             pv: NET_RACE_PROTOCOL_VERSION,
             seed: this._pendingSeed,
             mods: this._memberModifiers,
             mode: this._mode,
             rules: this.ruleKey(),
+            owner: this._localPos,
+            roster: this._members.map(member => this.memberKey(member)),
         }));
         if (this._reconnect) {
             // Rematch on the still-alive session: do NOT startGame again (WeChat rooms are
@@ -788,6 +824,16 @@ export class RoomFlow {
             // makes the guests do the same. requestStartGame arms the recovery timeout.
             this.requestStartGame();
         }
+    }
+
+    private broadcastStart(message: string): void {
+        const net = netRoom(), accessInfo = this._accessInfo, seed = this._pendingSeed;
+        net.broadcast(message);
+        // 房间广播可能丢包，有限补发跨过场景切换；换房、取消或新一轮开始后失效。
+        for (const delay of [300, 900, 1800]) setTimeout(() => {
+            if (net.currentAccessInfo() === accessInfo && this._pendingSeed === seed
+                && (this._raceEntered || (this.live() && !this._leaving && this._startRequested))) net.broadcast(message);
+        }, delay);
     }
 
     // Recover from a start that never completes (e.g. the guest hadn't returned to the
@@ -804,6 +850,7 @@ export class RoomFlow {
             this._startRequested = false;
             this._gameStartCalled = false;
             this._pendingSeed = 0;
+            this._startMembers = null;
             this._gameStartConfirmed = false;
             this.setHint('开始失败，请确认好友已回到房间并准备后重试');
             this.render();
@@ -833,7 +880,7 @@ export class RoomFlow {
 
     // 首局房主和成员都需调用 startGame；重赛继续复用已有会话，不再次调用。
     private handleBroadcast(msg: string) {
-        if (!this._root?.isValid || this._roomUnavailable || this._raceEntered || this._leaving) return;
+        if (typeof msg !== 'string' || !this.live() || this._leaving || this._entryFailed) return;
         if (msg.startsWith('CB|')) { this.collectMemberCareer(msg); return; }
         const protocolRequest = decodeProtocolRequest(msg);
         if (protocolRequest) {
@@ -866,6 +913,9 @@ export class RoomFlow {
             const data = JSON.parse(msg);
             if (this.handleRules(data)) return;
             if (data && data.t === 'start' && typeof data.seed === 'number') {
+                if (this._isHost || this._startRequested || data.seed === this._lastStartSeed
+                    || !Number.isInteger(data.seed) || data.seed <= 0 || data.seed > 0xffffffff
+                    || data.owner !== this._members.find(member => member.owner)?.pos) return;
                 if (!isCompatibleProtocolVersion(data.pv)) {
                     if (this._localReady && !this._isHost) {
                         this._localReady = false;
@@ -878,6 +928,13 @@ export class RoomFlow {
                     this.setHint('赛制或准备状态未确认，请重新准备'); return;
                 }
                 if (!ROOM_MODES.some(m => m.id === data.mode)) return;
+                if (!Array.isArray(data.roster) || data.roster.length !== this._members.length
+                    || data.roster.some((key: unknown, index: number) => key !== this.memberKey(this._members[index]))
+                    || !this.mergeBroadcastModifiers(data.mods)) {
+                    this.requestProtocolDeclarations(); this.setHint('开赛资料不完整，请重新准备'); return;
+                }
+                this._lastStartSeed = data.seed;
+                this.captureStartMembers();
                 this._mode = data.mode;
                 setRaceDifficulty(this._mode);
                 this._pendingSeed = data.seed >>> 0;
@@ -885,7 +942,6 @@ export class RoomFlow {
                 this.setHint('开始中…');
                 // Adopt the host's consolidated 养成 digest map (authoritative + identical on
                 // every client) BEFORE entering, so all clients apply the same balance.
-                this.mergeBroadcastModifiers(data.mods);
                 if (this._reconnect) {
                     // Rematch: the lock-step session is still alive (we never endGame),
                     // so enter directly instead of calling startGame (which would 4014).
@@ -921,7 +977,7 @@ export class RoomFlow {
     // WeChat game has started (onGameStart / roomState). Prevents a fresh join into an
     // already-started keep-alive room from auto-entering off the stale roomState.
     private maybeEnterNetRace() {
-        if (this._raceEntered) {
+        if (!this.live() || this._leaving) {
             return;
         }
         if (this._pendingSeed !== 0 && this._gameStartConfirmed) {
@@ -931,7 +987,8 @@ export class RoomFlow {
 
     // Lock-step has begun on every client: hand the agreed seed + roster to the race.
     private enterNetRace() {
-        if (this._raceEntered) {
+        if (!this.live() || this._leaving || !this._startMembers || !this._pendingSeed
+            || this._localPos < 0 || !this._startMembers.some(member => member.pos === this._localPos)) {
             return;
         }
         this._raceEntered = true;
@@ -944,20 +1001,12 @@ export class RoomFlow {
         // (may be rejected mid-game); returning to the lobby also resets it.
         this._localReady = false;
         netRoom().updateReady(false).catch(() => undefined);
-        const members: NetRaceMember[] = this._members.map((m) => ({
-            avatarId: m.avatarId,
-            nickName: m.nickName,
-            self: m.self,
-            pos: typeof m.pos === 'number' ? m.pos : -1,
-            // 养成 digest collected from the lobby broadcasts (empty if it never arrived,
-            // e.g. an old client or a dropped broadcast -> that swimmer stays neutral).
-            modifiersBlob: this._memberModifiers[typeof m.pos === 'number' ? m.pos : -1] ?? '',
-        }));
+        const members = this._startMembers;
         setNetRaceSession({
-            seed: (this._pendingSeed >>> 0) || SeededRandom.entropySeed(),
+            seed: this._pendingSeed >>> 0,
             members,
             localIsHost: this._isHost,
-            localPos: this._localPos >= 0 ? this._localPos : (this._isHost ? 0 : 0),
+            localPos: this._localPos,
         });
         this._callbacks.onStartNetRace();
     }
@@ -968,17 +1017,29 @@ export class RoomFlow {
     }
 
     private async exit() {
-        if (this._leaving || this._startRequested) return;
-        this._leaving = true; this.render();
-        if (this._netReal && !this._roomUnavailable) {
-            try { await netRoom().leaveRoom(); }
-            catch {
-                this._leaving = false;
-                this.setHint('退出房间失败，请重试');
-                return;
-            }
+        if (await this.leaveForInvite()) {
+            if (!this._disposed && this._root?.isValid) this._callbacks.onExit();
         }
-        if (this._root?.isValid) this._callbacks.onExit();
+    }
+
+    // 退出和换邀请共用同一事务；退出失败仍保留当前房间供重试。
+    async leaveForInvite(): Promise<boolean> {
+        if (this._disposed || this._leaving || this._startRequested || this._raceEntered) return false;
+        this._leaving = true; this.render();
+        // 尚未完成进房时立即允许离开界面；平台迟到的成功会在原队列内清理。
+        if (this._entryTask && !this._joined) return true;
+        try {
+            await serializeRoomOperation(async () => {
+                if ((this._joined || RoomFlow._networkOwner === this) && netRoom().currentAccessInfo()) await netRoom().leaveRoom();
+                this._joined = false;
+            });
+            this.stopRulesTimer();
+            return true;
+        } catch {
+            this._leaving = false;
+            this.setHint('退出房间失败，请重试');
+            return false;
+        }
     }
 
     // Whether this room is the one identified by the given accessInfo (share token).
@@ -992,9 +1053,24 @@ export class RoomFlow {
     }
 
     dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
         this.stopRulesTimer();
         this.clearStartTimeout();
-        netRoom().setCallbacks({});
+        if (this._entryTimer !== null) clearTimeout(this._entryTimer);
+        this._entryTimer = null;
+        if (RoomFlow._networkOwner === this) {
+            if (!this._raceEntered) netRoom().setCallbacks({});
+            RoomFlow._networkOwner = null;
+        }
+        if (!this._raceEntered && (this._joined || this._entryTask)) {
+            void serializeRoomOperation(async () => {
+                // 新房间已接管时不再执行旧界面的清理；待完成的进房在同一队列内先行取消。
+                if (RoomFlow._networkOwner && RoomFlow._networkOwner !== this) return;
+                if (netRoom().currentAccessInfo()) await netRoom().leaveRoom();
+                this._joined = false;
+            }).catch(error => console.warn('[房间] 取消连接后的清理失败', error));
+        }
         if (this._root?.isValid) {
             this._root.destroy();
         }
@@ -1004,7 +1080,18 @@ export class RoomFlow {
 }
 
 function encodeIdentity(avatarId: string, nickName: string): string {
-    return `${avatarId}${IDENTITY_SEP}${nickName}`;
+    const avatar = AVATARS.some(item => item.id === avatarId) ? avatarId : 'aqua';
+    let remaining = 32 - avatar.length - 1;
+    let name = '';
+    // memberExtInfo 按 UTF-8 字节限制；不能以 JS 字符数截断中文或表情。
+    for (const character of nickName || '玩家') {
+        const point = character.codePointAt(0)!;
+        const bytes = point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;
+        if (bytes > remaining) break;
+        name += character; remaining -= bytes;
+    }
+
+    return `${avatar}${IDENTITY_SEP}${name}`;
 }
 
 function parseIdentity(extInfo: string | undefined): { avatarId: string; nickName: string } {

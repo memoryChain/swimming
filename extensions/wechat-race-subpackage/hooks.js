@@ -8,6 +8,7 @@ const { assertUiFontPolicy } = require('../../scripts/ui-font-policy');
 const { applyWechatProjectConfig, assertWechatProjectOutput } = require('./wechat-project-config');
 const { compactBuiltMotions, assertBuiltMotionRuntime } = require('./sampled-motion-storage');
 const { auditWechatPackageOutput } = require('./wechat-package-budget');
+const { assertStartupCodeOutput, assertStartupSceneEntry } = require('./startup-code-policy');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -19,6 +20,8 @@ const SUBPACKAGE_GAME_ENTRY = "'use strict';\nrequire('./index.js');\n";
 const SUBPACKAGE_BUNDLES = [
     { name: 'race', root: 'db://assets/race', priority: 7 },
     { name: 'music', root: 'db://assets/music', priority: 6 },
+    { name: 'gameplay', root: 'db://assets/scripts', priority: 5 },
+    { name: 'startup-ui', root: 'db://assets/race/fonts/startup', priority: 9 },
 ];
 
 // WeChat lock-step (帧同步) options for wx.getGameServerManager(). gameTick is the
@@ -47,6 +50,7 @@ exports.onBeforeBuild = async function onBeforeBuild(options) {
     }
 
     applyWechatProjectConfig(options);
+    assertStartupSceneEntry(PROJECT_ROOT);
 
     // Do not silently publish newly imported large images or GLB-embedded images
     // without the project's tiered ASTC policy. The fixer must run before this
@@ -188,12 +192,14 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
         }
     }
     assertWechatProjectOutput(result.dest);
+    const startupAudit = assertStartupCodeOutput(result.dest);
+    console.log(`[startup-code] 主包脚本 ${(startupAudit.mainJsBytes / 1024).toFixed(1)} KiB；延迟业务脚本 ${(startupAudit.gameplayJsBytes / 1024).toFixed(1)} KiB。`);
     assertBuiltMotionRuntime(result.dest);
     const motionAudit = compactBuiltMotions(PROJECT_ROOT, result.dest);
     console.log(`[motion-storage] 无损压缩 ${motionAudit.motions} 个动作，节省 ${(motionAudit.savedBytes / 1024).toFixed(1)} KiB。`);
     const packageAudit = auditWechatPackageOutput(result.dest);
     console.log(
-        `[wechat-race-subpackage] generated and verified race/music subpackages; `
+        `[wechat-race-subpackage] generated and verified race/music/gameplay/startup-ui subpackages; `
         + `main package ${(packageAudit.mainBytes / 1024).toFixed(1)} KiB; `
         + `total ${(packageAudit.totalBytes / 1024).toFixed(1)} / 30720 KiB.`,
     );

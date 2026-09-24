@@ -41,13 +41,15 @@ export interface RaceModifierProfile {
 export interface RaceModifierDigest {
     characterId: string;
     level: number;
+    skinToneId?: string;
+    colorSchemeId?: string;
 }
 
 // The local player's digest, from their save (selected character + its progression level).
 export function resolveLocalModifierDigest(): RaceModifierDigest {
-    const characterId = getPlayerCharacterSelection().characterId;
+    const { characterId, skinToneId, colorSchemeId } = getPlayerCharacterSelection();
     const level = getProgressionManager().getCharacterLevel(characterId);
-    return { characterId, level };
+    return { characterId, level, skinToneId, colorSchemeId };
 }
 
 // Re-resolve a full profile from a digest using SHARED config (character definitions)

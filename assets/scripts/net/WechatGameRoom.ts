@@ -106,14 +106,28 @@ export class WechatGameRoom implements INetRoom {
     // True for the room creator (owner); owners must leave via ownerLeaveRoom.
     private _isOwner = false;
     private _localClientId: number | null = null;
+    private _localPos: number | null = null;
+    private _roomGeneration = 0;
+    private _pollingGameStart = false;
     private _localExtInfo = '';
 
     private adoptRoomOwnership(info: NetRoomInfo): void {
         if (!this._accessInfo) return;
+        if (info.localClientId !== undefined) this._localClientId = info.localClientId;
+        if (info.localPos !== undefined) this._localPos = info.localPos;
         const byId = this._localClientId === null ? undefined : info.members.find(m => m.clientId === this._localClientId);
         const byIdentity = info.members.filter(m => m.extInfo === this._localExtInfo);
-        const mine = byId ?? (byIdentity.length === 1 ? byIdentity[0] : undefined);
-        if (mine) this._isOwner = mine.owner === true;
+        const mine = this._localClientId !== null ? byId
+            : this._localPos !== null ? info.members.find(m => m.pos === this._localPos)
+            : byIdentity.length === 1 ? byIdentity[0] : undefined;
+        if (mine) {
+            this._isOwner = mine.owner === true;
+            this._localPos = mine.pos ?? this._localPos;
+            this._localClientId = mine.clientId ?? this._localClientId;
+        }
+        // getRoomInfo 通常不再携带本人字段；保活重赛仍需让新界面识别自己。
+        info.localClientId = this._localClientId ?? undefined;
+        info.localPos = this._localPos ?? undefined;
     }
     // Whether the lock-step frame channel (uploadFrame/onSyncFrame) actually works.
     // Optimistic until proven otherwise: on iOS high-performance(+) mode the room
@@ -170,9 +184,11 @@ export class WechatGameRoom implements INetRoom {
         const gsm = this.manager();
         this._roomEventsBound = true;
         this.safeOn('onBeKickedOut', () => gsm.onBeKickedOut?.(() => {
+            this._roomGeneration++; this._pollingGameStart = false;
             this._accessInfo = '';
             this._isOwner = false;
             this._localClientId = null;
+            this._localPos = null;
             this._localExtInfo = '';
             this._callbacks.onKicked?.();
         }));
@@ -299,19 +315,25 @@ export class WechatGameRoom implements INetRoom {
     // onGameStart still detects the game has started (roomState 2/5). Logs the state
     // so we can see the real value.
     private pollGameStart(attempt: number): void {
-        if (this._gameStartNotified || attempt >= 15) {
+        if (!this._accessInfo || this._gameStartNotified || attempt >= 15 || this._pollingGameStart) {
             return;
         }
+        const generation = this._roomGeneration;
+        this._pollingGameStart = true;
         this.getRoomInfo().then((info) => {
-            if (this._gameStartNotified) {
-                return;
-            }
+            if (generation !== this._roomGeneration) return;
+            if (this._gameStartNotified) { this._pollingGameStart = false; return; }
             const state = info ? info.state : undefined;
             netLog(`poll roomState=${state}`);
             if (isGameStartedRoomState(state)) {
+                this._pollingGameStart = false;
                 this.handleGameStarted('poll');
             } else {
-                setTimeout(() => this.pollGameStart(attempt + 1), 400);
+                setTimeout(() => {
+                    if (generation !== this._roomGeneration) return;
+                    this._pollingGameStart = false;
+                    this.pollGameStart(attempt + 1);
+                }, 400);
             }
         });
     }
@@ -336,8 +358,10 @@ export class WechatGameRoom implements INetRoom {
     }
 
     createRoom(options: CreateRoomOptions): Promise<NetRoomInfo> {
+        this._roomGeneration++; this._pollingGameStart = false;
         this._localExtInfo = options.memberExtInfo ?? '';
         this._localClientId = null;
+        this._localPos = null;
         const payload = {
             maxMemberNum: options.maxMembers,
             // startPercent = fraction of members that must have called startGame before
@@ -360,6 +384,8 @@ export class WechatGameRoom implements INetRoom {
                 this._accessInfo = info.accessInfo;
                 this._isOwner = true;
                 this._localClientId = unwrap(res)?.clientId ?? null;
+                this._localPos = info.localPos ?? null;
+                this.adoptRoomOwnership(info);
                 return info;
             })
             .catch((error: any) => {
@@ -369,8 +395,10 @@ export class WechatGameRoom implements INetRoom {
     }
 
     joinRoom(accessInfo: string, memberExtInfo?: string): Promise<NetRoomInfo> {
+        this._roomGeneration++; this._pollingGameStart = false;
         this._localExtInfo = memberExtInfo ?? '';
         this._localClientId = null;
+        this._localPos = null;
         this._isOwner = false;
         netLog('joinRoom ->', { accessInfo, memberExtInfo });
         return this.manager()
@@ -380,6 +408,7 @@ export class WechatGameRoom implements INetRoom {
                 const info = mapRoomInfo(res);
                 this._accessInfo = info.accessInfo || accessInfo;
                 this._localClientId = unwrap(res)?.clientId ?? null;
+                this._localPos = info.localPos ?? null;
                 this.adoptRoomOwnership(info);
                 return info;
             })
@@ -392,9 +421,11 @@ export class WechatGameRoom implements INetRoom {
     getRoomInfo(): Promise<NetRoomInfo | null> {
         // getRoomInfo does NOT support promise-style calls on WeChat — it must be
         // called with success/fail callbacks, which we wrap into a Promise here.
+        const generation = this._roomGeneration;
         return new Promise((resolve) => {
-            const timer = setTimeout(() => resolve(null), 8000);
-            const finish = (info: NetRoomInfo | null) => { clearTimeout(timer); resolve(info); };
+            let settled = false;
+            const finish = (info: NetRoomInfo | null) => { settled = true; clearTimeout(timer); resolve(info); };
+            const timer = setTimeout(() => finish(null), 8000);
             const gsm = this.manager();
             if (!gsm || typeof gsm.getRoomInfo !== 'function') {
                 finish(null);
@@ -403,6 +434,8 @@ export class WechatGameRoom implements INetRoom {
             try {
                 gsm.getRoomInfo({
                     success: (res: any) => {
+                        if (settled) return;
+                        if (generation !== this._roomGeneration) { finish(null); return; }
                         netLog('getRoomInfo result', res);
                         const info = mapRoomInfo(res);
                         this.adoptRoomOwnership(info);
@@ -453,6 +486,7 @@ export class WechatGameRoom implements INetRoom {
     }
 
     startGame(): Promise<void> {
+        const generation = this._roomGeneration;
         const gsm = this.manager();
         // Do NOT bind onSyncFrame here. Before the game has actually started the frame
         // emitter doesn't exist and gsm.onSyncFrame() throws; that premature failed bind
@@ -476,7 +510,9 @@ export class WechatGameRoom implements INetRoom {
                         // initialize (uploadFrame is gated on _gameStarted) and gives
                         // onGameStart / roomState a chance to fire first; handleGameStarted
                         // is idempotent so whichever lands first wins.
-                        setTimeout(() => this.handleGameStarted('startGame-success'), 1500);
+                        setTimeout(() => {
+                            if (generation === this._roomGeneration && this._accessInfo) this.handleGameStarted('startGame-success');
+                        }, 1500);
                         resolve();
                     },
                     fail: (error: any) => {
@@ -510,10 +546,12 @@ export class WechatGameRoom implements INetRoom {
     }
 
     broadcast(msg: string): void {
-        this.manager().broadcastInRoom({ msg });
-        // The host broadcasts START but does NOT call startGame (see RoomFlow), so it
-        // won't poll via startGame(); start watching for the game start here so the
-        // owner still detects it (roomState) even without receiving onGameStart.
+        // 广播是尽力投递；断网拒绝不能变成未处理异常，由上层补发关键房间消息。
+        try {
+            const result = this.manager().broadcastInRoom({ msg });
+            if (result?.then) result.then(undefined, () => undefined);
+        } catch { /* 等待下一次补发或用户重试。 */ }
+        // 一条轮询链补偿平台开赛通知，不能由每条广播启动新的轮询链。
         this.pollGameStart(0);
     }
 
@@ -536,8 +574,9 @@ export class WechatGameRoom implements INetRoom {
                 if (settled) return;
                 settled = true; clearTimeout(timer);
                 this._accessInfo = '';
+                this._roomGeneration++; this._pollingGameStart = false;
                 this._gameStarted = false; this._gameStartNotified = false;
-                this._isOwner = false; this._localClientId = null; this._localExtInfo = '';
+                this._isOwner = false; this._localClientId = null; this._localPos = null; this._localExtInfo = '';
                 this.unbindGameEvents();
                 resolve();
             };
@@ -644,6 +683,8 @@ function mapRoomInfo(res: any): NetRoomInfo {
         // to roomIdStr here: they are different values, and joining with roomIdStr fails
         // with errCode 4003. Leave it empty so callers keep the real token.
         accessInfo: room?.accessInfo ?? data.accessInfo ?? '',
+        localPos: Number.isInteger(data.myPos) && data.myPos >= 0 && data.myPos < 8 ? data.myPos : undefined,
+        localClientId: Number.isInteger(data.clientId) ? data.clientId : undefined,
         roomId: String(room?.roomIdStr ?? data.roomIdStr ?? room?.roomId ?? data.roomId ?? ''),
         members,
         ownerOpenId: room?.ownerOpenId ?? room?.owner,

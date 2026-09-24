@@ -1,3 +1,4 @@
+import { STARTUP_RESOURCES } from '../../startup/StartupResources';
 import type { SampledActionId } from '../character/SampledActionMotionCurve';
 import type { CharacterAbilityId } from './CharacterAbilityConfig';
 
@@ -402,13 +403,7 @@ export const RESOURCE_PATHS = {
         regular: 'fonts/ShuiMasterUI-Regular',
         semibold: 'fonts/ShuiMasterUI-SemiBold',
     },
-    loginUi: {
-        background: 'ui/paddle-master-login-v8/background/texture',
-        logo: 'ui/paddle-master-login-v8/logo/texture',
-        primaryButton: 'ui/paddle-master-login-v8/primary-button/texture',
-        primaryArrow: 'ui/paddle-master-login-v8/primary-arrow/texture',
-        onlineButton: 'ui/paddle-master-login-v8/online-button/texture',
-    },
+    loginUi: STARTUP_RESOURCES.loginUi,
     careerUi: {
         panelWhite: 'ui/career-v1/panel-white/texture',
         tagActive: 'ui/career-v1/tag-active/texture',
@@ -617,15 +612,7 @@ export const RESOURCE_PATHS = {
     },
     sampledActionsDir: TPOSE_ACTION_PROFILE_DIR,
     sampledActionsFilePrefix: 'Tpose_',
-    music: {
-        bundle: 'music',
-        login: 'login_ripples',
-        race: 'race_current',
-        result: 'result_sunlit_podium',
-        strokeSfx: [
-            'sfx/stroke_water_01',
-        ],
-    },
+    music: STARTUP_RESOURCES.music,
 };
 
 export function findSwimmerModelVariant(id: string): SwimmerModelVariant | null {

@@ -15,7 +15,6 @@ import { ResourceHeadBar } from '../ui/ResourceHeadBar';
 import { IdentityEditPanel } from '../ui/IdentityEditPanel';
 import { RoomFlow } from '../ui/RoomFlow';
 import { getUILayer, UILayer } from '../ui/UILayers';
-import { netRoom } from '../net/NetManager';
 import { ensureLogin } from '../platform/PlatformSession';
 import { platform } from '../platform/PlatformManager';
 import { rewardedAdUnitId } from '../platform/AdConfig';
@@ -27,6 +26,7 @@ import { SettingsManager } from './SettingsManager';
 import { SettingsPanel } from '../ui/SettingsPanel';
 import { MusicManager } from './MusicManager';
 import { PrepareRaceFlow } from '../ui/PrepareRaceFlow';
+import { takeStartupHandoff } from '../../startup/StartupHandoff';
 
 
 const { ccclass } = _decorator;
@@ -50,8 +50,12 @@ export class LoginManager extends Component {
     private _loginUiRetries = 0;
     private _offAppShow: (() => void) | null = null;
     private _adInProgress = false;
+    private _nextInvitedRoom: string | null = null;
+    private _switchingInvite = false;
+    private _destroyed = false;
 
     onLoad() {
+        const startup = takeStartupHandoff(this.node);
         const canvasNode = this.findCanvasNode();
         canvasNode.layer = Layers.Enum.UI_2D;
 
@@ -63,7 +67,6 @@ export class LoginManager extends Component {
         this._designHeight = height;
 
         this.setupUiCamera(canvasNode, height);
-        this.buildLoginScreen(canvasNode, width, height);
         SettingsManager.apply();
         MusicManager.playLogin();
         // Returning from a room-mode race: re-open the room once the login UI loads.
@@ -78,7 +81,7 @@ export class LoginManager extends Component {
         // it after a race would wrongly re-JOIN the (now in-game) room ("invalid room
         // state"). When returning from a race we reconnect instead and ignore it.
         if (!returningToRoom && !this._pendingOpenLobby) {
-            const invitedRoom = platform().getLaunchQuery().room;
+            const invitedRoom = startup?.joinRoomId ?? platform().getLaunchQuery().room;
             if (invitedRoom) {
                 this._pendingJoinRoomId = invitedRoom;
                 this._pendingOpenRoom = true;
@@ -104,6 +107,20 @@ export class LoginManager extends Component {
             onOpenSettings: () => this.openSettings(),
         });
         void PlayerData.load().then(() => getProgressionManager().migrateLegacySave());
+        // 首屏已完成渲染：复用节点并直接进入大厅，不能重新创建整套登录/HUD。
+        if (startup) {
+            this._loginUiRoot = startup.root;
+            if (this._pendingOpenRoom) {
+                this._pendingOpenRoom = false;
+                this.openRoom(this._pendingJoinRoomId, this._pendingReconnect);
+                this._pendingJoinRoomId = null;
+            } else {
+                this._pendingOpenLobby = false;
+                this.openPrepareRace();
+            }
+        } else {
+            this.buildLoginScreen(canvasNode, width, height);
+        }
     }
 
     // Lazily mount the authored avatar picker once. Reopening only resets its draft
@@ -180,6 +197,8 @@ export class LoginManager extends Component {
     }
 
     onDestroy() {
+        this._destroyed = true;
+        this._nextInvitedRoom = null;
         this._offAppShow?.();
         this._offAppShow = null;
         this._prepareRaceFlow?.dispose();
@@ -234,41 +253,34 @@ export class LoginManager extends Component {
     }
 
     private handleAppShowInvite(query: Record<string, string>) {
-        const invitedRoom = query && query.room;
-        if (!invitedRoom) {
-            return;
-        }
-        console.log(`[Room] onShow invite room=${invitedRoom} roomOpen=${!!this._roomFlow}`);
-        // Any deferred open (login screen still loading) is superseded by this invite.
+        const invitedRoom = query?.room;
+        if (!invitedRoom || this._destroyed) return;
         this._pendingOpenRoom = false;
         this._pendingJoinRoomId = null;
         this._pendingReconnect = false;
-        if (this._roomFlow) {
-            // Already in a room. If it's the SAME room, do nothing. Otherwise LEAVE the
-            // current room first, then join the friend's — previously this returned and
-            // silently did nothing, so tapping a friend's invite while already in a room
-            // left the player stuck in the old room ("一直加不到好友的房间里").
-            if (this._roomFlow.matchesRoom(invitedRoom)) {
-                return;
+        this._nextInvitedRoom = invitedRoom;
+        void this.followLatestInvite();
+    }
+
+    private async followLatestInvite(): Promise<void> {
+        if (this._switchingInvite) return;
+        this._switchingInvite = true;
+        try {
+            while (this._nextInvitedRoom && !this._destroyed && this._canvasNode?.isValid) {
+                const room = this._roomFlow;
+                if (room?.matchesRoom(this._nextInvitedRoom)) { this._nextInvitedRoom = null; return; }
+                if (room) {
+                    if (!await room.leaveForInvite()) { this._nextInvitedRoom = null; return; }
+                    if (this._destroyed || !this._canvasNode?.isValid) return;
+                    room.dispose();
+                    if (this._roomFlow === room) this._roomFlow = null;
+                }
+                // 等待退房期间收到更多邀请时，只进入最新房间。
+                const target = this._nextInvitedRoom;
+                this._nextInvitedRoom = null;
+                if (target) this.openRoom(target);
             }
-            this._roomFlow.dispose();
-            this._roomFlow = null;
-            this._headBar?.setBack(null);
-            // Leave the old room on the server BEFORE joining the new one (WeChat only
-            // allows membership in one room at a time; joining while still in the old one
-            // fails). Open the invited room once the leave settles.
-            netRoom()
-                .leaveRoom()
-                .catch(() => undefined)
-                .then(() => {
-                    if (this._canvasNode?.isValid && !this._roomFlow) {
-                        this.openRoom(invitedRoom);
-                    }
-                });
-            return;
-        }
-        // Open the invited room in JOIN mode right away (openRoom hides the login UI).
-        this.openRoom(invitedRoom);
+        } finally { this._switchingInvite = false; }
     }
 
     private openRoom(joinRoomId: string | null = null, reconnect = false) {
