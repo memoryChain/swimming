@@ -46,7 +46,12 @@ const STAND_ROW_RISE = 0.72;
 const SPECTATOR_SEAT_FORWARD_OFFSET = 0.22;
 const STAND_SECTION_COUNT = 6;
 const STAND_AISLE_WIDTH = 1.8;
-const SPECTATOR_SPACING = 1.1;
+const SPECTATOR_SPACING = 1.6;
+// 覆盖举手模板、上身缩放/偏移和朝向变化后的最大横向半宽。
+const SPECTATOR_HALF_WIDTH_FACTOR = 0.8;
+// 小片空座与独立座位采样叠加，避免每层重复同一排人。
+const SPECTATOR_OCCUPANCY = 0.66;
+const SPECTATOR_EMPTY_POCKET = 0.24;
 const FLASH_CANDIDATE_RATE = 0.22;
 const MAX_FLASH_CANDIDATES = 320;
 // The rebuilt grandstands have a shared access core at their longitudinal
@@ -197,11 +202,11 @@ export class SpectatorCrowdBuilder {
 
             let flashSiteCount = 0;
             try {
-                const flashPositions = buildCameraFlashPositions(buckets);
-                flashSiteCount = Math.floor(flashPositions.length / 3);
+                const flashSites = buildCameraFlashPositions(buckets);
+                flashSiteCount = flashSites.motions.length;
                 if (flashSiteCount > 0) {
                     flashEmitter = crowdRoot.addComponent(SpectatorCameraFlashEmitter);
-                    flashEmitter.configure(flashPositions);
+                    flashEmitter.configure(flashSites.positions, flashSites.motions, motionParents);
                 }
             } catch (error) {
                 console.warn('[SpeedSwimming] spectator camera flashes skipped', error);
@@ -219,6 +224,7 @@ export class SpectatorCrowdBuilder {
 
     private collectGrandstandSpectators(buckets: SpectatorSpec[][], stand: Grandstand) {
         const { name, bounds, sideSign, axis, rowCount, yaw, tier } = stand;
+        const standSeed = tier * 101 + (axis === 'x' ? 17 : 43) + (sideSign > 0 ? 211 : 397);
         const standLength = axis === 'x'
             ? bounds.maxX - bounds.minX
             : bounds.maxZ - bounds.minZ;
@@ -271,43 +277,38 @@ export class SpectatorCrowdBuilder {
                 // the venue (their Z coordinate starts around the east stand's X).
                 const sectionMinLong = (axis === 'x' ? bounds.minX : bounds.minZ)
                     + section * (sectionWidth + STAND_AISLE_WIDTH);
-                const columns = Math.max(4, Math.floor(sectionWidth / SPECTATOR_SPACING));
+                const columns = Math.max(1, Math.floor(sectionWidth / SPECTATOR_SPACING));
+                const cellWidth = sectionWidth / columns;
+                const seed = standSeed + section * 31;
                 for (let col = 0; col < columns; col++, globalColumn++) {
-                    // Irregular empty pockets keep the crowd from becoming a rigid
-                    // checkerboard while the six real stand aisles remain clear.
-                    const pocket = random01(Math.floor(col / 3), row, section, 43) * 0.09;
-                    if (random01(col, row, section + sideSign * 7, 17) < 0.13 + pocket) {
-                        continue;
-                    }
+                    if (!spectatorSeatOccupied(col, row, seed)) continue;
 
-                    const height = 0.66 + random01(row, col, section, 31) * 0.14;
-                    const width = 0.38 + random01(col, section, row, 37) * 0.10;
+                    const height = 0.60 + random01(row, col, seed, 31) * 0.28;
+                    const width = 0.36 + random01(col, seed, row, 37) * 0.16;
                     const longPosition = sectionMinLong
-                        + (col + 0.5) * (sectionWidth / columns)
-                        + jitter(row, col, section, 0.18);
-                    if (accessHalfWidth > 0 && Math.abs(longPosition - standCenterLong) < accessHalfWidth) {
+                        + spectatorSeatPosition(col, row, seed, cellWidth, width);
+                    if (accessHalfWidth > 0 && Math.abs(longPosition - standCenterLong) < accessHalfWidth + width * SPECTATOR_HALF_WIDTH_FACTOR) {
                         continue;
                     }
-                    const depthJitter = jitter(col, row, sideSign, rowDepth * 0.24);
+                    // 前后仅在座位内小幅变化；脚底仍落在真实台阶高度上。
+                    const depthJitter = jitter(col, row, seed, Math.min(0.32, rowDepth * 0.36));
                     const x = axis === 'x' ? longPosition : visibleSeatDepth + depthJitter;
                     const z = axis === 'x' ? visibleSeatDepth + depthJitter : longPosition;
                     const colorIndex = Math.floor(
-                        random01(col, row, section + sideSign * 11, 53) * SPECTATOR_COLORS.length,
+                        random01(col, row, seed, 53) * SPECTATOR_COLORS.length,
                     ) % SPECTATOR_COLORS.length;
-                    const wobbleIndex = tier <= 2 ? spectatorPose(random01(row, col, section, 71)) : 0;
+                    const wobbleIndex = tier <= 2 ? spectatorPose(random01(row, col, seed, 71)) : 0;
 
                     buckets[wobbleIndex * SPECTATOR_COLORS.length + colorIndex].push({
                         pos: new Vec3(x, seatY + height * 0.5 + 0.025, z),
                         width,
                         height,
-                        topWidthScale: 0.94 + random01(col, row, section, 79) * 0.12,
-                        topOffset: jitter(section, col, row, 0.06),
+                        topWidthScale: 0.94 + random01(col, row, seed, 79) * 0.12,
+                        topOffset: jitter(seed, col, row, 0.10),
                         row,
                         col: globalColumn,
                         side: sideSign,
-                        // Face inward toward the pool; small per-plane yaw/roll
-                        // jitter is applied again while building the mesh.
-                        yaw,
+                        yaw: yaw + jitter(col, row, seed, 14),
                         brightness,
                         saturation,
                         tier,
@@ -363,41 +364,40 @@ export class SpectatorCrowdBuilder {
             const depthUz = (depthEnd.z - origin.z) / depth;
             // Face inward toward the pool (facing = -depth axis).
             const yaw = Math.atan2(depthUx, depthUz) * 180 / Math.PI;
-            const columns = Math.max(5, Math.floor(length / SPECTATOR_SPACING));
+            const columns = Math.max(1, Math.floor(length / SPECTATOR_SPACING));
+            const cellWidth = length / columns;
             const salt = side.salt;
             for (const tier of tiers) {
                 const baseY = tierBaseY[tier];
+                const seed = tier * 101 + salt + 503;
                 for (let row = 0; row < FLAT_BLEACHER_ROW_COUNT; row++) {
                     const brightness = spectatorBrightness(tier);
                     const saturation = spectatorSaturation(tier);
                     const seatY = baseY + SEAT_SURFACE_LIFT + row * STAND_ROW_RISE;
                     const rowDepth = ((row + 0.5) / FLAT_BLEACHER_ROW_COUNT) * depth;
                     for (let col = 0; col < columns; col++) {
-                        if (random01(col, row, tier + salt, 29) < 0.15) {
-                            continue;
-                        }
-                        const along = ((col + 0.5) / columns) * length
-                            + jitter(row, col, tier + salt, 0.18);
+                        if (!spectatorSeatOccupied(col, row, seed)) continue;
+                        const height = 0.60 + random01(row, col, seed, 31) * 0.28;
+                        const width = 0.36 + random01(col, seed, row, 37) * 0.16;
+                        const along = spectatorSeatPosition(col, row, seed, cellWidth, width);
                         const dp = rowDepth - SPECTATOR_SEAT_FORWARD_OFFSET
-                            + jitter(col, row, tier + salt, depth * 0.12);
+                            + jitter(col, row, seed, Math.min(0.32, depth / FLAT_BLEACHER_ROW_COUNT * 0.36));
                         const x = origin.x + longUx * along + depthUx * dp;
                         const z = origin.z + longUz * along + depthUz * dp;
-                        const height = 0.66 + random01(row, col, tier + salt, 31) * 0.14;
-                        const width = 0.38 + random01(col, tier, row + salt, 37) * 0.10;
                         const colorIndex = Math.floor(
-                            random01(col, row, tier + salt + 11, 53) * SPECTATOR_COLORS.length,
+                            random01(col, row, seed, 53) * SPECTATOR_COLORS.length,
                         ) % SPECTATOR_COLORS.length;
-                        const wobbleIndex = tier <= 2 ? spectatorPose(random01(row, col, tier + salt, 71)) : 0;
+                        const wobbleIndex = tier <= 2 ? spectatorPose(random01(row, col, seed, 71)) : 0;
                         buckets[wobbleIndex * SPECTATOR_COLORS.length + colorIndex].push({
                             pos: new Vec3(x, seatY + height * 0.5 + 0.025, z),
                             width,
                             height,
-                            topWidthScale: 0.94 + random01(col, row, tier + salt, 79) * 0.12,
-                            topOffset: jitter(tier, col, row + salt, 0.06),
+                            topWidthScale: 0.94 + random01(col, row, seed, 79) * 0.12,
+                            topOffset: jitter(seed, col, row, 0.10),
                             row,
                             col,
                             side: 1,
-                            yaw,
+                            yaw: yaw + jitter(col, row, seed, 14),
                             brightness,
                             saturation,
                             tier,
@@ -438,35 +438,35 @@ function partitionSpectators(buckets: SpectatorSpec[][], regionCount: 4 | 6 | 8 
     return groups.filter(group => group.spectators.length > 0);
 }
 
-function buildCameraFlashPositions(buckets: SpectatorSpec[][]): Float32Array {
-    const selected: number[] = [];
+function buildCameraFlashPositions(buckets: SpectatorSpec[][]): { positions: Float32Array; motions: Uint8Array } {
+    const selected: SpectatorSpec[] = [];
     for (const bucket of buckets) {
         for (const spectator of bucket) {
             const positionSalt = Math.round((spectator.pos.x + spectator.pos.z) * 10);
             if (random01(spectator.row, spectator.col, positionSalt, 113) >= FLASH_CANDIDATE_RATE) {
                 continue;
             }
-            selected.push(
-                spectator.pos.x,
-                spectator.pos.y + spectator.height * 0.12,
-                spectator.pos.z,
-            );
+            selected.push(spectator);
         }
     }
-    const selectedCount = Math.floor(selected.length / 3);
-    if (selectedCount <= MAX_FLASH_CANDIDATES) {
-        return new Float32Array(selected);
-    }
-    const positions = new Float32Array(MAX_FLASH_CANDIDATES * 3);
-    const stride = selectedCount / MAX_FLASH_CANDIDATES;
-    for (let index = 0; index < MAX_FLASH_CANDIDATES; index++) {
-        const source = Math.min(selectedCount - 1, Math.floor((index + 0.5) * stride)) * 3;
+    const count = Math.min(selected.length, MAX_FLASH_CANDIDATES);
+    const positions = new Float32Array(count * 3);
+    const motions = new Uint8Array(count);
+    const stride = selected.length / Math.max(1, count);
+    const rotation = new Quat();
+    const point = new Vec3();
+    for (let index = 0; index < count; index++) {
+        const spectator = selected[Math.min(selected.length - 1, Math.floor((index + 0.5) * stride))];
+        // 从实际保留的观众生成脸前挂点，与网格共用朝向、上身偏移和动作父节点。
+        setSpectatorRotation(rotation, spectator);
+        transformSpectatorPoint(point, spectator, rotation, 0, 0.18, -0.26);
         const target = index * 3;
-        positions[target] = selected[source];
-        positions[target + 1] = selected[source + 1];
-        positions[target + 2] = selected[source + 2];
+        positions[target] = point.x;
+        positions[target + 1] = point.y;
+        positions[target + 2] = point.z;
+        motions[index] = spectator.pose;
     }
-    return positions;
+    return { positions, motions };
 }
 
 function addSpectatorGroup(
@@ -498,8 +498,7 @@ function buildSpectatorGeometry(spectators: SpectatorSpec[], baseColor: Color): 
         const template = SPECTATOR_TEMPLATES[spectator.tier - 1][spectator.pose];
         const base = positions.length / 3;
         // 坐姿保持竖直，避免倾斜令有厚度的底部穿入台阶。
-        Quat.fromEuler(rotation, -90,
-            spectator.yaw + jitter(spectator.col, spectator.side, spectator.row, 8), 0);
+        setSpectatorRotation(rotation, spectator);
         for (let vertex = 0; vertex < template.positions.length / 3; vertex++) {
             pushCorner(positions, point, minPos, maxPos, spectator, rotation,
                 template.positions[vertex * 3], template.positions[vertex * 3 + 2],
@@ -541,6 +540,25 @@ function pushCorner(
     zFactor: number,
     depthFactor: number,
 ) {
+    transformSpectatorPoint(point, spectator, rotation, xFactor, zFactor, depthFactor);
+    positions.push(point.x, point.y, point.z);
+    minPos.x = Math.min(minPos.x, point.x);
+    minPos.y = Math.min(minPos.y, point.y);
+    minPos.z = Math.min(minPos.z, point.z);
+    maxPos.x = Math.max(maxPos.x, point.x);
+    maxPos.y = Math.max(maxPos.y, point.y);
+    maxPos.z = Math.max(maxPos.z, point.z);
+}
+
+function setSpectatorRotation(rotation: Quat, spectator: SpectatorSpec) {
+    Quat.fromEuler(rotation, -90,
+        spectator.yaw + jitter(spectator.col, spectator.side, spectator.row, 8), 0);
+}
+
+function transformSpectatorPoint(
+    point: Vec3, spectator: SpectatorSpec, rotation: Quat,
+    xFactor: number, zFactor: number, depthFactor: number,
+) {
     // 远层保留标准矩形，不把顶部随机偏移变成斜四边形。
     const isTop = spectator.tier <= 2 && zFactor > 0;
     const widthScale = isTop ? spectator.topWidthScale : 1;
@@ -551,13 +569,6 @@ function pushCorner(
         spectator.height * zFactor);
     Vec3.transformQuat(point, point, rotation);
     point.add(spectator.pos);
-    positions.push(point.x, point.y, point.z);
-    minPos.x = Math.min(minPos.x, point.x);
-    minPos.y = Math.min(minPos.y, point.y);
-    minPos.z = Math.min(minPos.z, point.z);
-    maxPos.x = Math.max(maxPos.x, point.x);
-    maxPos.y = Math.max(maxPos.y, point.y);
-    maxPos.z = Math.max(maxPos.z, point.z);
 }
 
 function collectGrandstands(root: Node): Grandstand[] {
@@ -713,6 +724,18 @@ function spectatorSaturation(tier: number): number {
 
 function spectatorPose(value: number): number {
     return value < 0.72 ? 0 : value < 0.92 ? 1 : 2;
+}
+
+function spectatorSeatOccupied(col: number, row: number, seed: number): boolean {
+    const pocket = random01(Math.floor(col / 3), row, seed, 43) * SPECTATOR_EMPTY_POCKET;
+    return random01(col, row, seed, 17) < SPECTATOR_OCCUPANCY - pocket;
+}
+
+function spectatorSeatPosition(col: number, row: number, seed: number, cellWidth: number, width: number): number {
+    // 整排错位叠加个人偏移；按最大半宽留边，避免相邻人重叠或跨入过道。
+    const offset = cellWidth * (0.5 + jitter(row, seed, 0, 0.40) + jitter(col, row, seed, 0.50));
+    const margin = Math.min(cellWidth * 0.5, width * SPECTATOR_HALF_WIDTH_FACTOR + 0.04);
+    return col * cellWidth + Math.max(margin, Math.min(cellWidth - margin, offset));
 }
 
 function jitter(a: number, b: number, c: number, scale: number): number {

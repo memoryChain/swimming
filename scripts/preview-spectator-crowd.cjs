@@ -34,7 +34,7 @@ class Quat {
 }
 class Color { constructor(r, g, b, a = 255) { Object.assign(this, { r, g, b, a }); } }
 class Component {}
-class AuditFlashEmitter { configure(positions) { this.positions = positions; } }
+class AuditFlashEmitter { configure(positions, motions, parents) { this.positions = positions; this.motions = motions; this.parents = parents; } }
 const cc = { Vec3, Quat, Color, Component, _decorator: { ccclass: () => c => c, property: () => {} } };
 function load(source, filename, dependencies = {}) {
     const module = { exports: {} };
@@ -58,6 +58,8 @@ const current = load(fs.readFileSync(path.join(root, relative), 'utf8') + expose
 const baseline = process.argv[2] || 'HEAD';
 // 配色验收允许顶点色变化，但仍逐人检查全部几何、包围盒和落位。
 const paletteOnly = process.argv.includes('--palette-only');
+// 排布调整允许位置变化，但要求显著减少人数，并完整执行几何/分区/生命周期审计。
+const layoutChange = process.argv.includes('--layout-change');
 const comparisonGeometry = g => paletteOnly ? { ...g, colors: undefined } : g;
 const fromDirectory = fs.existsSync(baseline) && fs.statSync(baseline).isDirectory();
 const baselineSource = file => fromDirectory ? fs.readFileSync(path.join(baseline, path.basename(file)), 'utf8')
@@ -153,9 +155,15 @@ for (const [name, module] of [['before', previous], ['after', current]]) {
         for (let j = 0; j < 3; j++) assert(Math.abs(edges[0][j] + edges[2][j]) < 1e-9);
     }
 }
-assert.equal(report.before.spectators, report.after.spectators, '不改变观众数量和落位规则');
-assert.deepEqual(placements.before, placements.after, '保留所有观众位置与尺寸');
-assert.deepEqual(nearGeometry.before.map(comparisonGeometry), nearGeometry.after.map(comparisonGeometry), '未修改层的实际几何保持；非配色模式还检查颜色');
+if (layoutChange) {
+    const ratio = report.after.spectators / report.before.spectators;
+    assert(ratio >= 0.3 && ratio <= 0.65, '稀疏排布应保留原人数的 30%～65%');
+    assert(report.after.triangles < report.before.triangles * 0.65, '观众几何量应同步降低');
+} else {
+    assert.equal(report.before.spectators, report.after.spectators, '不改变观众数量和落位规则');
+    assert.deepEqual(placements.before, placements.after, '保留所有观众位置与尺寸');
+    assert.deepEqual(nearGeometry.before.map(comparisonGeometry), nearGeometry.after.map(comparisonGeometry), '未修改层的实际几何保持；非配色模式还检查颜色');
+}
 assert.equal(report.before.sampleTriangles[3], report.after.sampleTriangles[3], '第二层面数保持');
 // 装饰动画停用与节流：检查实际组件逻辑，而非只检查常量。
 const wobble = new current.SpectatorGroupWobble(); let writes = 0;
@@ -165,9 +173,9 @@ assert(writes <= 48); const count = writes;
 wobble.node.activeInHierarchy = false; wobble.update(1); assert.equal(writes, count);
 wobble.node.activeInHierarchy = true; wobble.update(0); assert.equal(writes, count);
 report.culling = require('./spectator-culling-audit.cjs')(current, collectedBuckets.after);
-report.runtime = require('./spectator-runtime-audit.cjs')(cc, current, scene, current.buildCameraFlashPositions(collectedBuckets.after));
+report.runtime = require('./spectator-runtime-audit.cjs')(cc, current, scene, current.buildCameraFlashPositions(collectedBuckets.after), report.after);
 // 分区前后的每个人仍使用相同模板、衣服色、肤色、尺寸和位置。
-if (fromDirectory && report.before.triangles === report.after.triangles) {
+if (!layoutChange && fromDirectory && report.before.triangles === report.after.triangles) {
     assert.deepEqual(current.buildCameraFlashPositions(collectedBuckets.before),current.buildCameraFlashPositions(collectedBuckets.after),'分区前后闪光候选及顺序保持');
     for (let i = 0; i < 15; i++) {
         assert.equal(collectedBuckets.before[i].length,collectedBuckets.after[i].length);

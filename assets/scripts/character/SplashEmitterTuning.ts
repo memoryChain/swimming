@@ -366,10 +366,6 @@ export const SPLASH_EMITTER_TUNING = {
             // Body emitters are ambient-only; drop them entirely for reduced swimmers.
             // 身体发射器纯属氛围，精简选手直接去掉。
             enableBody: false,
-            // Keep surface foam meshes so AI still visibly disturb the water; only the heavy CPU
-            // particle spray is trimmed. Set true to also skip foam for even fewer draw calls.
-            // 保留水面泡沫网格，让 AI 仍能看出扰动水面；只削减昂贵的 CPU 粒子飞溅。置 true 可连泡沫一并跳过。
-            disableFoam: false,
         },
 
         // Side lane offsets for left/right hand, lower-leg and body emitters.

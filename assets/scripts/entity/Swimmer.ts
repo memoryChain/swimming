@@ -853,6 +853,14 @@ export class Swimmer extends Component {
         this.cartoonRig?.setSplashCulled(culled);
     }
 
+    get distantSplashCulled(): boolean {
+        return this.cartoonRig?.distantSplashCulled ?? false;
+    }
+
+    setDistantSplashCulled(culled: boolean) {
+        this.cartoonRig?.setDistantSplashCulled(culled);
+    }
+
     setMotionThrottleStride(stride: number) {
         this.cartoonRig?.setMotionThrottleStride(stride);
     }

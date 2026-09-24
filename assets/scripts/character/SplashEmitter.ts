@@ -95,6 +95,47 @@ let _splashSprayTexture: Texture2D | null = null;
 const _splashParticleMaterials: Partial<Record<SplashParticleEmitterTuning['visual'], Material>> = {};
 const TUNING = SPLASH_EMITTER_TUNING;
 
+// 只在一次同步更新／事件内复用；下一次调用先失效，避免同帧多次姿态更新读到旧骨骼。
+class SplashBoneSamples {
+    private readonly points = Array.from({ length: 6 }, () => new Vec3());
+    private sampled = 0;
+    private valid = 0;
+
+    constructor(private readonly read: SplashEmitterOptions['getBoneWorldPosition']) {}
+
+    begin() {
+        this.sampled = 0;
+        this.valid = 0;
+    }
+
+    get(name: string, out: Vec3): boolean {
+        const index = name === 'LeftHand' ? 0 : name === 'RightHand' ? 1
+            : name === 'LeftFoot' ? 2 : name === 'RightFoot' ? 3
+                : name === 'FootFoam' ? 4 : name === 'Body' ? 5 : -1;
+        if (index < 0) return this.read(name, out);
+        const bit = 1 << index;
+        if (!(this.sampled & bit)) {
+            this.sampled |= bit;
+            const point = this.points[index];
+            let found: boolean;
+            if (name === 'FootFoam') {
+                // 与 FreestylePoseController 一致：双脚中点，缺一脚时用另一脚。
+                const left = this.get('LeftFoot', point);
+                const right = this.get('RightFoot', this.points[3]);
+                if (left && right) Vec3.lerp(point, point, this.points[3], 0.5);
+                else if (right) point.set(this.points[3]);
+                found = left || right;
+            } else {
+                found = this.read(name, point);
+            }
+            if (found) this.valid |= bit;
+        }
+        if (!(this.valid & bit)) return false;
+        out.set(this.points[index]);
+        return true;
+    }
+}
+
 // 用手骨下缘穿过水面判断拍水；前伸姿态本身不会触发。
 class HandWaterContact {
     readonly point = new Vec3();
@@ -144,9 +185,8 @@ class WorldWakeEmitter {
     private readonly point = new Vec3();
     private ready = false;
     private elapsed = 0;
-    private remaining = 0;
 
-    constructor(parent: Node, texture: Texture2D, private readonly reduced: boolean) {
+    constructor(private readonly parent: Node, texture: Texture2D, private readonly reduced: boolean) {
         this.node = new Node('WorldFootWake');
         this.node.setParent(parent);
         this.node.layer = parent.layer;
@@ -189,22 +229,20 @@ class WorldWakeEmitter {
         system.processor?.updateMaterialParams();
         // 材质只属于本节点，在节点生命周期结束时释放。
         this.node.on(Node.EventType.NODE_DESTROYED, () => material.destroy());
-        system.play();
+        keepSplashSystemAwake(system, false);
     }
 
     reset() {
         this.ready = false;
         this.elapsed = 0;
-        this.remaining = 0;
-        this.system.clear();
+        clearSplashSystem(this.system);
     }
 
     update(dt: number, waterY: number, speed: number, state: SplashEmitterState, options: SplashEmitterOptions): boolean {
-        this.remaining = Math.max(0, this.remaining - dt);
         this.elapsed += dt;
         if (state.legSplashSuppressed || speed < 0.3 || !options.getBoneWorldPosition('FootFoam', this.point)) {
             this.ready = false;
-            return this.remaining > 0;
+            return keepSplashSystemAwake(this.system, false);
         }
         this.point.y = waterY + 0.012;
         const distance = this.ready ? Vec3.squaredDistance(this.point, this.last) : 0;
@@ -214,14 +252,13 @@ class WorldWakeEmitter {
             this.node.setWorldPosition(this.point);
             const heading = -state.movementDirection * state.movementHeadingRadians;
             setCurveRange(this.system.startRotationZ, heading + (state.movementDirection < 0 ? Math.PI : 0) + randomRange(-0.25, 0.25));
-            this.system.play();
+            wakeSplashSystem(this.system, this.parent);
             (this.system as any).emit(1, 0);
             this.last.set(this.point);
             this.ready = true;
             this.elapsed = 0;
-            this.remaining = 1.15;
         }
-        return this.remaining > 0;
+        return keepSplashSystemAwake(this.system, false);
     }
 }
 
@@ -250,8 +287,13 @@ export class SplashEmitter {
     private _countSpeedFactor = 1;
     private readonly _reduced: boolean;
     private _lastRootYawDegrees = Number.NaN;
+    private _lastSpeedRatio = 0;
+    private readonly _boneSamples: SplashBoneSamples;
+    private readonly _sampleOptions: SplashEmitterOptions;
 
     constructor(private readonly _options: SplashEmitterOptions) {
+        this._boneSamples = new SplashBoneSamples(_options.getBoneWorldPosition);
+        this._sampleOptions = { ..._options, getBoneWorldPosition: (name, out) => this._boneSamples.get(name, out) };
         this._waterY = _options.waterY;
         this._reduced = _options.reduced === true;
         this.node = new Node(_options.name);
@@ -288,13 +330,11 @@ export class SplashEmitter {
                         this.node.active = true;
                         this._parts.length = 0;
                         const reduced = this._reduced;
-                        if (!(reduced && TUNING.particleEmitters.reduced.disableFoam)) {
-                            this._wake = new WorldWakeEmitter(this.node, surfaceTexture, reduced);
+                        // AI 和远端玩家使用 reduced 模式；路径泡沫和波纹只为本机主角创建。
+                        if (!reduced) {
+                            this._wake = new WorldWakeEmitter(this.node, surfaceTexture, false);
                             for (const part of TUNING.foam.parts) {
                                 if (!part.ripple) continue;
-                                if (reduced && part.ripple) {
-                                    continue;
-                                }
                                 this.createPart(material, part, surfaceTexture);
                             }
                         }
@@ -326,6 +366,8 @@ export class SplashEmitter {
 
     triggerStrokeFeedback(side: 'left' | 'right', perfect: boolean) {
         if (this._culled || !this._particleEffectsEnabled || !TUNING.particleEmitters.enableHand) return;
+        this._boneSamples.begin();
+        this.syncRootTransform(true);
         for (const emitter of this._particleEmitters) {
             if (emitter.role !== 'hand' || emitter.side !== side) continue;
             const progress = side === 'left' ? this._state.leftHandWaterProgress : this._state.rightHandWaterProgress;
@@ -360,12 +402,14 @@ export class SplashEmitter {
         const config = TUNING.takeoffImpact;
         const strength = clamp(scale / 2.6, 0, 1.5);
         if (strength <= 0) return;
+        this._boneSamples.begin();
+        this.syncRootTransform(true);
         const direction = this._state.movementDirection >= 0 ? 1 : -1;
         const heading = this._state.movementHeadingRadians;
         // 从当前身体接触点发射，之后由世界空间粒子留在起跳水面。
         if (contactPoint) {
             this._tmpTakeoffPoint.set(contactPoint);
-        } else if (!this._options.getBoneWorldPosition('Body', this._tmpTakeoffPoint)) {
+        } else if (!this._sampleOptions.getBoneWorldPosition('Body', this._tmpTakeoffPoint)) {
             this._tmpTakeoffPoint.set(this._options.owner.worldPosition);
         }
         this._tmpTakeoffPoint.y = this._waterY + config.height;
@@ -390,7 +434,7 @@ export class SplashEmitter {
             setCurveRangeTwoConstants(system.startSizeY, sheet ? config.sheetHeightMin * strength : 0.14, sheet ? config.sheetHeightMax * strength : 0.23);
             setCurveRangeTwoConstants(system.startSizeZ, sheet ? config.sheetWidthMin * strength : 0.14, sheet ? config.sheetWidthMax * strength : 0.23);
             if (system.shapeModule) { system.shapeModule.angle = sheet ? 8 : 24; system.shapeModule.radius = 0.06; }
-            system.play();
+            wakeSplashSystem(system, this.node);
             (system as any).emit(sheet ? 1 : config.dropCount, 0);
             if (!sheet) {
                 setCurveRangeTwoConstants(system.startSizeX, 0.055, 0.095);
@@ -434,6 +478,8 @@ export class SplashEmitter {
         this._armSplashBurst = Math.max(this._armSplashBurst, safeScale * TUNING.burst.armScale);
         this._kickSplashBurst = Math.max(this._kickSplashBurst, safeScale * TUNING.burst.kickScale);
         if (this._particleEffectsEnabled) {
+            this._boneSamples.begin();
+            this.syncRootTransform(true);
             for (const emitter of this._particleEmitters) {
                 const base = emitter.role === 'leg'
                     ? TUNING.behavior.legBurstCountMax
@@ -443,6 +489,7 @@ export class SplashEmitter {
                 const count = Math.max(1, Math.round(base * safeScale));
                 // speedRatio 1 = biggest/fastest particle profile; pullScale = safeScale
                 // pushes the plume higher/faster for an exaggerated "山峰" spray.
+                this.positionEmitterForCurrentState(emitter, this._lastSpeedRatio);
                 this.playParticleBurst(emitter, count, 1, safeScale);
             }
         }
@@ -480,15 +527,13 @@ export class SplashEmitter {
         }
         for (const emitter of this._particleEmitters) {
             this.clearParticleEmitter(emitter);
-            if (this._particleEffectsEnabled) {
-                emitter.node.active = true;
-                emitter.system.play();
-            }
         }
         this.update(0);
     }
 
     setVisible(active: boolean) {
+        // 姿态切换不能重新激活被距离或视锥裁剪的粒子根节点。
+        active = active && !this._culled;
         if (this.node.active !== active) {
             this.node.active = active;
         }
@@ -504,8 +549,7 @@ export class SplashEmitter {
             this._leftHandImpact.reset();
             this._rightHandImpact.reset();
             this._wake?.reset();
-            // Off-screen: stop simulating and clear residual particles/burst so nothing pops on return.
-            // 离屏：停止模拟并清空残留粒子/爆发值，避免回到画面时突然爆水花。
+            // 离屏或远离主角：停止模拟并清空残留，避免恢复显示时突然补发水花。
             this._splashBurst = 0;
             this._armSplashBurst = 0;
             this._kickSplashBurst = 0;
@@ -516,7 +560,7 @@ export class SplashEmitter {
                 emitter.sprayTime = 0;
                 emitter.sprayRate = 0;
                 emitter.sprayCarry = 0;
-                emitter.system.clear();
+                clearSplashSystem(emitter.system);
             }
             if (this.node?.isValid) {
                 this.node.active = false;
@@ -533,10 +577,6 @@ export class SplashEmitter {
         this._rightHandImpact.reset();
         for (const emitter of this._particleEmitters) {
             this.clearParticleEmitter(emitter);
-            emitter.node.active = enabled;
-            if (enabled) {
-                emitter.system.play();
-            }
         }
     }
 
@@ -559,22 +599,15 @@ export class SplashEmitter {
             return;
         }
 
-        this._leftHandImpact.update(this._options, 'LeftHand', this._waterY, this._state.legSplashSuppressed);
-        this._rightHandImpact.update(this._options, 'RightHand', this._waterY, this._state.legSplashSuppressed);
+        this._boneSamples.begin();
+        this._leftHandImpact.update(this._sampleOptions, 'LeftHand', this._waterY, this._state.legSplashSuppressed);
+        this._rightHandImpact.update(this._sampleOptions, 'RightHand', this._waterY, this._state.legSplashSuppressed);
         const speedRatio = clamp(speed / TUNING.speedNormalize, 0, 1);
+        this._lastSpeedRatio = speedRatio;
         this._countSpeedFactor = this.computeCountSpeedFactor(speed);
-        this.node.setPosition(this._options.owner.position.x, this._waterY, this._options.owner.position.z);
-        // Yaw the whole splash rig to the swimmer's travel heading. The internal foam
-        // and particle layout is built along the local lane axis (flipped by
-        // movementDirection); rotating the root about Y aligns that local forward with
-        // the actual world heading so splashes trail the body when it steers off-lane.
+        this.syncRootTransform();
         const direction = this._state.movementDirection >= 0 ? 1 : -1;
-        const yawDegrees = -direction * this._state.movementHeadingRadians * 180 / Math.PI;
-        if (yawDegrees !== this._lastRootYawDegrees) {
-            this.node.setRotationFromEuler(0, yawDegrees, 0);
-            this._lastRootYawDegrees = yawDegrees;
-        }
-        let anyActive = this._wake?.update(this._lastDt, this._waterY, speed, this._state, this._options) ?? false;
+        let anyActive = this._wake?.update(this._lastDt, this._waterY, speed, this._state, this._sampleOptions) ?? false;
         for (const part of this._parts) {
             if (part.node.name === 'EntryImpactRing') {
                 part.rippleTime = Math.max(0, part.rippleTime - this._lastDt);
@@ -605,7 +638,7 @@ export class SplashEmitter {
                     part.rippleTime = Math.max(0, part.rippleTime - this._lastDt);
                 }
                 part.lastHandEntry = handEntry;
-                this.keepHandRippleFrozen(part);
+                if (part.rippleTime > 0) this.keepHandRippleFrozen(part);
             }
             const handSignal = isHandRipple
                 ? clamp(part.rippleTime / TUNING.foam.handRippleLifetime, 0, 1)
@@ -656,8 +689,8 @@ export class SplashEmitter {
             if (!isHandRipple) {
                 this.resolvePartPosition(part, speedRatio, surge, isFoot, isHand, handContact);
             }
-            part.node.setRotationFromEuler(0, isFoot && direction < 0 ? 180 : 0, 0);
-            part.node.setScale(
+            setSplashEuler(part.node, 0, isFoot && direction < 0 ? 180 : 0, 0);
+            setSplashScale(part.node,
                 part.baseScale.x * part.rippleScale * footBoost * (1 + speedRatio * TUNING.foam.speedScaleX + surge * TUNING.foam.surgeScaleX),
                 1,
                 part.baseScale.z * part.rippleScale * footBoost * (1 + surge * TUNING.foam.surgeScaleZ),
@@ -672,10 +705,32 @@ export class SplashEmitter {
         if (this._particleEffectsEnabled) {
             this.updateParticleEmitters(speedRatio);
             for (const emitter of this._particleEmitters) {
-                anyActive = anyActive || emitter.keepAlive > 0;
+                // 不能用 keepAlive 倒计时决定显隐：连续喷射、慢帧和起跳可令实际寿命更长。
+                const active = keepSplashSystemAwake(emitter.system, emitter.sprayTime > 0 && emitter.sprayRate > 0);
+                anyActive = anyActive || active;
             }
         }
         if (this.node.active !== anyActive) this.node.active = anyActive;
+    }
+
+    private syncRootTransform(preserveRipples = false) {
+        const position = this._options.owner.position;
+        const current = this.node.position;
+        let changed = current.x !== position.x || current.y !== this._waterY || current.z !== position.z;
+        setSplashPosition(this.node, position.x, this._waterY, position.z);
+        const direction = this._state.movementDirection >= 0 ? 1 : -1;
+        const yaw = -direction * this._state.movementHeadingRadians * 180 / Math.PI;
+        if (yaw !== this._lastRootYawDegrees) {
+            this.node.setRotationFromEuler(0, yaw, 0);
+            this._lastRootYawDegrees = yaw;
+            changed = true;
+        }
+        // 事件可能发生在常规 update 之后；发射器跟上新姿态时，已有波纹仍需留在原水面。
+        if (preserveRipples && changed) {
+            for (const part of this._parts) {
+                if (part.rippleTime > 0) this.keepHandRippleFrozen(part);
+            }
+        }
     }
 
     // Map raw swim speed to an overall particle-count multiplier across the arm-cycle
@@ -887,12 +942,9 @@ export class SplashEmitter {
 
         system.bursts = [];
         system.clear();
-        if (this._particleEffectsEnabled) {
-            system.play();
-        } else {
-            node.active = false;
-        }
         applyParticleTexture(system, tuning.visual, tuning.role);
+        // 配置时完成 onLoad；没有粒子时连引擎 update / beforeRender 回调一起休眠。
+        keepSplashSystemAwake(system, false);
 
         this._particleEmitters.push({
             node,
@@ -940,20 +992,13 @@ export class SplashEmitter {
                 continue;
             }
 
-            const contact = emitter.side === 'left'
-                ? this._state.leftHandWaterContact
-                : this._state.rightHandWaterContact;
             const entry = emitter.side === 'left'
                 ? this._state.leftHandWaterEntry
                 : this._state.rightHandWaterEntry;
-            const progress = emitter.side === 'left'
-                ? this._state.leftHandWaterProgress
-                : this._state.rightHandWaterProgress;
             const burst = Math.max(
                 this._armSplashBurst * TUNING.behavior.handBurstArmWeight,
                 this._splashBurst * TUNING.behavior.handBurstGenericWeight,
             );
-            this.positionParticleEmitter(emitter, speedRatio, progress, Math.max(contact, entry));
             const impact = emitter.side === 'left' ? this._leftHandImpact : this._rightHandImpact;
             if (impact.triggered) {
                 const entryScale = lerp(TUNING.behavior.handEntryScaleMin, TUNING.behavior.handEntryScaleMax, clamp(entry, 0, 1));
@@ -961,13 +1006,14 @@ export class SplashEmitter {
                     + burst * TUNING.behavior.handBurstExtraCount) * entryScale);
                 if (emitter.visual === 'spray') this.playHandImpact(emitter, speedRatio);
                 else {
+                    this.orientParticleEmitter(emitter);
                     this._tmpWorld.set(impact.point);
                     this._tmpWorld.y += TUNING.handImpact.height;
                     emitter.node.setWorldPosition(this._tmpWorld);
                     this.playParticleBurst(emitter, clamp(count, TUNING.behavior.handBurstCountClampMin, TUNING.behavior.handBurstCountClampMax), speedRatio, entryScale);
                 }
             }
-            this.emitSprayFrame(emitter);
+            this.emitSprayFrame(emitter, speedRatio);
             emitter.lastContact = entry;
         }
         this._kickParticleBurstPending = false;
@@ -995,7 +1041,7 @@ export class SplashEmitter {
         const yaw = Math.atan2(direction * config.backwardWeight, -outward * config.outwardWeight) * 180 / Math.PI;
         emitter.node.setRotationFromEuler(config.elevation, yaw, 0);
         if (!this.node.active) this.node.active = true;
-        system.play();
+        wakeSplashSystem(system, this.node);
         const count = Math.round(lerp(config.countMin, config.countMax, speedRatio));
         (system as any).emit(count, 0);
         // 同一系统补少量细滴，无额外节点或材质；尺寸只在出生时采样。
@@ -1027,13 +1073,13 @@ export class SplashEmitter {
             0,
             TUNING.behavior.legSignalMax,
         );
-        this.positionParticleEmitter(emitter, speedRatio, 0, kickSignal);
         const entry = this.legEntryForEmitter(emitter);
         const entering = kickParticleBurstPending || (
             entry > TUNING.behavior.legEntryThreshold
             && emitter.lastContact <= TUNING.behavior.legLastEntryThreshold
         );
         if (entering) {
+            this.positionParticleEmitter(emitter, speedRatio, 0, kickSignal);
             const entryScale = lerp(TUNING.behavior.legEntryScaleMin, TUNING.behavior.legEntryScaleMax, clamp(entry, 0, 1));
             const strength = Math.max(kickSignal, entry);
             const count = Math.round(lerp(TUNING.behavior.legBurstCountMin, TUNING.behavior.legBurstCountMax, clamp(strength, 0, 1)));
@@ -1045,23 +1091,23 @@ export class SplashEmitter {
                 useHandSprayProfile ? entryScale : TUNING.behavior.legBurstPullScale * entryScale,
             );
         }
-        this.emitSprayFrame(emitter);
+        this.emitSprayFrame(emitter, speedRatio);
         emitter.lastContact = entry;
     }
 
     private updateBodyParticleEmitter(emitter: SplashParticleEmitter, speedRatio: number) {
         // Torso foam that pulses with the arm stroke rhythm (not a continuous faucet).
         // 躯干泡沫，跟随手臂划水节奏脉冲（不是持续水龙头）。
-        this.positionBodyParticleEmitter(emitter, speedRatio);
         const strokePulse = this._armSplashBurst;
         const risingEdge = emitter.lastContact <= TUNING.behavior.bodyPulseThreshold
             && strokePulse > TUNING.behavior.bodyPulseThreshold;
         if (risingEdge && speedRatio > TUNING.behavior.bodyEmitThreshold) {
+            this.positionBodyParticleEmitter(emitter, speedRatio);
             const strength = clamp(speedRatio + this._splashBurst * TUNING.behavior.bodySignalBurstWeight, 0, 1);
             const count = Math.round(lerp(TUNING.behavior.bodyBurstCountMin, TUNING.behavior.bodyBurstCountMax, strength));
             this.playParticleBurst(emitter, count, speedRatio * TUNING.behavior.bodyBurstSpeedScale, TUNING.behavior.bodyBurstPullScale);
         }
-        this.emitSprayFrame(emitter);
+        this.emitSprayFrame(emitter, speedRatio);
         emitter.lastContact = strokePulse;
     }
 
@@ -1072,13 +1118,38 @@ export class SplashEmitter {
         emitter.sprayTime = 0;
         emitter.sprayRate = 0;
         emitter.sprayCarry = 0;
-        emitter.system.stop();
-        emitter.system.clear();
+        clearSplashSystem(emitter.system);
+    }
+
+    private orientParticleEmitter(emitter: SplashParticleEmitter) {
+        const direction = this._state.movementDirection >= 0 ? 1 : -1;
+        setSplashEuler(emitter.node, TUNING.particleSystem.emitterEulerX,
+            direction * emitter.forwardTilt, direction * Math.abs(emitter.lateralTilt));
+    }
+
+    private positionEmitterForCurrentState(emitter: SplashParticleEmitter, speedRatio: number) {
+        if (emitter.role === 'body') {
+            this.positionBodyParticleEmitter(emitter, speedRatio);
+            return;
+        }
+        if (emitter.role === 'leg') {
+            const contact = clamp(speedRatio * TUNING.behavior.legSignalSpeedWeight
+                + this._state.kickCycleMotion * TUNING.behavior.legSignalCycleWeight
+                + this._state.kickAction * TUNING.behavior.legSignalActionWeight
+                + this._kickSplashBurst * TUNING.behavior.legSignalBurstWeight, 0, TUNING.behavior.legSignalMax);
+            this.positionParticleEmitter(emitter, speedRatio, 0, contact);
+            return;
+        }
+        const left = emitter.side === 'left';
+        this.positionParticleEmitter(emitter, speedRatio,
+            left ? this._state.leftHandWaterProgress : this._state.rightHandWaterProgress,
+            Math.max(left ? this._state.leftHandWaterContact : this._state.rightHandWaterContact,
+                left ? this._state.leftHandWaterEntry : this._state.rightHandWaterEntry));
     }
 
     private positionBodyParticleEmitter(emitter: SplashParticleEmitter, speedRatio: number) {
         const direction = this._state.movementDirection >= 0 ? 1 : -1;
-        if (this._options.getBoneWorldPosition('Body', this._tmpWorld)) {
+        if (this._sampleOptions.getBoneWorldPosition('Body', this._tmpWorld)) {
             this._tmpWorld.x += direction * (emitter.palmOffset.x - speedRatio * TUNING.behavior.bodySpeedBack);
             this._tmpWorld.y = this._waterY + emitter.palmOffset.y;
             this._tmpWorld.z += emitter.palmOffset.z;
@@ -1099,7 +1170,7 @@ export class SplashEmitter {
         const boneName = emitter.role === 'leg'
             ? this.legSplashBoneName(emitter)
             : emitter.side === 'left' ? 'LeftHand' : 'RightHand';
-        if (this._options.getBoneWorldPosition(boneName, this._tmpWorld)) {
+        if (this._sampleOptions.getBoneWorldPosition(boneName, this._tmpWorld)) {
             this._tmpWorld.x += direction * (emitter.palmOffset.x + speedRatio * TUNING.behavior.boneSpeedLead);
             if (emitter.role === 'leg') {
                 this._tmpWorld.y = this._waterY + emitter.palmOffset.y;
@@ -1111,7 +1182,7 @@ export class SplashEmitter {
             emitter.node.setPosition(this._tmpLocal);
             // All roles emit upward (cone along local -Z pitched up) so splash rises out of the water.
             // 所有角色都朝上发射（cone 本地 -Z 上仰），让水花冒出水面。
-            emitter.node.setRotationFromEuler(TUNING.particleSystem.emitterEulerX, direction * emitter.forwardTilt, direction * Math.abs(emitter.lateralTilt));
+            this.orientParticleEmitter(emitter);
             return;
         }
 
@@ -1124,7 +1195,7 @@ export class SplashEmitter {
             emitter.basePosition.y,
             emitter.basePosition.z,
         );
-        emitter.node.setRotationFromEuler(TUNING.particleSystem.emitterEulerX, direction * emitter.forwardTilt, direction * Math.abs(emitter.lateralTilt));
+        this.orientParticleEmitter(emitter);
     }
 
     private playParticleBurst(emitter: SplashParticleEmitter, count: number, speedRatio: number, pullScale: number) {
@@ -1159,8 +1230,7 @@ export class SplashEmitter {
         setCurveRangeTwoConstants(emitter.system.startSizeX, width * TUNING.behavior.sizeRangeMinScale, width * TUNING.behavior.sizeRangeMaxScale);
         setCurveRangeTwoConstants(emitter.system.startSizeY, height * TUNING.behavior.sizeRangeMinScale, height * TUNING.behavior.sizeRangeMaxScale);
         setCurveRangeTwoConstants(emitter.system.startSizeZ, width * TUNING.behavior.sizeRangeMinScale, width * TUNING.behavior.sizeRangeMaxScale);
-        this.node.active = true;
-        emitter.system.play();
+        wakeSplashSystem(emitter.system, this.node);
         const scaledCount = Math.max(TUNING.behavior.minimumScaledCount, Math.round(count * emitter.countScale * this._countSpeedFactor));
         const spraySeconds = !isHand && !useHandSprayProfile ? TUNING.behavior.legSpraySeconds : TUNING.behavior.handSpraySeconds;
         if (isPlume) {
@@ -1203,7 +1273,7 @@ export class SplashEmitter {
         return TUNING.particleSystem.roleWaterlineLifetimeCap[emitter.role] ?? TUNING.particleSystem.waterlineLifetimeCap;
     }
 
-    private emitSprayFrame(emitter: SplashParticleEmitter) {
+    private emitSprayFrame(emitter: SplashParticleEmitter, speedRatio: number) {
         if (emitter.sprayTime <= 0 || emitter.sprayRate <= 0) {
             return;
         }
@@ -1217,7 +1287,8 @@ export class SplashEmitter {
         }
 
         emitter.sprayCarry -= emitCount;
-        emitter.system.play();
+        this.positionEmitterForCurrentState(emitter, speedRatio);
+        wakeSplashSystem(emitter.system, this.node);
         this.emitJitteredParticles(emitter, emitCount, dt);
     }
 
@@ -1301,7 +1372,7 @@ export class SplashEmitter {
             return;
         }
 
-        const hasBonePosition = this._options.getBoneWorldPosition(part.node.name, this._tmpWorld);
+        const hasBonePosition = this._sampleOptions.getBoneWorldPosition(part.node.name, this._tmpWorld);
         if (hasBonePosition) {
             this._tmpWorld.y = this._waterY + part.basePosition.y + surge * TUNING.foam.surgeYOffset;
             this.node.inverseTransformPoint(this._tmpLocal, this._tmpWorld);
@@ -1339,8 +1410,46 @@ export class SplashEmitter {
         // Ripple nodes remain under the moving splash root, so transform the saved
         // water-entry point back to local space every frame to cancel parent motion.
         this.node.inverseTransformPoint(this._tmpLocal, part.frozenWorldPosition);
-        part.node.setPosition(this._tmpLocal);
+        setSplashPosition(part.node, this._tmpLocal.x, this._tmpLocal.y, this._tmpLocal.z);
     }
+}
+
+function wakeSplashSystem(system: ParticleSystem, root: Node) {
+    if (!root.active) root.active = true;
+    if (!system.enabled) system.enabled = true;
+    if (!system.isPlaying) system.play();
+}
+
+function keepSplashSystemAwake(system: ParticleSystem, pending: boolean): boolean {
+    if (system.getParticleCount() > 0 || pending) return true;
+    if (system.enabled) {
+        if (system.isPlaying) system.pause();
+        system.enabled = false;
+    }
+    return false;
+}
+
+function clearSplashSystem(system: ParticleSystem) {
+    // 3.8.8 的 clear() 在组件未激活时不清处理器；隐藏中重置也必须清掉旧粒子。
+    if (system.enabledInHierarchy) system.clear();
+    else system.processor?.clear();
+    if (system.isPlaying) system.pause();
+    if (system.enabled) system.enabled = false;
+}
+
+function setSplashPosition(node: Node, x: number, y: number, z: number) {
+    const position = node.position;
+    if (position.x !== x || position.y !== y || position.z !== z) node.setPosition(x, y, z);
+}
+
+function setSplashEuler(node: Node, x: number, y: number, z: number) {
+    const euler = node.eulerAngles;
+    if (euler.x !== x || euler.y !== y || euler.z !== z) node.setRotationFromEuler(x, y, z);
+}
+
+function setSplashScale(node: Node, x: number, y: number, z: number) {
+    const scale = node.scale;
+    if (scale.x !== x || scale.y !== y || scale.z !== z) node.setScale(x, y, z);
 }
 
 function clamp(value: number, min: number, max: number): number {

@@ -1,6 +1,6 @@
 // 对实际 build() 做节点生命周期检查；不替代 Creator 的渲染管线验证。
 const assert = require('node:assert/strict');
-module.exports = function auditRuntime(cc, current, poolScene, expectedFlashPositions) {
+module.exports = function auditRuntime(cc, current, poolScene, expectedFlashSites, expectedGeometry) {
     class Node {
         constructor(name) { this.name=name; this.children=[]; this.components=[]; this.position=new cc.Vec3(); this.active=true; this.isValid=true; this.writes=0; }
         setParent(parent) { this.parent=parent; parent.children.push(this); }
@@ -19,16 +19,19 @@ module.exports = function auditRuntime(cc, current, poolScene, expectedFlashPosi
     for (let rebuild=0;rebuild<3;rebuild++) {
         const emitter=new current.SpectatorCrowdBuilder().build(root,poolScene);
         assert(emitter,'闪光组件应创建成功');
-        assert.deepEqual(emitter.positions,expectedFlashPositions,'闪光候选与顺序保持');
+        assert.deepEqual(emitter.positions,expectedFlashSites.positions,'闪光候选与顺序保持');
+        assert.deepEqual(emitter.motions,expectedFlashSites.motions,'闪光动作组与候选一一对应');
+        assert.equal(emitter.parents.length,3);
+        for (const motion of emitter.motions) assert(emitter.parents[motion]?.isValid, '每个闪光挂点都有有效动作父节点');
         if(previous) assert.equal(previous.isValid,false);
         const crowd=root.getChildByName('SpectatorCrowd'); previous=crowd;
         const nodes=nodesOf(crowd), renderers=nodes.flatMap(n=>n.components.filter(c=>c instanceof MeshRenderer));
         assert(nodes.every(n=>n.layer===current.SPECTATOR_LAYER),'延迟创建的所有观众节点必须在专用层');
         const animations=nodes.flatMap(n=>n.components.filter(c=>c instanceof current.SpectatorGroupWobble));
-        assert.equal(renderers.length,18); assert.equal(animations.length,2);
+        assert.equal(renderers.length,expectedGeometry.groups); assert(renderers.length<=18); assert.equal(animations.length,2);
         assert.equal(new Set(renderers.map(r=>r.material)).size,1);
-        assert.equal(renderers.reduce((n,r)=>n+r.mesh.indices.length/3,0),15280);
-        assert.equal(nodes.filter(n=>n.name.startsWith('SpectatorRegion')).length,18);
+        assert.equal(renderers.reduce((n,r)=>n+r.mesh.indices.length/3,0),expectedGeometry.triangles);
+        assert.equal(nodes.filter(n=>n.name.startsWith('SpectatorRegion')).length,expectedGeometry.groups);
         if(expectedCount===undefined) expectedCount=nodes.length;
         assert.equal(nodes.length,expectedCount,'重建后节点数不增长');
         for(const animation of animations) {
@@ -41,5 +44,5 @@ module.exports = function auditRuntime(cc, current, poolScene, expectedFlashPosi
         crowd.active=true; for(const a of animations) a.update(0);
         assert.deepEqual(animations.map(a=>a.node.writes),writes,'暂停后不更新动画');
     }
-    return {renderers:18,materials:1,animationComponents:2,rebuilds:3,nodes:expectedCount};
+    return {renderers:expectedGeometry.groups,materials:1,animationComponents:2,rebuilds:3,nodes:expectedCount};
 };

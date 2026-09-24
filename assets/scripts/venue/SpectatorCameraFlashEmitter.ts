@@ -49,6 +49,8 @@ let sharedFlashMaterial: Material | null = null;
 @ccclass('SpectatorCameraFlashEmitter')
 export class SpectatorCameraFlashEmitter extends Component {
     private _positions = new Float32Array(0);
+    private _positionMotions = new Uint8Array(0);
+    private _motionParents: readonly Node[] = [];
     private _visiblePositionIndices = new Uint16Array(0);
     private _visiblePositionCount = 0;
     private _visibilityCamera: Camera | null = null;
@@ -64,8 +66,10 @@ export class SpectatorCameraFlashEmitter extends Component {
     private _densityMultiplier = START_DENSITY_MULTIPLIER;
     private _targetDensityMultiplier = START_DENSITY_MULTIPLIER;
 
-    configure(positions: Float32Array) {
+    configure(positions: Float32Array, motions: Uint8Array, motionParents: readonly Node[]) {
         this._positions = positions;
+        this._positionMotions = motions;
+        this._motionParents = motionParents;
         this._visiblePositionIndices = new Uint16Array(Math.floor(positions.length / 3));
         this._visiblePositionCount = 0;
         if (positions.length < 3) {
@@ -141,6 +145,8 @@ export class SpectatorCameraFlashEmitter extends Component {
             this._system.stop();
         }
         this._positions = new Float32Array(0);
+        this._positionMotions = new Uint8Array(0);
+        this._motionParents = [];
         this._visiblePositionIndices = new Uint16Array(0);
         this._visiblePositionCount = 0;
         this._visibilityCamera = null;
@@ -160,12 +166,7 @@ export class SpectatorCameraFlashEmitter extends Component {
         let visibleCount = 0;
         const positionCount = Math.floor(this._positions.length / 3);
         for (let positionIndex = 0; positionIndex < positionCount; positionIndex++) {
-            const offset = positionIndex * 3;
-            this._visibilityCenter.set(
-                this._positions[offset],
-                this._positions[offset + 1],
-                this._positions[offset + 2],
-            );
+            if (!this.resolvePosition(positionIndex, this._visibilityCenter)) continue;
             geometry.AABB.set(
                 this._visibilityBounds,
                 this._visibilityCenter.x,
@@ -240,12 +241,7 @@ export class SpectatorCameraFlashEmitter extends Component {
             positionIndex = this._visiblePositionIndices[visibleSlot];
         }
         this._lastPositionIndex = positionIndex;
-        const offset = positionIndex * 3;
-        this._emitPosition.set(
-            this._positions[offset],
-            this._positions[offset + 1],
-            this._positions[offset + 2],
-        );
+        if (!this.resolvePosition(positionIndex, this._emitPosition)) return;
         this._emitterNode!.setWorldPosition(this._emitPosition);
         const system = this._system!;
         (system as unknown as { emit: (count: number, step: number) => void }).emit(1, Math.min(dt, 0.05));
@@ -256,6 +252,16 @@ export class SpectatorCameraFlashEmitter extends Component {
         if (!processor?.getModel?.()?.scene) {
             processor?.attachToScene?.();
         }
+    }
+
+    private resolvePosition(index: number, out: Vec3): boolean {
+        const parent = this._motionParents[this._positionMotions[index]];
+        if (!parent?.isValid || !parent.activeInHierarchy) return false;
+        const offset = index * 3;
+        out.set(this._positions[offset], this._positions[offset + 1], this._positions[offset + 2]);
+        // 合批顶点和挂点在同一局部空间；筛选与发射都使用父节点的最新变换。
+        Vec3.transformMat4(out, out, parent.worldMatrix);
+        return true;
     }
 }
 

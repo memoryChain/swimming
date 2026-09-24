@@ -611,21 +611,33 @@ export class GameManager extends Component {
             // 关闭裁剪：确保没有选手仍处于裁剪状态，方便对比开/关的性能差异。
             for (const swimmer of this._aiSwimmers) {
                 swimmer?.setSplashCulled(false);
+                swimmer?.setDistantSplashCulled(false);
             }
             return;
         }
         const frustum = this._cameraNode?.getComponent(Camera)?.camera?.frustum ?? null;
         const marginXZ = PERFORMANCE_CONFIG.splash.visibilityMarginXZ;
         const marginY = PERFORMANCE_CONFIG.splash.visibilityMarginY;
-        const playerX = playerNode.position.x;
+        const playerPosition = playerNode.worldPosition;
+        const playerX = playerPosition.x;
+        const playerZ = playerPosition.z;
+        const enableDistanceSq = PERFORMANCE_CONFIG.splash.opponentEnableDistance ** 2;
+        const disableDistanceSq = PERFORMANCE_CONFIG.splash.opponentDisableDistance ** 2;
         for (const swimmer of this._aiSwimmers) {
             const node = swimmer?.node;
             if (!node?.isValid) {
                 continue;
             }
+            const pos = node.worldPosition;
+            const dx = pos.x - playerX;
+            const dz = pos.z - playerZ;
+            const distanceSq = dx * dx + dz * dz;
+            const distanceCulled = swimmer.distantSplashCulled
+                ? distanceSq > enableDistanceSq
+                : distanceSq >= disableDistanceSq;
+            swimmer.setDistantSplashCulled(distanceCulled);
             let culled: boolean;
             if (frustum) {
-                const pos = node.position;
                 this._tmpSplashCullCenter.set(pos.x, pos.y, pos.z);
                 geometry.AABB.set(
                     this._splashCullAabb,
@@ -636,13 +648,13 @@ export class GameManager extends Component {
             } else {
                 // Fallback before the camera frustum is available: 1D X-distance window.
                 // 相机视锥不可用时的回退：一维 X 距离窗口。
-                culled = Math.abs(node.position.x - playerX) > PERFORMANCE_CONFIG.splash.cullingDistanceX;
+                culled = Math.abs(dx) > PERFORMANCE_CONFIG.splash.cullingDistanceX;
             }
             swimmer.setSplashCulled(culled);
             if (!culled) {
                 // On-screen AI: pick a pose-update stride from distance-based LOD tiers (nearer = higher fps).
                 // 屏内 AI：按距离分级选姿态更新 stride（越近帧率越高）。
-                swimmer.setMotionThrottleStride(this.motionStrideForDistance(Math.abs(node.position.x - playerX)));
+                swimmer.setMotionThrottleStride(this.motionStrideForDistance(Math.abs(dx)));
             }
         }
     }
@@ -699,6 +711,7 @@ export class GameManager extends Component {
         if (!this._splashCullingEnabled) {
             for (const swimmer of this._aiSwimmers) {
                 swimmer?.setSplashCulled(false);
+                swimmer?.setDistantSplashCulled(false);
             }
         }
         this.debug(`splash culling=${this._splashCullingEnabled ? 'ON' : 'OFF'}`);

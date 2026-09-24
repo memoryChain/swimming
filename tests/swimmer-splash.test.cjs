@@ -16,8 +16,11 @@ function evaluate(source, globals = {}) {
 const TUNING = evaluate(fs.readFileSync(path.join(root, 'assets/scripts/character/SplashEmitterTuning.ts'), 'utf8')).SPLASH_EMITTER_TUNING;
 const source = ts.createSourceFile('SplashEmitter.ts', fs.readFileSync(path.join(root, 'assets/scripts/character/SplashEmitter.ts'), 'utf8'), ts.ScriptTarget.Latest, true);
 const cls = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text === 'SplashEmitter');
+const utilities = evaluate(source.statements.filter(n => ts.isFunctionDeclaration(n)
+    && ['wakeSplashSystem', 'keepSplashSystemAwake', 'clearSplashSystem', 'setSplashPosition'].includes(n.name?.text))
+    .map(n => 'export ' + n.getText(source)).join('\n'));
 function method(name, globals) {
-    return evaluate(`export class Subject { ${cls.members.find(n => n.name?.getText(source) === name).getText(source)} }`, { TUNING, ...globals }).Subject;
+    return evaluate(`export class Subject { ${cls.members.find(n => n.name?.getText(source) === name).getText(source)} }`, { TUNING, ...utilities, ...globals }).Subject;
 }
 test('尾流在正向、反向和转向时始终落在双脚后方', () => {
     const math = createHarness();
@@ -28,6 +31,7 @@ test('尾流在正向、反向和转向时始终落在双脚后方', () => {
         h._state = { movementDirection: direction };h._waterY = 0;h._tmpWorld = new Vec3();h._tmpLocal = new Vec3();
         const foot = new Node(h.node, -direction, 0, 0);
         h._options = { getBoneWorldPosition: (_, out) => { foot.getWorldPosition(out); return true; } };
+        h._sampleOptions = h._options;
         const part = { node: new Node(h.node), basePosition: new Vec3(0, 0.005, 0) };
         h.resolvePartPosition(part, 1, 0, true, false, 0);
         assert(direction * (part.node.position.x - foot.position.x) < -0.3);
@@ -57,9 +61,9 @@ test('路径泡沫按移动距离采样，静止和离水不持续发射，瞬�
     const math = createHarness();const { Vec3 } = math;
     const wake = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text === 'WorldWakeEmitter');
     const update = wake.members.find(n => n.name?.getText(source) === 'update').getText(source);
-    const { Subject } = evaluate(`export class Subject { ${update} }`, { Vec3, setCurveRange() {}, randomRange: () => 0 });
+    const { Subject } = evaluate(`export class Subject { ${update} }`, { Vec3, ...utilities, setCurveRange() {}, randomRange: () => 0 });
     const h = new Subject();let count = 0;let position = new Vec3();
-    Object.assign(h,{remaining:0,elapsed:0,ready:false,reduced:false,point:new Vec3(),last:new Vec3(),node:{setWorldPosition(){}},system:{play(){},emit(){count++;}}});
+    Object.assign(h,{elapsed:0,ready:false,reduced:false,parent:{active:true},point:new Vec3(),last:new Vec3(),node:{setWorldPosition(){}},system:{play(){},emit(){count++;},getParticleCount:()=>count}});
     const state = {legSplashSuppressed:false,movementDirection:1,movementHeadingRadians:0};
     const options={getBoneWorldPosition(_,out){out.set(position);return true;}};
     for(let i=0;i<120;i++)h.update(1/60,0,3,state,options);
@@ -148,7 +152,7 @@ test('水滴与水片消费同一次真实接触，前伸信号不会提前喷�
     h._state={leftHandWaterContact:1,leftHandWaterEntry:1,leftHandWaterProgress:0};
     h._armSplashBurst=0;h._splashBurst=0;
     h._particleEmitters=['spray','plume'].map(visual=>({role:'hand',side:'left',visual,cooldown:1,node:{setWorldPosition:p=>assert.equal(p.x,3)}}));
-    h.positionParticleEmitter=()=>{};h.emitSprayFrame=()=>{};
+    h.orientParticleEmitter=()=>{};h.emitSprayFrame=()=>{};
     h.playHandImpact=()=>hits.push('spray');h.playParticleBurst=()=>hits.push('plume');
     h.updateParticleEmitters(.5);assert.equal(hits.length,0);
     h._leftHandImpact.triggered=true;h.updateParticleEmitters(.5);
@@ -176,6 +180,7 @@ test('起跳点只发一张主水片和两侧少量飞溅，波纹留在水面',
  const Subject=method('triggerTakeoffSurfaceBurst',{clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),setCurveRange:()=>{},setCurveRangeTwoConstants:()=>{}});
  const h=new Subject(),counts=[],positions=[];
  Object.assign(h,{_culled:false,_particleEffectsEnabled:true,_state:{movementDirection:1,movementHeadingRadians:0},_waterY:.15,_tmpWorld:new Vec3(),_tmpTakeoffPoint:new Vec3(),node:{active:false},_options:{getBoneWorldPosition:(_,v)=>{v.set(3,4,5);return true;}}});
+ h._sampleOptions=h._options;h._boneSamples={begin(){}};h.syncRootTransform=()=>{};
  h._particleEmitters=[];
  for(const side of ['left','right'])for(const visual of ['plume','spray'])h._particleEmitters.push({role:'hand',side,visual,node:{setWorldPosition:v=>positions.push({...v}),setRotationFromEuler(){}},system:{shapeModule:{},play(){},emit:n=>counts.push([visual,n])}});
  const ring={node:{name:'LeftHandRipple'},frozenWorldPosition:new Vec3(),basePosition:new Vec3(0,.01,0),rippleScale:1};h._parts=[ring];h.keepHandRippleFrozen=()=>{};

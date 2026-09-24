@@ -48,6 +48,11 @@ export const PERFORMANCE_CONFIG = {
         // 因此能正确处理缩放和非横版机位，而非粗暴的 X 距离估算。此为启动默认值；预览中按 K 可运行时切换。
         cullingEnabled: true,
 
+        // 按本机主角与对手的水平世界距离（米）裁剪水花，与姿态离屏冻结分开。
+        // 8～10 米之间保持当前状态；本机主角始终保留完整水花。
+        opponentEnableDistance: 8,
+        opponentDisableDistance: 10,
+
         // World-space margin (meters) added around each swimmer when frustum-testing. Padding avoids
         // popping a swimmer whose body/splash still pokes into view while its origin just left the frame.
         // XZ pads the horizontal spread; Y pads the small vertical splash column.

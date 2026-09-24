@@ -316,6 +316,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private readonly _headBounds = new CharacterHeadBounds();
     private readonly _handContact = new CharacterHandContact();
     private _splashCulled = false;
+    private _distantSplashCulled = false;
     private _motionThrottleStride = 1;
     private _motionThrottleCountdown = 0;
     private _motionThrottleAccumDt = 0;
@@ -356,6 +357,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 reduced: reducedSplash,
             });
             this.splashNode = this._splashEmitter.node;
+            this._splashEmitter.setCulled(this._splashCulled || this._distantSplashCulled);
             this._splashEmitter.build();
             // Underwater bubbles: player only (skip reduced-LOD AI). Parented under
             // the splash node so it inherits the swimmer overlay-layer tagging and
@@ -1005,7 +1007,18 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this._splashCulled = culled;
-        this._splashEmitter?.setCulled(culled);
+        this._splashEmitter?.setCulled(culled || this._distantSplashCulled);
+    }
+
+    get distantSplashCulled(): boolean {
+        return this._distantSplashCulled;
+    }
+
+    // 距离裁剪只停水花；屏内远处选手仍按原有姿态 LOD 正常游泳。
+    setDistantSplashCulled(culled: boolean) {
+        if (this._distantSplashCulled === culled) return;
+        this._distantSplashCulled = culled;
+        this._splashEmitter?.setCulled(culled || this._splashCulled);
     }
 
     // The race uses a world-space waterline shader, while presentation spaces
@@ -2264,6 +2277,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     private updateSplashSurface(speed: number) {
+        if (this._splashCulled || this._distantSplashCulled) return;
         this.syncSplashState();
         this._splashEmitter?.update(speed);
     }
