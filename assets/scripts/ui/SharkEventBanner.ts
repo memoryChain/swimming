@@ -45,7 +45,8 @@ export type EntertainmentBannerCategory =
     | '咬伤播报';
 
 const EVENT_WIDTH = 840;
-const EVENT_COMPACT_WIDTH = 650;
+// 画中画占位后，1280px 设计宽度下横幅约为 643px；此时图标和栏目仍放得下。
+const EVENT_COMPACT_WIDTH = 520;
 const EVENT_HEIGHT = 98;
 const EVENT_Y = 180;
 const EVENT_ICON_SIZE = 72;
