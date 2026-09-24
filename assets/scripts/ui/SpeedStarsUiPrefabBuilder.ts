@@ -126,16 +126,18 @@ export class SpeedStarsUiPrefabBuilder {
                 return;
             }
             try {
-                preloadRaceStartUi((assetError) => {
-                    if (!parent.isValid) return;
-                    if (assetError) { done(assetError); return; }
-                    preloadRaceHudStatus((hudError) => {
-                        if (!parent.isValid) return;
-                        if (hudError) { done(hudError); return; }
-                        try { done(null, this.instantiateUi(parent, prefab)); }
-                        catch (error) { done(error instanceof Error ? error : new Error(`${error}`)); }
-                    });
-                });
+                let remaining = 2;
+                let settled = false;
+                const complete = (assetError: Error | null) => {
+                    if (settled || !parent.isValid) return;
+                    if (assetError) { settled = true; done(assetError); return; }
+                    if (--remaining > 0) return;
+                    settled = true;
+                    try { done(null, this.instantiateUi(parent, prefab)); }
+                    catch (error) { done(error instanceof Error ? error : new Error(`${error}`)); }
+                };
+                preloadRaceStartUi(complete);
+                preloadRaceHudStatus(complete);
             } catch (error) {
                 done(error instanceof Error ? error : new Error(`${error}`));
             }

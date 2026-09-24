@@ -126,6 +126,7 @@ export class NetRaceController {
     // ready (host tracks all; clients just broadcast). GO fires once everyone is ready.
     private readonly _readyPoses = new Set<number>();
     private _raceReadyReported = false;
+    private _goReceivedEarly = false;
     private _countdownStarted = false;
     private _countdownStartListener: (() => void) | null = null;
     private _goTimeoutHandle: any = null;
@@ -521,10 +522,11 @@ export class NetRaceController {
     // Called when this client's pre-race showcase is ready. The host tracks all-ready
     // and issues GO; a client just reports itself ready and waits for GO. Idempotent.
     reportRaceReady(): void {
-        if (this._raceReadyReported) {
+        if (this._disposed || this._raceReadyReported) {
             return;
         }
         this._raceReadyReported = true;
+        if (this._goReceivedEarly) { this.triggerCountdownFromGo(); return; }
         if (this.isHost) {
             this._readyPoses.add(this._session.localPos);
             // Fallback: don't wait forever for a stuck member — GO after a few seconds.
@@ -546,6 +548,7 @@ export class NetRaceController {
     }
 
     private maybeStartCountdown(): void {
+        if (this._disposed || !this._raceReadyReported) return;
         // Host only: have all room members reported ready?
         const allReady = this._session.members.every((m) => m.pos < 0 || this._readyPoses.has(m.pos));
         if (allReady) {
@@ -554,7 +557,7 @@ export class NetRaceController {
     }
 
     private broadcastGo(): void {
-        if (this._countdownStarted) {
+        if (this._disposed || !this._raceReadyReported || this._countdownStarted) {
             return;
         }
         this._countdownStarted = true;
@@ -567,9 +570,11 @@ export class NetRaceController {
     }
 
     private triggerCountdownFromGo(): void {
-        if (this._countdownStarted) {
+        if (this._disposed || this._countdownStarted) {
             return;
         }
+        // 房主的超时兜底可能先到；本机完整加载并结束展示前不能进入倒计时。
+        if (!this._raceReadyReported) { this._goReceivedEarly = true; return; }
         this._countdownStarted = true;
         if (this._goTimeoutHandle) {
             clearTimeout(this._goTimeoutHandle);

@@ -26,6 +26,7 @@ import { StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
+import { initializeRaceModel } from '../core/RaceLoading';
 import { defaultSwimmerColorVariant, defaultSwimmerModelVariant, findSwimmerColorVariant, findSwimmerModelVariant, isDebugOnlySwimmerModelVariant, RESOURCE_PATHS } from '../core/ResourcePaths';
 import type { DebugSwimmerActionPose } from '../core/ResourcePaths';
 import type { SwimmerMotor } from '../swimmer/SwimmerMotor';
@@ -248,6 +249,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private readonly _diveChargeBodyParams = new Vec4(0, 0, 0.90, 15);
     private _modelVariantId = defaultSwimmerModelVariant().id;
     private _modelLoadToken = 0;
+    private _modelLoading = false;
+    private _modelLoadError: Error | null = null;
+    private _actionLoadError: Error | null = null;
+    private _colorLoadError: Error | null = null;
+    private _actionsReady = false;
     private _colorVariantId = defaultSwimmerColorVariant().id;
     private _colorOverride: { skin?: Color; suit?: Color; cap?: Color } | null = null;
     private _colorMask: Texture2D = null;
@@ -327,7 +333,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         reducedSplash = false,
         enableSplash = true,
     ) {
-        if (this._loaded || this._model) {
+        if (this._loaded || this._model || this._modelLoading) {
             return;
         }
         this.storeSkinSettings(skinColor, suitColor, capColor, robotStyle, playerOutline);
@@ -373,12 +379,13 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             console.warn(`[SpeedSwimming] unknown swimmer model variant=${variantId}`);
             return false;
         }
-        if (this._modelVariantId === variant.id && (this._loaded || this._model)) {
+        if (this._modelVariantId === variant.id && (this._loaded || this._model || this._modelLoading)) {
             return true;
         }
 
         this._modelVariantId = variant.id;
         this._colorAssetLoadToken += 1;
+        this._colorLoadError = null;
         this._colorMask = null;
         this._dynamicColorEffect = null;
         if (variant.dynamicColor) {
@@ -395,6 +402,18 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     get modelVariantId(): string {
         return this._modelVariantId;
+    }
+
+    get raceLoadError(): Error | null {
+        return this._modelLoadError ?? this._actionLoadError ?? this._colorLoadError;
+    }
+
+    get raceReady(): boolean {
+        const dynamicColor = findSwimmerModelVariant(this._modelVariantId)?.dynamicColor;
+        return !!this.node?.isValid && this._loaded && this._actionsReady && !this.raceLoadError
+            && this._rendererRevealFramesRemaining === 0
+            && (!dynamicColor || (!!this._dynamicColorEffect
+                && (dynamicColor.mode !== 'mask' || !!this._colorMask)));
     }
 
     get colorVariantId(): string {
@@ -614,97 +633,111 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         const variant = findSwimmerModelVariant(this._modelVariantId) ?? defaultSwimmerModelVariant();
         this._modelVariantId = variant.id;
         const token = ++this._modelLoadToken;
+        this._modelLoading = true;
+        this._modelLoadError = null;
+        this._actionLoadError = null;
+        this._actionsReady = false;
 
         loadSwimmerPrefab((err, result) => {
-            if (token !== this._modelLoadToken) {
+            if (token !== this._modelLoadToken || !this.node?.isValid) {
                 return;
             }
             if (err || !result?.prefab || !this.node?.isValid) {
+                this._modelLoading = false;
+                this._modelLoadError = err ?? new Error(`角色模型加载失败：${variant.id}`);
                 console.error(`[SpeedSwimming] failed to load swimmer prefab variant=${variant.id}`, err);
                 return;
             }
 
-            this._model = instantiate(result.prefab);
-            this._model.name = 'UserSwimmerModel';
-            const prunedComponents = pruneNullComponentsRecursive(this._model);
-            if (prunedComponents > 0) {
-                console.warn(`[SpeedSwimming] pruned null components from swimmer prefab count=${prunedComponents}`);
-            }
-            const prunedParents = pruneNullComponentsInParentChain(this.node);
-            if (prunedParents > 0) {
-                console.warn(`[SpeedSwimming] pruned null components from swimmer parent chain count=${prunedParents}`);
-            }
-            if (!this.attachModelToSwimmerNode()) {
-                this._model.destroy();
-                this._model = null;
-                return;
-            }
-            // The water/refraction stack may already have moved the swimmer root
-            // onto its dedicated overlay-camera layer before this async model
-            // finishes loading. Inherit that layer instead of forcing the new
-            // subtree back to DEFAULT, where the main water pass can cover it.
-            setLayerRecursive(this._model, this.node.layer);
-            this._poseState.applyRaceModelSetup();
+            initializeRaceModel(() => {
+                if (token !== this._modelLoadToken || !this.node?.isValid) return;
+                this._model = instantiate(result.prefab);
+                this._model.name = 'UserSwimmerModel';
+                const prunedComponents = pruneNullComponentsRecursive(this._model);
+                if (prunedComponents > 0) {
+                    console.warn(`[SpeedSwimming] pruned null components from swimmer prefab count=${prunedComponents}`);
+                }
+                const prunedParents = pruneNullComponentsInParentChain(this.node);
+                if (prunedParents > 0) {
+                    console.warn(`[SpeedSwimming] pruned null components from swimmer parent chain count=${prunedParents}`);
+                }
+                if (!this.attachModelToSwimmerNode()) {
+                    this._model.destroy();
+                    this._model = null;
+                    throw new Error(`角色模型挂载失败：${variant.id}`);
+                }
+                // The water/refraction stack may already have moved the swimmer root
+                // onto its dedicated overlay-camera layer before this async model
+                // finishes loading. Inherit that layer instead of forcing the new
+                // subtree back to DEFAULT, where the main water pass can cover it.
+                setLayerRecursive(this._model, this.node.layer);
+                this._poseState.applyRaceModelSetup();
 
-            // Imported GLBs wrap their actual armature in a prefab scene root. The
-            // Most canonical T-pose exports name that child `Armature`, but a valid
-            // export may use another armature name. Falling back to the prefab
-            // wrapper makes tread water write its pose rotation onto
-            // the same node used for upright model placement, so the pose update
-            // immediately overwrites the upright rotation. Resolve the armature
-            // generically from the parent of the canonical `Root` bone instead.
-            const rootBone = findNode(this._model, 'Root');
-            this.root = findNode(this._model, 'Armature') || rootBone?.parent || this._model;
-            this._pose.setModelVariantId(variant.id);
-            this._pose.setSurfaceSwimStyle(variant.surfaceSwimStyle);
-            this._pose.bind(this.root);
-            this._pose.setSwimHeadLift(this.swimHeadLiftDegrees());
-            this.configureSkinnedRenderers();
-            this.setSkinnedRenderersEnabled(false);
-            this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
-            this._animationPlayer.bind(findComponentRecursive(this._model, SkeletalAnimation), false);
-            this._pose.captureBasePose();
-            this._standingSoles.bind(this._model, this._skinnedRenderers);
-            this._headBounds.bind(this._skinnedRenderers);
-            this._handContact.bind(this._model, this._skinnedRenderers);
-            this._pose.setDiveHandContact(this._handContact);
-            if (this._pose.getHipWorldPosition(this._tmpFlipTurnWorldPivot)) {
-                this._model.inverseTransformPoint(
-                    this._collisionPitchPivotModelLocal,
-                    this._tmpFlipTurnWorldPivot,
-                );
-                this._hasCollisionPitchPivot = true;
-            } else {
-                this._hasCollisionPitchPivot = false;
-            }
-            this._hasPresentationPivot = false;
-            if (this._hasCollisionPitchPivot) {
-                Vec3.copy(this._presentationPivotModelLocal, this._collisionPitchPivotModelLocal);
-                if (this._pose.getStandingFootCenterWorldPosition(this._tmpFlipTurnWorldPivot)) {
+                // Imported GLBs wrap their actual armature in a prefab scene root. The
+                // Most canonical T-pose exports name that child `Armature`, but a valid
+                // export may use another armature name. Falling back to the prefab
+                // wrapper makes tread water write its pose rotation onto
+                // the same node used for upright model placement, so the pose update
+                // immediately overwrites the upright rotation. Resolve the armature
+                // generically from the parent of the canonical `Root` bone instead.
+                const rootBone = findNode(this._model, 'Root');
+                this.root = findNode(this._model, 'Armature') || rootBone?.parent || this._model;
+                this._pose.setModelVariantId(variant.id);
+                this._pose.setSurfaceSwimStyle(variant.surfaceSwimStyle);
+                this._pose.bind(this.root);
+                this._pose.setSwimHeadLift(this.swimHeadLiftDegrees());
+                this.configureSkinnedRenderers();
+                this.setSkinnedRenderersEnabled(false);
+                this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
+                this._animationPlayer.bind(findComponentRecursive(this._model, SkeletalAnimation), false);
+                this._pose.captureBasePose();
+                this._standingSoles.bind(this._model, this._skinnedRenderers);
+                this._headBounds.bind(this._skinnedRenderers);
+                this._handContact.bind(this._model, this._skinnedRenderers);
+                this._pose.setDiveHandContact(this._handContact);
+                if (this._pose.getHipWorldPosition(this._tmpFlipTurnWorldPivot)) {
                     this._model.inverseTransformPoint(
-                        this._tmpFlipTurnContactLocal,
+                        this._collisionPitchPivotModelLocal,
                         this._tmpFlipTurnWorldPivot,
                     );
-                    this._presentationPivotModelLocal.x = this._tmpFlipTurnContactLocal.x;
-                    this._presentationPivotModelLocal.z = this._tmpFlipTurnContactLocal.z;
+                    this._hasCollisionPitchPivot = true;
+                } else {
+                    this._hasCollisionPitchPivot = false;
                 }
-                this._hasPresentationPivot = true;
-            }
-            this.refreshShowcaseAction();
-            this.loadSampledActionOverrides(variant, token);
-            this._loaded = true;
-            this.resetPose();
-            if (this._modelDebugMode) {
-                this.applyModelDebugSetup();
-            } else {
-                this._poseState.reapplyCurrentState();
-            }
-            this._rendererRevealFramesRemaining = 2;
-            console.log(
-                `[SpeedSwimming] loaded athlete variant=${variant.id} prefab=${result.path} joints=${this.boundJointCount} manualBones=${this.manualBoneCount} clips=${this.animationClipNames} ` +
-                `skinned=${this._skinnedRenderers.length} rigRoot=${this.root.name} ` +
-                `baseEuler=${this._pose.rootBaseEuler.x.toFixed(1)},${this._pose.rootBaseEuler.y.toFixed(1)},${this._pose.rootBaseEuler.z.toFixed(1)}`,
-            );
+                this._hasPresentationPivot = false;
+                if (this._hasCollisionPitchPivot) {
+                    Vec3.copy(this._presentationPivotModelLocal, this._collisionPitchPivotModelLocal);
+                    if (this._pose.getStandingFootCenterWorldPosition(this._tmpFlipTurnWorldPivot)) {
+                        this._model.inverseTransformPoint(
+                            this._tmpFlipTurnContactLocal,
+                            this._tmpFlipTurnWorldPivot,
+                        );
+                        this._presentationPivotModelLocal.x = this._tmpFlipTurnContactLocal.x;
+                        this._presentationPivotModelLocal.z = this._tmpFlipTurnContactLocal.z;
+                    }
+                    this._hasPresentationPivot = true;
+                }
+                this.refreshShowcaseAction();
+                this.loadSampledActionOverrides(variant, token);
+                this._loaded = true;
+                this._modelLoading = false;
+                this.resetPose();
+                if (this._modelDebugMode) {
+                    this.applyModelDebugSetup();
+                } else {
+                    this._poseState.reapplyCurrentState();
+                }
+                this._rendererRevealFramesRemaining = 2;
+                console.log(
+                    `[SpeedSwimming] loaded athlete variant=${variant.id} prefab=${result.path} joints=${this.boundJointCount} manualBones=${this.manualBoneCount} clips=${this.animationClipNames} ` +
+                    `skinned=${this._skinnedRenderers.length} rigRoot=${this.root.name} ` +
+                    `baseEuler=${this._pose.rootBaseEuler.x.toFixed(1)},${this._pose.rootBaseEuler.y.toFixed(1)},${this._pose.rootBaseEuler.z.toFixed(1)}`,
+                );
+            }, error => {
+                if (token !== this._modelLoadToken || !this.node?.isValid) return;
+                this._modelLoading = false;
+                this._modelLoadError = error instanceof Error ? error : new Error(String(error));
+            });
         }, variant.candidates);
     }
 
@@ -724,6 +757,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._pose.setDivePrepPoseOverride(null);
         this._poseState.setShowcaseAction(this._showcaseActionId, null);
         this._loaded = false;
+        this._modelLoading = false;
+        this._modelLoadError = null;
+        this._actionLoadError = null;
+        this._actionsReady = false;
         this._rendererRevealFramesRemaining = 0;
         this.root = null;
         this._skinnedRenderers.length = 0;
@@ -767,6 +804,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         const filePrefix = variant.sampledActionOverrideFilePrefix;
         const divePrepPath = variant.divePrepOverridePath;
         if (!directory || !filePrefix) {
+            this._actionsReady = true;
             return;
         }
         // This rig cannot safely use the canonical tread-water local rotations.
@@ -787,6 +825,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 || this._sampledActionOverrides.size !== SAMPLED_ACTION_IDS.length
                 || treadWaterSampleCount <= 0
                 || (!!divePrepPath && !divePrepLoaded)) {
+                this._actionLoadError = new Error(`角色动作加载失败：${variant.id}`);
                 console.error(
                     `[SpeedSwimming] sampled action overrides incomplete variant=${variant.id} ` +
                     `emotes=${this._sampledActionOverrides.size}/${SAMPLED_ACTION_IDS.length} ` +
@@ -810,10 +849,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             } else {
                 this._poseState.reapplyCurrentState();
             }
+            this._actionsReady = true;
         };
         for (const actionId of SAMPLED_ACTION_IDS) {
             loadRaceAsset(`${directory}/${filePrefix}${actionId}`, JsonAsset, (error, asset) => {
-                if (overrideToken !== this._sampledActionOverrideLoadToken || modelLoadToken !== this._modelLoadToken) {
+                if (!this.node?.isValid || overrideToken !== this._sampledActionOverrideLoadToken || modelLoadToken !== this._modelLoadToken) {
                     return;
                 }
                 if (error || !asset) {
@@ -835,7 +875,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             });
         }
         loadRaceAsset(`${directory}/${filePrefix}breaststroke`, JsonAsset, (error, asset) => {
-            if (overrideToken !== this._sampledActionOverrideLoadToken || modelLoadToken !== this._modelLoadToken) {
+            if (!this.node?.isValid || overrideToken !== this._sampledActionOverrideLoadToken || modelLoadToken !== this._modelLoadToken) {
                 return;
             }
             const samples = !error && asset ? parseTreadWaterOverride(asset.json) : null;
@@ -853,7 +893,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         });
         if (divePrepPath) {
             loadRaceAsset(divePrepPath, JsonAsset, (error, asset) => {
-                if (overrideToken !== this._sampledActionOverrideLoadToken || modelLoadToken !== this._modelLoadToken) {
+                if (!this.node?.isValid || overrideToken !== this._sampledActionOverrideLoadToken || modelLoadToken !== this._modelLoadToken) {
                     return;
                 }
                 const sample = !error && asset ? parseDivePrepOverride(asset.json) : null;
@@ -1893,10 +1933,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         };
         if (dynamicColor.mode === 'mask' && dynamicColor.maskPath) {
             loadRaceAsset(dynamicColor.maskPath, Texture2D, (error, texture) => {
-                if (token !== this._colorAssetLoadToken || this._modelVariantId !== expectedModelVariantId) {
+                if (!this.node?.isValid || token !== this._colorAssetLoadToken || this._modelVariantId !== expectedModelVariantId) {
                     return;
                 }
                 if (error || !texture) {
+                    this._colorLoadError = error ?? new Error(`角色换色遮罩加载失败：${expectedModelVariantId}`);
                     console.error(`[SpeedSwimming] failed to load swimmer color mask variant=${expectedModelVariantId}`, error);
                     return;
                 }
@@ -1905,10 +1946,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             });
         }
         loadRaceAsset(RESOURCE_PATHS.swimmerDynamicColorEffect, EffectAsset, (error, effect) => {
-            if (token !== this._colorAssetLoadToken || this._modelVariantId !== expectedModelVariantId) {
+            if (!this.node?.isValid || token !== this._colorAssetLoadToken || this._modelVariantId !== expectedModelVariantId) {
                 return;
             }
             if (error || !effect) {
+                this._colorLoadError = error ?? new Error('角色换色材质加载失败');
                 console.error('[SpeedSwimming] failed to load swimmer dynamic color effect', error);
                 return;
             }

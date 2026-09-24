@@ -1,4 +1,4 @@
-import { _decorator, Camera, Canvas, Color, Component, director, Graphics, Label, Layers, Node, UITransform, Vec3, view } from 'cc';
+import { _decorator, BlockInputEvents, Camera, Canvas, Color, Component, director, Graphics, Label, Layers, Node, UITransform, Vec3, view } from 'cc';
 
 const { ccclass } = _decorator;
 
@@ -79,7 +79,9 @@ export class LoadingOverlay {
 
         const root = new Node(OVERLAY_NODE_NAME);
         root.layer = LOADING_OVERLAY_LAYER;
-        root.addComponent(UITransform);
+        const visible = view.getVisibleSize();
+        root.addComponent(UITransform).setContentSize(visible.width, visible.height);
+        root.addComponent(BlockInputEvents);
         const canvas = root.addComponent(Canvas);
 
         const cameraNode = new Node('Camera');

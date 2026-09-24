@@ -113,6 +113,7 @@ import { TopViewCeilingController } from '../venue/TopViewCeilingController';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 import { loadSampledActionsForRace } from '../character/SampledActionLoader';
 import { logTextureFormatDiagnostics } from './TextureFormatDiagnostics';
+import { RaceLoading } from './RaceLoading';
 
 const { ccclass } = _decorator;
 
@@ -326,60 +327,70 @@ export class GameManager extends Component {
     private _cameraPos = new Vec3(-6, 4.7, 10.5);
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
 
+    private _raceLoading: RaceLoading | null = null;
+    private _raceSceneReady = false;
+    private _loadFailed = false;
+
     onLoad() {
         game.frameRate = 60;
         console.log(`[SpeedSwimming] target frameRate=${game.frameRate}`);
         this.node.layer = Layers.Enum.UI_2D;
-        loadSavedTuningAsync(() => this.scheduleOnce(() => {
-            loadSampledActionsForRace((actionError) => {
-                if (actionError) {
-                    this.paintError(actionError);
-                    return;
+        LoadingOverlay.show();
+        void this.loadRace();
+    }
+
+    private async loadRace() {
+        const loading = this._raceLoading = new RaceLoading();
+        try {
+            const launchMode = consumeMainGameLaunchMode();
+            const modelDebug = DEBUG_UI_ENABLED && launchMode === 'model-debug';
+            const underwaterDebug = DEBUG_UI_ENABLED && launchMode === 'underwater-debug';
+            this._aiDebugMode = DEBUG_UI_ENABLED && launchMode === 'ai-debug';
+            if (this._aiDebugMode) this._aiDebugDifficulty = getAiDebugDifficulty();
+            this.initializeRaceContext();
+            await loading.frames();
+            await Promise.all([
+                loading.step('调参配置', done => loadSavedTuningAsync(() => done())),
+                loading.step('公共动作', done => loadSampledActionsForRace(done)),
+            ]);
+            await loading.step('场馆与界面', done => this.buildScene(done));
+            if (!modelDebug && !underwaterDebug) {
+                this.buildDeferredAiSwimmers();
+                this.applyAiDebugHud();
+            }
+            await loading.frames();
+            this.buildSpectatorCrowd(this._worldRoot, this._poolNode);
+            this.setupScoreboardFeed(this._poolNode);
+            const swimmers = [this._playerSwimmer, ...this._aiSwimmers];
+            await loading.waitFor('选手与附属资源', () => {
+                for (const swimmer of swimmers) {
+                    if (!swimmer?.node?.isValid || !swimmer.cartoonRig) throw new Error('参赛角色已失效');
+                    if (swimmer.cartoonRig.raceLoadError) throw swimmer.cartoonRig.raceLoadError;
                 }
-                try {
-                    this.buildScene((error) => {
-                        if (error) {
-                            this.paintError(error);
-                            return;
-                        }
-                        try {
-                            this.registerEvents();
-                            this.debug('3D runtime initialized');
-                            const launchMode = consumeMainGameLaunchMode();
-                            if (DEBUG_UI_ENABLED && launchMode === 'model-debug') {
-                                this.enterModelDebug('freestyle');
-                            } else if (DEBUG_UI_ENABLED && launchMode === 'underwater-debug') {
-                                this.enterUnderwaterDebug();
-                            } else {
-                                this._aiDebugMode = DEBUG_UI_ENABLED && launchMode === 'ai-debug';
-                                if (this._aiDebugMode) {
-                                    this._aiDebugDifficulty = getAiDebugDifficulty();
-                                }
-                                this.applyAiDebugHud();
-                                this.startGame();
-                            }
-                            // Models and venue textures finish their asynchronous
-                            // uploads shortly after scene construction. Audit once,
-                            // after that initial loading window, so a real-device
-                            // vConsole can prove both the selected .astc source and
-                            // the final GPU texture format without any frame-loop cost.
-                            this.scheduleOnce(logTextureFormatDiagnostics, 3);
-                            // Race scene is fully built and its initial camera /
-                            // state are set: reveal it by dropping the loading
-                            // cover that spanned the scene switch.
-                            LoadingOverlay.hide();
-                        } catch (setupError) {
-                            this.paintError(setupError);
-                        }
-                    });
-                } catch (error) {
-                    this.paintError(error);
-                }
+                if (this._preRaceIntroPanel.loadError) throw this._preRaceIntroPanel.loadError;
+                return loading.assetsPending === 0 && swimmers.every(swimmer => swimmer.cartoonRig.raceReady);
             });
-        }, 0));
+            // 所有人物就绪后才初始化展示姿态；此时镜头计时与输入仍被门控。
+            if (!modelDebug && !underwaterDebug) this.startGame();
+            await loading.frames(3);
+            await loading.waitFor('首屏附属资源', () => loading.assetsPending === 0);
+            this.registerEvents();
+            loading.finish();
+            // 调试入口会隐藏原玩家并建立独立预览；不能等待已停用节点的 lateUpdate。
+            if (modelDebug) this.enterModelDebug('freestyle');
+            else if (underwaterDebug) this.enterUnderwaterDebug();
+            this._raceSceneReady = true;
+            this._raceLoading = null;
+            LoadingOverlay.hide();
+            this.scheduleOnce(logTextureFormatDiagnostics, 3);
+        } catch (error) {
+            if (this._raceLoading === loading && this.node?.isValid && !this._isReturningToLogin) this.paintError(error);
+        }
     }
 
     onDestroy() {
+        this._raceLoading?.cancel();
+        this._raceLoading = null;
         this.detachObservedAiHud();
         this._scenePreviewCamera?.dispose();
         this._scenePreviewCamera = null;
@@ -406,6 +417,12 @@ export class GameManager extends Component {
     }
 
     update(dt: number) {
+        if (!this._raceSceneReady) {
+            // 加载期间继续上传空输入帧，避免阻塞其他设备；不推进玩法、镜头或倒计时。
+            this._netRaceController?.tick(dt);
+            if (!this._loadFailed) this._waterRefraction?.update();
+            return;
+        }
         if (!this._playerSwimmer) {
             return;
         }
@@ -766,6 +783,8 @@ export class GameManager extends Component {
             return;
         }
         this._isReturningToLogin = true;
+        this._raceLoading?.cancel();
+        LoadingOverlay.hide();
         if (!this._roomMode && getSoloRaceTicket()) { setReturnToLobby(true); markSoloReturn(); }
         // Room-mode races return to the online room, not the main menu.
         if (this._roomMode) {
@@ -785,7 +804,7 @@ export class GameManager extends Component {
         director.loadScene('Login');
     }
 
-    private buildScene(done: (error?: unknown) => void) {
+    private initializeRaceContext() {
         this._roomMode = consumeRoomMode();
         this._netSession = consumeNetRaceSession();
         if (this._roomMode || this._netSession || this._aiDebugMode) {
@@ -804,6 +823,9 @@ export class GameManager extends Component {
             reseedSharedRandom(this._netSession.seed);
             this._netRaceController = new NetRaceController(this._netSession);
         }
+    }
+
+    private buildScene(done: (error?: unknown) => void) {
         const scene = this.createRuntimeSceneBuilder().build();
         this._worldRoot = scene.worldRoot;
         this._cameraNode = scene.cameraNode;
@@ -813,13 +835,15 @@ export class GameManager extends Component {
         }
         this._underwaterCameraTint = this.buildUnderwaterCameraTint(this._cameraNode, scene.width, scene.height);
         this._skyboxApplier = scene.skyboxApplier;
-        this.buildPool3D(this._worldRoot, (pool) => {
-            if (!this.node?.isValid || !this._worldRoot?.isValid) {
+        this.buildPool3D(this._worldRoot, (pool, poolError) => {
+            if (!this._raceLoading?.active || !this.node?.isValid || !this._worldRoot?.isValid) {
                 return;
             }
+            if (poolError) { done(poolError); return; }
             try {
                 this.buildPlayerSwimmer3D(this._worldRoot);
                 this.buildUi(scene.canvasNode, scene.width, scene.height, (uiError) => {
+                    if (!this._raceLoading?.active || !this.node?.isValid) return;
                     if (uiError) {
                         done(uiError);
                         return;
@@ -837,7 +861,6 @@ export class GameManager extends Component {
                     this._modelDebugFlow = this.createModelDebugFlow();
                     this._inputRouter = this.createInputRouter();
                     done();
-                    this.scheduleDeferredSceneExtras(pool);
                 });
             } catch (error) {
                 done(error);
@@ -1067,41 +1090,47 @@ export class GameManager extends Component {
         });
     }
 
-    private buildPool3D(root: Node, done: (pool: Node | null) => void) {
+    private buildPool3D(root: Node, done: (pool: Node | null, error?: Error) => void) {
         const venue = new VenueManager({ debug: (message) => this.debug(message) });
         this._venueManager = venue;
-        venue.buildPool(root, DEFAULT_POOL_DEFINITION, ({ pool }) => {
+        venue.buildPool(root, DEFAULT_POOL_DEFINITION, ({ pool, error }) => {
+            if (!this._raceLoading?.active) return;
             if (!pool?.isValid) {
                 COURSE_LAYOUT.setStartBlockSurfaces([]);
                 this._poolNode = null;
-                done(null);
+                done(null, error ?? new Error('比赛场馆加载失败'));
                 return;
             }
             this.scheduleOnce(() => {
+                if (!this._raceLoading?.active) return;
                 if (!pool.isValid) {
                     this._poolNode = null;
-                    done(null);
+                    done(null, new Error('比赛场馆已失效'));
                     return;
                 }
-                const calibrated = COURSE_LAYOUT.calibrateFromPoolScene(pool, DEFAULT_POOL_DEFINITION, (message) => this.debug(message));
-                COURSE_LAYOUT.setStartBlockSurfaces(venue.startBlockSurfaces);
-                if (calibrated) {
-                    venue.setWaterY(COURSE_LAYOUT.waterY);
-                    this._raceCameraDirector.resetToBroadcast();
+                try {
+                    const calibrated = COURSE_LAYOUT.calibrateFromPoolScene(pool, DEFAULT_POOL_DEFINITION, (message) => this.debug(message));
+                    COURSE_LAYOUT.setStartBlockSurfaces(venue.startBlockSurfaces);
+                    if (calibrated) {
+                        venue.setWaterY(COURSE_LAYOUT.waterY);
+                        this._raceCameraDirector.resetToBroadcast();
+                    }
+                    this._poolNode = pool;
+                    // Attach the ceiling lights before the top-view binder scans so
+                    // its 'ceiling'-named node is captured and hidden in top view.
+                    applyCeilingLightArray(pool, (message) => this.debug(message));
+                    const ceilingCount = this._topViewCeiling.bind(pool);
+                    this.debug(`top-view ceiling nodes=${ceilingCount}`);
+                    this.setupWaterRefraction(pool);
+                    applyPoolEdgeToonOutline(pool, (message) => this.debug(message));
+                    applyAwardsPodiumToonOutline(pool, (message) => this.debug(message));
+                    applyStandStructureToonOutline(pool, (message) => this.debug(message));
+                    applyTierFrontToonOutline(pool, (message) => this.debug(message));
+                    this.setupLaneLockdownVisualPreview();
+                    done(pool);
+                } catch (error) {
+                    done(null, error instanceof Error ? error : new Error(String(error)));
                 }
-                this._poolNode = pool;
-                // Attach the ceiling lights before the top-view binder scans so
-                // its 'ceiling'-named node is captured and hidden in top view.
-                applyCeilingLightArray(pool, (message) => this.debug(message));
-                const ceilingCount = this._topViewCeiling.bind(pool);
-                this.debug(`top-view ceiling nodes=${ceilingCount}`);
-                this.setupWaterRefraction(pool);
-                applyPoolEdgeToonOutline(pool, (message) => this.debug(message));
-                applyAwardsPodiumToonOutline(pool, (message) => this.debug(message));
-                applyStandStructureToonOutline(pool, (message) => this.debug(message));
-                applyTierFrontToonOutline(pool, (message) => this.debug(message));
-                this.setupLaneLockdownVisualPreview();
-                done(pool);
             }, 0);
         });
     }
@@ -1408,9 +1437,7 @@ export class GameManager extends Component {
             controller.raceObserver = raceObserver;
         }
         this._gameFlow?.refreshPreRaceShowcaseRoster();
-        // AI swimmers load one frame after startGame(), so the pre-race roster
-        // panel was first populated with only the player. Repopulate it now that
-        // the full lineup exists.
+        // 阵容在展示开始前一次性完整建立，远端真人映射完成后再等待最终模型。
         this.refreshPreRaceIntroRoster();
         this.refreshSwimmerNameRoster();
         this.applySplashParticlesEnabled();
@@ -2130,21 +2157,6 @@ export class GameManager extends Component {
         });
     }
 
-    private scheduleDeferredSceneExtras(pool: Node | null) {
-        this.scheduleOnce(() => {
-            if (!this.node?.isValid) {
-                return;
-            }
-            this.buildDeferredAiSwimmers();
-            this.scheduleOnce(() => {
-                if (this.node?.isValid && this._worldRoot?.isValid) {
-                    this.buildSpectatorCrowd(this._worldRoot, pool?.isValid ? pool : this._poolNode);
-                    this.setupScoreboardFeed(pool?.isValid ? pool : this._poolNode);
-                }
-            }, 0);
-        }, 0);
-    }
-
     private buildUi(root: Node, w: number, h: number, done: (error?: unknown) => void) {
         // Cache the 2D UI camera so world-anchored HUD elements (e.g. the sweet-zone
         // dials) can map a swimmer's world position back into HUD-local space.
@@ -2175,6 +2187,7 @@ export class GameManager extends Component {
         });
         this._raceUiBuilder = raceUiBuilder;
         raceUiBuilder.build(uiRoot, w, h, (error, refs) => {
+            if (!this._raceLoading?.active || !this.node?.isValid) return;
             if (error || !refs) {
                 done(error ?? new Error('SpeedStars UI prefab build failed'));
                 return;
@@ -3382,16 +3395,30 @@ export class GameManager extends Component {
     }
 
     private paintError(error: unknown) {
-        // Drop the loading cover so the error panel below is actually visible.
+        if (this._loadFailed) return;
+        this._loadFailed = true;
+        this._raceSceneReady = false;
+        this._raceLoading?.cancel();
+        this._gameFlow?.stopAllAi();
+        this._inputRouter?.unbind();
+        this._netRaceController?.setCountdownStartListener(null);
+        this._netRaceController?.broadcastQuit();
+        this._netRaceController?.dispose();
+        this._netRaceController = null;
+        this._worldRoot?.destroy();
         LoadingOverlay.hide();
         const canvasNode = this.createRuntimeSceneBuilder().findCanvasNode();
+        canvasNode.getChildByName('RuntimeUIRoot')?.destroy();
         const panel = makeUiNode('RuntimeErrorPanel', canvasNode);
         panel.setPosition(0, 0, 0);
-        makeRect('ErrorBack', panel, 780, 190, color(70, 16, 16, 245));
+        makeRect('ErrorBack', panel, 780, 250, color(70, 16, 16, 245));
         const message = error instanceof Error ? error.message : `${error}`;
-        const label = makeLabel('ErrorLabel', panel, `Runtime error: ${message}`, 20, color(255, 255, 255));
+        const label = makeLabel('ErrorLabel', panel, `比赛加载失败：${message}`, 20, color(255, 255, 255));
         label.getComponent(UITransform).setContentSize(720, 120);
-        label.setPosition(0, 0, 0);
+        label.setPosition(0, 25, 0);
+        const back = makeButton('ReturnAfterLoadFailure', panel, 220, 48, color(37, 100, 150), '返回');
+        back.setPosition(0, -80, 0);
+        back.on(Button.EventType.CLICK, () => this.returnToLogin());
         console.error('[SpeedSwimming] runtime error', error);
     }
 

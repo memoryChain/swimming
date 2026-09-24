@@ -1,5 +1,6 @@
 import { assetManager, Asset, AssetManager, JsonAsset } from 'cc';
 import { decodeSampledMotion } from '../character/SampledMotionStorage';
+import { trackRaceAsset } from './RaceLoading';
 
 export const RACE_BUNDLE_NAME = 'race';
 
@@ -30,6 +31,7 @@ export function loadRaceAsset<T extends Asset>(
     type: AssetConstructor<T>,
     done: (error: Error | null, asset?: T) => void,
 ) {
+    done = trackRaceAsset(done);
     loadRaceBundle((bundleError, bundle) => {
         if (bundleError || !bundle) {
             done(bundleError ?? new Error(`Race Asset Bundle is unavailable: ${path}`));
@@ -55,6 +57,7 @@ export function loadRaceAssetDir<T extends Asset>(
     type: AssetConstructor<T>,
     done: (error: Error | null, assets?: T[]) => void,
 ) {
+    done = trackRaceAsset(done);
     loadRaceBundle((bundleError, bundle) => {
         if (bundleError || !bundle) {
             done(bundleError ?? new Error(`Race Asset Bundle is unavailable: ${path}`));

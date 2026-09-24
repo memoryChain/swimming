@@ -58,6 +58,8 @@ export class PreRaceIntroPanel {
     private _ruleLabel: Label | null = null;
     private readonly _cards: IntroCard[] = [];
     private readonly _paths = new WeakMap<Sprite, string>();
+    private readonly _artErrors = new Map<Sprite, Error>();
+    get loadError(): Error | null { return this._artErrors.values().next().value ?? null; }
     private _phase: PreRaceIntroPhase = 'hidden';
 
     build(parent: Node, w: number, h: number): Node {
@@ -308,11 +310,13 @@ export class PreRaceIntroPanel {
     private setArt(sprite: Sprite, path: string) {
         if (this._paths.get(sprite) === path) return;
         this._paths.set(sprite, path);
+        this._artErrors.delete(sprite);
         if (!path) { sprite.spriteFrame = null; this.active(sprite.node, false); return; }
         // 更换参赛者时先清掉旧卡面；迟到回调必须同时核查请求身份和节点生命周期。
         if (sprite.spriteFrame) sprite.spriteFrame = null;
         loadAvatarUiSpriteFrame(path, frame => {
             if (!sprite.isValid || this._paths.get(sprite) !== path) return;
+            if (!frame) this._artErrors.set(sprite, new Error(`赛前界面素材加载失败：${path}`));
             if (sprite.spriteFrame !== frame) sprite.spriteFrame = frame;
             sprite.sizeMode = Sprite.SizeMode.CUSTOM;
             sprite.trim = false;
