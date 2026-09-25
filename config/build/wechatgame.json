@@ -1,10 +1,42 @@
 {
+  "__version__": "1.3.9",
   "name": "划水大师",
   "platform": "wechatgame",
   "buildPath": "project://build",
   "outputName": "wechatgame",
+  "engineModulesConfigKey": "custom-config-62586aa7-3e38-4b8b-b2c1-42185257bb02",
+  "buildMode": "normal",
   "debug": false,
   "sourceMaps": false,
+  "mangleProperties": true,
+  "md5Cache": false,
+  "skipCompressTexture": false,
+  "overwriteProjectSettings": {
+    "macroConfig": {
+      "cleanupImageCache": "on"
+    },
+    "includeModules": {
+      "physics": "inherit-project-setting",
+      "physics-2d": "inherit-project-setting",
+      "gfx-webgl2": "on"
+    }
+  },
+  "nativeCodeBundleMode": "wasm",
+  "wasmCompressionMode": "brotli",
+  "polyfills": {
+    "asyncFunctions": false
+  },
+  "experimentalEraseModules": false,
+  "startSceneAssetBundle": true,
+  "inlineEnum": true,
+  "mainBundleIsRemote": false,
+  "useSplashScreen": true,
+  "bundleCommonChunk": false,
+  "packAutoAtlas": true,
+  "binGroupConfig": {
+    "threshold": 16,
+    "enable": false
+  },
   "startScene": "074665cc-6b6a-4138-bf91-410cd0b70e4d",
   "scenes": [
     {
@@ -15,11 +47,13 @@
   "mainBundleCompressionType": "merge_dep",
   "packages": {
     "wechatgame": {
+      "__version__": "1.0.4",
       "appid": "wx89ee56c51312f147",
       "orientation": "landscapeRight",
-      "startSceneAssetBundle": false,
       "separateEngine": false,
-      "buildOpenDataContextTemplate": false
+      "buildOpenDataContextTemplate": "",
+      "highPerformanceMode": true,
+      "wasmSubpackage": true
     }
   }
 }
