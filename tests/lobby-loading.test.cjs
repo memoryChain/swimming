@@ -52,6 +52,7 @@ function loginHarness() {
     const PlayerData = { loaded: true, load: () => profile };
     class Cover {
         disposed = false; loading = false;
+        constructor(login) { this.login = login; }
         setLoading() { this.loading = true; }
         setRetry(callback) { this.retry = callback; this.loading = false; }
         dispose() { this.disposed = true; }
@@ -100,6 +101,24 @@ test('大厅图片失败保留可重试的登录画面，重试重新构建且�
     h.requests.slice(2).forEach(done => done()); m._prepareRaceFlow.presentationReady = true;
     h.frame(); h.frame(); await flush(); assert.equal(cover.disposed, true);
     assert.equal(h.calls.filter(c => c === 'lobby').length, 2);
+});
+
+test('比赛返回无登录节点时仍等待完整大厅，失败重试不会恢复登录画面', async () => {
+    const h = loginHarness(), m = h.manager;
+    m._loginUiRoot = null;
+    m.openPrepareRace(); const cover = m._lobbyCover;
+    assert.equal(cover.login, null); assert.equal(cover.loading, true);
+    h.resolveProfile(); await flush();
+    h.requests[0](new Error('断网')); h.frame(); await flush();
+    assert.equal(cover.disposed, false); assert.equal(typeof cover.retry, 'function');
+    cover.retry(); await flush();
+    h.requests.forEach(done => done()); h.frame(); h.frame(); await flush();
+    assert.equal(cover.disposed, false, '角色尚未就绪时保持加载遮罩');
+    m._prepareRaceFlow.presentationReady = true;
+    h.frame(); h.frame(); await flush();
+    assert.equal(cover.disposed, true); assert.equal(m._loginUiRoot, null);
+    assert.equal(h.calls.filter(c => c === 'enter').length, 1);
+    assert.equal(h.hooks.size, 0);
 });
 
 test('等待存档或模型时被邀请/销毁打断，迟到回调不创建大厅或关闭新页面', async () => {

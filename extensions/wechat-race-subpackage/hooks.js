@@ -9,6 +9,8 @@ const { applyWechatProjectConfig, assertWechatProjectOutput } = require('./wecha
 const { compactBuiltMotions, assertBuiltMotionRuntime } = require('./sampled-motion-storage');
 const { auditWechatPackageOutput } = require('./wechat-package-budget');
 const { assertStartupCodeOutput, assertStartupSceneEntry } = require('./startup-code-policy');
+const { applyWechatIosDpr } = require('./wechat-ios-dpr');
+const { applyWechatFirstScreen } = require('./wechat-first-screen');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -102,6 +104,10 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
     if (options.platform !== 'wechatgame') {
         return;
     }
+
+    // 在任何适配层和引擎初始化之前限制 iOS 渲染像素比。
+    applyWechatIosDpr(result.dest);
+    applyWechatFirstScreen(PROJECT_ROOT, result.dest);
 
     // 在搬移 Bundle 之前使用 Creator 返回的原生文件路径，兼容 MD5 文件名。
     const mipmapAudit = assertBuildMipmaps(PROJECT_ROOT, result);

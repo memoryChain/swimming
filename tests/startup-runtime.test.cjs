@@ -69,7 +69,7 @@ function baseCc() {
     return { Component, Node, UITransform: Transform, Label, Sprite, Button, Camera, Canvas: class {},
         Color: class {}, Font: class {}, Texture2D: class {},
         SpriteFrame: class { destroy() { this.destroyed = true; } }, view,
-        Layers: { Enum: { UI_2D: 1 }, BitMask: { UI_2D: 1 } }, _decorator: { ccclass: () => Type => Type },
+        Layers: { Enum: { UI_2D: 1 }, BitMask: { UI_2D: 1 } }, _decorator: { ccclass: () => Type => Type, property: () => () => {} },
     };
 }
 function managerHarness({ wechat = true, invite = null, screenFails = false } = {}) {
@@ -83,7 +83,7 @@ function managerHarness({ wechat = true, invite = null, screenFails = false } = 
         './DeferredCodeLoader': { loadGameplayCode: () => { calls.loads++; return new Promise((resolve, reject) => pending.push({ resolve, reject })); } },
         './StartupPlatform': { startupInvite: () => invite, observeStartupInvites: callback => { onInvite = callback; return () => calls.off++; }, showStartupRetry: callback => calls.modals.push(callback) },
         './StartupView': { StartupView: class {
-            constructor(parent) { this.root = new Node('首屏'); this.root.setParent(parent); calls.screens++; }
+            constructor(parent, _onStart, art) { this.root = new Node('首屏'); this.root.setParent(parent); calls.screens++; calls.art = art; }
             async build() { if (screenFails) throw new Error('首屏断网'); }
             setState(state) { this.state = state; }
         } },
@@ -166,6 +166,52 @@ test('首屏资源迟到时不能向销毁的场景添加节点', async () => {
     assert.equal(screen.root.children.length, 0); assert.equal(cc.view.listenerCount('canvas-resize'), 0);
 });
 
+test('首屏字体和按钮延迟时，场景预加载的背景与 Logo 在首次等待前就完整建立', async () => {
+    for (const destroy of [false, true]) {
+        const cc = baseCc(), requests = [];
+        let fontReady;
+        cc.resources = { load: (name, _Type, callback) => requests.push({ name, callback }) };
+        cc.assetManager = { loadBundle: (_name, callback) => callback(null, { load: (_font, _Type, done) => fontReady = done }) };
+        const { StartupView } = loader({ cc })('assets/startup/StartupView.ts');
+        const art = { background: {}, logo: {} };
+        const screen = new StartupView(new Node('Canvas'), () => {}, art);
+        const pending = screen.build();
+        const background = screen.root.getChildByName('Background'), logo = screen.root.getChildByName('Logo');
+        assert.ok(background && logo, '不能等待图片或字体回调后才建立背景');
+        assert.equal(background.getComponent(cc.Sprite).spriteFrame.texture, art.background);
+        assert.equal(logo.getComponent(cc.Sprite).spriteFrame.texture, art.logo);
+        assert.equal(background.scale.x, 1560 / 1280);
+        assert.equal(logo.position.y, 157);
+        assert.equal(screen.root.children.length, 2);
+        assert.equal(requests.length, 2, '只异步请求按钮和箭头，不重复请求背景与 Logo');
+        requests.forEach(request => request.callback(null, {})); await flush();
+        assert.equal(screen.root.children.length, 2, '字库尚未就绪时保留完整背景');
+        if (destroy) screen.root.destroy();
+        fontReady(null, {}); await pending;
+        assert.equal(screen.root.getChildByName('Background'), background);
+        assert.equal(screen.root.getChildByName('Logo'), logo);
+        assert.equal(screen.root.children.length, destroy ? 2 : 3);
+        if (!destroy) screen.root.destroy();
+        assert.equal(cc.view.listenerCount('canvas-resize'), 0);
+    }
+});
+
+test('登录场景绑定既有纹理依赖，启动组件将预加载资源传给首屏', () => {
+    const scene = JSON.parse(fs.readFileSync(path.join(root, 'assets/scenes/Login.scene'), 'utf8'));
+    const manager = scene.find(item => item._id === 'login-manager-on-canvas');
+    for (const [field, file] of [['startupBackground', 'background.jpg'], ['startupLogo', 'logo.png']]) {
+        const meta = JSON.parse(fs.readFileSync(path.join(root, 'assets/resources/ui/paddle-master-login-v8', file + '.meta'), 'utf8'));
+        const texture = Object.values(meta.subMetas).find(item => item.importer === 'texture');
+        assert.equal(manager[field].__uuid__, texture.uuid);
+        assert.equal(manager[field].__expectedType__, 'cc.Texture2D');
+    }
+    const h = managerHarness();
+    h.manager.startupBackground = {}; h.manager.startupLogo = {};
+    h.manager.onLoad();
+    assert.equal(h.calls.art.background, h.manager.startupBackground);
+    assert.equal(h.calls.art.logo, h.manager.startupLogo);
+});
+
 test('首屏静态依赖不能越过业务分包边界，场景引用仍解析到启动组件', () => {
     const load = loader({ cc: {} });
     const seen = new Set();
@@ -191,10 +237,12 @@ test('真实登录初始化消费首屏交接，邀请优先最新房号，重�
         { startup: { root: new Node('首屏'), joinRoomId: null }, destination: '大厅' },
         { startup: { root: null, joinRoomId: '最新房' }, cold: '旧房', destination: '房间', room: '最新房' },
         { returningRoom: true, cold: '过期邀请', destination: '登录' },
-        { returningLobby: true, cold: '过期邀请', destination: '登录' },
+        { returningLobby: true, cold: '过期邀请', destination: '大厅' },
+        { returningRoom: true, returningLobby: true, destination: '登录' },
+        { destination: '登录' },
         { cold: '邀请房', destination: '登录' },
     ]) {
-        let destination, openedRoom, reconnect, headbars = 0;
+        let destination, openedRoom, reconnect, headbars = 0, loginScreens = 0;
         const globals = {
             takeStartupHandoff: () => scenario.startup, Layers: { Enum: { UI_2D: 1 } },
             view: { getDesignResolutionSize: () => ({ width: 1280, height: 720 }) },
@@ -211,13 +259,17 @@ test('真实登录初始化消费首屏交接，邀请优先最新房号，重�
             findCanvasNode: () => manager.node, setupUiCamera() {},
             openPrepareRace: () => { destination = '大厅'; },
             openRoom: (room, reuse) => { destination = '房间'; openedRoom = room; reconnect = reuse; },
-            buildLoginScreen: () => { destination = '登录'; },
+            buildLoginScreen: () => { loginScreens++; destination = '登录'; },
         });
         manager.onLoad(); await flush();
         assert.equal(destination, scenario.destination); assert.equal(headbars, 0, '头像栏交由大厅资源准备或房间入口创建');
         if (scenario.room) { assert.equal(openedRoom, scenario.room); assert.equal(reconnect, false); }
         if (scenario.returningRoom) { assert.equal(manager._pendingOpenRoom, true); assert.equal(manager._pendingReconnect, true); assert.equal(manager._pendingJoinRoomId, undefined); }
-        if (scenario.returningLobby) { assert.equal(manager._pendingOpenLobby, true); assert.equal(manager._pendingOpenRoom, false); }
+        if (scenario.returningLobby && !scenario.returningRoom) {
+            assert.equal(loginScreens, 0, '比赛返回直接准备大厅或生涯，不能先创建登录页');
+            assert.equal(manager._loginUiRoot, null);
+            assert.equal(manager._pendingOpenLobby, false); assert.equal(manager._pendingOpenRoom, false);
+        }
         if (!scenario.startup && scenario.cold && !scenario.returningRoom && !scenario.returningLobby) assert.equal(manager._pendingJoinRoomId, scenario.cold);
     }
 });

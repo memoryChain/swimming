@@ -8,7 +8,7 @@
   "scripts": {
     "wechat:check": "node scripts/check-wechat-project.cjs",
     "wechat:finalize": "node scripts/finalize-wechat-build.cjs",
-    "test:wechat": "node --test tests/wechat-project-config.test.cjs",
+    "test:wechat": "node --test tests/wechat-project-config.test.cjs tests/wechat-ios-dpr.test.cjs tests/wechat-first-screen.test.cjs",
     "test:startup": "npx --yes --package typescript@5.4.5 -c \"node --test tests/startup-runtime.test.cjs tests/startup-code-policy.test.cjs\"",
     "test:package": "npx --yes --package typescript@5.4.5 -c \"node --test tests/wechat-package-size.test.cjs\"",
     "test:ui-resources": "npx --yes --package typescript@5.4.5 -c \"node --test tests/ui-resource-integrity.test.cjs\"",

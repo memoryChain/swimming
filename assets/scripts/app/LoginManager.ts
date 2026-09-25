@@ -107,9 +107,9 @@ export class LoginManager extends Component {
         // renders above screen UI (login prefab, prepare-race) without any manual
         // z-order juggling. Load the profile so the count reflects saved data.
         void PlayerData.load().then(() => getProgressionManager().migrateLegacySave());
-        // 首屏已完成渲染：复用节点并直接进入大厅，不能重新创建整套登录/HUD。
-        if (startup) {
-            this._loginUiRoot = startup.root;
+        // 首屏交接或比赛返回直接准备大厅；加载遮罩保留到目标页面就绪。
+        if (startup || this._pendingOpenLobby) {
+            this._loginUiRoot = startup?.root ?? null;
             if (this._pendingOpenRoom) {
                 this._pendingOpenRoom = false;
                 this.openRoom(this._pendingJoinRoomId, this._pendingReconnect);

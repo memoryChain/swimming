@@ -7,6 +7,8 @@ const { assertUiFontPolicy } = require('./ui-font-policy');
 const { auditWechatPackageOutput } = require('../extensions/wechat-race-subpackage/wechat-package-budget');
 const { assertBuiltMotionRuntime, assertBuiltMotionStorage } = require('../extensions/wechat-race-subpackage/sampled-motion-storage');
 const { assertStartupCodeOutput, assertStartupSceneEntry } = require('../extensions/wechat-race-subpackage/startup-code-policy');
+const { assertWechatIosDpr } = require('../extensions/wechat-race-subpackage/wechat-ios-dpr');
+const { assertWechatFirstScreen } = require('../extensions/wechat-race-subpackage/wechat-first-screen');
 
 const projectRoot = path.resolve(__dirname, '..');
 try {
@@ -25,6 +27,9 @@ try {
     if (args[0] === '--build') {
         const output = path.resolve(projectRoot, args[1] || 'build/wechatgame');
         const result = assertWechatProjectOutput(output);
+        assertWechatIosDpr(output);
+        assertWechatFirstScreen(projectRoot, output);
+        console.log('[wechat-project] DPR 策略及启动日志与当前源码一致。');
         const startup = assertStartupCodeOutput(output);
         console.log(`[wechat-project] 主包脚本 ${(startup.mainJsBytes / 1024).toFixed(1)} KiB；延迟业务脚本 ${(startup.gameplayJsBytes / 1024).toFixed(1)} KiB。`);
         assertBuiltMotionRuntime(output);

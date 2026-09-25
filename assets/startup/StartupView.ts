@@ -26,7 +26,8 @@ export class StartupView {
     private background: Node | null = null;
     private readonly resize = () => this.layout();
 
-    constructor(parent: Node, private readonly onStart: () => void) {
+    constructor(parent: Node, private readonly onStart: () => void,
+        private readonly initialArt: { background: Texture2D; logo: Texture2D } | null = null) {
         this.root = this.node('StartupLogin', parent, 1280, 720);
         this.root.once(Node.EventType.NODE_DESTROYED, () => this.dispose());
         view.on('canvas-resize', this.resize);
@@ -35,13 +36,15 @@ export class StartupView {
 
     async build(): Promise<void> {
         const paths = STARTUP_RESOURCES.loginUi;
+        // 场景依赖在 onLoad 前就绪，背景与 Logo 同步建立，不等待按钮和字库。
+        if (this.initialArt) this.buildBackdrop(this.initialArt.background, this.initialArt.logo);
         const [background, logo, button, arrow, font] = await Promise.all([
-            loadTexture(paths.background), loadTexture(paths.logo), loadTexture(paths.primaryButton),
+            this.initialArt?.background ?? loadTexture(paths.background),
+            this.initialArt?.logo ?? loadTexture(paths.logo), loadTexture(paths.primaryButton),
             loadTexture(paths.primaryArrow), loadStartupFont(),
         ]);
         if (this.disposed || !this.root.isValid) return;
-        this.background = this.sprite('Background', this.root, background, 1280, 720);
-        this.art('Logo', logo, 608, 262, 28, 157);
+        if (!this.background) this.buildBackdrop(background, logo);
         const primary = this.art('StartButton', button, 373, 119, -0.5, -151.5);
         const control = primary.addComponent(Button);
         control.target = primary;
@@ -65,6 +68,12 @@ export class StartupView {
         labelNode.getComponent(UITransform)!.setContentSize(160, 50);
         this.label = label;
         this.sprite('Arrow', primary, arrow, 38, 38).setPosition(122.5, -0.5, 1);
+        this.layout();
+    }
+
+    private buildBackdrop(background: Texture2D, logo: Texture2D): void {
+        this.background = this.sprite('Background', this.root, background, 1280, 720);
+        this.art('Logo', logo, 608, 262, 28, 157);
         this.layout();
     }
 

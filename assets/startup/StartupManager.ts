@@ -1,4 +1,4 @@
-import { _decorator, Camera, Canvas, Color, Component, js, Layers, Node, sys, view } from 'cc';
+import { _decorator, Camera, Canvas, Color, Component, js, Layers, Node, sys, Texture2D, view } from 'cc';
 import { WECHAT } from 'cc/env';
 import { loadGameplayCode } from './DeferredCodeLoader';
 import { offerStartupHandoff } from './StartupHandoff';
@@ -7,9 +7,14 @@ import { StartupView } from './StartupView';
 import { MusicManager } from './MusicManager';
 import { StartupLoadingCover } from './StartupLoadingCover';
 
-const { ccclass } = _decorator;
+const { ccclass, property } = _decorator;
 @ccclass('StartupManager')
 export class StartupManager extends Component {
+    @property(Texture2D)
+    startupBackground: Texture2D | null = null;
+    @property(Texture2D)
+    startupLogo: Texture2D | null = null;
+
     private screen: StartupView | null = null;
     private loading = false;
     private attached = false;
@@ -44,7 +49,9 @@ export class StartupManager extends Component {
 
     private async buildScreen(): Promise<void> {
         if (this.screen || !this.node.isValid || this.attached) return;
-        const screen = new StartupView(this.node, () => { void this.enter(); });
+        const art = this.startupBackground && this.startupLogo
+            ? { background: this.startupBackground, logo: this.startupLogo } : null;
+        const screen = new StartupView(this.node, () => { void this.enter(); }, art);
         this.screen = screen;
         try { await screen.build(); if (this.loading) screen.setState('loading'); }
         catch (error) {

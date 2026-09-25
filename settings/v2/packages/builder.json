@@ -174,5 +174,11 @@
       }
     },
     "genMipmaps": true
+  },
+  "splash-setting": {
+    "logo": {
+      "type": "none"
+    },
+    "totalTime": 500
   }
 }

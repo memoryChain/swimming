@@ -6,6 +6,8 @@ const { assertWechatProjectOutput } = require('../extensions/wechat-race-subpack
 const { assertBuiltMotionRuntime, compactBuiltMotions, assertBuiltMotionStorage } = require('../extensions/wechat-race-subpackage/sampled-motion-storage');
 const { auditWechatPackageOutput } = require('../extensions/wechat-race-subpackage/wechat-package-budget');
 const { assertStartupCodeOutput } = require('../extensions/wechat-race-subpackage/startup-code-policy');
+const { applyWechatIosDpr, assertWechatIosDpr } = require('../extensions/wechat-race-subpackage/wechat-ios-dpr');
+const { applyWechatFirstScreen, assertWechatFirstScreen } = require('../extensions/wechat-race-subpackage/wechat-first-screen');
 
 const projectRoot = path.resolve(__dirname, '..');
 try {
@@ -24,16 +26,24 @@ try {
     assertStartupCodeOutput(outputRoot);
     assertBuiltMotionRuntime(outputRoot);
     const preview = compactBuiltMotions(projectRoot, outputRoot, { checkOnly: true });
+    const dprPreview = applyWechatIosDpr(outputRoot, { checkOnly: true });
+    const screenPreview = applyWechatFirstScreen(projectRoot, outputRoot, { checkOnly: true });
     let backupRoot;
-    if (preview.files) {
+    if (preview.files || dprPreview.changed || screenPreview.changed) {
         const backupParent = path.join(projectRoot, 'temp', 'wechat-finalize-backups');
         fs.mkdirSync(backupParent, { recursive: true });
         backupRoot = fs.mkdtempSync(path.join(backupParent, 'before-'));
     }
     const motions = compactBuiltMotions(projectRoot, outputRoot, { backupRoot });
+    const dpr = applyWechatIosDpr(outputRoot, { backupRoot });
+    assertWechatIosDpr(outputRoot);
+    applyWechatFirstScreen(projectRoot, outputRoot, { backupRoot });
+    assertWechatFirstScreen(projectRoot, outputRoot);
     assertBuiltMotionStorage(projectRoot, outputRoot);
     const budget = auditWechatPackageOutput(outputRoot);
     console.log(`[wechat-finalize] 已核验 ${motions.motions} 个动作；本次修改 ${motions.files} 个文件，无损减少 ${(motions.savedBytes / 1024).toFixed(1)} KiB。`);
+    console.log(`[wechat-finalize] DPR 策略和启动日志已${dpr.changed ? '更新并验证' : '验证'}。`);
+    console.log('[wechat-finalize] 登录背景、Logo 和加载进度条已更新并验证，复用主包图片。');
     if (backupRoot) console.log(`[wechat-finalize] 原构建数据备份：${path.relative(projectRoot, backupRoot)}。`);
     console.log(`[wechat-finalize] 主包 ${(budget.mainBytes / 1024).toFixed(1)} / 4096 KiB；总包 ${(budget.totalBytes / 1024).toFixed(1)} / 30720 KiB，余量 ${(budget.remainingBytes / 1024).toFixed(1)} KiB。`);
     console.log('[wechat-finalize] 后处理和包体检查完成；此命令不会上传或发布。');
