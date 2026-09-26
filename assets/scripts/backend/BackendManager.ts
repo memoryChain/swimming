@@ -1,10 +1,7 @@
-// Backend factory + singleton. Callers use PlayerData; PlayerData asks backend()
-// for the active IBackend. Today only the local MockBackend exists (phase 1). When
-// the WeChat Cloud backend is ready, gate it here on the WECHAT constant — callers
-// won't change.
-
 import { IBackend } from './IBackend';
 import { MockBackend } from './MockBackend';
+import { WECHAT } from 'cc/env';
+import { WechatCloudBackend } from './WechatCloudBackend';
 
 let _backend: IBackend | null = null;
 
@@ -12,8 +9,7 @@ export function backend(): IBackend {
     if (_backend) {
         return _backend;
     }
-    // TODO(阶段1C): if (WECHAT) _backend = new WechatCloudBackend(); (wx.cloud.callFunction)
-    // For now every build uses the local mock so the养成 data flow is testable in the editor.
-    _backend = new MockBackend();
+    // 微信端失败不回退到本地经济档，避免形成无法合并的两份进度。
+    _backend = WECHAT ? new WechatCloudBackend() : new MockBackend();
     return _backend;
 }

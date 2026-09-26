@@ -42,6 +42,14 @@ export class WechatPlatform implements IPlatform {
         }
     }
 
+    copyText(text: string): Promise<boolean> {
+        if (typeof wx === 'undefined' || typeof wx.setClipboardData !== 'function') return Promise.resolve(false);
+        return new Promise(resolve => {
+            try { wx.setClipboardData({ data: text, success: () => resolve(true), fail: () => resolve(false) }); }
+            catch { resolve(false); }
+        });
+    }
+
     login(): Promise<LoginResult> {
         return new Promise((resolve, reject) => {
             wx.login({

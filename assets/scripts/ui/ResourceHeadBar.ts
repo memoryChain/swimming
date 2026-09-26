@@ -15,7 +15,7 @@ import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { platform } from '../platform/PlatformManager';
 import { loadAvatarSpriteFrame, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
-import { styleCurrencyNumberLabel } from './ProjectUiFonts';
+import { styleCurrencyNumberLabel, styleProjectUiLabel } from './ProjectUiFonts';
 import { CareerImage } from './CareerPageWidgets';
 
 export interface ResourceHeadBarOptions {
@@ -53,6 +53,7 @@ export class ResourceHeadBar {
     private _backHandler: (() => void) | null = null;
     private _identity: Node | null = null;
     private _nameLabel: Label | null = null;
+    private _uidLabel: Label | null = null;
     private _avatarSprite: Sprite | null = null;
     private _avatarId = '';
     private _careerBadge: CareerImage | null = null;
@@ -110,8 +111,16 @@ export class ResourceHeadBar {
         nameLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
         nameLabel.verticalAlign = Label.VerticalAlign.CENTER;
         nameLabel.overflow = Label.Overflow.SHRINK;
-        nameNode.getComponent(UITransform)!.setContentSize(96, 38);
-        nameNode.setPosition(24.5, 0, 1);
+        nameNode.getComponent(UITransform)!.setContentSize(96, 28);
+        nameNode.setPosition(24.5, 11, 1);
+        const uidNode = makeLabel('PlayerUid', identity, '', 13, uiColor(199, 227, 245, 255));
+        const uidLabel = uidNode.getComponent(Label)!;
+        uidLabel.overflow = Label.Overflow.SHRINK;
+        uidLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+        styleProjectUiLabel(uidLabel, 'regular', 18);
+        uidNode.getComponent(UITransform)!.setContentSize(96, 22);
+        uidNode.setPosition(24.5, -13, 1);
+        this._uidLabel = uidLabel;
         this._careerBadge = new CareerImage(identity, 'CareerBadge', RESOURCE_PATHS.careerUi.badges[PlayerData.profile.career.league],
             42, 39, 99.5, 0, true);
         this._nameLabel = nameLabel;
@@ -185,6 +194,8 @@ export class ResourceHeadBar {
 
     // Update the displayed identity from the in-game profile.
     private refreshIdentity(profile: PlayerProfile): void {
+        const uidText = PlayerData.uid !== null ? `ID：${PlayerData.uid}` : PlayerData.usesCloud ? 'ID：待获取' : '本地测试';
+        if (this._uidLabel?.isValid && this._uidLabel.string !== uidText) this._uidLabel.string = uidText;
         this._careerBadge?.set(RESOURCE_PATHS.careerUi.badges[profile.career.league]);
         if (this._nameLabel?.isValid && this._nameLabel.string !== profile.nickName) {
             this._nameLabel.string = profile.nickName;
@@ -226,6 +237,7 @@ export class ResourceHeadBar {
         this._backHandler = null;
         this._identity = null;
         this._nameLabel = null;
+        this._uidLabel = null;
         this._avatarSprite = null;
         this._careerBadge = null;
         this._avatarId = '';

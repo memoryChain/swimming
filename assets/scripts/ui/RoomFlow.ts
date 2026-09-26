@@ -183,7 +183,7 @@ export class RoomFlow {
             this._statusHint = '连接超时，请返回大厅后重试';
             this.render();
         }, 15000);
-        this._entryTask = PlayerData.load().then(async () => {
+        this._entryTask = PlayerData.load(true).then(async () => {
             if (!this.entryActive()) return;
             if (!PlayerData.loaded) throw new Error('角色资料读取失败');
             if (!this._reconnect) { this._localPos = this._isHost ? 0 : -1; this._localClientId = undefined; }

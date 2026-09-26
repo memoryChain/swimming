@@ -28,6 +28,7 @@ function createHarness(externalModules = {}) {
     const ts = compiler(), cache = {};
     let cc;
     const stubs = {
+        'cc/env': { WECHAT: false },
         './CharacterModelLoader': { findNode: (node, name) => node.name === name ? node : node.children.map(child => stubs['./CharacterModelLoader'].findNode(child, name)).find(Boolean) || null },
         '../data/class': { CCClass: { fastDefine() {} } },
         '../value-types/value-type': { ValueType: class {} },

@@ -8,6 +8,7 @@ import {
 } from 'cc';
 import { PopupUiMotion } from './PopupUiMotion';
 import { AVATARS, generateRandomNickName } from '../backend/IdentityConfig';
+import { platform } from '../platform/PlatformManager';
 import { PlayerData } from '../backend/PlayerData';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { loadAvatarSpriteFrame, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
@@ -45,6 +46,12 @@ export class IdentityEditPanel {
     private _draftAvatarId: string = AVATARS[0].id;
     private _draftNickname = '';
     private _saving = false;
+    private _uidLabel: Label | null = null;
+    private _copyLabel: Label | null = null;
+    private _copyButton: Button | null = null;
+    private _copying = false;
+    private _copyGeneration = 0;
+    private _onProfileChange = () => { if (this._root?.active) this.refreshUid(); };
 
     build(parent: Node, designWidth: number, designHeight: number): Node {
         if (this._root?.isValid) return this._root;
@@ -69,11 +76,14 @@ export class IdentityEditPanel {
         const titleLabel = title.getComponent(Label)!;
         styleProjectUiLabel(titleLabel, 'semibold', 38);
         title.getComponent(UITransform)!.setContentSize(300, 44);
-        title.setPosition(0, 160, 1);
+        title.setPosition(0, 174, 1);
+
+        this.buildUidRow(panel);
 
         this.buildAvatarGrid(panel);
         this.buildNicknameRow(panel);
         this.buildActions(panel);
+        PlayerData.onChange(this._onProfileChange);
         return root;
     }
 
@@ -82,6 +92,9 @@ export class IdentityEditPanel {
         this._draftAvatarId = AVATARS.some((option) => option.id === PlayerData.avatarId)
             ? PlayerData.avatarId
             : AVATARS[0].id;
+        this._copyGeneration++;
+        this._copying = false;
+        this.refreshUid();
         this._draftNickname = PlayerData.nickName;
         this.setNicknameLabel(this._draftNickname);
         this.updateSelection(this._draftAvatarId);
@@ -90,10 +103,17 @@ export class IdentityEditPanel {
 
     hide(): void {
         if (this._saving || !this._root?.isValid) return;
+        this._copyGeneration++;
         this._motion?.hide();
     }
 
     dispose(): void {
+        PlayerData.offChange(this._onProfileChange);
+        this._copyGeneration++;
+        this._copying = false;
+        this._uidLabel = null;
+        this._copyLabel = null;
+        this._copyButton = null;
         this._motion?.dispose();
         this._motion = null;
         if (this._root?.isValid) this._root.destroy();
@@ -104,6 +124,49 @@ export class IdentityEditPanel {
         this._avatarViews.clear();
         this._selectedId = null;
         this._saving = false;
+    }
+
+    private buildUidRow(panel: Node): void {
+        const uid = makeLabel('PlayerUid', panel, '', 18, uiColor(57, 83, 148, 255));
+        this._uidLabel = uid.getComponent(Label)!;
+        this._uidLabel.overflow = Label.Overflow.SHRINK;
+        styleProjectUiLabel(this._uidLabel, 'regular', 24);
+        uid.getComponent(UITransform)!.setContentSize(350, 26);
+        uid.setPosition(-55, 136, 2);
+        const copy = makeTouchArea('CopyUid', panel, 130, 32);
+        copy.setPosition(205, 136, 2);
+        this._copyButton = copy.getComponent(Button)!;
+        const text = makeLabel('Label', copy, '复制 ID', 18, uiColor(75, 115, 224, 255));
+        this._copyLabel = text.getComponent(Label)!;
+        styleProjectUiLabel(this._copyLabel, 'semibold', 24);
+        text.getComponent(UITransform)!.setContentSize(130, 30);
+        copy.on(Button.EventType.CLICK, () => { void this.copyUid(); });
+    }
+
+    private refreshUid(): void {
+        const uid = PlayerData.uid;
+        const text = uid != null ? `玩家 ID：${uid}` : PlayerData.usesCloud ? '玩家 ID：待获取' : '本地测试，无正式 ID';
+        if (this._uidLabel?.isValid && this._uidLabel.string !== text) this._uidLabel.string = text;
+        if (this._copyLabel?.isValid && this._copyLabel.string !== '复制 ID') this._copyLabel.string = '复制 ID';
+        const enabled = uid != null && !this._copying;
+        if (this._copyButton && this._copyButton.interactable !== enabled) this._copyButton.interactable = enabled;
+    }
+
+    private async copyUid(): Promise<void> {
+        const uid = PlayerData.uid;
+        if (uid == null || this._copying || !this._root?.active || !this._motion?.interactive) return;
+        const generation = this._copyGeneration;
+        this._copying = true;
+        this.refreshUid();
+        let copied = false;
+        try { copied = await platform().copyText(String(uid)); } catch { /* 保留编号供手动复制。 */ }
+        if (generation !== this._copyGeneration || !this._root?.isValid || !this._root.active) return;
+        this._copying = false;
+        this.refreshUid();
+        if (this._copyLabel?.isValid && PlayerData.uid === uid) {
+            const text = copied ? '已复制' : '请手动记录';
+            if (this._copyLabel.string !== text) this._copyLabel.string = text;
+        }
     }
 
     private buildAvatarGrid(panel: Node): void {

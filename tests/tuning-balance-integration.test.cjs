@@ -24,7 +24,7 @@ function setup(externalModules = {}) {
     Object.assign(harness.cc, {
         JsonAsset: class {}, native: {},
         Color: class { constructor(r, g, b, a) { Object.assign(this, { r, g, b, a }); } },
-        sys: { localStorage: { getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) } },
+        sys: { localStorage: { getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value), removeItem: key => saved.delete(key) } },
         resources: { load(_path, _type, callback) { callback(null, { json: project }); } },
     });
     const load = relative => harness.load(path.join(harness.root, 'assets/scripts', relative + '.ts'));
@@ -785,11 +785,12 @@ test('30 级封顶：旧档归一、29 升 30、批量升级和满级不扣金�
     h.saved.set('swimming.player-profile',JSON.stringify({coins:999999,characters:{[id]:{level:1,signed:true}}}));
     const bulk=await backend.spendCoinsForLevel(id,60);
     assert.equal(bulk.levelsGained,29);assert.equal(bulk.profile.characters[id].level,30);
+    await PlayerData.load();
     PlayerData.profile.characters[id]={level:60};const manager=new ProgressionManager();
     assert.equal(manager.getCharacterLevel(id),30);assert.equal(manager.canAffordNextLevel(id),false);
     assert.equal(manager.projectSpendToMax(id).levels,0);
     h.saved.set('SpeedSwimming.Progression.v2',JSON.stringify({characters:{[id]:{level:60}}}));
-    manager.migrateLegacySave();assert.equal(PlayerData.profile.characters[id].level,30);
+    await manager.migrateLegacySave();assert.equal(PlayerData.profile.characters[id].level,30);
 });
 
 

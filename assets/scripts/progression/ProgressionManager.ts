@@ -22,9 +22,8 @@ export type SpendResult = {
 };
 
 // Reads/writes character progression through the shared PlayerData profile (which
-// delegates persistence to the active backend). awardRace computes coins on the
-// client and persists via PlayerData.persist() - fine for the mock phase; when the
-// WeChat Cloud backend lands the coin math should move server-side (see IBackend).
+// delegates persistence to the active backend).
+// 比赛结算由 executeCareer 处理，微信在云函数中执行同一规则。
 // Leveling is manual: spendForLevel / spendToMax go through the backend's
 // spendCoinsForLevel (server-authoritative, mirrors grantAdReward).
 export class ProgressionManager {
@@ -112,7 +111,8 @@ export class ProgressionManager {
     // shared PlayerData profile. Call once after PlayerData has loaded. Reads the
     // old key, folds any saved character progress into the profile, persists, then
     // clears the old key so it never runs again.
-    migrateLegacySave(): void {
+    async migrateLegacySave(): Promise<void> {
+        if (!PlayerData.loaded || PlayerData.usesCloud) return;
         let raw: string | null = null;
         try {
             raw = sys.localStorage.getItem(LEGACY_STORAGE_KEY);
@@ -141,7 +141,7 @@ export class ProgressionManager {
                 }
             }
         }
-        void PlayerData.persist();
+        await PlayerData.persist();
         this.clearLegacySave();
     }
 

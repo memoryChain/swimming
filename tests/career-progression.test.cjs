@@ -18,6 +18,27 @@ const { coinCostForLevel, calculateRaceCoins } = load('progression/ProgressionBa
 const { MockBackend } = load('backend/MockBackend');
 const roster = Object.keys(createDefaultProfile().characters);
 const [a, b] = roster;
+
+test('旧档迁移只在本地加载成功后执行，持久化确认前保留旧键，失败不删除', async () => {
+    const legacyKey = 'SpeedSwimming.Progression.v2';
+    const saved = new Map([[legacyKey, JSON.stringify({ characters: { [a]: { level: 10 } } })]]);
+    let resolve, reject, writes = 0;
+    const player = { loaded: false, usesCloud: false, profile: createDefaultProfile(),
+        persist: () => { writes++; return new Promise((yes, no) => { resolve = yes; reject = no; }); } };
+    const fixture = createHarness({ '../backend/PlayerData': { PlayerData: player } });
+    fixture.cc.sys = { localStorage: { getItem: key => saved.get(key) ?? null, removeItem: key => saved.delete(key) } };
+    const { ProgressionManager } = fixture.load(path.join(fixture.root, 'assets/scripts/progression/ProgressionManager.ts'));
+    const manager = new ProgressionManager();
+    await manager.migrateLegacySave(); assert.equal(writes, 0);
+    player.loaded = true; player.usesCloud = true;
+    await manager.migrateLegacySave(); assert.equal(writes, 0); assert.ok(saved.has(legacyKey));
+    player.usesCloud = false;
+    const failed = manager.migrateLegacySave(); assert.ok(saved.has(legacyKey));
+    reject(Error('保存失败')); await assert.rejects(failed); assert.ok(saved.has(legacyKey));
+    const success = manager.migrateLegacySave(); assert.ok(saved.has(legacyKey));
+    resolve(player.profile); await success; assert.equal(saved.has(legacyKey), false);
+    assert.equal(player.profile.characters[a].level, 10);
+});
 function begin(p, source = 'league', id = a, tier = p.career.league, extra = {}) {
     const r = executeCareer(p, { type: 'begin', source, characterId: id, tier, distance: 200, rule: 'standard', seed: 12345, ...extra });
     assert.equal(r.ok, true, r.message); return r.ticket;

@@ -35,7 +35,15 @@ class PlayerDataStore {
                 this._profile = retry.profile;
                 this._pendingSettlement = null;
             }
-            return action();
+            try { return await action(); }
+            catch (error) {
+                if (this.usesCloud) {
+                    // 不确定提交由云端持久化请求恢复；不与内存结算队列重复重试。
+                    this._pendingSettlement = null;
+                    this._loaded = false;
+                }
+                throw error;
+            }
         });
         this._careerQueue = next.catch(() => undefined);
         return next;
@@ -43,7 +51,7 @@ class PlayerDataStore {
 
     executeCareer(command: CareerCommand): Promise<CareerResult> {
         return this.enqueue(async () => {
-            if (command.type === 'settle') this._pendingSettlement = command;
+            if (command.type === 'settle' && !this.usesCloud) this._pendingSettlement = command;
             const result = await backend().executeCareer(command);
             if (command.type === 'settle') this._pendingSettlement = null;
             this._profile = result.profile;
@@ -60,6 +68,8 @@ class PlayerDataStore {
         return this._profile.coins;
     }
 
+    get uid(): number | null { return this._loaded ? backend().uid ?? null : null; }
+
     get nickName(): string {
         return this._profile.nickName;
     }
@@ -74,7 +84,25 @@ class PlayerDataStore {
 
     // Load the profile from the backend (idempotent: concurrent callers share one
     // request). Never rejects - keeps defaults on failure so the UI still works.
-    load(): Promise<PlayerProfile> {
+    get usesCloud(): boolean { return backend().name === 'wechat-cloud'; }
+
+    load(refresh = false): Promise<PlayerProfile> {
+        if (refresh && this._loaded && this.usesCloud) {
+            const next = this._careerQueue.then(async () => {
+                const profile = await backend().loadProfile();
+                this._loaded = true;
+                this._profile = profile;
+                restorePlayerCharacterSelection(profile.characterSelection);
+                this._emit();
+                return profile;
+            }).catch(error => {
+                this._loaded = false;
+                console.warn('[PlayerData] refresh failed', error);
+                return this._profile;
+            });
+            this._careerQueue = next;
+            return next;
+        }
         if (this._loaded) {
             return Promise.resolve(this._profile);
         }
@@ -166,7 +194,7 @@ class PlayerDataStore {
                 restorePlayerCharacterSelection(current);
                 return;
             }
-            this._profile = await backend().saveProfile({ ...this._profile, characterSelection: requested });
+            this._profile = await backend().saveCharacterSelection(requested);
             restorePlayerCharacterSelection(this._profile.characterSelection);
             this._emit();
         });

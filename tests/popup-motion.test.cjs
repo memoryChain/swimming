@@ -79,8 +79,9 @@ function setup() {
     const settings={musicVolume:.8,sfxVolume:.8,previewMusicVolume:v=>music=v,previewSfxVolume:v=>sfx=v,
         setVolumes(a,b){this.musicVolume=music=a;this.sfxVolume=sfx=b;persisted++;}};
     const requests=[];
-    const player={avatarId:'aqua',nickName:'选手',setIdentity:patch=>new Promise((resolve,reject)=>requests.push({resolve:()=>{Object.assign(player,patch);resolve();},reject}))};
-    const imports={cc,'./PopupUiMotion':{PopupUiMotion},'./RuntimeUiFactory':factory,
+    const profileListeners=new Set(),copies=[];
+    const player={uid:10000,usesCloud:true,onChange:fn=>profileListeners.add(fn),offChange:fn=>profileListeners.delete(fn),avatarId:'aqua',nickName:'选手',setIdentity:patch=>new Promise((resolve,reject)=>requests.push({resolve:()=>{Object.assign(player,patch);resolve();},reject}))};
+    const imports={cc,'../platform/PlatformManager':{platform:()=>({copyText:text=>new Promise(resolve=>copies.push({text,resolve}))})},'./PopupUiMotion':{PopupUiMotion},'./RuntimeUiFactory':factory,
         '../core/ResourcePaths':{RESOURCE_PATHS:{avatarPickerUi:{}}},
         './AvatarUiAssets':{loadAvatarUiSpriteFrame(){},loadAvatarSpriteFrame(){}},
         './ProjectUiFonts':{styleProjectUiLabel(){},styleDynamicUiLabel(){}},
@@ -89,7 +90,7 @@ function setup() {
     const {SettingsPanel}=load('assets/scripts/ui/SettingsPanel.ts',imports);
     const {IdentityEditPanel}=load('assets/scripts/ui/IdentityEditPanel.ts',imports);
     const parent=new Node('弹窗层');
-    return {parent,SettingsPanel,IdentityEditPanel,sliders,requests,player,settings,get music(){return music;},get persisted(){return persisted;},
+    return {parent,SettingsPanel,IdentityEditPanel,sliders,requests,player,settings,copies,profileListeners,get music(){return music;},get persisted(){return persisted;},
         advance(seconds){now+=seconds;for(const t of [...running])t.tick();},get running(){return running.size;},get created(){return created;}};
 }
 function near(a,b){assert.ok(Math.abs(a-b)<1e-7,`${a} != ${b}`);}
@@ -136,4 +137,20 @@ test('旧保存完成不能关闭重新创建的弹窗；按钮取消触摸和�
     p.selectAvatar('coral');const pending=p.confirm();p.dispose();const fresh=p.build(s.parent,1280,720);p.show();
     s.requests[0].resolve();await pending;s.advance(1);assert.equal(fresh.active,true);assert.equal(p._motion.interactive,true);
     p.dispose();assert.equal(s.running,0);
+});
+
+test('资料面板展示和复制服务器 ID：重复点击、失败、旧回调和监听清理', async () => {
+    const s=setup(),p=new s.IdentityEditPanel(),root=p.build(s.parent,1280,720);p.show();s.advance(.3);
+    assert.equal(find(root,'PlayerUid').getComponent(Label).string,'玩家 ID：10000');
+    const pending=p.copyUid();await p.copyUid();assert.equal(s.copies.length,1);assert.equal(s.copies[0].text,'10000');
+    s.copies[0].resolve(true);await pending;
+    assert.equal(find(find(root,'CopyUid'),'Label').getComponent(Label).string,'已复制');
+    const failed=p.copyUid();s.copies[1].resolve(false);await failed;
+    assert.equal(find(find(root,'CopyUid'),'Label').getComponent(Label).string,'请手动记录');
+    const late=p.copyUid();p.hide();s.advance(.3);p.show();s.advance(.3);s.copies[2].resolve(true);await late;
+    assert.equal(find(find(root,'CopyUid'),'Label').getComponent(Label).string,'复制 ID');
+    s.player.uid=null;for(const fn of s.profileListeners)fn();
+    assert.equal(find(root,'CopyUid').getComponent(Button).interactable,false);
+    await p.copyUid();assert.equal(s.copies.length,3);
+    p.dispose();assert.equal(s.profileListeners.size,0);
 });

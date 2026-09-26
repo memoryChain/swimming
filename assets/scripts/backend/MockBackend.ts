@@ -7,6 +7,7 @@
 // local mock; the production WeChat Cloud backend is the authoritative one.
 
 import { sys } from 'cc';
+import { normalizePlayerCharacterSelection, PlayerCharacterSelection } from '../app/PlayerCharacterConfig';
 import { CareerCommand, CareerResult, executeCareer } from '../progression/CareerRules';
 import { AdRewardResult, IBackend, IdentityPatch, LevelSpendResult } from './IBackend';
 import {
@@ -102,6 +103,13 @@ export class MockBackend implements IBackend {
     // Phase-2 progression writes come through here. The mock just persists what the
     // client computed; the future cloud function will validate and return the
     // authoritative profile instead.
+    saveCharacterSelection(selection: PlayerCharacterSelection): Promise<PlayerProfile> {
+        const profile = this.read();
+        profile.characterSelection = normalizePlayerCharacterSelection(selection);
+        this.write(profile);
+        return Promise.resolve(profile);
+    }
+
     saveProfile(profile: PlayerProfile): Promise<PlayerProfile> {
         this.write(profile);
         return Promise.resolve(profile);

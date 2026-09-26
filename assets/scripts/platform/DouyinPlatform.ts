@@ -41,6 +41,14 @@ export class DouyinPlatform implements IPlatform {
         }
     }
 
+    copyText(text: string): Promise<boolean> {
+        if (typeof tt === 'undefined' || typeof tt.setClipboardData !== 'function') return Promise.resolve(false);
+        return new Promise(resolve => {
+            try { tt.setClipboardData({ data: text, success: () => resolve(true), fail: () => resolve(false) }); }
+            catch { resolve(false); }
+        });
+    }
+
     login(): Promise<LoginResult> {
         return new Promise((resolve, reject) => {
             tt.login({

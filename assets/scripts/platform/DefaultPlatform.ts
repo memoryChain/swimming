@@ -21,6 +21,14 @@ export class DefaultPlatform implements IPlatform {
         return true;
     }
 
+    async copyText(text: string): Promise<boolean> {
+        try {
+            if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return false;
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch { return false; }
+    }
+
     login(): Promise<LoginResult> {
         return Promise.resolve({ code: 'mock-code', platform: this.name });
     }

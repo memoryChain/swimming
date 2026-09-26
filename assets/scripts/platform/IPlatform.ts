@@ -49,6 +49,8 @@ export interface LeaderboardEntry {
 
 export interface IPlatform {
     readonly name: PlatformName;
+    /** 用户点击复制时调用；失败或不支持返回 false。 */
+    copyText(text: string): Promise<boolean>;
 
     // Cheap synchronous capability probe. Use before offering an ad button, etc.
     isSupported(feature: PlatformFeature): boolean;

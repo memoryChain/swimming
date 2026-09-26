@@ -106,7 +106,9 @@ export class LoginManager extends Component {
         // Unified resource headbar (游泳卡) mounted into the HUD layer so it always
         // renders above screen UI (login prefab, prepare-race) without any manual
         // z-order juggling. Load the profile so the count reflects saved data.
-        void PlayerData.load().then(() => getProgressionManager().migrateLegacySave());
+        void PlayerData.load().then(() => getProgressionManager().migrateLegacySave()).catch(error => {
+            console.warn('[PlayerData] legacy migration failed', error);
+        });
         // 首屏交接或比赛返回直接准备大厅；加载遮罩保留到目标页面就绪。
         if (startup || this._pendingOpenLobby) {
             this._loginUiRoot = startup?.root ?? null;
@@ -192,8 +194,10 @@ export class LoginManager extends Component {
     // See PROGRESSION_CONFIG.debugGrantCoins - remove before a production release.
     private async grantDebugCoins() {
         if (!DEBUG_UI_ENABLED) return;
-        await PlayerData.grantDebugCoins(PROGRESSION_CONFIG.debugGrantCoins);
-        this.toast(`调试 +${PROGRESSION_CONFIG.debugGrantCoins} ${CURRENCY.coin.label}`);
+        try {
+            await PlayerData.grantDebugCoins(PROGRESSION_CONFIG.debugGrantCoins);
+            this.toast(`调试 +${PROGRESSION_CONFIG.debugGrantCoins} ${CURRENCY.coin.label}`);
+        } catch (error) { this.toast(error instanceof Error ? error.message : '保存失败，请重试'); }
     }
 
     onDestroy() {
@@ -236,7 +240,7 @@ export class LoginManager extends Component {
             return !!flow?.presentationReady;
         });
         // 先还原存档，避免先建默认角色，存档返回后再销毁重建。
-        void PlayerData.load().then(() => {
+        void PlayerData.load(true).then(() => {
             if (this._lobbyLoading !== loading || this._destroyed || !this._canvasNode?.isValid) return;
             if (!PlayerData.loaded) { loading.fail(new Error('存档加载失败')); return; }
             try {
@@ -314,6 +318,10 @@ export class LoginManager extends Component {
     }
 
     private handleAppShowInvite(query: Record<string, string>) {
+        // 仅大厅刷新；房间中使用已确认快照，比赛场景不注册这个回调。
+        if (!this._roomFlow && !this._lobbyLoading && !this._destroyed && PlayerData.loaded) {
+            void PlayerData.load(true);
+        }
         const invitedRoom = query?.room;
         if (!invitedRoom || this._destroyed) return;
         this._pendingOpenRoom = false;

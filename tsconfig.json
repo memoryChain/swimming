@@ -8,6 +8,8 @@
   },
   "exclude": [
     "extensions/**",
+    "art/**",
+    "cloud/**",
     "temp/**"
   ]
 }

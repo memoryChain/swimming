@@ -14,10 +14,12 @@
       "assets/scripts",
       "assets/startup",
       "assets/resources",
-      "assets/race"
+      "assets/race",
+      "cloud/src/service.cjs"
     ],
     "extensions": [
       ".ts",
+      ".cjs",
       ".json",
       ".scene",
       ".prefab"
