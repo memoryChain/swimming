@@ -17,7 +17,7 @@ for name,pos,energy,size in [('主柔光',(1,-3,4),200,3),('补光',(-3,-1,1),10
     light.rotation_euler=(Vector((0,0,.25))-light.location).to_track_quat('-Z','Y').to_euler()
 cam=bpy.data.objects.new('离线相机',bpy.data.cameras.new('离线相机')); scene.collection.objects.link(cam); scene.camera=cam
 cam.data.type='ORTHO'
-def render(name,pos,scale=1.58,target=(0,.20,.28)):
+def render(name,pos,scale=1.25,target=(0,0,.245)):
     cam.location=pos; cam.rotation_euler=(Vector(target)-cam.location).to_track_quat('-Z','Y').to_euler(); cam.data.ortho_scale=scale
     scene.render.filepath=str(HERE/(name+'.png')); bpy.ops.render.render(write_still=True)
 scene.frame_set(1)
@@ -35,7 +35,7 @@ for name,pos in ([] if '--export-icon-only' in sys.argv else [('front',(0,-3,.28
     render(name,pos)
 scene.render.film_transparent=True; scene.render.resolution_x=256; scene.render.resolution_y=256
 if '--export-icon-only' not in sys.argv:
-    render('icon-shark',(-3,-1.7,1.45),1.45,(0,.20,.28))
+    render('icon-shark',(-3,-1.7,1.45),1.18,(0,0,.245))
 if '--apply-icon' in sys.argv:
     # 保留运行时 128px 画布；源模型、灯光和镜头是图标的可编辑作者源。
     source=bpy.data.images.load(str(HERE/'icon-shark.png'),check_existing=False)

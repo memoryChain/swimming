@@ -23,12 +23,16 @@ assert.ok(restDelta<1e-5,`原骨架绑定矩阵偏差 ${restDelta}`);
 const p=g.meshes[0].primitives[0],weights=read(p.attributes.WEIGHTS_0),joints=read(p.attributes.JOINTS_0),jaw=names.indexOf('Shark_Jaw');assert.ok(jaw>=0);
 let jawWeights=0;for(let i=0;i<weights.length;i++)if(joints[i]===jaw&&weights[i]>0)jawWeights++;assert.ok(jawWeights>0);
 const bite=g.animations.find(a=>a.name==='Shark_Bite');
-const jawChannel=bite.channels.find(c=>g.nodes[c.target.node].name==='Shark_Jaw'&&c.target.path==='rotation');assert.ok(jawChannel);
-const jawSampler=bite.samplers[jawChannel.sampler],jawTimes=read(jawSampler.input),jawValues=read(jawSampler.output);
-const jawRest=jawValues.slice(0,4);
-const jawAngles=jawTimes.map((t,i)=>{const q=jawValues.slice(i*4,i*4+4),dot=q.reduce((n,x,k)=>n+x*jawRest[k],0)/(Math.hypot(...q)*Math.hypot(...jawRest));return {seconds:t,degrees:2*Math.acos(Math.min(1,Math.abs(dot)))*180/Math.PI};});
-const jawAt=t=>jawAngles.reduce((a,b)=>Math.abs(b.seconds-t)<Math.abs(a.seconds-t)?b:a);
-assert.ok(jawAt(.04).degrees>24);assert.ok(jawAt(.09).degrees<.01);assert.ok(jawAt(.13).degrees>10);assert.ok(jawAt(10/24).degrees<.01);
+function rotationKeys(bone){const channel=bite.channels.find(c=>g.nodes[c.target.node].name===bone&&c.target.path==='rotation');if(!channel)return [];
+const sampler=bite.samplers[channel.sampler],times=read(sampler.input),values=read(sampler.output),rest=values.slice(0,4);
+return times.map((seconds,i)=>{const q=values.slice(i*4,i*4+4),dot=q.reduce((n,x,k)=>n+x*rest[k],0)/(Math.hypot(...q)*Math.hypot(...rest));
+return {seconds,degrees:2*Math.acos(Math.min(1,Math.abs(dot)))*180/Math.PI};});}
+const jawAngles=rotationKeys('Shark_Jaw');
+assert.ok(jawAngles.every(x=>x.degrees<.02),'冲撞动作不能包含下颌咬合');
+const headAngles=rotationKeys('Shark_Head');assert.ok(headAngles.length);
+const headAt=t=>headAngles.reduce((a,b)=>Math.abs(b.seconds-t)<Math.abs(a.seconds-t)?b:a);
+assert.ok(headAt(.09).degrees>5,'接触时须有可见的头身歪撞');
+assert.ok(headAt(.13).degrees>5,'接触后须有冲过头的惯性');
 const animations=g.animations.map(a=>{const times=a.samplers.flatMap(s=>read(s.input));const min=Math.min(...times),max=Math.max(...times);assert.ok(min>=0&&min<1e-7);
 let endpointDelta=0;for(const s of a.samplers){const values=read(s.output),dim={VEC3:3,VEC4:4}[g.accessors[s.output].type],cubic=s.interpolation==='CUBICSPLINE',first=cubic?dim:0,last=values.length-(cubic?2:1)*dim;for(let i=0;i<dim;i++)endpointDelta=Math.max(endpointDelta,Math.abs(values[first+i]-values[last+i]));}
 return {name:a.name,start:min,duration:max,channel_endpoint_max_delta:endpointDelta};});
@@ -38,10 +42,10 @@ assert.equal(meta.uuid,'80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0');const iconMeta=fs
 assert.equal(sha(iconMeta).toUpperCase(),baseline.find(x=>x.Path.endsWith('icon-shark.png.meta')).Hash);
 const report={runtime:'assets/race/models/SharkModel.glb',bytes:current.b.length,previous_bytes:old.b.length,sha256:sha(current.b),uuid:meta.uuid,
 meshes:g.meshes.length,materials:g.materials.length,textures:g.images?.length??0,triangles:read(p.indices).length/3,exported_vertices:g.accessors[p.attributes.POSITION].count,
-bones:names,inverse_bind_max_delta:restDelta,jaw_weight_entries:jawWeights,jaw_keyframes:jawAngles,animations,
+bones:names,inverse_bind_max_delta:restDelta,jaw_weight_entries:jawWeights,jaw_keyframes:jawAngles,head_contact_keyframes:headAngles,animations,
 runtime_icon:png(path.join(root,'assets/race/ui/entertainment-banner-v1/icon-shark.png')),
 source_icon:png(path.join(root,'art/ui/entertainment-banner-v1/icon-shark-generated-source.png')),
 creator_meta:{imported:meta.imported,mesh_triangles:Object.values(meta.subMetas??{}).filter(x=>x.importer==='gltf-mesh').reduce((n,x)=>n+(x.userData?.triangleCount??0),0),
 matches_current_geometry:Object.values(meta.subMetas??{}).filter(x=>x.importer==='gltf-mesh').reduce((n,x)=>n+(x.userData?.triangleCount??0),0)===read(p.indices).length/3,
-animation_names:(meta.userData.animationImportSettings??[]).map(x=>x.name),note:'仅元数据观察；若网格数量不匹配，表示最后改形尚待重导入，不是引擎画面或真机验证'}};
+animation_names:(meta.userData.animationImportSettings??[]).map(x=>x.name),note:'仅元数据观察；面数一致不能证明最新动画缓存已更新，也不是引擎画面或真机验证'}};
 fs.copyFileSync(runtime,path.join(__dirname,'SharkModel_preview.glb'));fs.writeFileSync(path.join(__dirname,'export-audit.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report,null,2));

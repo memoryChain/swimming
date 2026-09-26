@@ -15,6 +15,36 @@ export class StrokeSfxManager {
     private static _buoyPop: AudioClip | null = null;
     private static _buoyPopLoading = false;
     private static _lastBuoyPopMs = -Infinity;
+    private static _toySharkBump: AudioClip | null = null;
+    private static _toySharkBumpLoading = false;
+    private static _lastToySharkBumpMs = -Infinity;
+
+    /** 玩具软壳撞击只在真实结果发生时播放；资源晚到不补播旧局声音。 */
+    static preloadToySharkBump() {
+        this.ensureSource();
+        if (this._toySharkBump || this._toySharkBumpLoading) return;
+        this._toySharkBumpLoading = true;
+        const load = (bundle: AssetManager.Bundle) => {
+            bundle.load(RESOURCE_PATHS.music.toySharkBump, AudioClip, (error, clip) => {
+                this._toySharkBumpLoading = false;
+                if (!error && clip) this._toySharkBump = clip;
+            });
+        };
+        const bundle = assetManager.getBundle(RESOURCE_PATHS.music.bundle);
+        if (bundle) load(bundle);
+        else assetManager.loadBundle(RESOURCE_PATHS.music.bundle, (error, loaded) => {
+            if (!error && loaded) load(loaded);
+            else this._toySharkBumpLoading = false;
+        });
+    }
+
+    static playToySharkBump() {
+        if (this._volumeScale <= 0 || !this._toySharkBump || !this._source?.isValid) return;
+        const now = Date.now();
+        if (now - this._lastToySharkBumpMs < 120) return;
+        this._lastToySharkBumpMs = now;
+        this._source.playOneShot(this._toySharkBump, 0.42 * this._volumeScale);
+    }
 
     /** 复用现有音效输出与设置音量；加载完成不补播已经过去的触发。 */
     static preloadBuoyPop() {

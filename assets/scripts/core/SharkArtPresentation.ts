@@ -71,7 +71,7 @@ export class SharkArtPresentation {
         this.animation = animation;
         this.lastVisualYaw = Number.NaN;
         this.lastVisualAdvance = Number.NaN;
-        // 更换资源只补当前姿态，不清掉事件序号，不能倒播已经结束的顶推。
+        // 更换资源只补当前姿态，不清掉事件序号，不能倒播已经结束的冲撞。
         const previousMode = this.mode;
         this.mode = 'none';
         if (previousMode === 'contact') {
@@ -194,9 +194,11 @@ export class SharkArtPresentation {
             SHARK_TUNING.bitePresentationSeconds, SHARK_TUNING.biteAnticipationSeconds));
         const anticipation = Math.max(0.001, Math.min(SHARK_TUNING.bitePresentationSeconds, SHARK_TUNING.biteAnticipationSeconds));
         const tail = Math.max(0.001, SHARK_TUNING.bitePresentationSeconds - anticipation);
+        const postImpact = Math.max(0, (this.contactElapsed - anticipation) / tail);
         const envelope = this.contactElapsed <= anticipation
             ? Math.min(1, this.contactElapsed / anticipation)
-            : Math.max(0, 1 - (this.contactElapsed - anticipation) / tail);
+            : Math.max(0, 1 - postImpact)
+                + Math.max(0, 1 - postImpact) * 0.18 * Math.sin(Math.PI * Math.min(1, postImpact * 3));
         this.applyContactTransform(this.contactYaw, this.contactAdvance * envelope);
     }
 
@@ -204,7 +206,7 @@ export class SharkArtPresentation {
         this.contactYaw = 0;
         this.contactAdvance = 0;
         if (!target?.isValid) return;
-        // 两者都挂在比赛世界根下，只校准演员层；背后／侧方补命中也使用圆鼻头。
+        // 两者都挂在比赛世界根下，只校准演员层；背后／侧方补命中也使用鼻端冲撞。
         const dx = target.position.x - shark.node.position.x;
         const dz = target.position.z - shark.node.position.z;
         const length = Math.sqrt(dx * dx + dz * dz);

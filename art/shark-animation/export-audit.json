@@ -1,14 +1,14 @@
 {
   "runtime": "assets/race/models/SharkModel.glb",
-  "bytes": 119008,
+  "bytes": 188876,
   "previous_bytes": 248976,
-  "sha256": "d8f529be5cde3cb9af0d6368d8c45bc2b3b6501bd732db95f27fcc3afd034b22",
+  "sha256": "30d02dfc73ece9bc1ae2257d994f2a6a12f3f8f6801ab1a6e267c7a6885d80b9",
   "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0",
   "meshes": 1,
   "materials": 1,
   "textures": 0,
-  "triangles": 2648,
-  "exported_vertices": 1408,
+  "triangles": 3250,
+  "exported_vertices": 2587,
   "bones": [
     "Shark_Head",
     "Shark_Body_A",
@@ -19,7 +19,7 @@
     "Shark_Jaw"
   ],
   "inverse_bind_max_delta": 0,
-  "jaw_weight_entries": 171,
+  "jaw_weight_entries": 158,
   "jaw_keyframes": [
     {
       "seconds": 1.2417634698280722e-9,
@@ -27,7 +27,7 @@
     },
     {
       "seconds": 0.04000000283122063,
-      "degrees": 25.9999973406411
+      "degrees": 0
     },
     {
       "seconds": 0.09000001102685928,
@@ -35,7 +35,7 @@
     },
     {
       "seconds": 0.12999999523162842,
-      "degrees": 12.00000144338106
+      "degrees": 0
     },
     {
       "seconds": 0.2083333283662796,
@@ -48,6 +48,36 @@
     {
       "seconds": 0.4166666865348816,
       "degrees": 0
+    }
+  ],
+  "head_contact_keyframes": [
+    {
+      "seconds": 1.2417634698280722e-9,
+      "degrees": 0.0000017075472925031877
+    },
+    {
+      "seconds": 0.04000000283122063,
+      "degrees": 6.000007378651818
+    },
+    {
+      "seconds": 0.09000001102685928,
+      "degrees": 9.000006404878
+    },
+    {
+      "seconds": 0.12999999523162842,
+      "degrees": 11.999999775076484
+    },
+    {
+      "seconds": 0.2083333283662796,
+      "degrees": 7.000003292618518
+    },
+    {
+      "seconds": 0.2916666865348816,
+      "degrees": 2.0000024270104717
+    },
+    {
+      "seconds": 0.4166666865348816,
+      "degrees": 0.0000017075472925031877
     }
   ],
   "animations": [
@@ -75,38 +105,38 @@
     "height": 128,
     "alpha_min": 0,
     "alpha_max": 255,
-    "occupied_pixels": 2639,
+    "occupied_pixels": 2702,
     "bounds": [
-      21,
-      32,
-      115,
-      88
+      24,
+      35,
+      111,
+      96
     ],
-    "sha256": "f73d7149e3af54a76b09f95482d5c662d7d46e0a56e426843beb6eb0a3af6ec5"
+    "sha256": "8c0ca49aff7a344682b420063e0f1132f049b6bd78653879a1a271013e315c39"
   },
   "source_icon": {
     "width": 256,
     "height": 256,
     "alpha_min": 0,
     "alpha_max": 255,
-    "occupied_pixels": 10090,
+    "occupied_pixels": 10354,
     "bounds": [
-      42,
-      65,
-      231,
-      177
+      49,
+      71,
+      222,
+      192
     ],
-    "sha256": "630e3496c9a244c9305e341a59082ad0de28b945abd39efa6b4cca02793e1b8d"
+    "sha256": "05a9b24ae7d5c822ef5d257a683164221d3a504f87722ac380dc00d99e1305a3"
   },
   "creator_meta": {
     "imported": true,
-    "mesh_triangles": 2648,
-    "matches_current_geometry": true,
+    "mesh_triangles": 3837,
+    "matches_current_geometry": false,
     "animation_names": [
       "Shark_Bite",
       "Shark_Entry_Rise",
       "Shark_Swim_Loop"
     ],
-    "note": "仅元数据观察；若网格数量不匹配，表示最后改形尚待重导入，不是引擎画面或真机验证"
+    "note": "仅元数据观察；面数一致不能证明最新动画缓存已更新，也不是引擎画面或真机验证"
   }
 }

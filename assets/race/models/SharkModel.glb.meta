@@ -9,15 +9,15 @@
     "__original-animation-2.bin"
   ],
   "subMetas": {
-    "fee1d": {
+    "5f027": {
       "importer": "gltf-mesh",
-      "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@fee1d",
+      "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@5f027",
       "displayName": "",
-      "id": "fee1d",
-      "name": "Shark_Mesh.001.mesh",
+      "id": "5f027",
+      "name": "Shark_Mesh.mesh",
       "userData": {
         "gltfIndex": 0,
-        "triangleCount": 2648
+        "triangleCount": 3837
       },
       "ver": "1.1.1",
       "imported": true,
@@ -113,12 +113,12 @@
       ],
       "subMetas": {}
     },
-    "53d07": {
+    "516c4": {
       "importer": "gltf-material",
-      "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@53d07",
+      "uuid": "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@516c4",
       "displayName": "",
-      "id": "53d07",
-      "name": "Shark_Mat.material",
+      "id": "516c4",
+      "name": "充气软塑料_单顶点色材质.material",
       "userData": {
         "gltfIndex": 0
       },
@@ -212,14 +212,14 @@
     },
     "assetFinder": {
       "meshes": [
-        "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@fee1d"
+        "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@5f027"
       ],
       "skeletons": [
         "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@08860"
       ],
       "textures": [],
       "materials": [
-        "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@53d07"
+        "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@516c4"
       ],
       "scenes": [
         "80c3b97c-f7a8-4d0a-8ba3-217482a1c8a0@eb992"

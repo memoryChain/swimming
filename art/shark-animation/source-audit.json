@@ -1,169 +1,48 @@
 {
+  "approved_source": "real-shark-toy-study/Shark_Original_Toy_Study.blend",
+  "approved_source_sha256": "f9c35d847788c608e70aab23c27e71adde9abbfbdd7b0dd147a9d631187e06d3",
   "bones": 7,
   "rest_matrices_unchanged": true,
-  "vertices": 1374,
-  "triangles": 2648,
+  "vertices": 2395,
+  "triangles": 3250,
   "meshes": 1,
   "materials": 1,
   "textures": 0,
   "blender_bounds": [
     [
-      -0.3700000047683716,
-      -0.4749999940395355,
-      0.06499999761581421
+      -0.29285159707069397,
+      -0.4990234971046448,
+      3.2594108745342965e-08
     ],
     [
-      0.3700000047683716,
-      0.8886574506759644,
-      0.5849999785423279
+      0.29285159707069397,
+      0.4990234375,
+      0.5017695426940918
     ]
   ],
   "contact_seconds": 0.09,
   "clip_seconds": 0.4166666666666667,
-  "jaw_weighted_vertices": 165,
-  "jaw_open_degrees": 26,
-  "jaw_open_seconds": 0.04,
-  "jaw_release_seconds": 0.13,
-  "parts": [
-    {
-      "name": "圆鼻上颌",
-      "first": 0,
-      "count": 143
-    },
-    {
-      "name": "充气下颌",
-      "first": 143,
-      "count": 104
-    },
-    {
-      "name": "短圆背鳍",
-      "first": 247,
-      "count": 50
-    },
-    {
-      "name": "左软鳍",
-      "first": 297,
-      "count": 40
-    },
-    {
-      "name": "尾鳍下瓣",
-      "first": 337,
-      "count": 50
-    },
-    {
-      "name": "右软鳍",
-      "first": 387,
-      "count": 40
-    },
-    {
-      "name": "尾鳍上瓣",
-      "first": 427,
-      "count": 50
-    },
-    {
-      "name": "眼白",
-      "first": 477,
-      "count": 144
-    },
-    {
-      "name": "瞳孔",
-      "first": 621,
-      "count": 84
-    },
-    {
-      "name": "眼睛高光",
-      "first": 705,
-      "count": 40
-    },
-    {
-      "name": "得意眉眼",
-      "first": 745,
-      "count": 56
-    },
-    {
-      "name": "眼白",
-      "first": 801,
-      "count": 144
-    },
-    {
-      "name": "瞳孔",
-      "first": 945,
-      "count": 84
-    },
-    {
-      "name": "眼睛高光",
-      "first": 1029,
-      "count": 40
-    },
-    {
-      "name": "得意眉眼",
-      "first": 1069,
-      "count": 56
-    },
-    {
-      "name": "闭合弧形笑脸",
-      "first": 1125,
-      "count": 102
-    },
-    {
-      "name": "笑脸端点",
-      "first": 1227,
-      "count": 12
-    },
-    {
-      "name": "笑脸端点",
-      "first": 1239,
-      "count": 12
-    },
-    {
-      "name": "热合接缝",
-      "first": 1251,
-      "count": 42
-    },
-    {
-      "name": "热合接缝",
-      "first": 1293,
-      "count": 42
-    },
-    {
-      "name": "软壳鳃纹",
-      "first": 1335,
-      "count": 18
-    },
-    {
-      "name": "软壳鳃纹",
-      "first": 1353,
-      "count": 18
-    },
-    {
-      "name": "软壳鳃纹",
-      "first": 1371,
-      "count": 18
-    },
-    {
-      "name": "软壳鳃纹",
-      "first": 1389,
-      "count": 18
-    },
-    {
-      "name": "软壳鳃纹",
-      "first": 1407,
-      "count": 18
-    },
-    {
-      "name": "软壳鳃纹",
-      "first": 1425,
-      "count": 18
-    },
-    {
-      "name": "气阀底座",
-      "first": 1443,
-      "count": 60
-    },
-    {
-      "name": "橙色软气阀",
-      "first": 1503,
-      "count": 60
-    }
-  ]
+  "jaw_weighted_vertices": 158,
+  "contact_kind": "inflatable_body_bump",
+  "jaw_motion_degrees": 0,
+  "impact_seconds": 0.09,
+  "overshoot_seconds": 0.13,
+  "weight_sum_max_error": 4.284083843231201e-08,
+  "detail_weights": "父壳三角面重心插值",
+  "parts": [],
+  "teeth_islands_removed": 8,
+  "source_vertices_removed": 559,
+  "antenna_anchor": [
+    -0.07999999821186066,
+    0.07999999821186066,
+    0.23984986543655396
+  ],
+  "propeller_anchor": [
+    -0.07210224866867065,
+    -0.05999999865889549,
+    0.2800000011920929
+  ],
+  "antenna_contact_error": 1.345634460525602e-07,
+  "propeller_contact_error": 2.2486686706568726e-06,
+  "toy_hardware_parts": 8
 }

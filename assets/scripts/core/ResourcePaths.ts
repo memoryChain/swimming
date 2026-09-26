@@ -70,13 +70,14 @@ const SHARK_MODEL_PREFAB_CANDIDATES = [
 ];
 
 export const SHARK_MODEL_PRESENTATION = {
-    // 新作者源鼻端 -0.475m × 1.6 = 0.76m，与原 0.75m 判定锚点对齐。
-    visualScale: 1.6,
-    visualYOffset: -0.10,
+    // 已认可原鲨鱼鼻端 -0.499m × 1.5 ≈ 0.75m；只校准外观，不改判定。
+    visualScale: 1.5,
+    // 权威根在水面下 0.28m；作者 z=0.20m 对应水线，保留露出的眼睛与背鳍。
+    visualYOffset: -0.02,
     visualEulerDegrees: [0, 90, 0] as const,
     swimAnimationSpeed: 1.2,
     swimBlendSeconds: 0.08,
-    // 接触之后只保留原有水花短延迟；顶推由有效判定时钟采样。
+    // 接触之后沿用水花短延迟；冲撞由有效判定时钟采样。
     biteSplashDelaySeconds: 0.04,
 };
 const CARTON_SWIMMER5_PREFAB_CANDIDATES = [
@@ -691,6 +692,7 @@ export const RESOURCE_PATHS = {
         race: 'race_current',
         result: 'result_sunlit_podium',
         buoyPop: 'sfx/buoy_balloon_pop',
+        toySharkBump: 'sfx/shark_toy_bump',
         strokeSfx: [
             'sfx/stroke_water_01',
         ],

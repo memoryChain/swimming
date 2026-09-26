@@ -91,23 +91,46 @@ test('零资源期间也保留序号，晚加载不重播已过期事件；销�
         h.shark.reset();h.art.sync(h.shark,0,false);h.shark.applyAuthoritativeState(h.snapshot(6,1,.38,10));h.art.sync(h.shark,0,false);
         h.shark.tick(.4);h.art.sync(h.shark,0,false);assert.equal(h.art.mode,'swim');
     }
-    assert.equal(h.model.position.x,0);assert.equal(h.model.position.z,0);assert.equal(h.model.position.y,-.1);
+    assert.equal(h.model.position.x,0);assert.equal(h.model.position.z,0);
+    assert.equal(h.model.position.y,h.load(path.join(h.root,'assets/scripts/core/ResourcePaths.ts')).SHARK_MODEL_PRESENTATION.visualYOffset);
     h.shark.reset();h.art.sync(h.shark,0,false);const count=h.animation.plays.length,samples=h.animation.samples.length,stops=h.animation.stops;
     for(let i=0;i<120;i++)h.art.sync(h.shark,1/60,false);
     assert.equal(h.animation.samples.length,samples);assert.equal(h.animation.stops,stops);
     h.art.dispose();h.art.bind(new h.Node(),h.animation,h.shark);assert.equal(h.animation.plays.length,count);
 });
-test('实际导出游动和顶推通道首尾一致，骨架、材质与资源预算符合交付',()=>{
+test('实际导出游动和冲撞通道首尾一致，下颌静止且接触时头身有惯性',()=>{
     const h=setup(),dir=path.join(h.root,'art/shark-animation');
     const a=JSON.parse(fs.readFileSync(path.join(dir,'export-audit.json'))),source=JSON.parse(fs.readFileSync(path.join(dir,'source-audit.json')));
     for(const name of ['Shark_Swim_Loop','Shark_Bite'])assert.equal(a.animations.find(x=>x.name===name).channel_endpoint_max_delta,0);
     assert.equal(a.inverse_bind_max_delta,0);assert.equal(source.rest_matrices_unchanged,true);assert.ok(source.jaw_weighted_vertices>0);
-    const jawAt=t=>a.jaw_keyframes.reduce((x,y)=>Math.abs(y.seconds-t)<Math.abs(x.seconds-t)?y:x);
-    assert.ok(jawAt(.04).degrees>24);assert.ok(jawAt(.09).degrees<.01);assert.ok(jawAt(.13).degrees>10);assert.ok(jawAt(10/24).degrees<.01);
+    assert.equal(source.teeth_islands_removed,8);
+    assert.equal(source.toy_hardware_parts,8);
+    assert.ok(source.antenna_contact_error<.001&&source.propeller_contact_error<.001);
+    assert.ok(a.jaw_keyframes.every(x=>x.degrees<.02));
+    const headAt=t=>a.head_contact_keyframes.reduce((x,y)=>Math.abs(y.seconds-t)<Math.abs(x.seconds-t)?y:x);
+    assert.ok(headAt(.09).degrees>5);assert.ok(headAt(.13).degrees>5);
     const b=fs.readFileSync(path.join(h.root,'assets/race/models/SharkModel.glb')),g=JSON.parse(b.subarray(20,20+b.readUInt32LE(12)));
     assert.equal(g.meshes.length,1);assert.equal(g.meshes[0].primitives.length,1);assert.equal(g.materials.length,1);assert.equal(g.images?.length??0,0);
     assert.equal(g.skins[0].joints.length,7);assert.ok(b.length<249000);
     for(const anim of g.animations){assert.equal(Math.min(...anim.samplers.map(s=>g.accessors[s.input].min[0])),0);}
+});
+
+test('正式资源确实替换为已认可的原鲨鱼造型，鼻端对齐原判定且备用模型不沿用圆头版',()=>{
+    const root=path.resolve(__dirname,'..'),crypto=require('node:crypto');
+    const source=JSON.parse(fs.readFileSync(path.join(root,'art/shark-animation/source-audit.json')));
+    const audit=JSON.parse(fs.readFileSync(path.join(root,'art/shark-animation/export-audit.json')));
+    const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
+    assert.equal(sha(fs.readFileSync(path.join(root,'art/shark-animation',source.approved_source))),source.approved_source_sha256);
+    const runtime=fs.readFileSync(path.join(root,'assets/race/models/SharkModel.glb'));
+    assert.equal(sha(runtime),audit.sha256);
+    assert.notEqual(sha(runtime),sha(fs.readFileSync(path.join(root,'art/shark-animation/archive/SharkModel_toy_bite.glb'))));
+    const h=setup(),{SHARK_MODEL_PRESENTATION:p}=h.load(path.join(root,'assets/scripts/core/ResourcePaths.ts'));
+    const [min,max]=source.blender_bounds;
+    assert.ok(Math.abs(-min[1]*p.visualScale-.75)<.005);
+    assert.ok(max[1]-min[1]<1.05 && max[1]-min[1]>.95);
+    const {SHARK_FALLBACK_GEOMETRY:geometry}=h.load(path.join(root,'assets/scripts/core/SharkFallbackGeometry.ts'));
+    let lo=Infinity,hi=-Infinity;for(let i=2;i<geometry.positions.length;i+=3){lo=Math.min(lo,geometry.positions[i]);hi=Math.max(hi,geometry.positions[i]);}
+    assert.ok(hi-lo<1.05 && hi-lo>.90);
 });
 
 test('侧后方巡游顶推只校准演员，归位后不留下旋转或位移',()=>{
@@ -137,21 +160,23 @@ test('真实管理器结果去重、B1 接线、旧局水花回调和过期演�
     const h=setup();h.shark.applyAuthoritativeState(h.snapshot(6,3,.29));
     const Recovery=h.load(path.join(h.root,'assets/scripts/core/EntertainmentRecoveryController.ts'));
     const paths=h.load(path.join(h.root,'assets/scripts/core/ResourcePaths.ts'));
+    const calls={recovery:0,contact:0,camera:0,splash:0,broadcast:0,sound:0};
     const Probe=methods(h,'assets/scripts/core/GameManager.ts',['applySharkKnockDown'],{
         EntertainmentRecoveryReason:Recovery.EntertainmentRecoveryReason,EntertainmentRecoveryPhase:Recovery.EntertainmentRecoveryPhase,
         ENTERTAINMENT_RECOVERY_TUNING:Recovery.ENTERTAINMENT_RECOVERY_TUNING,SHARK_TUNING:h.SHARK_TUNING,
-        SHARK_MODEL_PRESENTATION:paths.SHARK_MODEL_PRESENTATION,GameState:{RACING:1},SWIMMER_LAYER:7,setLayerRecursive:()=>{}});
-    const p=new Probe(),calls={recovery:0,contact:0,camera:0,splash:0,broadcast:0},callbacks=[];
+        SHARK_MODEL_PRESENTATION:paths.SHARK_MODEL_PRESENTATION,GameState:{RACING:1},SWIMMER_LAYER:7,setLayerRecursive:()=>{},
+        StrokeSfxManager:{playToySharkBump:()=>calls.sound++}});
+    const p=new Probe(),callbacks=[];
     h.swimmer.setSplashCulled=()=>{};h.swimmer.cartoonRig={splashNode:null,triggerBigSplashAt:()=>calls.splash++};
     Object.assign(p,{_shark:h.shark,_state:1,_lastSharkBitePresentationSequence:-1,_sharkPresentationGeneration:1,_sharkBiteWorldPosition:new h.Vec3(),
       swimmerForLane:()=>h.swimmer,applyEventKnockdown:()=>{calls.recovery++;return true;},_sharkArtPresentation:{notifyContact:()=>calls.contact++},
       _eventPictureInPicture:{showSharkContact:()=>calls.camera++},_netRaceController:{isHost:true,enqueueSharkKnockdown:()=>calls.broadcast++},scheduleOnce:cb=>callbacks.push(cb)});
     p.applySharkKnockDown(0,40,3,true);p.applySharkKnockDown(0,40,3,true);p.applySharkKnockDown(0,40,2,true);
-    assert.deepEqual(calls,{recovery:1,contact:1,camera:1,splash:0,broadcast:1});assert.equal(callbacks.length,1);
+    assert.deepEqual(calls,{recovery:1,contact:1,camera:1,splash:0,broadcast:1,sound:1});assert.equal(callbacks.length,1);
     p._sharkPresentationGeneration++;callbacks[0]();assert.equal(calls.splash,0);
     // 已在 B1 后段的迟到通知不重播顶推水花和镜头。
     p._lastSharkBitePresentationSequence=-1;p._entertainmentRecovery={stateForLane:()=>({phase:Recovery.EntertainmentRecoveryPhase.KNOCKED,remainingSeconds:1})};
-    p.applySharkKnockDown(0,40,3,false);assert.equal(calls.camera,1);assert.equal(callbacks.length,1);
+    p.applySharkKnockDown(0,40,3,false);assert.equal(calls.camera,1);assert.equal(calls.sound,1);assert.equal(callbacks.length,1);
 });
 test('真实入场层复用水花，晚快照与退场重开不移动权威根',()=>{
     const h=setup(),events=[];h.cc.Node=h.Node;
