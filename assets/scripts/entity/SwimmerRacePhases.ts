@@ -21,6 +21,7 @@ export interface SwimmerRacePhaseHost {
     readonly cartoonRig: CartoonSwimmerRig | null;
     readonly courseLayout: RaceCourseLayout;
     readonly startPosition: Readonly<Vec3>;
+    readonly onDolphinSplash?: ((phase: 'takeoff' | 'landing') => void) | null;
     updateBodyMotion(dt: number): void;
 }
 
@@ -678,6 +679,7 @@ export class SwimmerRacePhases {
                 this._dolphinBaseDistance = distance;
                 this._dolphinBaseLateral = worldZ - this._host.startPosition.z;
                 rig?.triggerTakeoffSplash(DOLPHIN_JUMP.takeoffSplashScale);
+                this._host.onDolphinSplash?.('takeoff');
             }
             return;
         }
@@ -770,6 +772,7 @@ export class SwimmerRacePhases {
         this._dolphinActive = false;
         this._dolphinAirStroking = false;
         this.startDolphinLandingUnderwaterPhase();
+        this._host.onDolphinSplash?.('landing');
         // Render the underwater glide pose this same frame (mirrors the flip turn
         // handoff) so the re-entry does not freeze on the airborne snapshot.
         this._host.updateBodyMotion(dt);

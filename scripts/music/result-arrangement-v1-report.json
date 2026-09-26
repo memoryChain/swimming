@@ -1,0 +1,53 @@
+{
+  "source": "assets/music/result_sunlit_podium.mp3",
+  "score": "result-arrangement-v1.strudel.js",
+  "strudel": "1.3.0",
+  "sourceFrames": 355968,
+  "arrangement": true,
+  "bpm": 120,
+  "bars": 4,
+  "bitrate": "80k",
+  "duration": 8,
+  "originalBytes": 32287,
+  "previewBytes": 80762,
+  "before": {
+    "input_i": "-13.78",
+    "input_tp": "-1.57",
+    "input_lra": "0.50",
+    "input_thresh": "-23.78",
+    "output_i": "-15.77",
+    "output_tp": "-3.52",
+    "output_lra": "0.50",
+    "output_thresh": "-25.77",
+    "normalization_type": "dynamic",
+    "target_offset": "-0.23"
+  },
+  "final": {
+    "input_i": "-13.78",
+    "input_tp": "-4.23",
+    "input_lra": "0.80",
+    "input_thresh": "-23.78",
+    "output_i": "-15.70",
+    "output_tp": "-6.20",
+    "output_lra": "0.50",
+    "output_thresh": "-25.70",
+    "normalization_type": "dynamic",
+    "target_offset": "-0.30"
+  },
+  "preparation": {
+    "trimStartSamples44100Hz": 2210,
+    "trimmedFrames": 352800
+  },
+  "verification": {
+    "decodedFrames": 352800,
+    "rawClippedSamples": 0,
+    "boundaryJump": 0.0026802942156791687,
+    "melodyBandCorrelationPerBar": [
+      0.9484696970123486,
+      0.9816244498282287,
+      0.979126129789164,
+      0.9675872492606434
+    ],
+    "sha256": "a82cad5c88615cfda48c3c94d48d5d4d8b15d1dda06ea892721d60737877a01e"
+  }
+}

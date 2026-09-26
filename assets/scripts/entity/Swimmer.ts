@@ -45,6 +45,8 @@ export class Swimmer extends Component {
     public collisionRemoteHuman = false;
     // 由流程层绑定体力模型；每次成功释放同步结算，重开不叠加监听。
     public onDolphinJumpEnergyCost: ((cost: number) => void) | null = null;
+    // 只由流程层为本机主角订阅，声音跟随实际出水、落水阶段。
+    public onDolphinSplash: ((phase: 'takeoff' | 'landing') => void) | null = null;
 
     get collisionParticipantIsAI(): boolean {
         return this.isAI && !this.collisionRemoteHuman;

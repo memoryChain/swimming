@@ -280,6 +280,12 @@ export class GameFlowController {
     }
 
     bindRaceManagerCallbacks() {
+        // 固定绑定本机主角；AI、远端选手及观战目标不接入音效。
+        this._refs.playerSwimmer.onDolphinSplash = (phase) => {
+            if (this._refs.getState() === GameState.RACING) {
+                StrokeSfxManager.playDolphinSplash(phase);
+            }
+        };
         const raceManager = this._refs.raceManager;
         if (!raceManager) {
             return;
@@ -405,6 +411,7 @@ export class GameFlowController {
     }
 
     clearRaceManagerCallbacks() {
+        this._refs.playerSwimmer.onDolphinSplash = null;
         this._finishPresentationVersion += 1;
         this._pendingFinishPresentation = null;
         const raceManager = this._refs.raceManager;

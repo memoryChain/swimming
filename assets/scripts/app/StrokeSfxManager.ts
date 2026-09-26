@@ -4,6 +4,8 @@ import { RESOURCE_PATHS } from '../core/ResourcePaths';
 const SFX_NODE_NAME = 'SpeedSwimmingStrokeSfx';
 const STROKE_VOLUME = 0.32;
 const PERFECT_STROKE_VOLUME = 0.52;
+const DOLPHIN_TAKEOFF_VOLUME = 0.60;
+const DOLPHIN_LANDING_VOLUME = 0.78;
 
 export class StrokeSfxManager {
     private static _node: Node | null = null;
@@ -35,6 +37,14 @@ export class StrokeSfxManager {
     }
 
     static playStroke(perfect = false) {
+        this.playWaterSplash(perfect ? PERFECT_STROKE_VOLUME : STROKE_VOLUME);
+    }
+
+    static playDolphinSplash(phase: 'takeoff' | 'landing') {
+        this.playWaterSplash(phase === 'takeoff' ? DOLPHIN_TAKEOFF_VOLUME : DOLPHIN_LANDING_VOLUME);
+    }
+
+    private static playWaterSplash(volume: number) {
         if (this._volumeScale <= 0) {
             return;
         }
@@ -49,7 +59,7 @@ export class StrokeSfxManager {
                 continue;
             }
             this._nextClip = (index + 1) % this._clips.length;
-            source.playOneShot(clip, (perfect ? PERFECT_STROKE_VOLUME : STROKE_VOLUME) * this._volumeScale);
+            source.playOneShot(clip, volume * this._volumeScale);
             return;
         }
         this.preload();
