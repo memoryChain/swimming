@@ -1,7 +1,9 @@
 'use strict';
+const { settingsFile } = require('./build-layout');
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { assertRemoteOutput } = require('./remote-assets');
 
 const CONFIG_PATH = path.resolve(__dirname, '../../config/build/wechatgame.json');
 
@@ -43,11 +45,12 @@ function assertWechatProjectOutput(outputRoot) {
     if (game.deviceOrientation !== expected.orientation) {
         throw new Error('[wechat-project] 构建包横屏配置与项目不一致。请重新构建。');
     }
-    for (const entry of ['game.js', 'src/settings.json']) {
+    for (const entry of ['game.js', path.relative(outputRoot, settingsFile(outputRoot))]) {
         if (!fs.existsSync(path.join(outputRoot, entry))) {
             throw new Error(`[wechat-project] 构建包缺少入口文件 ${entry}。`);
         }
     }
+    assertRemoteOutput(outputRoot);
     for (const name of ['race', 'music', 'gameplay', 'startup-ui']) {
         const root = `subpackages/${name}/`;
         if (!game.subpackages?.some(item => item.name === name && item.root === root)

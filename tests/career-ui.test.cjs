@@ -82,6 +82,7 @@ let adResult = 'skipped', resolveAd;
 let hotFontCache = false;
 const listeners = new Set();
 const store = { profile: null, onChange: f => listeners.add(f), offChange: f => listeners.delete(f),
+    stageCharacterAppearance() {}, async flushCharacterAppearances() {},
     async executeCareer(command) { const result = rules.executeCareer(store.profile, command); for (const f of listeners) f(store.profile); return result; } };
 class SpriteFrame {isValid=true;rect={width:100,height:100};set texture(v){this._texture=v;this.rect={width:v.width,height:v.height};} get texture(){return this._texture;} destroy(){this.isValid=false;} }
 class Sprite extends Component {static SizeMode={CUSTOM:1};static Type={SLICED:1};color=factory.uiColor(255,255,255);set spriteFrame(v){this.frame=v;this.node.asset=v?.texture?.path;}get spriteFrame(){return this.frame;} }
@@ -539,6 +540,72 @@ test('生涯与快速比赛不出现道具入口', () => {
     root.destroy();
 });
 
+test('角色页连续换色只预览，停止 1.2 秒后合并保存，切角色不串色', async t => {
+    reset(); chars.restorePlayerCharacterSelection(store.profile.characterSelection, store.profile.characterAppearances);
+    const { PrepareRaceFlow } = load('ui/PrepareRaceFlow');
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const root = new Node('Canvas'), flow = new PrepareRaceFlow(root, root, 1280, 720, {});
+    const a = ids[0], b = 'cartonSwimmer14';
+    let writes = 0, applies = 0, modelChanges = 0;
+    const drafts = new Map(), saved = [];
+    flow._root = root; flow._view = 'characters'; flow._draftCharacterId = a;
+    flow._preview = { applyAppearance() { applies++; } };
+    flow._swatches = [{ group: 'color', id: 'red', selected: true }, { group: 'color', id: 'blue', selected: false }];
+    for (const method of ['refreshCharacterCard', 'refreshCharacterInspector', 'refreshAppearanceSupport', 'refreshCharacterConfirmState']) flow[method] = () => {};
+    flow.presentCharacter = () => { modelChanges++; };
+    const previousStage = store.stageCharacterAppearance, previousFlush = store.flushCharacterAppearances;
+    store.stageCharacterAppearance = value => drafts.set(value.characterId, { ...value });
+    store.flushCharacterAppearances = async () => {
+        for (const value of drafts.values()) { writes++; saved.push(value); }
+        drafts.clear();
+    };
+    try {
+        for (let i = 0; i < 100; i++) {
+            flow.selectAppearance({ group: 'color', id: i % 2 ? 'blue' : 'purple' });
+            t.mock.timers.tick(100);
+        }
+        assert.equal(writes, 0); assert.equal(applies, 100); assert.equal(modelChanges, 0);
+        t.mock.timers.tick(1099); await tick(); assert.equal(writes, 0);
+        t.mock.timers.tick(1); await tick(); assert.equal(writes, 1);
+        assert.equal(saved[0].characterId, a); assert.equal(saved[0].colorSchemeId, 'blue');
+        flow.selectDraftCharacter(b); assert.equal(flow._swatches[0].selected, true);
+        flow.selectDraftCharacter(a); assert.equal(flow._swatches[1].selected, true);
+        assert.equal(modelChanges, 2);
+        flow.selectAppearance({ group: 'color', id: 'blue' });
+        t.mock.timers.tick(1200); await tick(); assert.equal(writes, 1);
+        flow.selectAppearance({ group: 'skin', id: 'deep' });
+        flow.selectAppearance({ group: 'color', id: 'purple' });
+        // 离开页面立即提交末次选择，清理计时器且不再访问销毁的预览。
+        flow.dispose(); await tick();
+        assert.equal(writes, 2); assert.equal(saved[1].skinToneId, 'deep');
+        assert.equal(saved[1].colorSchemeId, 'purple'); assert.equal(flow._appearanceSaveTimer, null);
+        t.mock.timers.tick(5000); await tick(); assert.equal(writes, 2);
+    } finally {
+        store.stageCharacterAppearance = previousStage; store.flushCharacterAppearances = previousFlush;
+        root.destroy();
+    }
+});
+
+test('确认角色等待保存，保存期间切换草稿后不被旧响应强制退回大厅', async () => {
+    reset(); chars.restorePlayerCharacterSelection(store.profile.characterSelection, store.profile.characterAppearances);
+    const { PrepareRaceFlow } = load('ui/PrepareRaceFlow');
+    const root = new Node('Canvas'), flow = new PrepareRaceFlow(root, root, 1280, 720, {});
+    flow._root = root; flow._view = 'characters'; flow._draftCharacterId = 'cartonSwimmer14';
+    let writes = 0, ready = 0, finish;
+    const previous = store.setCharacterSelection;
+    store.setCharacterSelection = () => { writes++; return new Promise(resolve => { finish = resolve; }); };
+    flow.showReadyScreen = () => { ready++; };
+    try {
+        const pending = flow.confirmDraftCharacter();
+        await flow.confirmDraftCharacter();
+        assert.equal(writes, 1); assert.equal(ready, 0);
+        flow._draftCharacterId = 'cartonSwimmer16'; finish(); await pending;
+        assert.equal(ready, 0); assert.equal(flow._appearancePending, false);
+        const next = flow.confirmDraftCharacter(); finish(); await next;
+        assert.equal(ready, 1);
+    } finally { store.setCharacterSelection = previous; root.destroy(); }
+});
+
 // 离线排版检查读取同一套实际页面节点，不启动或截图Creator。
 if (process.env.CAREER_LAYOUT_EXPORT) {
     const fs=require('node:fs'); reset();const host=new Node('Root');
@@ -800,7 +867,7 @@ test('积分条按像素宽度更新不缩放圆角，数值复用金币字体�
 });
 
 
-test('大厅首次构建不创建隐藏赛事页，首次打开等待，重复进入复用且销毁取消等待', async () => {
+test('首次赛事页面热缓存不显示转圈，重复进入复用且销毁取消等待', async () => {
     reset();
     const root = new Node('Root'), panel = new CareerPrototypePanel(root, () => {}, () => {});
     assert.equal(panel.page, null);
@@ -808,15 +875,61 @@ test('大厅首次构建不创建隐藏赛事页，首次打开等待，重复�
     panel.refresh(); assert.equal(descendants(root).length, count);
     panel.openQuick();
     assert.ok(panel.page); assert.ok(panel.pageLoading);
-    const page = panel.page, cover = panel.pageCover;
+    const page = panel.page; assert.equal(panel.pageCover, null, '缓存已就绪时不能显示转圈遮罩');
     panel.openQuick(); assert.equal(panel.page, page);
     pageLoads.at(-1).resolve(); await tick();
-    assert.equal(panel.pageLoading, null); assert.equal(cover.disposed, true);
+    assert.equal(panel.pageLoading, null); assert.equal(panel.pageCover, null);
     panel.open('home'); panel.openQuick(); assert.equal(panel.page, page);
     root.destroy();
     const otherRoot = new Node('Root'), other = new CareerPrototypePanel(otherRoot, () => {}, () => {});
-    other.openQuick(); const oldCover = other.pageCover;
+    other.openQuick(); assert.equal(other.pageCover, null);
     otherRoot.destroy(); await tick();
-    assert.equal(oldCover.disposed, true); assert.equal(other.pageLoading, null);
+    assert.equal(other.pageCover, null); assert.equal(other.pageLoading, null);
     pageLoads.length = 0;
+});
+
+
+test('开赛云端拒绝显示具体原因并恢复按钮，不误报通用保存失败', async () => {
+    reset(); const host = new Node('页面层'), panel = warmPanel(host, () => assert.fail('拒绝不能开赛'), () => {});
+    panel.openQuick();
+    const { CloudBackendError } = h.load(path.resolve(__dirname, '../assets/scripts/backend/WechatCloudBackend.ts'));
+    const original = store.executeCareer;
+    store.executeCareer = async () => { throw new CloudBackendError('CONFLICT', '存档已更新，请重试当前操作', true); };
+    try {
+        find(panel.page.root, 'StartEvent').click(); await tick();
+        assert.equal(textOf(panel.page.root, 'QuickStatus'), '存档已更新，请重试当前操作');
+        assert.equal(panel.busy, false);
+        assert.equal(find(panel.page.root, 'StartEvent').getComponent(Button).interactable, true);
+    } finally { store.executeCareer = original; host.destroy(); }
+});
+
+test('比赛返回复用赛事面板并解除开赛忙碌，快速赛回大厅，生涯赛恢复原赛程', () => {
+    const session = load('progression/SoloRaceSession');
+    for (const source of ['quick', 'league', 'cup']) {
+        reset();
+        const root = new Node('Root'), p = warmPanel(root, () => {}, () => {});
+        const page = p.page, count = listeners.size;
+        p.busy = true; p.setSuspended(true);
+        session.setSoloRaceTicket({ id: 'same-session', source, tier: 0, characterId: ids[0] });
+        session.markSoloReturn();
+        p.restoreNavigation(true); p.setSuspended(false);
+        assert.equal(p.busy, false); assert.equal(p.page, page); assert.equal(listeners.size, count);
+        assert.equal(p.screen, source === 'quick' ? 'home' : 'career');
+        assert.equal(session.consumeSoloReturn(), null);
+        root.destroy(); session.setSoloRaceTicket(null);
+    }
+});
+
+test('开赛请求未返回时切入房间，迟到成功不能在恢复大厅后自动开赛', async () => {
+    reset(); const root = new Node('Root'); let starts = 0, resolve;
+    const p = warmPanel(root, () => starts++, () => {}), execute = store.executeCareer;
+    const session = load('progression/SoloRaceSession'); session.setSoloRaceTicket(null);
+    store.executeCareer = () => new Promise(done => resolve = done);
+    try {
+        const task = p.begin('quick');
+        p.setSuspended(true); p.restoreNavigation(false); p.setSuspended(false);
+        resolve({ ok: true, ticket: { id: 'late', source: 'quick', rule: 'wild', distance: 200 } });
+        await task;
+        assert.equal(starts, 0); assert.equal(p.busy, false); assert.equal(session.getSoloRaceTicket(), null);
+    } finally { store.executeCareer = execute; root.destroy(); }
 });

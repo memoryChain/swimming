@@ -1,5 +1,6 @@
 import { Button, Label, Node, UITransform } from 'cc';
 import { PlayerData } from '../backend/PlayerData';
+import { CloudBackendError } from '../backend/WechatCloudBackend';
 import { getPlayerCharacterSelection } from '../app/PlayerCharacterConfig';
 import { LEAGUES, cupName, roundName, SoloSource, RaceRule } from '../progression/CareerRules';
 import { setSoloRaceTicket, consumeSoloReturn } from '../progression/SoloRaceSession';
@@ -35,6 +36,7 @@ export class CareerPrototypePanel {
     private reviewCharacterId = '';
     private disposed = false;
     private suspended = false;
+    private navigationToken = 0;
     private readonly visible = [false];
     private title: Label;
     private detail: Label;
@@ -50,26 +52,12 @@ export class CareerPrototypePanel {
     private pageCover: StartupLoadingCover | null = null;
     private pageVisible = false;
     private pageModal = false;
-    private readonly changed = () => { if (this.root.isValid && (this.root.active || this.page?.root.active)) this.refresh(); };
+    private readonly changed = () => { if (!this.suspended && this.root.isValid && (this.root.active || this.page?.root.active)) this.refresh(); };
 
     constructor(parent: Node, private readonly start: () => void, private readonly friends: () => void,
         private readonly pageHost?: { parent: Node; popupParent?: Node; visibility: (visible: boolean, modal?: boolean) => void;
             characters?: (navigation: CareerNavigation) => void; navigation?: CareerNavigation | null }) {
-        const previous = consumeSoloReturn();
-        if (previous) {
-            // 快速比赛的“返回大厅”落到大厅；更换角色返回仍由navigation恢复弹窗。
-            this.screen = previous.source === 'quick' ? 'home' : 'career';
-            this.source = previous.source === 'cup' ? 'cup' : 'league';
-            this.tier = previous.source === 'quick' ? PlayerData.profile.career.league : previous.tier;
-            const cup = PlayerData.profile.career.cups[previous.characterId];
-            const receipt = PlayerData.profile.career.receipts.find(r => r.id === previous.id);
-            if (previous.source === 'cup' && cup?.state === 'won' && cup.tier === previous.tier
-                && PlayerData.profile.career.league === previous.tier + 1 && receipt?.message.startsWith('晋级成功')) {
-                this.reviewCupTier = previous.tier;
-                this.reviewCharacterId = previous.characterId;
-                this.tier = PlayerData.profile.career.league;
-            }
-        }
+        this.restoreNavigation(true);
         if (pageHost?.navigation) {
             const n = pageHost.navigation;
             this.screen = n.screen; this.tier = n.tier; this.source = n.source;
@@ -120,6 +108,26 @@ export class CareerPrototypePanel {
         PlayerData.onChange(this.changed);
         this.root.once(Node.EventType.NODE_DESTROYED, () => this.dispose());
         this.refresh();
+    }
+
+    restoreNavigation(afterRace: boolean): void {
+        this.screen = 'home'; this.status = ''; this.confirmAbandon = false; this.busy = false;
+        this.reviewCupTier = null; this.reviewCharacterId = '';
+        const previous = afterRace ? consumeSoloReturn() : null;
+        if (previous) {
+            // 快速比赛的“返回大厅”落到大厅；更换角色返回仍由navigation恢复弹窗。
+            this.screen = previous.source === 'quick' ? 'home' : 'career';
+            this.source = previous.source === 'cup' ? 'cup' : 'league';
+            this.tier = previous.source === 'quick' ? PlayerData.profile.career.league : previous.tier;
+            const cup = PlayerData.profile.career.cups[previous.characterId];
+            const receipt = PlayerData.profile.career.receipts.find(r => r.id === previous.id);
+            if (previous.source === 'cup' && cup?.state === 'won' && cup.tier === previous.tier
+                && PlayerData.profile.career.league === previous.tier + 1 && receipt?.message.startsWith('晋级成功')) {
+                this.reviewCupTier = previous.tier;
+                this.reviewCharacterId = previous.characterId;
+                this.tier = PlayerData.profile.career.league;
+            }
+        }
     }
 
     private ensurePage(): CareerEventPage {
@@ -173,6 +181,11 @@ export class CareerPrototypePanel {
         if (this.suspended === suspended) return;
         this.suspended = suspended;
         if (suspended) {
+            this.navigationToken++;
+            const loading = this.pageLoading; this.pageLoading = null;
+            loading?.cancel();
+            this.pageCover?.dispose(); this.pageCover = null;
+            if (loading) { this.page?.dispose(); this.page = null; }
             this.page?.hide();
             if (this.page?.root.active) this.page.root.active = false;
             this.pageVisible = false; this.pageModal = false;
@@ -211,8 +224,6 @@ export class CareerPrototypePanel {
 
     private async preparePage(screen: 'quick' | 'career', source: 'league' | 'cup'): Promise<void> {
         const loading = this.pageLoading = new UiAssetBarrier();
-        this.pageCover ??= new StartupLoadingCover(null);
-        this.pageCover.setLoading();
         try {
             loading.run(() => {
                 this.ensurePage();
@@ -220,6 +231,11 @@ export class CareerPrototypePanel {
                 this.pageLoading = null;
                 try { this.open(screen, source); } finally { this.pageLoading = loading; }
             });
+            // 热缓存同步绑定完毕时直接显示，首次创建页面不等于需要下载资源。
+            if (loading.pending > 0) {
+                this.pageCover ??= new StartupLoadingCover(null, 'transparent');
+                this.pageCover.setLoading();
+            }
             await loading.waitFor(() => !!this.page?.root.isValid);
             if (this.pageLoading !== loading || this.disposed) return;
             this.pageLoading = null;
@@ -231,7 +247,8 @@ export class CareerPrototypePanel {
             this.page?.dispose(); this.page = null;
             this.screen = 'home'; this.refresh();
             console.warn('[大厅] 赛事页面加载失败，可点击重试', error);
-            this.pageCover?.setRetry(() => this.open(screen, source));
+            this.pageCover ??= new StartupLoadingCover(null, 'transparent');
+            this.pageCover.setRetry(() => this.open(screen, source));
         }
     }
     refresh(): void {
@@ -283,18 +300,22 @@ export class CareerPrototypePanel {
             const result = await PlayerData.executeCareer({ type: 'abandon', characterId: id });
             this.status = result.ok ? '' : result.message;
         }
-        catch { this.status = '保存失败，请重试'; }
+        catch (error) {
+            this.status = error instanceof CloudBackendError ? error.message : '保存失败，请重试';
+            console.warn('[Career] abandon failed', error);
+        }
         finally { this.busy = false; this.confirmAbandon = false; if (this.root.isValid) this.refresh(); }
     }
     private async begin(source: SoloSource): Promise<void> {
-        if (this.busy) return;
+        if (this.busy || this.disposed || this.suspended) return;
+        const token = this.navigationToken;
         this.busy = true; this.refresh();
         let launching = false;
         try {
             const result = await PlayerData.executeCareer({ type: 'begin', source, tier: this.tier,
                 characterId: getPlayerCharacterSelection().characterId, distance: this.distance, rule: this.rule,
                 seed: SeededRandom.entropySeed() });
-            if (!this.root.isValid) return;
+            if (!this.root.isValid || this.disposed || this.suspended || token !== this.navigationToken) return;
             if (result.ok && result.ticket) {
                 setSoloRaceTicket(result.ticket);
                 setRaceDifficulty(result.ticket.rule === 'standard' ? 'beginner' : 'competitive');
@@ -302,7 +323,15 @@ export class CareerPrototypePanel {
                 launching = true;
                 this.start();
             } else this.status = result.message;
-        } catch { this.status = '保存失败，请重试'; }
-        finally { if (!launching) this.busy = false; if (this.root.isValid) this.refresh(); }
+        } catch (error) {
+            if (token === this.navigationToken) this.status = error instanceof CloudBackendError ? error.message : '保存失败，请重试';
+            console.warn('[Career] begin failed', error);
+        }
+        finally {
+            if (token === this.navigationToken) {
+                if (!launching) this.busy = false;
+                if (this.root.isValid) this.refresh();
+            }
+        }
     }
 }

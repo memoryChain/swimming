@@ -2,7 +2,7 @@ import type { CharacterAbilityId } from '../core/CharacterAbilityConfig';
 import { HeartRateTraitId } from '../core/ConditionBalance';
 import { RaceDifficulty } from '../core/GameBalance';
 
-export type PlayerCharacterId = 'muscleMan' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer8' | 'cartonSwimmer9' | 'cartonSwimmer10' | 'cartonSwimmer11' | 'cartonSwimmer12' | 'cartonSwimmer13' | 'cartonSwimmer14' | 'cartonSwimmer15';
+export type PlayerCharacterId = 'muscleMan' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer8' | 'cartonSwimmer9' | 'cartonSwimmer10' | 'cartonSwimmer11' | 'cartonSwimmer12' | 'cartonSwimmer13' | 'cartonSwimmer14' | 'cartonSwimmer15' | 'cartonSwimmer16';
 
 export type PlayerCharacterDefinition = {
     id: PlayerCharacterId;
@@ -158,6 +158,17 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         supportsSkinTone: false,
     },
     {
+        id: 'cartonSwimmer16', name: '赛博少女', modelVariantId: 'cartonSwimmer16', unlocked: true,
+        stamina: 125, technique: 100, burst: 75,
+        weight: 1.00,
+        energyGain: 82,
+        heartRateTrait: 'balanced',
+        description: '粉帽与机械义肢是她的标志，保持节奏，稳稳向前。',
+        abilityId: 'none',
+        skillName: '暂无专属技能', skillDescription: '均衡属性，稳步发挥\n暂无额外技能效果',
+        supportsSkinTone: true,
+    },
+    {
         id: 'muscleMan', name: '肌肉男', modelVariantId: 'muscleMan', unlocked: true,
         stamina: 80, technique: 84, burst: 100,
         weight: 1.30,
@@ -194,6 +205,13 @@ export const PLAYER_COLOR_SCHEMES: readonly PlayerColorScheme[] = [
     { id: 'cherry-red', label: '樱桃红', suit: [233, 54, 79], cap: [233, 54, 79] },
     { id: 'strawberry-pink', label: '草莓粉', suit: [255, 117, 158], cap: [255, 117, 158] },
 ];
+
+export type PlayerCharacterAppearance = {
+    skinToneId: PlayerSkinTone['id'];
+    colorSchemeId: string;
+};
+
+export type PlayerCharacterAppearances = Record<string, PlayerCharacterAppearance>;
 
 export type PlayerCharacterSelection = {
     characterId: PlayerCharacterId;
@@ -233,43 +251,68 @@ export function normalizePlayerCharacterSelection(raw: unknown): PlayerCharacter
     };
 }
 
+/** 旧档只保留最后确认角色的外观；没有独立记录的角色使用默认值。 */
+export function normalizePlayerCharacterAppearances(raw: unknown, legacy?: unknown): PlayerCharacterAppearances {
+    const result: PlayerCharacterAppearances = {};
+    const saved = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as PlayerCharacterAppearances : {};
+    const last = normalizePlayerCharacterSelection(legacy);
+    for (const character of PLAYER_CHARACTER_DEFINITIONS) {
+        if (!character.unlocked) continue;
+        const entry = Object.prototype.hasOwnProperty.call(saved, character.id) ? saved[character.id]
+            : character.id === last.characterId ? last : undefined;
+        const value = normalizePlayerCharacterSelection({ ...entry, characterId: character.id });
+        result[character.id] = { skinToneId: character.supportsSkinTone === false ? 'warm' : value.skinToneId,
+            colorSchemeId: value.colorSchemeId };
+    }
+    return result;
+}
+
 let selection: PlayerCharacterSelection = createDefaultPlayerCharacterSelection();
+let appearances = normalizePlayerCharacterAppearances(undefined, selection);
 let selectedRaceDifficulty: RaceDifficulty = 'competitive';
 
-export function getPlayerCharacterSelection(): Readonly<PlayerCharacterSelection> { return selection; }
+export function getPlayerCharacterSelection(characterId = selection.characterId): Readonly<PlayerCharacterSelection> {
+    if (characterId === selection.characterId) return selection;
+    const appearance = appearances[characterId] ?? createDefaultPlayerCharacterSelection();
+    return { characterId, skinToneId: appearance.skinToneId, colorSchemeId: appearance.colorSchemeId };
+}
 
-// Restore the complete appearance from persistent profile data. Validation keeps
-// removed/renamed character ids in old saves from leaking into runtime systems.
-export function restorePlayerCharacterSelection(saved: unknown): void {
+export function restorePlayerCharacterSelection(saved: unknown, savedAppearances?: unknown): void {
     selection = normalizePlayerCharacterSelection(saved);
+    appearances = normalizePlayerCharacterAppearances(savedAppearances, selection);
+    selection = { characterId: selection.characterId, ...appearances[selection.characterId] };
 }
 
 export function selectPlayerCharacter(id: PlayerCharacterId) {
     const character = findPlayerCharacter(id);
-    if (character?.unlocked) selection = { ...selection, characterId: id };
+    if (character?.unlocked) selection = { characterId: id, ...appearances[id] };
+}
+
+function updateAppearance(characterId: PlayerCharacterId, patch: Partial<PlayerCharacterAppearance>): void {
+    if (!findPlayerCharacter(characterId)?.unlocked) return;
+    appearances[characterId] = { ...appearances[characterId], ...patch };
+    if (selection.characterId === characterId) selection = { ...selection, ...appearances[characterId] };
 }
 
 export function cyclePlayerSkinTone() {
-    if (!selectedPlayerCharacterSupportsSkinTone()) return;
     const index = PLAYER_SKIN_TONES.findIndex((tone) => tone.id === selection.skinToneId);
-    selection = { ...selection, skinToneId: PLAYER_SKIN_TONES[(Math.max(0, index) + 1) % PLAYER_SKIN_TONES.length].id };
+    setPlayerSkinTone(PLAYER_SKIN_TONES[(Math.max(0, index) + 1) % PLAYER_SKIN_TONES.length].id);
 }
 
 export function cyclePlayerColorScheme() {
     const index = PLAYER_COLOR_SCHEMES.findIndex((scheme) => scheme.id === selection.colorSchemeId);
-    const nextIndex = index < 0 ? 0 : (index + 1) % PLAYER_COLOR_SCHEMES.length;
-    selection = { ...selection, colorSchemeId: PLAYER_COLOR_SCHEMES[nextIndex].id };
+    setPlayerColorScheme(PLAYER_COLOR_SCHEMES[index < 0 ? 0 : (index + 1) % PLAYER_COLOR_SCHEMES.length].id);
 }
 
 export function setPlayerSkinTone(id: PlayerSkinTone['id'], characterId = selection.characterId) {
     if (!selectedPlayerCharacterSupportsSkinTone(characterId)) return;
     if (!PLAYER_SKIN_TONES.some((tone) => tone.id === id)) return;
-    selection = { ...selection, skinToneId: id };
+    updateAppearance(characterId, { skinToneId: id });
 }
 
-export function setPlayerColorScheme(id: string) {
+export function setPlayerColorScheme(id: string, characterId = selection.characterId) {
     if (!PLAYER_COLOR_SCHEMES.some((scheme) => scheme.id === id)) return;
-    selection = { ...selection, colorSchemeId: id };
+    updateAppearance(characterId, { colorSchemeId: id });
 }
 
 export function findPlayerCharacter(id = selection.characterId): PlayerCharacterDefinition | null {
@@ -293,15 +336,15 @@ export function weightToPhysicalRating(weight: number): number {
 
 export function selectedPlayerSkinTone(characterId = selection.characterId): PlayerSkinTone {
     if (!selectedPlayerCharacterSupportsSkinTone(characterId)) return PLAYER_SKIN_TONES[0];
-    return PLAYER_SKIN_TONES.find((tone) => tone.id === selection.skinToneId) ?? PLAYER_SKIN_TONES[0];
+    return PLAYER_SKIN_TONES.find((tone) => tone.id === getPlayerCharacterSelection(characterId).skinToneId) ?? PLAYER_SKIN_TONES[0];
 }
 
 export function selectedPlayerCharacterSupportsSkinTone(characterId = selection.characterId): boolean {
     return findPlayerCharacter(characterId)?.supportsSkinTone !== false;
 }
 
-export function selectedPlayerColorScheme(): PlayerColorScheme {
-    return PLAYER_COLOR_SCHEMES.find((scheme) => scheme.id === selection.colorSchemeId) ?? PLAYER_COLOR_SCHEMES[0];
+export function selectedPlayerColorScheme(characterId = selection.characterId): PlayerColorScheme {
+    return PLAYER_COLOR_SCHEMES.find((scheme) => scheme.id === getPlayerCharacterSelection(characterId).colorSchemeId) ?? PLAYER_COLOR_SCHEMES[0];
 }
 
 export function setSelectedRaceDifficulty(difficulty: RaceDifficulty) { selectedRaceDifficulty = difficulty; }

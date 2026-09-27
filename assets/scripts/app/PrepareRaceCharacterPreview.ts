@@ -44,6 +44,9 @@ export class PrepareRaceCharacterPreview extends Component {
     private _yawDegrees = 0;
     private _centered = false;
     private _selectedCharacterId = '';
+    private readonly _preparedCharacters = new Map<string, {
+        pivot: Node; swimmer: Node; rig: CartoonSwimmerRig; action: CharacterAction;
+    }>();
     private _showcaseAction = CharacterAction.ArmStretching;
     private _lobbyPresentation = false;
     private _hallOffsetEnabled = false;
@@ -130,14 +133,34 @@ export class PrepareRaceCharacterPreview extends Component {
             this.applyAppearance();
             return;
         }
-        if (character.id !== this._selectedCharacterId) {
-            this._selectedCharacterId = character.id;
-            this._showcaseAction = selectActionFromPool(CHARACTER_SELECT_ACTIONS)
-                ?? CharacterAction.ArmStretching;
+        // 角色首次展示时创建，之后复用已就绪实例。隐藏角色停止所有组件更新。
+        if (this.presentationReady && this._pivotNode?.isValid && this._swimmerNode && this._rig) {
+            this._preparedCharacters.set(this._selectedCharacterId, {
+                pivot: this._pivotNode, swimmer: this._swimmerNode, rig: this._rig, action: this._showcaseAction,
+            });
+            this._pivotNode.active = false;
+        } else {
+            this._pivotNode?.destroy();
         }
         this._shadowSilhouetteProxy?.destroy();
         this._shadowSilhouetteProxy = null;
-        this._pivotNode?.destroy();
+        this._selectedCharacterId = character.id;
+        const prepared = this._preparedCharacters.get(character.id);
+        if (prepared?.pivot.isValid && prepared.rig.raceReady) {
+            this._pivotNode = prepared.pivot;
+            this._swimmerNode = prepared.swimmer;
+            this._rig = prepared.rig;
+            this._showcaseAction = prepared.action;
+            this._centered = true;
+            const scale = this._lobbyPresentation ? LOBBY_CHARACTER_SCALE : PREVIEW_CHARACTER_SCALE;
+            prepared.pivot.setScale(scale, scale, scale);
+            prepared.pivot.setRotationFromEuler(0, this._yawDegrees, 0);
+            this.applyAppearance();
+            prepared.pivot.active = true;
+            return;
+        }
+        this._preparedCharacters.delete(character.id);
+        this._showcaseAction = selectActionFromPool(CHARACTER_SELECT_ACTIONS) ?? CharacterAction.ArmStretching;
         const pivot = new Node('PrepareRaceCharacterPivot');
         pivot.layer = Layers.Enum.DEFAULT;
         pivot.setParent(this.node);
@@ -153,7 +176,7 @@ export class PrepareRaceCharacterPreview extends Component {
 
         const rig = swimmer.addComponent(CartoonSwimmerRig);
         const skin = selectedPlayerSkinTone(character.id);
-        const palette = selectedPlayerColorScheme();
+        const palette = selectedPlayerColorScheme(character.id);
         rig.setModelVariant(character.modelVariantId);
         rig.build(
             new Color(...skin.color, 255),
@@ -190,7 +213,7 @@ export class PrepareRaceCharacterPreview extends Component {
             return;
         }
         const skin = selectedPlayerSkinTone(this._selectedCharacterId as PlayerCharacterId);
-        const palette = selectedPlayerColorScheme();
+        const palette = selectedPlayerColorScheme(this._selectedCharacterId as PlayerCharacterId);
         this._rig.setColorOverride({
             skin: skin.preserveOriginal ? undefined : new Color(...skin.color, 255),
             suit: new Color(...palette.suit, 255),
@@ -254,6 +277,7 @@ export class PrepareRaceCharacterPreview extends Component {
     }
 
     onDestroy() {
+        this._preparedCharacters.clear();
         this._cameraNode?.destroy();
         this._lightNode?.destroy();
         this._shadowCameraNode?.destroy();

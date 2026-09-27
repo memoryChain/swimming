@@ -6,6 +6,32 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { readWechatConfig, applyWechatProjectConfig, assertWechatProjectOutput } = require('../extensions/wechat-race-subpackage/wechat-project-config');
+const { configure } = require('../scripts/configure-wechat-cloud.cjs');
+
+test('云开发根项目开启上传压缩并跟随构建 SourceMap 配置，保留其他本地设置', t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'swimming-cloud-config-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    fs.mkdirSync(path.join(root, 'config/build'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'assets/scripts/backend'), { recursive: true });
+    const build = { sourceMaps: false, packages: { wechatgame: { appid: 'wx89ee56c51312f147' } } };
+    const buildFile = path.join(root, 'config/build/wechatgame.json');
+    fs.writeFileSync(buildFile, JSON.stringify(build));
+    fs.writeFileSync(path.join(root, 'assets/scripts/backend/WechatCloudConfig.ts'), "export const config = { environmentId: '' };\n");
+    const file = path.join(root, 'project.config.json');
+    const ignores = [{ type: 'file', value: 'local-notes.txt' }];
+    fs.writeFileSync(file, JSON.stringify({ setting: { minified: false, uploadWithSourceMap: true, urlCheck: true }, packOptions: { ignore: ignores } }));
+    configure('test-env', root);
+    const project = JSON.parse(fs.readFileSync(file));
+    assert.equal(project.setting.minified, true);
+    assert.equal(project.setting.uploadWithSourceMap, false);
+    assert.equal(project.setting.urlCheck, true);
+    assert.deepEqual(project.packOptions.ignore, ignores);
+    assert.equal(project.miniprogramRoot, 'build/wechatgame/');
+    assert.equal(project.cloudfunctionRoot, 'cloud/functions/');
+    build.sourceMaps = true; fs.writeFileSync(buildFile, JSON.stringify(build));
+    configure('test-env', root);
+    assert.equal(JSON.parse(fs.readFileSync(file)).setting.uploadWithSourceMap, true);
+});
 
 test('微信构建使用项目身份，保留调试和平台其他配置', () => {
     const options = { platform: 'wechatgame', debug: false, packages: {

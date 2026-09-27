@@ -18,7 +18,7 @@ const TRACKS: Record<MusicTrack, MusicTrackConfig> = {
 
 // One persistent AudioSource follows the player across Login and MainGame.
 // The separate music Asset Bundle is a WeChat subpackage, keeping every MP3
-// out of the initial package. Clips are still decoded one at a time.
+// 音频留在微信分包，切换曲目时按需解析，始终复用一个 AudioSource。
 export class MusicManager {
     private static _node: Node | null = null;
     private static _source: AudioSource | null = null;

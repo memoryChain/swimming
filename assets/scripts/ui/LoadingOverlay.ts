@@ -1,6 +1,5 @@
-import { _decorator, BlockInputEvents, Camera, Canvas, Color, Component, director, Graphics, Label, Layers, Node, UITransform, Vec3, view } from 'cc';
-
-const { ccclass } = _decorator;
+import { BlockInputEvents, Camera, Canvas, Color, director, Graphics, Label, Node, UITransform, view } from 'cc';
+import { styleProjectUiLabel } from './ProjectUiFonts';
 
 // Full-screen loading cover that persists across the Login -> MainGame scene
 // switch. Without it the new scene shows its world camera's solid blue clear
@@ -17,56 +16,12 @@ const OVERLAY_NODE_NAME = 'RaceLoadingOverlay';
 // Rendered after the world (priority 0) and MainGame UI (priority 10) cameras so
 // its SOLID_COLOR clear wipes them and draws the loading label on top.
 const OVERLAY_CAMERA_PRIORITY = 100;
-// Full turns per second for the spinner ring.
-const SPINNER_TURNS_PER_SECOND = 0.9;
-
-// Cycles a trailing ellipsis and spins the loading ring so the loading screen
-// visibly animates and never looks frozen while assets stream in.
-@ccclass('LoadingDotsAnimator')
-class LoadingDotsAnimator extends Component {
-    label: Label = null;
-    spinner: Node = null;
-    baseText = '加载中';
-    private _elapsed = 0;
-    private _dots = -1;
-    private _spin = 0;
-    private readonly _spinEuler = new Vec3();
-
-    update(dt: number) {
-        this._elapsed += dt;
-        if (this.label?.isValid) {
-            const dots = Math.floor(this._elapsed / 0.35) % 4;
-            if (dots !== this._dots) {
-                this._dots = dots;
-                this.label.string = this.baseText + '.'.repeat(dots);
-            }
-        }
-        if (this.spinner?.isValid) {
-            this._spin = (this._spin - dt * SPINNER_TURNS_PER_SECOND * 360) % 360;
-            this._spinEuler.set(0, 0, this._spin);
-            this.spinner.setRotationFromEuler(this._spinEuler);
-        }
-    }
-}
-
-// Draws a circular track plus a bright leading arc; rotating the whole node
-// gives the classic "spinner" look without needing any texture asset.
-function drawSpinnerRing(gfx: Graphics, radius: number): void {
-    gfx.clear();
-    gfx.lineWidth = 6;
-    gfx.lineCap = Graphics.LineCap.ROUND;
-    gfx.strokeColor = new Color(70, 96, 122, 180);
-    gfx.circle(0, 0, radius);
-    gfx.stroke();
-    gfx.strokeColor = new Color(120, 196, 255, 255);
-    // Leading arc spanning ~270 degrees (from -30deg counter-clockwise).
-    gfx.arc(0, 0, radius, -Math.PI / 6, Math.PI * 1.3, true);
-    gfx.stroke();
-}
-
-
 export class LoadingOverlay {
     private static _node: Node | null = null;
+    private static _fill: Node | null = null;
+    private static _label: Label | null = null;
+    private static _percent = -1;
+    private static _message = '加载中';
 
     // Create and show the overlay as a persistent root node. Safe to call more
     // than once; subsequent calls are ignored while an overlay is already up.
@@ -107,22 +62,34 @@ export class LoadingOverlay {
         label.color = new Color(226, 238, 250, 255);
         label.horizontalAlign = Label.HorizontalAlign.CENTER;
         label.verticalAlign = Label.VerticalAlign.CENTER;
+        styleProjectUiLabel(label, 'semibold', 40);
 
-        const spinnerNode = new Node('LoadingSpinner');
-        spinnerNode.setParent(root);
-        spinnerNode.layer = LOADING_OVERLAY_LAYER;
-        spinnerNode.setPosition(0, 36, 0);
-        const spinnerRadius = 26;
-        spinnerNode.addComponent(UITransform).setContentSize(spinnerRadius * 2 + 12, spinnerRadius * 2 + 12);
-        drawSpinnerRing(spinnerNode.addComponent(Graphics), spinnerRadius);
-
-        const animator = root.addComponent(LoadingDotsAnimator);
-        animator.label = label;
-        animator.spinner = spinnerNode;
-        animator.baseText = message;
+        const track = new Node('LoadingProgress');
+        track.setParent(root); track.layer = LOADING_OVERLAY_LAYER;
+        track.addComponent(UITransform).setContentSize(360, 12);
+        const trackGraphics = track.addComponent(Graphics);
+        trackGraphics.fillColor = new Color(70, 96, 122, 255);
+        trackGraphics.rect(-180, 0, 360, 12); trackGraphics.fill();
+        const fill = new Node('LoadingProgressFill');
+        fill.setParent(track); fill.layer = LOADING_OVERLAY_LAYER; fill.setPosition(-180, 0, 0);
+        fill.addComponent(UITransform).setContentSize(360, 12);
+        const fillGraphics = fill.addComponent(Graphics);
+        fillGraphics.fillColor = new Color(120, 196, 255, 255);
+        fillGraphics.rect(0, 0, 360, 12); fillGraphics.fill();
+        this._fill = fill; this._label = label; this._percent = -1; this._message = message;
 
         director.addPersistRootNode(root);
         this._node = root;
+        this.setProgress(0);
+    }
+
+    static setProgress(fraction: number): void {
+        if (!this._node?.isValid || !Number.isFinite(fraction)) return;
+        const percent = Math.max(this._percent, Math.min(100, Math.floor(fraction * 100)));
+        if (percent === this._percent) return;
+        this._percent = percent;
+        this._fill?.setScale(percent / 100, 1, 1);
+        if (this._label?.isValid) this._label.string = `${this._message} ${percent}%`;
     }
 
     // Remove the overlay once the race scene is ready. Safe to call when nothing
@@ -130,6 +97,7 @@ export class LoadingOverlay {
     static hide(): void {
         const node = this._node;
         this._node = null;
+        this._fill = null; this._label = null; this._percent = -1;
         if (!node?.isValid) {
             return;
         }

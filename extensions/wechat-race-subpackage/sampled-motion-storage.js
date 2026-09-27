@@ -1,4 +1,5 @@
 'use strict';
+const { settingsFile } = require('./build-layout');
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -93,7 +94,21 @@ function compactBuiltMotions(projectRoot, outputRoot, { checkOnly = false, backu
             }
         }
     }
-    visit(path.join(outputRoot, 'subpackages/race/import'));
+    let importRoot = path.join(outputRoot, 'subpackages/race/import');
+    if (!fs.existsSync(importRoot)) {
+        const settings = JSON.parse(fs.readFileSync(settingsFile(outputRoot), 'utf8'));
+        const server = new URL(settings.assets?.server);
+        if (!settings.assets?.remoteBundles?.includes('race') || !/^\/[a-z0-9-]+\/[A-Za-z0-9][A-Za-z0-9._-]{0,31}\/$/.test(server.pathname)) {
+            throw Error('[motion-storage] 缺少有效的远程资源版本。');
+        }
+        importRoot = path.join(projectRoot, 'output/wechat-cdn', server.pathname, 'remote/race/import');
+        if (!checkOnly) {
+            const audit = compactBuiltMotions(projectRoot, outputRoot, { checkOnly: true });
+            if (audit.files) throw Error('[motion-storage] 远程发布版本不可修改，请从新构建重新导出。');
+            return audit;
+        }
+    }
+    visit(importRoot);
     const missing = [...sources.keys()].filter((id) => !seen.has(id));
     if (missing.length) throw new Error(`[motion-storage] Missing built motions: ${missing.join(', ')}`);
     // 全部动作核验成功后才写入；源 JSON、UUID 和 Cocos 的依赖/版本索引保持原样。

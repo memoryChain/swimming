@@ -13,6 +13,8 @@ import {
     normalizePlayerCharacterSelection,
     PlayerCharacterSelection,
     restorePlayerCharacterSelection,
+    setPlayerSkinTone,
+    setPlayerColorScheme,
 } from '../app/PlayerCharacterConfig';
 
 type ChangeListener = (profile: PlayerProfile) => void;
@@ -24,6 +26,38 @@ class PlayerDataStore {
     private _listeners: ChangeListener[] = [];
     private _careerQueue: Promise<unknown> = Promise.resolve();
     private _pendingSettlement: CareerCommand | null = null;
+    private readonly _appearanceDrafts = new Map<string, PlayerCharacterSelection>();
+    private _appearanceQueue: Promise<void> = Promise.resolve();
+
+    stageCharacterAppearance(appearance: Readonly<PlayerCharacterSelection>): void {
+        const requested = normalizePlayerCharacterSelection(appearance);
+        this._appearanceDrafts.set(requested.characterId, requested);
+    }
+
+    /** 每次提交只处理这一刻的最终选择，等待期间已被新选择替代的项直接跳过。 */
+    flushCharacterAppearances(): Promise<void> {
+        const batch = [...this._appearanceDrafts.values()];
+        const next = this._appearanceQueue.then(async () => {
+            for (const requested of batch) {
+                if (this._appearanceDrafts.get(requested.characterId) !== requested) continue;
+                await this.setCharacterAppearance(requested);
+                if (this._appearanceDrafts.get(requested.characterId) === requested) {
+                    this._appearanceDrafts.delete(requested.characterId);
+                }
+            }
+        });
+        this._appearanceQueue = next.catch(() => undefined);
+        return next;
+    }
+
+    private restoreCharacterAppearances(): void {
+        restorePlayerCharacterSelection(this._profile.characterSelection, this._profile.characterAppearances);
+        // 请求返回和档案刷新不能盖掉玩家在等待期间继续试选的颜色。
+        for (const draft of this._appearanceDrafts.values()) {
+            setPlayerSkinTone(draft.skinToneId, draft.characterId);
+            setPlayerColorScheme(draft.colorSchemeId, draft.characterId);
+        }
+    }
 
     private enqueue<T>(action: () => Promise<T>, retrySettlement = true): Promise<T> {
         const next = this._careerQueue.then(async () => {
@@ -86,13 +120,20 @@ class PlayerDataStore {
     // request). Never rejects - keeps defaults on failure so the UI still works.
     get usesCloud(): boolean { return backend().name === 'wechat-cloud'; }
 
+    // 导航使用当前已确认档案；等待在途写入，不重复向云端读取同一份数据。
+    async loadForNavigation(): Promise<PlayerProfile> {
+        await this.flushCharacterAppearances();
+        await this._careerQueue;
+        return this.load();
+    }
+
     load(refresh = false): Promise<PlayerProfile> {
         if (refresh && this._loaded && this.usesCloud) {
             const next = this._careerQueue.then(async () => {
                 const profile = await backend().loadProfile();
                 this._loaded = true;
                 this._profile = profile;
-                restorePlayerCharacterSelection(profile.characterSelection);
+                this.restoreCharacterAppearances();
                 this._emit();
                 return profile;
             }).catch(error => {
@@ -115,7 +156,7 @@ class PlayerDataStore {
                 this._loading = null;
                 this._loaded = true;
                 this._profile = profile;
-                restorePlayerCharacterSelection(profile.characterSelection);
+                this.restoreCharacterAppearances();
                 this._emit();
                 return profile;
             })
@@ -183,21 +224,46 @@ class PlayerDataStore {
         });
     }
 
+    /** 保存单个角色外观；不会把正在试穿的角色设为出场角色。 */
+    async setCharacterAppearance(appearance: Readonly<PlayerCharacterSelection>): Promise<void> {
+        const requested = normalizePlayerCharacterSelection(appearance);
+        try {
+            await this.enqueue(async () => {
+                const current = this._profile.characterAppearances[requested.characterId];
+                if (current?.skinToneId !== requested.skinToneId || current?.colorSchemeId !== requested.colorSchemeId) {
+                    this._profile = await backend().saveCharacterAppearance(requested);
+                }
+                this.restoreCharacterAppearances();
+                this._emit();
+            });
+        } catch (error) {
+            // 恢复确认档并叠加待保存草稿；未知提交仍由云 outbox 恢复。
+            this.restoreCharacterAppearances();
+            this._emit();
+            throw error;
+        }
+    }
+
     // Persist the last confirmed playable character and appearance. Loading first
     // prevents a fast early click from overwriting other fields with defaults.
     async setCharacterSelection(selection: Readonly<PlayerCharacterSelection>): Promise<void> {
         const requested = normalizePlayerCharacterSelection(selection);
-        return this.enqueue(async () => {
-            const current = this._profile.characterSelection;
-            if (current.characterId === requested.characterId && current.skinToneId === requested.skinToneId
-                && current.colorSchemeId === requested.colorSchemeId) {
-                restorePlayerCharacterSelection(current);
-                return;
-            }
-            this._profile = await backend().saveCharacterSelection(requested);
-            restorePlayerCharacterSelection(this._profile.characterSelection);
-            this._emit();
-        });
+        try {
+            await this.enqueue(async () => {
+                const current = this._profile.characterSelection;
+                if (current.characterId === requested.characterId && current.skinToneId === requested.skinToneId
+                    && current.colorSchemeId === requested.colorSchemeId) {
+                    this.restoreCharacterAppearances();
+                    return;
+                }
+                this._profile = await backend().saveCharacterSelection(requested);
+                this.restoreCharacterAppearances();
+                this._emit();
+            });
+        } catch (error) {
+            this.restoreCharacterAppearances();
+            throw error;
+        }
     }
 
     // Persist the current in-memory profile (phase-2 progression writes). Delegates
@@ -225,6 +291,7 @@ class PlayerDataStore {
     }
 
     private _emit(): void {
+        if (this._appearanceDrafts.size) this.restoreCharacterAppearances();
         for (const listener of this._listeners.slice()) {
             try {
                 listener(this._profile);

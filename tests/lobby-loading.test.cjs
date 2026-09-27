@@ -45,20 +45,23 @@ test('错误、超时和取消均结束等待；迟到回调不污染重试或�
     assert.equal(h.hooks.size, 0);
 });
 
-function loginHarness() {
+function loginHarness({ deferResources = false } = {}) {
     const h = barrierHarness(), requests = [], calls = [];
-    let resolveProfile;
+    let resolveProfile, resolveResources;
+    const resources = new Promise(resolve => resolveResources = resolve);
     const profile = new Promise(resolve => resolveProfile = resolve);
     const PlayerData = { loaded: true, load: () => profile };
     class Cover {
         disposed = false; loading = false;
-        constructor(login) { this.login = login; }
+        constructor(login, presentation) { this.login = login; this.presentation = presentation; }
         setLoading() { this.loading = true; }
+        setProgress(value) { this.progress = value; }
         setRetry(callback) { this.retry = callback; this.loading = false; }
         dispose() { this.disposed = true; }
     }
     const Login = methods('assets/scripts/app/LoginManager.ts', ['openPrepareRace', 'prepareLobby', 'cancelLobbyLoading'], {
         UiAssetBarrier: h.UiAssetBarrier, StartupLoadingCover: Cover, PlayerData,
+        loadRaceBundle(done) { if (deferResources) resources.then(() => done(null)); else done(null); },
         prepareProjectUiFonts() { requests.push(h.trackUiCallback(() => {}, error => error)); }, console: { warn() {} },
     });
     const manager = new Login();
@@ -72,7 +75,7 @@ function loginHarness() {
             requests.push(h.trackUiCallback(() => {}, error => error));
         },
     });
-    return { ...h, manager, calls, requests, resolveProfile, PlayerData };
+    return { ...h, manager, calls, requests, resolveProfile, resolveResources, PlayerData };
 }
 
 test('真实登录交接保留首屏并防连点，存档、图片、角色全部完成后才揭开并播放入场', async () => {
@@ -107,7 +110,7 @@ test('比赛返回无登录节点时仍等待完整大厅，失败重试不会�
     const h = loginHarness(), m = h.manager;
     m._loginUiRoot = null;
     m.openPrepareRace(); const cover = m._lobbyCover;
-    assert.equal(cover.login, null); assert.equal(cover.loading, true);
+    assert.equal(cover.login, null); assert.equal(cover.loading, true); assert.equal(cover.presentation, 'transparent');
     h.resolveProfile(); await flush();
     h.requests[0](new Error('断网')); h.frame(); await flush();
     assert.equal(cover.disposed, false); assert.equal(typeof cover.retry, 'function');
@@ -156,4 +159,201 @@ test('大厅专属骨架只读选中展示动作，动作失败不宣告就绪�
     assert.deepEqual(requests.map(r => r.path), ['actions/test/pose_happy', 'actions/test/pose_waving', 'actions/test/pose_breaststroke']);
     const common = setup(); common.loadShowcaseOnlyAction({ id: 'common' }, 1, 'waving');
     assert.equal(canonical[0].id, 'waving'); canonical[0].done(null); assert.equal(common._actionsReady, true);
+});
+
+
+test('登录只等微信分包、当前页面和选中角色，后续界面不在登录期间预热', async () => {
+    const h = loginHarness({ deferResources: true }), m = h.manager;
+    m.openPrepareRace(); const cover = m._lobbyCover;
+    h.resolveProfile(); await flush(); assert.deepEqual(h.calls, []);
+    h.frame(); h.frame(); assert.equal(cover.disposed, false);
+    h.resolveResources(); await flush(); assert.deepEqual(h.calls, ['head', 'lobby']);
+    h.requests.forEach(done => done()); m._prepareRaceFlow.presentationReady = true;
+    h.frame(); h.frame(); await flush();
+    assert.equal(cover.progress, 1); assert.equal(cover.disposed, true);
+    const source = read('assets/scripts/app/LoginManager.ts');
+    assert.doesNotMatch(source, /prepareLobbyResources|prepareForEntry|loadSampledActionsForRace/);
+});
+
+test('角色切换复用按需创建的实例，隐藏节点停用，反复选择不再构建模型', () => {
+    let builds = 0, appearance = 0;
+    class Rig {
+        raceReady = true;
+        setModelVariant() {} build() { builds++; } setSplashCulled() {} setWaterlineEffectEnabled() {}
+        setCastShadow() {} setShowcaseStanding() {}
+    }
+    class Node {
+        isValid = true; active = true; children = [];
+        setParent(parent) { this.parent = parent; parent.children.push(this); }
+        setScale() {} setPosition() {} setRotationFromEuler() {}
+        addComponent() { return new Rig(); } destroy() { this.isValid = false; this.active = false; }
+    }
+    const Preview = methods('assets/scripts/app/PrepareRaceCharacterPreview.ts', ['refresh'], {
+        findPlayerCharacter: id => ({ id, modelVariantId: id }), selectActionFromPool: () => 'happy',
+        CHARACTER_SELECT_ACTIONS: ['happy'], CharacterAction: { ArmStretching: 'arm' },
+        Node, Layers: { Enum: { DEFAULT: 1 } }, CartoonSwimmerRig: Rig, Color: class {},
+        LOBBY_CHARACTER_SCALE: 1.58, PREVIEW_CHARACTER_SCALE: 1.3,
+        selectedPlayerSkinTone: () => ({ color: [1, 2, 3] }), selectedPlayerColorScheme: () => ({ suit: [1, 2, 3], cap: [1, 2, 3] }),
+    });
+    const p = Object.assign(new Preview(), { node: new Node(), _preparedCharacters: new Map(), _selectedCharacterId: '',
+        _centered: false, _lobbyPresentation: true, _shadowCaptureEnabled: false, applyAppearance() { appearance++; } });
+    Object.defineProperty(p, 'presentationReady', { get: () => p._centered && !!p._rig?.raceReady });
+    p.refresh('a'); p._centered = true; const a = p._pivotNode;
+    p.refresh('b'); p._centered = true; const b = p._pivotNode;
+    assert.equal(a.active, false); assert.equal(b.active, true); assert.equal(builds, 2);
+    for (let i = 0; i < 20; i++) {
+        p.refresh('a'); assert.equal(p._pivotNode, a); assert.equal(a.active, true); assert.equal(b.active, false);
+        p.refresh('b'); assert.equal(p._pivotNode, b); assert.equal(a.active, false); assert.equal(b.active, true);
+    }
+    assert.equal(builds, 2); assert.equal(p.node.children.length, 2); assert.equal(p._preparedCharacters.size, 2);
+    assert.ok(appearance >= 42);
+});
+
+test('预热后的图片、模型同步绑定；缓存失效或类型不匹配才走加载器', () => {
+    class Asset { isValid = true; } class Texture2D extends Asset {} class Prefab extends Asset {} class JsonAsset extends Asset {}
+    const texture = new Texture2D(), cache = new Map([['image', texture]]); let queued = 0, done = false;
+    const bundle = { getInfoWithPath: () => ({ uuid: 'image' }), load() { queued++; } };
+    const exports = {};
+    new Function('require', 'exports', compile(read('assets/scripts/core/RaceBundleLoader.ts')))(id => id === 'cc'
+        ? { Asset, Texture2D, Prefab, JsonAsset, assetManager: { getBundle: () => bundle, assets: cache } }
+        : { RESOURCE_PATHS: { uiBundle: { name: 'ui', root: 'ui' } }, trackRaceAsset: cb => cb, trackUiCallback: cb => cb, decodeSampledMotion: value => value }, exports);
+    exports.loadRaceAsset('image', Texture2D, (error, asset) => { assert.equal(error, null); assert.equal(asset, texture); done = true; });
+    assert.equal(done, true); assert.equal(queued, 0);
+    texture.isValid = false; exports.loadRaceAsset('image', Texture2D, () => {}); assert.equal(queued, 1);
+    exports.loadRaceAsset('model', Prefab, () => {}); assert.equal(queued, 2);
+    const prefab = new Prefab(); cache.set('image', prefab); let model;
+    exports.loadRaceAsset('model', Prefab, (_error, asset) => model = asset);
+    assert.equal(model, prefab); assert.equal(queued, 2);
+});
+
+test('进度条按整数百分比更新且只改变填充缩放，不逐帧重画', () => {
+    let labels = 0, scales = 0; const label = {};
+    Object.defineProperty(label, 'string', { set(value) { labels++; assert.match(value, /资源准备中 \d+%/); } });
+    const Cover = methods('assets/startup/StartupLoadingCover.ts', ['setProgress'], { STARTUP_COPY: { preparing: '资源准备中' } });
+    const cover = Object.assign(new Cover(), { disposed: false, progressPercent: -1, animation: null,
+        spinner: { active: true }, progressRoot: { active: false }, progressFill: { setScale() { scales++; } }, label });
+    cover.setProgress(0); cover.setProgress(0.009); cover.setProgress(0.011); cover.setProgress(1);
+    assert.equal(labels, 3); assert.equal(scales, 3); assert.equal(cover.progressPercent, 100);
+    assert.equal(cover.spinner.active, false); assert.equal(cover.progressRoot.active, true);
+});
+
+
+test('首次邀请保留最新目标，初始化完成前不进房，完成后直达房间且不播放大厅入场', async () => {
+    const h = loginHarness({ deferResources: true }), m = h.manager;
+    const opened = []; m.openRoom = (room, reconnect) => opened.push([room, reconnect]);
+    m._pendingOpenRoom = true; m._pendingJoinRoomId = 'first'; m._pendingReconnect = false;
+    m.openPrepareRace(); const cover = m._lobbyCover;
+    h.resolveProfile(); await flush(); assert.deepEqual(opened, []);
+    m._pendingJoinRoomId = 'latest';
+    h.resolveResources(); await flush(); h.requests.forEach(done => done()); assert.equal(m._prepareRaceFlow, null);
+    h.frame(); h.frame(); await flush();
+    assert.deepEqual(opened, [['latest', false]]); assert.equal(m._entryResourcesReady, true);
+    assert.equal(m._pendingOpenRoom, false); assert.equal(cover.disposed, true); assert.ok(!h.calls.includes('enter'));
+});
+
+test('未初始化的新用户进房先排队登录，不建房、不隐藏登录页；加载中的新邀请替换目标', () => {
+    const Login = methods('assets/scripts/app/LoginManager.ts', ['openRoom'], {});
+    let prepare = 0; const m = Object.assign(new Login(), { _entryResourcesReady: false, _roomFlow: null,
+        openPrepareRace() { prepare++; }, _loginUiRoot: { isValid: true, active: true } });
+    m.openRoom('first', false); assert.equal(m._pendingJoinRoomId, 'first'); assert.equal(m._pendingOpenRoom, true);
+    m.openRoom('latest', false); assert.equal(m._pendingJoinRoomId, 'latest'); assert.equal(prepare, 2);
+    assert.equal(m._roomFlow, null); assert.equal(m._loginUiRoot.active, true);
+});
+
+test('跨场景往返只保留一份大厅，比赛时停用全部根节点，返回无读档和加载遮罩', () => {
+    const persistent = new Set(), events = [], popup = { isValid: true, active: true };
+    const canvas = { isValid: true, active: true }, preview = { isValid: true, active: true };
+    const session = {};
+    new Function('require', 'exports', compile(read('assets/scripts/app/LobbySceneSession.ts')))(() => ({
+        director: { addPersistRootNode: n => persistent.add(n), removePersistRootNode: n => persistent.delete(n) },
+    }), session);
+    let listeners = 1, room = false;
+    const off = () => { listeners--; };
+    const profile = { coins: 100 };
+    const Login = methods('assets/scripts/app/LoginManager.ts', ['suspendForRace', 'resumeAfterRace'], {
+        retainLobbyForRace: session.retainLobbyForRace,
+        getUILayer: () => ({ parent: popup }), UILayer: { Popup: 3 },
+        platform: () => ({ onAppShow() { listeners++; return off; } }),
+        PlayerData: { profile, load() { throw Error('返回不得重新读档'); } },
+        MusicManager: { playLogin() { events.push('music'); } },
+        consumeReturnToRoom: () => room, consumeReturnToLobby: () => true,
+    });
+    const m = new Login(), flow = { previewRoot: preview,
+        suspend() { preview.active = false; events.push('suspend'); },
+        resume(afterRace) { assert.equal(afterRace, true); preview.active = true; events.push('resume'); },
+    };
+    Object.assign(m, { _canvasNode: canvas, _prepareRaceFlow: flow, _offAppShow: off,
+        _headBar: { refresh: p => { assert.equal(p.coins, profile.coins); }, setBack() {}, setIdentityVisible() {} },
+        openRoom(id, reconnect) { assert.equal(id, null); assert.equal(reconnect, true); events.push('room'); },
+        openPrepareRace() { throw Error('已有大厅不得重新初始化'); },
+    });
+    for (let i = 0; i < 20; i++) {
+        m._loadingRace = true; m.suspendForRace();
+        assert.equal(listeners, 0); assert.equal(persistent.size, 3);
+        for (const node of persistent) assert.equal(node.active, false);
+        assert.throws(() => session.retainLobbyForRace([canvas], () => {}), /已暂存/);
+        profile.coins++;
+        assert.equal(session.resumeLobbyAfterRace(), true);
+        assert.equal(session.resumeLobbyAfterRace(), false);
+        assert.equal(persistent.size, 0); assert.equal(listeners, 1);
+        assert.equal(m._loadingRace, false); assert.equal(m._prepareRaceFlow, flow);
+        assert.equal(canvas.active, true); assert.equal(preview.active, true); assert.equal(popup.active, true);
+    }
+    room = true; m._roomFlow = { dispose() { events.push('dispose-room'); } };
+    m.suspendForRace(); assert.equal(m._roomFlow, null);
+    session.resumeLobbyAfterRace();
+    assert.equal(events.at(-1), 'room'); assert.equal(preview.active, false);
+    assert.equal(listeners, 1); assert.equal(persistent.size, 0);
+});
+
+test('进房导航等待换色和其他在途写入，复用已确认档案而非强制刷新', async () => {
+    const Store = methods('assets/scripts/backend/PlayerData.ts', ['loadForNavigation'], {});
+    let appearanceDone, saveDone, reads = 0, completed = false;
+    const store = new Store(), profile = { coins: 10 };
+    const appearance = new Promise(resolve => appearanceDone = resolve);
+    store.flushCharacterAppearances = () => appearance;
+    store._careerQueue = new Promise(resolve => saveDone = resolve);
+    store.load = refresh => { assert.notEqual(refresh, true); reads++; return profile; };
+    const pending = store.loadForNavigation().then(value => { completed = true; assert.equal(value.coins, 20); });
+    await flush(); assert.equal(reads, 0);
+    appearanceDone(); await flush(); assert.equal(reads, 0); assert.equal(completed, false);
+    profile.coins = 20; saveDone(); await pending; assert.equal(reads, 1);
+});
+
+test('暂停大厅会停止页面动效、隐藏预览；从角色页恢复只复用已有大厅页', () => {
+    const calls = [], active = (n, v) => { if (n) n.active = v; };
+    const Flow = methods('assets/scripts/ui/PrepareRaceFlow.ts', ['suspend', 'resume', 'activateContent'], {
+        setNodeActive: active, setButtonInteractable: (b, v) => b.interactable = v,
+        getPlayerCharacterSelection: () => ({ characterId: 'same' }),
+        makeUiNode() { throw Error('不能重建缓存页面'); },
+    });
+    const motion = () => ({ suspend: () => calls.push('stop'), showImmediately: () => calls.push('show') });
+    const ready = { content: { isValid: true, active: false }, motion: motion(), rotateArea: null };
+    const characters = { content: { isValid: true, active: true }, motion: motion(), rotateArea: null };
+    const f = Object.assign(new Flow(), { _root: { isValid: true, active: true }, _previewRoot: { active: true },
+        _view: 'characters', _content: characters.content, _motion: characters.motion,
+        _pages: new Map([['ready', ready], ['characters', characters]]), _leaveDisabledButtons: [{ interactable: false }],
+        _presentation: { detail: 1 }, _callbacks: {},
+        _careerPanel: { setSuspended: v => calls.push(v), restoreNavigation: v => calls.push(['navigation', v]) },
+        saveAppearanceChangesInBackground() {}, refreshReadyCharacterInfo() { calls.push('stats'); },
+        presentCharacter(id) { assert.equal(id, 'same'); this._previewRoot.active = true; }, layoutPresentation() {},
+    });
+    f.suspend(); assert.equal(f._root.active, false); assert.equal(f._previewRoot.active, false);
+    const count = calls.length; f.suspend(); assert.equal(calls.length, count);
+    f.resume(true); assert.equal(f._root.active, true); assert.equal(f._previewRoot.active, true);
+    assert.equal(f._content, ready.content); assert.equal(characters.content.active, false);
+    assert.equal(f._pages.size, 2); assert.equal(f._leaving, false); assert.equal(f._presentation.detail, 0);
+    assert.equal(calls.at(-1), 'show');
+});
+
+test('首次邀请直达房间只准备共用资源，不先构建隐藏大厅和角色预览', async () => {
+    const h = loginHarness(), m = h.manager, opened = [];
+    m._pendingOpenRoom = true; m._pendingJoinRoomId = 'invited'; m._pendingReconnect = false;
+    m.openRoom = (id, reconnect) => opened.push([id, reconnect]);
+    m.openPrepareRace(); const cover = m._lobbyCover;
+    h.resolveProfile(); await flush(); assert.deepEqual(h.calls, ['head']);
+    assert.equal(m._prepareRaceFlow, null); assert.equal(cover.disposed, false);
+    h.requests.forEach(done => done()); h.frame(); h.frame(); await flush();
+    assert.deepEqual(opened, [['invited', false]]); assert.equal(cover.disposed, true);
+    assert.equal(m._entryResourcesReady, true); assert.equal(h.hooks.size, 0);
 });

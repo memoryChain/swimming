@@ -1,0 +1,46 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "39fed9dd-83bf-42a0-ab11-c63b095295f8",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "39fed9dd-83bf-42a0-ab11-c63b095295f8@6c48a",
+      "displayName": "CartonSwimmer16ColorMask",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "linear",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "39fed9dd-83bf-42a0-ab11-c63b095295f8",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "fixAlphaTransparencyArtifacts": false,
+    "hasAlpha": true,
+    "redirect": "39fed9dd-83bf-42a0-ab11-c63b095295f8@6c48a",
+    "compressSettings": {
+      "useCompressTexture": true,
+      "presetId": "astc-model-alpha-6x6"
+    }
+  }
+}

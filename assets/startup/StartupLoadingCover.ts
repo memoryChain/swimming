@@ -11,12 +11,15 @@ export class StartupLoadingCover {
     private readonly layer: number;
     private readonly spinner: Node;
     private readonly label: Label;
+    private readonly progressRoot: Node;
+    private readonly progressFill: Node;
+    private progressPercent = -1;
     private animation: Tween<Node> | null = null;
     private retry: (() => void) | null = null;
     private disposed = false;
     private readonly resize = () => this.layout();
 
-    constructor(private readonly login: Node | null) {
+    constructor(private readonly login: Node | null, private readonly presentation: 'startup' | 'transparent' = 'startup') {
         this.parent = login?.parent ?? null;
         this.layer = login?.layer ?? 0;
         const root = this.node = new Node('StartupLoadingCover');
@@ -29,7 +32,7 @@ export class StartupLoadingCover {
         camera.visibility = LAYER;
         camera.priority = 90;
         camera.projection = Camera.ProjectionType.ORTHO;
-        camera.clearFlags = Camera.ClearFlag.SOLID_COLOR;
+        camera.clearFlags = presentation === 'transparent' ? Camera.ClearFlag.DEPTH_ONLY : Camera.ClearFlag.SOLID_COLOR;
         camera.clearColor = new Color(8, 25, 42, 255);
         camera.orthoHeight = (view.getDesignResolutionSize().height || 720) / 2;
         canvas.cameraComponent = camera;
@@ -43,8 +46,18 @@ export class StartupLoadingCover {
         graphic.lineWidth = 4;
         graphic.strokeColor = new Color(150, 221, 255, 255);
         graphic.arc(0, 0, 18, 0, Math.PI * 1.5, false); graphic.stroke();
+        const progressRoot = this.progressRoot = new Node('LoadingProgress');
+        progressRoot.layer = LAYER; progressRoot.setParent(blocker);
+        progressRoot.addComponent(UITransform).setContentSize(360, 8);
+        const track = progressRoot.addComponent(Graphics);
+        track.fillColor = new Color(29, 57, 77, 255); track.rect(-180, -4, 360, 8); track.fill();
+        const fill = this.progressFill = new Node('LoadingProgressFill');
+        fill.layer = LAYER; fill.setParent(progressRoot); fill.setPosition(-180, 0, 0);
+        fill.addComponent(UITransform).setContentSize(360, 8);
+        const fillGraphic = fill.addComponent(Graphics);
+        fillGraphic.fillColor = new Color(150, 221, 255, 255); fillGraphic.rect(0, -4, 360, 8); fillGraphic.fill();
         const text = new Node('LoadingLabel'); text.layer = LAYER; text.setParent(blocker);
-        text.addComponent(UITransform).setContentSize(280, 40);
+        text.addComponent(UITransform).setContentSize(480, 40);
         this.label = text.addComponent(Label);
         this.label.fontSize = 25; this.label.lineHeight = 32;
         this.label.horizontalAlign = Label.HorizontalAlign.CENTER;
@@ -61,9 +74,24 @@ export class StartupLoadingCover {
     setLoading(): void {
         if (this.disposed) return;
         this.retry = null;
+        this.progressPercent = -1;
+        this.progressRoot.active = false;
+        this.label.node.active = this.presentation !== 'transparent';
         this.label.string = STARTUP_COPY.loading;
         this.spinner.active = true;
         if (!this.animation) this.animation = tween(this.spinner).by(1, { angle: -324 }).repeatForever().start();
+    }
+
+    setProgress(fraction: number): void {
+        if (this.disposed) return;
+        const percent = Math.max(0, Math.min(100, Math.floor(fraction * 100)));
+        if (percent === this.progressPercent) return;
+        this.progressPercent = percent;
+        this.animation?.stop(); this.animation = null;
+        if (this.spinner.active) this.spinner.active = false;
+        if (!this.progressRoot.active) this.progressRoot.active = true;
+        this.progressFill.setScale(percent / 100, 1, 1);
+        this.label.string = `${STARTUP_COPY.preparing} ${percent}%`;
     }
 
     setRetry(retry: () => void): void {
@@ -71,6 +99,8 @@ export class StartupLoadingCover {
         this.retry = retry;
         this.animation?.stop(); this.animation = null;
         this.spinner.active = false;
+        this.progressRoot.active = false;
+        this.label.node.active = true;
         this.label.string = STARTUP_COPY.retry;
     }
 
@@ -91,8 +121,9 @@ export class StartupLoadingCover {
         this.node.getComponent(UITransform)!.setContentSize(size.width, size.height);
         this.spinner.parent!.getComponent(UITransform)!.setContentSize(size.width, size.height);
         const scale = Math.min(size.width / 1280, size.height / 720);
-        this.spinner.setPosition(0, -261 * scale, 0); this.spinner.setScale(scale, scale, 1);
-        this.label.node.setPosition(0, -302 * scale, 0); this.label.node.setScale(scale, scale, 1);
+        this.progressRoot.setPosition(0, -261 * scale, 0); this.progressRoot.setScale(scale, scale, 1);
+        this.spinner.setPosition(0, this.presentation === 'transparent' ? 0 : -261 * scale, 0); this.spinner.setScale(scale, scale, 1);
+        this.label.node.setPosition(0, (this.presentation === 'transparent' ? -52 : -302) * scale, 0); this.label.node.setScale(scale, scale, 1);
     }
 
     private setLayer(node: Node, layer: number): void {

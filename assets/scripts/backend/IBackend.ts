@@ -63,6 +63,8 @@ export interface IBackend {
     // profile.
     saveIdentity(identity: IdentityPatch): Promise<PlayerProfile>;
 
+    saveCharacterAppearance(appearance: PlayerCharacterSelection): Promise<PlayerProfile>;
+
     saveCharacterSelection(selection: PlayerCharacterSelection): Promise<PlayerProfile>;
 
     // 仅本地旧档迁移/测试允许整档写入；云端实现必须拒绝。

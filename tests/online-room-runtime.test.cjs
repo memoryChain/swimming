@@ -648,7 +648,7 @@ function navigationHarness() {
     }).outputText;
     let loaded, roomMode = true, opened = 0;
     const context = { exports: {}, console,
-        StartupLoadingCover: class { setLoading() {} dispose() {} }, UiAssetBarrier: class { cancel() {} },
+        cancelLobbyResourcePreparation() {}, StartupLoadingCover: class { setLoading() {} setProgress() {} dispose() {} }, UiAssetBarrier: class { cancel() {} },
         getUILayer: n => n, UILayer: { Screen: 1 }, setRoomMode: value => { roomMode = value; },
         PrepareRaceFlow: class { showReadyScreen() { opened++; } },
         RoomFlow: class { dispose() {} },
@@ -662,6 +662,7 @@ function navigationHarness() {
         manager.buildPrepareRace(); manager._lobbyLoading = null;
         if (manager._loginUiRoot?.isValid) manager._loginUiRoot.active = false;
     };
+    manager._entryResourcesReady = true;
     manager._canvasNode = new Node('Canvas'); manager._canvasNode.getChildByName = () => null;
     manager._designWidth = 1280; manager._designHeight = 720;
     return { manager, loaded: root => loaded(null, { root }), opened: () => opened, roomMode: () => roomMode };
@@ -683,11 +684,11 @@ test('分享直达房间也能返回大厅，迟到的登录资源不能盖住�
     assert.equal(lateLogin.active, false); assert.equal(h.opened(), 1);
 });
 test('从角色详情接收邀请，返回时也进入大厅而非残留角色页', () => {
-    const h = navigationHarness(), m = h.manager; let disposed = 0;
-    m._prepareRaceFlow = { dispose() { disposed++; } };
+    const h = navigationHarness(), m = h.manager; let suspended = 0, resumed = 0;
+    const flow = m._prepareRaceFlow = { suspend() { suspended++; }, resume() { resumed++; } };
     m.openRoom('friend-room');
-    assert.equal(disposed, 1); assert.equal(m._prepareRaceFlow, null);
-    m.exitRoom(); assert.equal(h.opened(), 1);
+    assert.equal(suspended, 1); assert.equal(m._prepareRaceFlow, flow);
+    m.exitRoom(); assert.equal(resumed, 1); assert.equal(h.opened(), 0);
 });
 
 test('房主迁移后平台权限随客户端标识更新，踢人传正式座位参数', async () => {

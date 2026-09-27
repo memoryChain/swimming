@@ -1,5 +1,5 @@
 /** 客户端与云函数共同编译；经济规则变更时递增 rulesVersion 并同步部署。 */
-export const CLOUD_PROTOCOL = { version: 1, rulesVersion: 1 } as const;
+export const CLOUD_PROTOCOL = { version: 1, rulesVersion: 2 } as const;
 
 export interface CloudRequest {
     protocol: number;

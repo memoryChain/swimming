@@ -107,9 +107,9 @@ test('联网头像通过稳定 ID 映射角色外观', () => {
 test('可选角色均有唯一模型，并复用标准动作资源', () => {
     const characters = PLAYER_CHARACTER_DEFINITIONS;
     const expectedCharacterIds = ['cartonSwimmer6', 'cartonSwimmer8', 'cartonSwimmer5',
-        'cartonSwimmer9', 'cartonSwimmer10', 'cartonSwimmer11', 'cartonSwimmer12', 'cartonSwimmer13', 'cartonSwimmer14', 'cartonSwimmer15', 'muscleMan'];
+        'cartonSwimmer9', 'cartonSwimmer10', 'cartonSwimmer11', 'cartonSwimmer12', 'cartonSwimmer13', 'cartonSwimmer14', 'cartonSwimmer15', 'cartonSwimmer16', 'muscleMan'];
     const expectedModelIds = ['muscleMan', 'cartonSwimmer5', 'cartonSwimmer6',
-        'cartonSwimmer8', 'cartonSwimmer9', 'cartonSwimmer10', 'cartonSwimmer11', 'cartonSwimmer12', 'cartonSwimmer13', 'cartonSwimmer14', 'cartonSwimmer15'];
+        'cartonSwimmer8', 'cartonSwimmer9', 'cartonSwimmer10', 'cartonSwimmer11', 'cartonSwimmer12', 'cartonSwimmer13', 'cartonSwimmer14', 'cartonSwimmer15', 'cartonSwimmer16'];
     assert.deepEqual(characters.map(c => c.id), expectedCharacterIds);
     assert.deepEqual(Resources.SWIMMER_MODEL_VARIANTS.map(c => c.id), expectedModelIds);
     assert.equal(new Set(characters.map(c => c.id)).size, characters.length);
@@ -461,14 +461,16 @@ test('潜水哥草稿肤色按草稿角色生效，确认后的序列化存档�
         setPlayerSkinTone('deep', draftCharacterId);
         assert.equal(getPlayerCharacterSelection().characterId, 'cartonSwimmer15');
         assert.equal(selectedPlayerSkinTone(draftCharacterId).id, 'deep');
-        setPlayerColorScheme('purple');
+        setPlayerColorScheme('purple', draftCharacterId);
+        assert.equal(selectedPlayerColorScheme().id, 'red');
         selectPlayerCharacter(draftCharacterId);
         const savedProfile = PlayerProfileConfig.createDefaultProfile();
         savedProfile.characterSelection = { ...getPlayerCharacterSelection() };
+        savedProfile.characterAppearances[draftCharacterId] = { skinToneId: 'deep', colorSchemeId: 'purple' };
         const serialized = JSON.stringify(savedProfile);
         restorePlayerCharacterSelection(createDefaultPlayerCharacterSelection());
         const loadedProfile = PlayerProfileConfig.normalizeProfile(JSON.parse(serialized));
-        restorePlayerCharacterSelection(loadedProfile.characterSelection);
+        restorePlayerCharacterSelection(loadedProfile.characterSelection, loadedProfile.characterAppearances);
         assert.deepEqual(getPlayerCharacterSelection(), {
             characterId: draftCharacterId, skinToneId: 'deep', colorSchemeId: 'purple',
         });
@@ -727,4 +729,73 @@ test('肌肉男短臂精修版保留身份并提供独立衣帽和肤色遮罩',
         setPlayerSkinTone('warm');
         assert.equal(getPlayerCharacterSelection().colorSchemeId, 'purple');
     } finally { restorePlayerCharacterSelection(saved); }
+});
+
+test('赛博少女独立解锁，换肤、换色、存档与联机摘要保持同一角色', () => {
+    const previous = { ...getPlayerCharacterSelection() };
+    try {
+        const character = PLAYER_CHARACTER_DEFINITIONS.find(c => c.id === 'cartonSwimmer16');
+        assert.equal(character.name, '赛博少女');
+        assert.equal(character.unlocked, true);
+        assert.equal(character.abilityId, 'none');
+        assert.deepEqual([character.stamina, character.technique, character.burst, character.weight], [125, 100, 75, 1]);
+        selectPlayerCharacter(character.id);
+        assert.equal(selectedPlayerCharacterSupportsSkinTone(), true);
+        for (let repeat = 0; repeat < 4; repeat++) {
+            for (const colorSchemeId of ['red', 'blue', 'yellow', 'purple', 'black']) {
+                setPlayerColorScheme(colorSchemeId);
+                for (const skinToneId of ['deep', 'warm']) {
+                    setPlayerSkinTone(skinToneId);
+                    const selection = { characterId: character.id, colorSchemeId, skinToneId };
+                    assert.deepEqual(getPlayerCharacterSelection(), selection);
+                    assert.deepEqual(normalizePlayerCharacterSelection(selection), selection);
+                    assert.equal(selectedPlayerSkinTone().preserveOriginal === true, skinToneId === 'warm');
+                    const digest = { ...selection, level: 7 };
+                    assert.deepEqual(ModifierCodec.decodeModifierDigest(ModifierCodec.encodeModifierDigest(digest)), digest);
+                }
+            }
+        }
+        assert.equal(Protocol.isCompatibleProtocolVersion(47), false);
+        assert.equal(Protocol.isCompatibleProtocolVersion(Protocol.NET_RACE_PROTOCOL_VERSION), true);
+    } finally {
+        restorePlayerCharacterSelection(previous);
+    }
+});
+
+test('赛博少女保持精修模型预算，复用标准动作并提供独立R/B遮罩及卡面', () => {
+    const model = Resources.findSwimmerModelVariant('cartonSwimmer16');
+    assert.deepEqual(model.candidates, ['models/CartonSwimmer16', 'models/CartonSwimmer16/CartonSwimmer16']);
+    assert.equal(model.sampledActionOverrideDir, 'model-actions/tPose');
+    assert.equal(model.dynamicColor.maskPath, 'models/CartonSwimmer16ColorMask/texture');
+    assert.equal(model.dynamicColor.usesCapChannel, false);
+    const data = fs.readFileSync(new URL('assets/race/models/CartonSwimmer16.glb', root));
+    const doc = JSON.parse(data.subarray(20, 20 + data.readUInt32LE(12)));
+    const primitive = doc.meshes[0].primitives[0];
+    assert.equal(doc.meshes.length, 1);
+    assert.equal(doc.materials.length, 1);
+    assert.equal(doc.meshes[0].primitives.length, 1);
+    assert.equal(doc.skins[0].joints.length, 41);
+    assert.equal(doc.accessors[primitive.attributes.POSITION].count, 3950);
+    assert.equal(doc.accessors[primitive.indices].count / 3, 5270);
+    assert.ok(data.length <= 1024 * 1024);
+    assert.equal(doc.images.length, 1);
+    assert.equal(doc.images[0].mimeType, 'image/png');
+    const view = doc.bufferViews[doc.images[0].bufferView];
+    const png = data.subarray(28 + data.readUInt32LE(12) + (view.byteOffset ?? 0));
+    assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [512, 512]);
+    const mask = decodeMaskRgba(fs.readFileSync(new URL('assets/race/models/CartonSwimmer16ColorMask.png', root)));
+    let clothes = 0, skin = 0, edges = 0;
+    for (let i = 0; i < mask.length; i += 4) {
+        clothes += Number(mask[i] > 0);
+        skin += Number(mask[i + 2] > 0);
+        edges += Number(mask[i + 2] > 0 && mask[i + 2] < 255);
+        assert.equal(mask[i + 1], 0, '粉帽保持原色');
+        assert.equal(mask[i + 3], 255);
+    }
+    assert.ok(clothes > 30000 && clothes < 60000);
+    assert.ok(skin > 25000 && skin < 45000);
+    assert.ok(edges > 0 && edges < skin / 2);
+    assert.equal(Resources.RESOURCE_PATHS.characterUi.portraits.cartonSwimmer16, 'ui/character-v1/portrait-cartonSwimmer16/texture');
+    const portrait = fs.readFileSync(new URL('assets/race/ui/character-v1/portrait-cartonSwimmer16.png', root));
+    assert.deepEqual([portrait.readUInt32BE(16), portrait.readUInt32BE(20)], [320, 320]);
 });

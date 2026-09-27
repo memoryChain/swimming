@@ -331,7 +331,7 @@ test('引擎先销毁子按钮后再清理大厅，解绑不得访问已销毁�
     s.advance(1);assert.equal(s.running,0);
 });
 
-test('大厅AI开赛前释放预览与动效，加载失败恢复可操作大厅，重复点击不重复换场',()=>{
+test('大厅AI开赛前暂停预览与动效，加载失败复用大厅，重复点击不重复换场',()=>{
     const source=ts.createSourceFile('LoginManager.ts',fs.readFileSync('assets/scripts/app/LoginManager.ts','utf8'),ts.ScriptTarget.Latest,true);
     const cls=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='LoginManager');
     const methods=cls.members.filter(n=>['startAiDebug','launchMainGame','recoverPrepareAfterLoadFailure','onDestroy'].includes(n.name?.getText(source)));
@@ -344,25 +344,21 @@ test('大厅AI开赛前释放预览与动效，加载失败恢复可操作大厅
         let loads=0,runs=0,pendingBundle,pendingScene,mode,owner;
         const Login=vm.runInNewContext(ts.transpileModule(`class Login { ${methods.map(n=>n.getText(source)).join('\n')} };Login`,
             {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,{
-            DEBUG_UI_ENABLED:true,
+            DEBUG_UI_ENABLED:true, cancelLobbyResourcePreparation(){},
             setSoloRaceTicket(){},setSoloRaceDistance(){},setSoloAiEvent(){},
             setAiDebugDifficulty(){},setRaceDifficulty(){},getAiDebugSetup:()=>({mode:'competitive'}),setMainGameLaunchMode:value=>mode=value,
             LoadingOverlay:{show(){},hide(){}},console:{error(){}},
             loadRaceBundle:cb=>{loads++;pendingBundle=cb;},
             director:{runScene(){
-                assert.equal(owner._prepareRaceFlow,null,'必须先释放大厅，再调用引擎换场');
-                assert.equal(preview.isValid,false);assert.equal(s.running,0);
-                s.parent.destroy();owner.onDestroy();runs++;
+                assert.equal(owner._prepareRaceFlow,f,'换场保留同一份大厅');
+                assert.equal(preview.isValid,true);assert.equal(preview.active,false);assert.equal(s.running,0);
+                runs++;
             }},
         });
         owner=new Login();owner.cancelLobbyLoading=()=>{};owner._prepareRaceFlow=f;
         owner.toast=()=>{};
-        owner.openPrepareRace=()=>{
-            const next=new f.constructor(s.parent,s.parent,1280,720,{});
-            next._root=new Node('恢复大厅');next._root.setParent(s.parent);next._content=next._root;
-            next._previewRoot=new Node('恢复预览');
-            owner._prepareRaceFlow=next;
-        };
+        owner.suspendForRace=()=>f.suspend();
+        owner.openPrepareRace=()=>{ f._leaving=false; f._motion.showImmediately(); };
         owner.startAiDebug(.95);owner.startAiDebug(.95);assert.equal(loads,1);
         if(failure==='bundle')pendingBundle(new Error('加载失败'),null);
         else {
@@ -370,7 +366,7 @@ test('大厅AI开赛前释放预览与动效，加载失败恢复可操作大厅
             if(failure==='scene')pendingScene(new Error('场景失败'),null);
         }
         if(failure!=='none'){
-            assert.notEqual(owner._prepareRaceFlow,f);assert.equal(preview.isValid,false);assert.equal(s.parent.isValid,true);
+            assert.equal(owner._prepareRaceFlow,f);assert.equal(preview.isValid,true);assert.equal(s.parent.isValid,true);
             assert.equal(owner._prepareRaceFlow._root.isValid,true);
             assert.equal(owner._loadingRace,false);assert.equal(runs,0);
             owner.startAiDebug(.95);assert.equal(loads,2);

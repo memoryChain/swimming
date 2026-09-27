@@ -9,7 +9,7 @@
   "debug": false,
   "sourceMaps": false,
   "mangleProperties": true,
-  "md5Cache": false,
+  "md5Cache": true,
   "skipCompressTexture": false,
   "overwriteProjectSettings": {
     "macroConfig": {

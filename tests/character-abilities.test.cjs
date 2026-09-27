@@ -22,7 +22,8 @@ function stroke(m, progress = .375, side = StrokeType.LEFT) {
 }
 
 test('全角色能力按稳定ID解析；重开清状态、重绑同角色保留状态、换角色清状态', () => {
-    assert.equal(new Set(roster.map(c => c.abilityId)).size, 11);
+    assert.equal(new Set(roster.filter(c => c.abilityId !== 'none').map(c => c.abilityId)).size, 11);
+    assert.equal(roster.find(c => c.id === 'cartonSwimmer16').abilityId, 'none');
     for (const character of roster) {
         const m = motor();
         const profile = resolveModifiersFromDigest({ characterId: character.id, level: 30 });

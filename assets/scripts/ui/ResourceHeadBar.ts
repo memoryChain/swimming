@@ -213,6 +213,7 @@ export class ResourceHeadBar {
     }
 
     refresh(profile: PlayerProfile): void {
+        if (this._root?.activeInHierarchy === false) return;
         const count = `${profile.coins}`;
         if (this._countLabel && this._countLabel.string !== count) {
             this._countLabel.string = count;
@@ -275,4 +276,3 @@ function makeCachedSprite(name: string, parent: Node, path: string, width: numbe
     });
     return node;
 }
-

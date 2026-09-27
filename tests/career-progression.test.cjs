@@ -164,6 +164,26 @@ test('奖励调用源明确门控联机与调试，旧无凭据发奖入口已�
     assert.doesNotMatch(gm, /progression\.awardRace/);
 });
 
+test('结算明确拒绝显示原因，网络不确定失败保留重试提示，联机不提交单人结算', async () => {
+    const gm = fs.readFileSync(path.join(h.root, 'assets/scripts/core/GameManager.ts'), 'utf8');
+    const award = gm.slice(gm.indexOf('awardProgression: async'), gm.indexOf('applyPlayerDive: (result)'));
+    const { CloudBackendError } = load('backend/WechatCloudBackend');
+    const logs = []; let failure, calls = 0;
+    const owner = {};
+    const manager = new Function('PlayerData', 'CloudBackendError', 'getSoloRaceTicket', 'console', `return ({${award}});`).call(owner,
+        { executeCareer: async () => { calls++; throw failure; } }, CloudBackendError,
+        () => ({ id: 'test-ticket', characterId: a }), { warn: (...args) => logs.push(args) });
+    failure = new CloudBackendError('INPUT', '参赛人数不匹配', true);
+    assert.equal((await manager.awardProgression({})).message, '参赛人数不匹配');
+    for (const error of [new CloudBackendError('NETWORK', '存档连接失败，请重试'), new Error('本地写入失败')]) {
+        failure = error;
+        assert.equal((await manager.awardProgression({})).message, '保存失败，下次开赛时自动重试结算');
+    }
+    assert.equal(logs.length, 3);
+    owner._netSession = {};
+    assert.equal(await manager.awardProgression({}), null); assert.equal(calls, 3);
+});
+
 test('角色选择与结算并发不覆盖金币，保存失败后下一次事务先重试结算', async () => {
     storage.clear();
     const { PlayerData: data } = load('backend/PlayerData');

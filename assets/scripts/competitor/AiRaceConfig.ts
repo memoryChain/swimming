@@ -54,6 +54,7 @@ export const AI_CHARACTER_STRATEGIES: Record<PlayerCharacterId, AiCharacterStrat
     cartonSwimmer13: { heartTarget: 142, heartRecovery: 114, budgetExponent: 0.93, sprint200: 30, sprint400: 40, kickBlock: 2.4, avoidContact: true, contest: false },
     cartonSwimmer14: { heartTarget: 162, heartRecovery: 116, budgetExponent: 0.96, sprint200: 32, sprint400: 42, kickBlock: 3, avoidContact: true, contest: false },
     cartonSwimmer15: { heartTarget: 157, heartRecovery: 122, budgetExponent: 1, sprint200: 35, sprint400: 45, kickBlock: 1.6, avoidContact: false, contest: false },
+    cartonSwimmer16: { heartTarget: 145, heartRecovery: 115, budgetExponent: 0.92, sprint200: 28, sprint400: 36, kickBlock: 2, avoidContact: true, contest: false },
     muscleMan: { heartTarget: 145, heartRecovery: 112, budgetExponent: 0.78, sprint200: 22, sprint400: 28, kickBlock: 3.2, avoidContact: false, contest: true },
 };
 

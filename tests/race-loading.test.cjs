@@ -18,6 +18,89 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
 const transpile = code => ts.transpileModule(code, { compilerOptions: {
     target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS,
 } }).outputText;
+
+test('场馆集中加载缺失资源，保留引用后再次进场零请求，失败不放行', () => {
+    class Asset { isValid = true; refs = 0; addRef() { this.refs++; } }
+    class ImageAsset extends Asset {}
+    const cache = new Map(), requests = [], progress = [];
+    const bundle = { name: 'race', getDirWithPath: dir => [{ uuid: dir }] };
+    const exports = {};
+    vm.runInNewContext(transpile(fs.readFileSync(path.join(root, 'assets/scripts/core/RaceBundleLoader.ts'), 'utf8')), {
+        exports, require: id => id === 'cc' ? { Asset, ImageAsset, assetManager: {
+            getBundle: () => bundle, assets: cache,
+            loadAny(items, options, report, done) { requests.push({ items, options, report, done }); },
+        } } : { RESOURCE_PATHS: { venuePreloadDirs: ['pool', 'skybox'] } },
+    });
+    let result = 'pending';
+    exports.prepareVenueResources(f => progress.push(f), error => result = error);
+    assert.equal(result, 'pending'); assert.equal(requests.length, 1);
+    assert.deepEqual(Array.from(requests[0].items, item => item.uuid), ['pool', 'skybox']);
+    requests[0].report(1, 2); assert.equal(progress.at(-1), .5);
+    for (const item of requests[0].items) cache.set(item.uuid, new Asset());
+    requests[0].done(null); assert.equal(result, null); assert.equal(progress.at(-1), 1);
+    exports.prepareVenueResources(() => {}, error => result = error);
+    assert.equal(requests.length, 1); assert.ok([...cache.values()].every(asset => asset.refs === 1));
+    cache.get('pool').isValid = false;
+    exports.prepareVenueResources(() => {}, error => result = error);
+    assert.equal(requests[1].items.length, 1);
+    requests[1].done(new Error('断网')); assert.match(result.message, /断网/);
+    exports.prepareVenueResources(() => {}, error => result = error);
+    requests[2].done(null); assert.match(result.message, /场馆资源缺失/);
+});
+
+test('场馆纹理上传后原始图片被清理仍可进场，保留纹理且二次进场不重载图片', () => {
+    class Asset { isValid = true; refs = 0; addRef() { this.refs++; } }
+    class ImageAsset extends Asset {}
+    class Texture2D extends Asset {}
+    const imageUuid = '18f647b4-d86e-4ae1-b9d7-f493734253c5';
+    const textureUuid = `${imageUuid}@6c48a`;
+    // 对应真实 Bundle 中同一图片同时存在 ImageAsset 与 Texture2D 入口。
+    for (const initiallyCached of [false, true]) {
+        const cache = new Map(), requests = [], exports = {};
+        const image = new ImageAsset(), texture = new Texture2D();
+        if (initiallyCached) cache.set(textureUuid, texture);
+        const bundle = { name: 'race', getDirWithPath: () => [
+            { uuid: imageUuid, ctor: ImageAsset }, { uuid: textureUuid, ctor: Texture2D },
+        ] };
+        vm.runInNewContext(transpile(fs.readFileSync(path.join(root, 'assets/scripts/core/RaceBundleLoader.ts'), 'utf8')), {
+            exports, require: id => id === 'cc' ? { Asset, ImageAsset, assetManager: {
+                getBundle: () => bundle, assets: cache,
+                loadAny(items, options, report, done) {
+                    requests.push(items);
+                    // 模拟 CLEANUP_IMAGE_CACHE：上传纹理后释放图片，缓存只保留纹理。
+                    cache.set(imageUuid, image);
+                    cache.set(textureUuid, texture);
+                    cache.delete(imageUuid); image.isValid = false;
+                    done(null);
+                },
+            } } : { RESOURCE_PATHS: { venuePreloadDirs: ['pool'] } },
+        });
+        let result = 'pending', progress = 0;
+        exports.prepareVenueResources(value => progress = value, error => result = error);
+        assert.equal(result, null); assert.equal(progress, 1);
+        assert.equal(requests.length, initiallyCached ? 0 : 1);
+        if (!initiallyCached) assert.deepEqual(Array.from(requests[0], item => item.uuid), [textureUuid]);
+        assert.equal(texture.refs, 1); assert.equal(image.refs, 0);
+        exports.prepareVenueResources(() => {}, error => result = error);
+        assert.equal(result, null); assert.equal(requests.length, initiallyCached ? 0 : 1);
+        assert.equal(texture.refs, 1);
+    }
+});
+
+test('进馆进度条只在百分比变化时更新，不倒退，跨场景重复 show 保持同一遮罩', () => {
+    const Overlay = methods('assets/scripts/ui/LoadingOverlay.ts', 'LoadingOverlay', ['setProgress', 'show']);
+    let writes = 0, scales = 0, text;
+    const node = { isValid: true };
+    Object.assign(Overlay, { _node: node, _percent: -1, _message: '加载中',
+        _fill: { setScale() { scales++; } },
+        _label: { isValid: true, set string(value) { writes++; text = value; } },
+    });
+    Overlay.setProgress(0); Overlay.setProgress(.505); Overlay.setProgress(.509);
+    Overlay.setProgress(.1); Overlay.setProgress(NaN); Overlay.show();
+    assert.equal(Overlay._node, node); assert.equal(text, '加载中 50%');
+    assert.equal(writes, 2); assert.equal(scales, 2);
+    Overlay.setProgress(1); assert.equal(text, '加载中 100%');
+});
 function methods(file, className, names, globals = {}) {
     const source = ts.createSourceFile(file, fs.readFileSync(path.join(root, file), 'utf8'), ts.ScriptTarget.Latest, true);
     const type = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text === className);
@@ -85,7 +168,8 @@ function raceFixture(mode = 'race') {
         RaceLoading: h.RaceLoading, DEBUG_UI_ENABLED: mode !== 'race', consumeMainGameLaunchMode: () => mode,
         loadSavedTuningAsync: done => assets.set('tuning', done),
         loadSampledActionsForRace: done => assets.set('actions', done),
-        LoadingOverlay: { hide: () => calls.push('hide') }, logTextureFormatDiagnostics() {},
+        prepareVenueResources(progress, done) { assets.set('venue', () => { progress(1); done(null); }); },
+        LoadingOverlay: { setProgress() {}, hide: () => calls.push('hide') }, logTextureFormatDiagnostics() {},
     });
     const manager = new Subject();
     const swimmer = () => ({ node: { isValid: true }, cartoonRig: { raceReady: true, raceLoadError: null } });
@@ -102,7 +186,9 @@ function raceFixture(mode = 'race') {
     const start = async () => {
         await h.frame(); assert.deepEqual([...assets.keys()], ['tuning', 'actions']);
         assets.get('actions')(null); await flush(); assert.equal(calls.includes('scene'), false);
-        assets.get('tuning')(); await flush(); await h.frame();
+        assets.get('tuning')(); await flush();
+        assert.equal(calls.includes('scene'), false, '场馆资源准备前不能开始建场景');
+        assets.get('venue')(); await flush(); await h.frame();
     };
     return { ...h, calls, manager, promise, start };
 }

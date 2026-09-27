@@ -23,7 +23,7 @@ function harness({ loaded = true, supported = true } = {}) {
     const calls = [], broadcasts = [], sessions = [], views = [], timers = new Map(), cache = new Map();
     let nextTimer = 0, access = '';
     const player = { loaded, avatarId: 'lime', nickName: '测试玩家', profile: { career: { league: 0 } },
-        load: async () => player.profile };
+        load: async () => player.profile, loadForNavigation: () => player.load() };
     let digest = { characterId: 'cartonSwimmer6', level: 1, skinToneId: 'warm', colorSchemeId: 'red' };
     const info = () => ({ accessInfo: access, localPos: 2, localClientId: 22, members: [
         { clientId: 11, pos: 0, owner: true, ready: true, extInfo: 'coral|房主' },
@@ -279,6 +279,8 @@ test('首次本地存档及旧存档恢复角色和配色，不把临时身份�
     assert.equal(JSON.parse(storage.get('swimming.player-profile')).nickName, data.nickName);
     const saved = JSON.parse(storage.get('swimming.player-profile'));
     saved.characterSelection = { characterId: 'cartonSwimmer14', skinToneId: 'deep', colorSchemeId: 'lake-teal' };
+    // 本用例验证旧版单角色外观迁移；新版外观表会优先于旧 selection 字段。
+    saved.schema = 5; delete saved.characterAppearances;
     storage.set('swimming.player-profile', JSON.stringify(saved));
     const second = createHarness(); second.cc.sys = h.cc.sys;
     await second.load(path.join(root, 'assets/scripts/backend/PlayerData.ts')).PlayerData.load();

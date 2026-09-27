@@ -6,6 +6,7 @@
   },
   "version": "3.8.8",
   "scripts": {
+    "test:cdn": "npx --yes --package typescript@5.4.5 -c \"node --test tests/wechat-remote-assets.test.cjs tests/wechat-cdn-build-publish.test.cjs tests/wechat-cdn-incremental.test.cjs tests/ui-asset-routing.test.cjs tests/lobby-loading.test.cjs\"",
     "wechat:check": "node scripts/check-wechat-project.cjs",
     "wechat:finalize": "node scripts/finalize-wechat-build.cjs",
     "test:wechat": "node --test tests/wechat-project-config.test.cjs tests/wechat-ios-dpr.test.cjs tests/wechat-first-screen.test.cjs",
@@ -42,6 +43,14 @@
     "cloud:configure": "node scripts/configure-wechat-cloud.cjs",
     "cloud:admin": "node scripts/wechat-cloud-admin.cjs",
     "test:cloud": "npx --yes --package typescript@5.4.5 -c \"node --test tests/wechat-cloud.test.cjs\"",
-    "benchmark:ai": "npx --yes --package typescript@5.4.5 -c \"node scripts/benchmark-ai.cjs\""
+    "benchmark:ai": "npx --yes --package typescript@5.4.5 -c \"node scripts/benchmark-ai.cjs\"",
+    "cdn:login": "tcb login --flow device",
+    "cdn:publish": "node scripts/publish-wechat-cdn.cjs",
+    "cdn:verify": "node scripts/verify-wechat-cdn.cjs"
+  },
+  "devDependencies": {
+    "@cloudbase/cli": "3.8.4",
+    "@cloudbase/manager-node": "5.8.8",
+    "@cloudbase/toolbox": "0.8.5"
   }
 }

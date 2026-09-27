@@ -1,4 +1,5 @@
 'use strict';
+const { settingsFile } = require('./build-layout');
 
 const fs = require('fs');
 const path = require('path');
@@ -8,9 +9,11 @@ const { assertUiFontPolicy } = require('../../scripts/ui-font-policy');
 const { applyWechatProjectConfig, assertWechatProjectOutput } = require('./wechat-project-config');
 const { compactBuiltMotions, assertBuiltMotionRuntime } = require('./sampled-motion-storage');
 const { auditWechatPackageOutput } = require('./wechat-package-budget');
+const { readClientVersion, readRemoteConfig, exportRemoteAssets, assertRemoteOutput } = require('./remote-assets');
 const { assertStartupCodeOutput, assertStartupSceneEntry } = require('./startup-code-policy');
 const { applyWechatIosDpr } = require('./wechat-ios-dpr');
 const { applyWechatFirstScreen } = require('./wechat-first-screen');
+const { preparePublisher, publishAfterBuild } = require('./cdn-publish');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -18,8 +21,8 @@ const LOGIN_SCENE = {
     url: 'db://assets/scenes/Login.scene',
     uuid: '074665cc-6b6a-4138-bf91-410cd0b70e4d',
 };
-const SUBPACKAGE_GAME_ENTRY = "'use strict';\nrequire('./index.js');\n";
 const SUBPACKAGE_BUNDLES = [
+    { name: 'ui', root: 'db://assets/race/ui', priority: 8 },
     { name: 'race', root: 'db://assets/race', priority: 7 },
     { name: 'music', root: 'db://assets/music', priority: 6 },
     { name: 'gameplay', root: 'db://assets/scripts', priority: 5 },
@@ -50,6 +53,17 @@ exports.onBeforeBuild = async function onBeforeBuild(options) {
     if (options.platform !== 'wechatgame') {
         return;
     }
+
+    const remoteConfig = readRemoteConfig(PROJECT_ROOT);
+    if (remoteConfig.enabled) {
+        readClientVersion(PROJECT_ROOT);
+        // 编辑器已有任务使用自己的配置；修改钩子参数不能保证影响 Bundle 构建。
+        // 必须在耗时审计和发布准备之前检查，不能等导出时才发现缺少缓存标识。
+        if (options.md5Cache !== true) {
+            throw new Error('[remote-assets] 当前微信构建任务未开启 MD5 Cache。请在 Creator「项目 → 构建发布」中编辑当前任务，勾选「MD5 Cache」并保存后重新构建；也可导入 config/build/wechatgame.json。共享配置不会自动覆盖已有任务。');
+        }
+    }
+    if (remoteConfig.enabled && remoteConfig.autoUpload) preparePublisher(PROJECT_ROOT);
 
     applyWechatProjectConfig(options);
     assertStartupSceneEntry(PROJECT_ROOT);
@@ -113,7 +127,7 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
     const mipmapAudit = assertBuildMipmaps(PROJECT_ROOT, result);
     console.log(`[texture-mipmap] 已验证 ${mipmapAudit.compressedImages} 张 ASTC 完整 mip 链及回退图片。`);
 
-    const settingsPath = path.join(result.dest, 'src', 'settings.json');
+    const settingsPath = settingsFile(result.dest);
     const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
     const settingsAssets = settings.assets || (settings.assets = {});
     const cocosSubpackages = Array.isArray(settingsAssets.subpackages) ? settingsAssets.subpackages : [];
@@ -149,18 +163,21 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
                 `[wechat-race-subpackage] Generated ${bundle.name} Asset Bundle root does not exist: ${generatedSubpackageRoot}`,
             );
         }
-        for (const requiredFile of ['config.json', 'index.js']) {
+        const bundleVersion = settingsAssets.bundleVers?.[bundle.name];
+        const suffix = bundleVersion ? `${bundleVersion}.` : '';
+        const gameEntry = `'use strict';\nrequire('./index.${suffix}js');\n`;
+        for (const requiredFile of [`config.${suffix}json`, `index.${suffix}js`]) {
             if (!fs.existsSync(path.join(subpackageRoot, requiredFile))) {
                 throw new Error(`[wechat-race-subpackage] ${bundle.name} Bundle is missing ${requiredFile}`);
             }
         }
         const gameEntryPath = path.join(subpackageRoot, 'game.js');
-        fs.writeFileSync(gameEntryPath, SUBPACKAGE_GAME_ENTRY, 'utf8');
+        fs.writeFileSync(gameEntryPath, gameEntry, 'utf8');
         generatedSubpackages.push({
             name: bundle.name,
             root: generatedSubpackageRoot,
             generatedBundleRoot,
-            gameEntryPath,
+            gameEntryPath, gameEntry,
         });
     }
 
@@ -190,7 +207,7 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
             (subpackage) => subpackage.name === generated.name && subpackage.root === generated.root,
         );
         const bundleMovedOutOfMain = !fs.existsSync(generated.generatedBundleRoot);
-        const entryReady = fs.readFileSync(generated.gameEntryPath, 'utf8') === SUBPACKAGE_GAME_ENTRY;
+        const entryReady = fs.readFileSync(generated.gameEntryPath, 'utf8') === generated.gameEntry;
         if (!settingsReady || !manifestReady || !bundleMovedOutOfMain || !entryReady) {
             throw new Error(
                 `[wechat-race-subpackage] ${generated.name} subpackage verification failed after generation.`,
@@ -203,10 +220,18 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
     assertBuiltMotionRuntime(result.dest);
     const motionAudit = compactBuiltMotions(PROJECT_ROOT, result.dest);
     console.log(`[motion-storage] 无损压缩 ${motionAudit.motions} 个动作，节省 ${(motionAudit.savedBytes / 1024).toFixed(1)} KiB。`);
+    const remoteConfig = readRemoteConfig(PROJECT_ROOT);
+    if (remoteConfig.enabled) {
+        const release = exportRemoteAssets(PROJECT_ROOT, result.dest, remoteConfig);
+        assertRemoteOutput(result.dest);
+        console.log(`[remote-assets] 远程资源 ${release.files.length} 个文件；发布目录 ${release.publishRoot}；服务器 ${release.server}`);
+    }
     const packageAudit = auditWechatPackageOutput(result.dest);
     console.log(
-        `[wechat-race-subpackage] generated and verified race/music/gameplay/startup-ui subpackages; `
+        `[wechat-race-subpackage] generated and verified resource bundles; `
         + `main package ${(packageAudit.mainBytes / 1024).toFixed(1)} KiB; `
         + `total ${(packageAudit.totalBytes / 1024).toFixed(1)} / 30720 KiB.`,
     );
+    // 必须放在所有本地审计之后，并等待发布和校验结束才允许 Creator 显示成功。
+    await publishAfterBuild(PROJECT_ROOT, result.dest);
 };

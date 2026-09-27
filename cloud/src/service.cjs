@@ -1,11 +1,11 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const { createDefaultProfile, PLAYER_PROFILE_SCHEMA } = require('./rules/backend/PlayerProfile');
+const { createDefaultProfile, PLAYER_PROFILE_SCHEMA, migrateProfileAppearances } = require('./rules/backend/PlayerProfile');
 const { executeCareer } = require('./rules/progression/CareerRules');
 const { coinCostForLevel, PROGRESSION_BALANCE } = require('./rules/progression/ProgressionBalance');
 const { AVATARS } = require('./rules/backend/IdentityConfig');
-const { normalizePlayerCharacterSelection } = require('./rules/app/PlayerCharacterConfig');
+const { normalizePlayerCharacterSelection, findPlayerCharacter } = require('./rules/app/PlayerCharacterConfig');
 const { CLOUD_PROTOCOL } = require('./rules/backend/CloudProtocol');
 
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -21,8 +21,10 @@ class Rejected extends Error {
 }
 function requireValue(condition, code, message) { if (!condition) throw new Rejected(code, message); }
 function checkDocument(doc) {
-    requireValue(doc?.profile?.schema === PLAYER_PROFILE_SCHEMA && integer(doc.revision, 0, Number.MAX_SAFE_INTEGER)
-        && integer(doc.profile.coins, 0, MAX_COINS) && doc.profile.characters && doc.profile.career,
+    requireValue([6, PLAYER_PROFILE_SCHEMA].includes(doc?.profile?.schema) && integer(doc.revision, 0, Number.MAX_SAFE_INTEGER)
+        && integer(doc.profile.coins, 0, MAX_COINS) && doc.profile.characters && doc.profile.career
+        && (doc.profile.schema === 6 || (doc.profile.characterAppearances
+            && typeof doc.profile.characterAppearances === 'object' && !Array.isArray(doc.profile.characterAppearances))),
     'SCHEMA', '存档版本不兼容，请联系管理员');
 }
 function envelope(doc, result = {}) {
@@ -89,11 +91,16 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
             }
             return {};
         }
-        if (event.action === 'selection') {
+        if (event.action === 'selection' || event.action === 'appearance') {
             const selection = normalizePlayerCharacterSelection(data);
             requireValue(Object.keys(data).length === 3 && Object.keys(selection).every(k => data[k] === selection[k])
-                && owns(p.characters, selection.characterId), 'INPUT', '角色外观无效');
-            p.characterSelection = selection; return {};
+                && owns(p.characters, selection.characterId)
+                && (findPlayerCharacter(selection.characterId)?.supportsSkinTone !== false || selection.skinToneId === 'warm'),
+            'INPUT', '角色外观无效');
+            const { characterId, skinToneId, colorSchemeId } = selection;
+            p.characterAppearances[characterId] = { skinToneId, colorSchemeId };
+            if (event.action === 'selection' || p.characterSelection.characterId === characterId) p.characterSelection = selection;
+            return {};
         }
         if (event.action === 'level') {
             requireValue(typeof data.characterId === 'string' && owns(p.characters, data.characterId)
@@ -116,8 +123,8 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
             requireValue(owns(p.characters, command.characterId) && integer(command.tier, 0, 5)
                 && ['quick', 'league', 'cup'].includes(command.source)
                 && [200, 400].includes(command.distance) && ['standard', 'wild'].includes(command.rule), 'INPUT', '比赛参数无效');
-            requireValue(!p.career.pending || doc.pendingWriter === event.writerId || time - doc.pendingAt > TICKET_TTL,
-                'BUSY', '其他设备有未结束比赛，请先完成或联系管理员');
+            // 中途退出后可以在任意设备重新开赛；新凭据替换旧凭据，不要求退出前结算。
+            // 事务版本检查处理并发，结算仍必须匹配当前凭据及其发起设备。
             command.seed = seed();
         } else if (command.type === 'settle') {
             const ticket = p.career.pending;
@@ -129,14 +136,15 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
                 && command.maxCombo <= command.perfectCount + command.goodCount + command.missCount
                 && Number.isFinite(command.time) && command.time >= 0 && command.time <= 7200,
             'INPUT', '比赛结果无效');
-            const racers = (ticket.ai.opponentCount ?? ticket.ai.intelligence.length) + 1;
+            // 未指定人数时客户端使用全部 8 条泳道；intelligence 是循环抽取的难度池，不是人数。
+            // 固定阵容赛事仍严格按服务端票据中的 opponentCount 校验。
+            const racers = (ticket.ai.opponentCount ?? 7) + 1;
             requireValue(command.racerCount === racers, 'INPUT', '参赛人数不匹配');
             // 只做保守合理性检查，不把客户端结果当作已完成强反作弊验证。
             if (command.finished) requireValue(command.time >= ticket.distance / 50
                 && command.time * 1000 <= time - doc.pendingAt + 10000, 'RESULT', '比赛耗时无效');
         } else {
             requireValue(owns(p.characters, command.characterId), 'INPUT', '角色不存在');
-            requireValue(!p.career.pending || doc.pendingWriter === event.writerId, 'BUSY', '其他设备有未结束比赛');
         }
         const result = executeCareer(p, command);
         requireValue(result.ok, 'CAREER', result.message);
@@ -154,7 +162,7 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
         let playerId;
         try {
             playerId = authenticate(context); protocol(event);
-            requireValue(['load', 'identity', 'selection', 'level', 'career'].includes(event.action), 'FORBIDDEN', '不支持此存档操作');
+            requireValue(['load', 'identity', 'selection', 'appearance', 'level', 'career'].includes(event.action), 'FORBIDDEN', '不支持此存档操作');
             if (event.action !== 'load') validateMutation(event);
             const time = now();
             return await db.runTransaction(async tx => {
@@ -165,6 +173,10 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
                         pendingWriter: '', pendingAt: 0 };
                 }
                 checkDocument(doc);
+                if (migrateProfileAppearances(doc.profile)) {
+                    doc.revision++; doc.updatedAt = time;
+                    await write(tx, 'players', playerId, doc);
+                }
                 await assignUid(tx, doc);
                 if (event.action === 'load') return envelope(doc);
                 const before = clone(doc);
@@ -254,6 +266,10 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
             return await db.runTransaction(async tx => {
                 const doc = await read(tx, 'players', playerId);
                 requireValue(doc, 'MISSING', '玩家不存在'); checkDocument(doc);
+                if (migrateProfileAppearances(doc.profile)) {
+                    doc.revision++; doc.updatedAt = time;
+                    await write(tx, 'players', playerId, doc);
+                }
                 if (event.action === 'inspect') return envelope(doc);
                 const id = hash(`admin:${actor}:${event.requestId}`), fingerprint = hash(JSON.stringify(event));
                 const prior = await read(tx, 'adminAudit', id);
@@ -276,8 +292,9 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
                 } else if (event.action === 'restore') {
                     requireValue(typeof event.data.auditId === 'string' && /^[a-f0-9]{64}$/.test(event.data.auditId), 'INPUT', '备份标识无效');
                     const source = await read(tx, 'adminAudit', event.data.auditId);
-                    requireValue(source?.playerId === playerId && source.before?.schema === PLAYER_PROFILE_SCHEMA, 'INPUT', '备份不可用');
+                    requireValue(source?.playerId === playerId && [6, PLAYER_PROFILE_SCHEMA].includes(source.before?.schema), 'INPUT', '备份不可用');
                     doc.profile = clone(source.before);
+                    migrateProfileAppearances(doc.profile);
                     doc.profile.career.serial = Math.max(before.career.serial, doc.profile.career.serial);
                 }
                 // 管理操作撤销未结算赛事，避免旧成绩按已被修改的经济状态继续领奖。

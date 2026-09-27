@@ -176,6 +176,9 @@ export class WechatCloudBackend implements IBackend {
         return this.mutate('level', { characterId, requestedLevels });
     }
     async saveIdentity(identity: IdentityPatch): Promise<PlayerProfile> { return (await this.mutate('identity', identity)).profile; }
+    async saveCharacterAppearance(appearance: PlayerCharacterSelection): Promise<PlayerProfile> {
+        return (await this.mutate('appearance', appearance)).profile;
+    }
     async saveCharacterSelection(selection: PlayerCharacterSelection): Promise<PlayerProfile> {
         return (await this.mutate('selection', selection)).profile;
     }

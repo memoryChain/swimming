@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "envId": "cloud1-d5gn11660fac3375c",
+  "region": "ap-shanghai",
+  "origin": "https://636c-cloud1-d5gn11660fac3375c-1496443607.tcb.qcloud.la",
+  "prefix": "game-assets",
+  "bundles": [
+    "ui"
+  ],
+  "autoUpload": true
+}

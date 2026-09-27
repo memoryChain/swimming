@@ -62,6 +62,7 @@ export type SkyboxVariant = {
 };
 
 const TPOSE_ACTION_PROFILE_DIR = 'model-actions/tPose';
+export const CHARACTER_PRELOAD_PATHS = { models: 'models', actions: 'model-actions' } as const;
 const MUSCLE_MAN_PREFAB_CANDIDATES = [
     'models/MuscleMan',
     'models/MuscleMan/MuscleMan',
@@ -105,6 +106,10 @@ const CARTON_SWIMMER14_PREFAB_CANDIDATES = [
 const CARTON_SWIMMER15_PREFAB_CANDIDATES = [
     'models/CartonSwimmer15',
     'models/CartonSwimmer15/CartonSwimmer15',
+];
+const CARTON_SWIMMER16_PREFAB_CANDIDATES = [
+    'models/CartonSwimmer16',
+    'models/CartonSwimmer16/CartonSwimmer16',
 ];
 
 export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
@@ -299,6 +304,23 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
             usesCapChannel: false,
         },
     },
+    {
+        id: 'cartonSwimmer16',
+        label: '赛博少女',
+        candidates: CARTON_SWIMMER16_PREFAB_CANDIDATES,
+        modelScaleMultiplier: 1.0,
+        preserveOriginalMaterial: true,
+        swimHeadLiftDegrees: 4,
+        sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
+        sampledActionOverrideFilePrefix: 'Tpose_',
+        divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
+        dynamicColor: {
+            mode: 'mask',
+            maskPath: 'models/CartonSwimmer16ColorMask/texture',
+            labelPrefix: '赛博少女',
+            usesCapChannel: false,
+        },
+    },
 ];
 
 export const DEBUG_SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = SWIMMER_MODEL_VARIANTS;
@@ -364,6 +386,8 @@ export const PREPARE_PANORAMA_WIDTH = 2115;
 export const PREPARE_PANORAMA_HEIGHT = 743;
 
 export const RESOURCE_PATHS = {
+    venuePreloadDirs: ['pool', 'skybox', 'material-effects'] as const,
+    uiBundle: { name: 'ui', root: 'ui' },
     raceStartUi: {
         'ready': 'ui/race-start-v1/ready/texture',
         'go': 'ui/race-start-v1/go/texture',
@@ -590,6 +614,7 @@ export const RESOURCE_PATHS = {
             cartonSwimmer13: 'ui/character-v1/portrait-cartonSwimmer13/texture',
             cartonSwimmer14: 'ui/character-v1/portrait-cartonSwimmer14/texture',
             cartonSwimmer15: 'ui/character-v1/portrait-cartonSwimmer15/texture',
+            cartonSwimmer16: 'ui/character-v1/portrait-cartonSwimmer16/texture',
             muscleMan: 'ui/character-v1/portrait-muscleMan/texture',
         },
         statusActive: 'ui/character-v1/status-active/texture',

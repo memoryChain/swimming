@@ -10,6 +10,7 @@ build(output);
 test.after(() => fs.rmSync(output, { recursive: true, force: true }));
 const { createService } = require(path.join(output, 'swimming-player/service.cjs'));
 const { createDefaultProfile } = require(path.join(output, 'swimming-player/rules/backend/PlayerProfile.js'));
+const { CLOUD_PROTOCOL } = require(path.join(output, 'swimming-player/rules/backend/CloudProtocol.js'));
 const characterId = Object.keys(createDefaultProfile().characters)[0];
 const copy = value => JSON.parse(JSON.stringify(value));
 
@@ -61,7 +62,7 @@ function harness() {
     const admins = [], context = { APPID: 'wx-test', OPENID: 'user-a' };
     const service = createService({ db, appId: context.APPID, adminPlayerIds: admins,
         now: () => time, uuid: () => `ticket-${++sequence}`, seed: () => 123 });
-    const request = (action = 'load', data = {}, revision = 0, extra = {}) => ({ protocol: 1, rulesVersion: 1,
+    const request = (action = 'load', data = {}, revision = 0, extra = {}) => ({ protocol: CLOUD_PROTOCOL.version, rulesVersion: CLOUD_PROTOCOL.rulesVersion,
         action, data, writerId: 'device-00001', expectedRevision: revision, requestId: `request-${++sequence}`, ...extra });
     const player = e => service.player(e, context);
     async function load() { return player(request()); }
@@ -73,7 +74,7 @@ function harness() {
 }
 const beginData = { type: 'begin', characterId, source: 'quick', tier: 0, distance: 200, rule: 'standard', seed: 999 };
 const settlement = ticket => ({ type: 'settle', ticketId: ticket.id, finished: true, placement: 1,
-    racerCount: (ticket.ai.opponentCount ?? ticket.ai.intelligence.length) + 1,
+    racerCount: (ticket.ai.opponentCount ?? 7) + 1,
     perfectCount: 80, goodCount: 10, missCount: 10, maxCombo: 80, time: 82 });
 
 test('可信账号建档隔离、并发首次建档、数据库失败不创建默认档', async () => {
@@ -113,11 +114,10 @@ test('客户端整档覆盖、调试发币、未验证广告发币和畸形参�
     assert.equal((await h.load()).profile.coins, 0);
 });
 
-test('云端比赛种子和凭据、重复结算、伪造结果、跨设备赛事冲突', async () => {
+test('云端比赛种子和凭据、重复结算、伪造结果', async () => {
     const h = harness(); await h.load();
     const first = await h.player(h.request('career', beginData)); assert.equal(first.ok, true);
     assert.equal(first.result.ticket.seed, 123); assert.match(first.result.ticket.id, /^race-ticket-/);
-    assert.equal((await h.player(h.request('career', beginData, first.revision, { writerId: 'another-device' }))).code, 'BUSY');
     const bad = settlement(first.result.ticket); bad.maxCombo = 9999;
     assert.equal((await h.player(h.request('career', bad, first.revision))).code, 'INPUT');
     h.advance(90000);
@@ -126,6 +126,46 @@ test('云端比赛种子和凭据、重复结算、伪造结果、跨设备赛�
     assert.equal(result.ok, true); assert.equal(result.profile.coins, 480);
     assert.deepEqual(repeat, result); assert.equal(result.profile.career.pending, null);
     assert.equal((await h.player(h.request('career', settlement(first.result.ticket), result.revision))).code, 'TICKET');
+});
+
+test('快速比赛按实际八人结算，未完赛零奖励且正常清理票据', async () => {
+    for (const finished of [false, true]) {
+        const h = harness(); await h.load();
+        const started = await h.player(h.request('career', beginData));
+        assert.equal(started.ok, true);
+        assert.equal(started.result.ticket.ai.opponentCount, undefined);
+        assert.equal(started.result.ticket.ai.intelligence.length, 4, '难度候选数量不是实际对手人数');
+        h.advance(100000);
+        const data = { ...settlement(started.result.ticket), racerCount: 8, finished,
+            placement: finished ? 1 : 8, time: finished ? 82 : 0,
+            perfectCount: 1, goodCount: 0, missCount: 3, maxCombo: 1 };
+        const invalid = await h.player(h.request('career', { ...data, placement: 1, racerCount: 5 }, started.revision));
+        assert.equal(invalid.code, 'INPUT'); assert.equal(invalid.message, '参赛人数不匹配');
+        const request = h.request('career', data, started.revision);
+        const result = await h.player(request);
+        assert.equal(result.ok, true, result.message);
+        assert.equal(result.profile.career.pending, null);
+        assert.equal(result.profile.career.receipts.length, 1);
+        if (finished) assert.ok(result.result.receipt.coinsGained > 0);
+        else {
+            assert.equal(result.result.receipt.message, '未完赛，本场无奖励');
+            assert.equal(result.result.receipt.coinsGained, 0);
+            assert.equal(result.profile.coins, started.profile.coins);
+        }
+        assert.deepEqual(await h.player(copy(request)), result);
+    }
+});
+
+test('固定对手人数的联赛继续按票据人数校验', async () => {
+    const h = harness(); await h.load();
+    const started = await h.player(h.request('career', { ...beginData, source: 'league' }));
+    assert.equal(started.ok, true);
+    const racers = (started.result.ticket.ai.opponentCount ?? 7) + 1;
+    const data = { ...settlement(started.result.ticket), finished: false, placement: racers, racerCount: racers, time: 0 };
+    const wrong = racers === 8 ? 5 : 8;
+    assert.equal((await h.player(h.request('career', { ...data, racerCount: wrong, placement: 1 }, started.revision))).code, 'INPUT');
+    const result = await h.player(h.request('career', data, started.revision));
+    assert.equal(result.ok, true, result.message); assert.equal(result.profile.career.pending, null);
 });
 
 test('管理员校验、审计、版本冲突、重试幂等、撤销管理修改且版本递增', async () => {
@@ -230,8 +270,177 @@ function client(h, storage = new Map(), options = {}) {
     const { WechatCloudBackend } = load(path.resolve(__dirname, '../assets/scripts/backend/WechatCloudBackend.ts'));
     activeBackend = new WechatCloudBackend();
     return { backend: activeBackend, data: () => load(path.resolve(__dirname, '../assets/scripts/backend/PlayerData.ts')).PlayerData, storage, options, calls: () => calls, drop: n => { drop = n; }, offline: v => { offline = v; },
+        config: () => load(path.resolve(__dirname, '../assets/scripts/app/PlayerCharacterConfig.ts')),
+        mock: () => new (load(path.resolve(__dirname, '../assets/scripts/backend/MockBackend.ts')).MockBackend)(),
         account: value => { account = value; } };
 }
+
+test('两个角色外观独立入云，试穿保存不改变出场角色，重登与联机快照保持一致', async () => {
+    const h = harness(), c = client(h), data = c.data(), config = c.config();
+    await data.load();
+    const a = { characterId: 'cartonSwimmer14', skinToneId: 'deep', colorSchemeId: 'blue' };
+    const b = { characterId: 'cartonSwimmer16', skinToneId: 'warm', colorSchemeId: 'purple' };
+    await data.setCharacterSelection(a);
+    await data.setCharacterAppearance(b);
+    assert.deepEqual(copy(data.profile.characterSelection), a);
+    assert.deepEqual(copy(config.getPlayerCharacterSelection(b.characterId)), b);
+    await data.setCharacterSelection(b);
+    const restarted = client(h); await restarted.data().load();
+    assert.deepEqual(copy(restarted.config().getPlayerCharacterSelection()), b);
+    restarted.config().selectPlayerCharacter(a.characterId);
+    assert.deepEqual(copy(restarted.config().getPlayerCharacterSelection()), a);
+    assert.equal(restarted.config().selectedPlayerColorScheme(b.characterId).id, 'purple');
+    assert.equal(restarted.config().selectedPlayerSkinTone(b.characterId).id, 'warm');
+    const stored = (await h.load()).profile;
+    assert.deepEqual(stored.characterAppearances[a.characterId], { skinToneId: 'deep', colorSchemeId: 'blue' });
+    assert.deepEqual(stored.characterAppearances[b.characterId], { skinToneId: 'warm', colorSchemeId: 'purple' });
+});
+
+test('试选只保留每角色末次值，改回原色零请求，确认出场不重复提交配色', async () => {
+    const h = harness(), c = client(h), data = c.data(); await data.load();
+    const original = copy(data.profile.characterSelection), before = c.calls();
+    for (let i = 0; i < 100; i++) data.stageCharacterAppearance({ ...original, colorSchemeId: i % 2 ? 'blue' : 'purple' });
+    assert.equal(c.calls(), before);
+    await data.flushCharacterAppearances();
+    assert.equal(c.calls(), before + 1);
+    data.stageCharacterAppearance({ ...original, colorSchemeId: 'purple' });
+    data.stageCharacterAppearance({ ...original, colorSchemeId: 'blue' });
+    await data.flushCharacterAppearances();
+    assert.equal(c.calls(), before + 1);
+    const selected = { characterId: 'cartonSwimmer14', skinToneId: 'deep', colorSchemeId: 'purple' };
+    data.stageCharacterAppearance(selected);
+    await data.setCharacterSelection(selected);
+    await data.flushCharacterAppearances();
+    assert.equal(c.calls(), before + 2);
+    assert.deepEqual(copy(data.profile.characterSelection), selected);
+});
+
+test('慢响应不盖掉新试选，排队过期颜色不发送，失败后保留末次选择供重试', async () => {
+    const h = harness(), c = client(h), data = c.data(), config = c.config(); await data.load();
+    const original = copy(data.profile.characterSelection);
+    const stage = (id, color) => {
+        config.setPlayerColorScheme(color, id);
+        data.stageCharacterAppearance(config.getPlayerCharacterSelection(id));
+    };
+    const save = c.backend.saveCharacterAppearance.bind(c.backend);
+    let release, called;
+    const started = new Promise(resolve => { called = resolve; });
+    c.backend.saveCharacterAppearance = async value => {
+        called(); await new Promise(resolve => { release = resolve; });
+        return save(value);
+    };
+    stage(original.characterId, 'blue');
+    const first = data.flushCharacterAppearances(); await started;
+    stage(original.characterId, 'purple');
+    const obsolete = data.flushCharacterAppearances();
+    stage(original.characterId, 'green'); stage('cartonSwimmer14', 'yellow');
+    release(); await first; await obsolete;
+    assert.equal(config.getPlayerCharacterSelection().colorSchemeId, 'green');
+    assert.equal(config.getPlayerCharacterSelection('cartonSwimmer14').colorSchemeId, 'yellow');
+    assert.equal((await h.load()).profile.characterAppearances[original.characterId].colorSchemeId, 'blue');
+    c.backend.saveCharacterAppearance = save;
+    const before = c.calls();
+    await data.flushCharacterAppearances();
+    assert.equal(c.calls(), before + 2);
+    const persisted = (await h.load()).profile.characterAppearances;
+    assert.equal(persisted[original.characterId].colorSchemeId, 'green');
+    assert.equal(persisted.cartonSwimmer14.colorSchemeId, 'yellow');
+    stage(original.characterId, 'orange'); c.offline(true);
+    await assert.rejects(data.flushCharacterAppearances());
+    assert.equal(config.getPlayerCharacterSelection().colorSchemeId, 'orange');
+    c.offline(false); await data.flushCharacterAppearances();
+    assert.equal((await h.load()).profile.characterAppearances[original.characterId].colorSchemeId, 'orange');
+});
+
+test('旧 schema 6 外观定向迁移一次，保留金币等级、赛事凭据和其他元数据', async () => {
+    const h = harness(), loaded = await h.compensate(12345);
+    const started = await h.player(h.request('career', beginData, loaded.revision));
+    const doc = h.db.data.get(`players/${loaded.playerId}`);
+    doc.profile.schema = 6;
+    delete doc.profile.characterAppearances;
+    doc.profile.characterSelection = { characterId: 'cartonSwimmer14', skinToneId: 'deep', colorSchemeId: 'blue' };
+    delete doc.profile.characters.cartonSwimmer16;
+    const before = copy(doc), migrated = await h.load(), again = await h.load();
+    assert.equal(migrated.profile.schema, 7);
+    assert.equal(migrated.revision, before.revision + 1);
+    assert.equal(again.revision, migrated.revision);
+    assert.equal(migrated.profile.coins, before.profile.coins);
+    assert.deepEqual(migrated.profile.career, before.profile.career);
+    assert.equal(migrated.profile.career.pending.id, started.result.ticket.id);
+    for (const id of Object.keys(before.profile.characters)) assert.deepEqual(migrated.profile.characters[id], before.profile.characters[id]);
+    assert.deepEqual(migrated.profile.characterAppearances.cartonSwimmer14, { skinToneId: 'deep', colorSchemeId: 'blue' });
+    assert.deepEqual(migrated.profile.characterAppearances.cartonSwimmer16, { skinToneId: 'warm', colorSchemeId: 'red' });
+    assert.equal(migrated.profile.characters.cartonSwimmer16.level, 1);
+    const after = h.db.data.get(`players/${loaded.playerId}`);
+    for (const key of ['uid', 'playerId', 'pendingWriter', 'pendingAt', 'createdAt']) assert.deepEqual(after[key], before[key]);
+});
+
+test('旧管理备份恢复时迁移外观，不支持肤色的角色保持当前快照一致', async () => {
+    const h = harness(), p = await h.compensate(100);
+    const audit = h.db.data.get(`adminAudit/${p.result.auditId}`);
+    audit.before.schema = 6;
+    delete audit.before.characterAppearances;
+    audit.before.characterSelection = { characterId: 'cartonSwimmer15', skinToneId: 'deep', colorSchemeId: 'blue' };
+    const restored = await h.service.admin(h.request('restore', {
+        playerId: p.playerId, auditId: p.result.auditId, reason: '恢复旧备份',
+    }, p.revision), h.context);
+    assert.equal(restored.ok, true);
+    assert.equal(restored.profile.schema, 7);
+    assert.equal(restored.profile.coins, 0);
+    assert.equal(restored.profile.characterSelection.skinToneId, 'warm');
+    assert.deepEqual(restored.profile.characterAppearances.cartonSwimmer15, { skinToneId: 'warm', colorSchemeId: 'blue' });
+});
+
+test('外观请求校验、重复提交及跨设备冲突不会覆盖其他角色', async () => {
+    const h = harness(), initial = await h.load();
+    const a = { characterId: 'cartonSwimmer14', skinToneId: 'deep', colorSchemeId: 'blue' };
+    const request = h.request('appearance', a, initial.revision);
+    const saved = await h.player(request), repeated = await h.player(copy(request));
+    assert.equal(saved.ok, true); assert.equal(repeated.revision, saved.revision);
+    const b = { characterId: 'cartonSwimmer16', skinToneId: 'warm', colorSchemeId: 'purple' };
+    assert.equal((await h.player(h.request('appearance', b, initial.revision))).code, 'CONFLICT');
+    assert.equal((await h.player(h.request('appearance', b, saved.revision))).ok, true);
+    assert.deepEqual((await h.load()).profile.characterAppearances[a.characterId], { skinToneId: 'deep', colorSchemeId: 'blue' });
+    const latest = await h.load();
+    for (const invalid of [{ ...a, characterId: 'unknown' }, { ...a, colorSchemeId: 'invalid' },
+        { ...a, characterId: 'cartonSwimmer15' }, { ...a, coins: 99999 }, { ...a, characterId: '__proto__' }]) {
+        assert.equal((await h.player(h.request('appearance', invalid, latest.revision))).code, 'INPUT');
+    }
+    assert.equal((await h.player(h.request('load', {}, 0, { rulesVersion: 1 }))).code, 'VERSION');
+});
+
+test('外观保存失败回退确认值，响应丢失重登恢复同一请求', async () => {
+    const h = harness(), c = client(h), data = c.data(), config = c.config();
+    await data.load();
+    const original = copy(config.getPlayerCharacterSelection());
+    config.setPlayerColorScheme('blue'); c.offline(true);
+    await assert.rejects(data.setCharacterAppearance(config.getPlayerCharacterSelection()));
+    assert.deepEqual(copy(config.getPlayerCharacterSelection()), original);
+    c.offline(false); await data.load(true);
+    assert.equal(config.getPlayerCharacterSelection().colorSchemeId, 'blue');
+    c.drop(2);
+    await assert.rejects(data.setCharacterAppearance({ ...original, colorSchemeId: 'purple' }));
+    const restarted = client(h); await restarted.data().load();
+    assert.equal(restarted.config().getPlayerCharacterSelection().colorSchemeId, 'purple');
+    assert.equal([...c.storage.keys()].some(k => k.endsWith('.pending')), true);
+    const recovered = client(h, c.storage); await recovered.data().load();
+    assert.equal([...c.storage.keys()].some(k => k.endsWith('.pending')), false);
+    assert.equal(recovered.config().getPlayerCharacterSelection().colorSchemeId, 'purple');
+});
+
+test('本地模拟档与云端采用相同独立外观结构，旧档迁移后可再次保存', async () => {
+    const h = harness(), c = client(h), mock = c.mock();
+    const legacy = createDefaultProfile(); legacy.schema = 6; delete legacy.characterAppearances;
+    legacy.characterSelection = { characterId: 'cartonSwimmer14', skinToneId: 'deep', colorSchemeId: 'blue' };
+    c.storage.set('swimming.player-profile', JSON.stringify(legacy));
+    const migrated = await mock.loadProfile();
+    assert.equal(migrated.characterAppearances.cartonSwimmer14.colorSchemeId, 'blue');
+    await mock.saveCharacterAppearance({ characterId: 'cartonSwimmer16', skinToneId: 'warm', colorSchemeId: 'purple' });
+    const saved = await mock.loadProfile();
+    assert.equal(saved.characterSelection.characterId, 'cartonSwimmer14');
+    assert.equal(saved.characterAppearances.cartonSwimmer14.colorSchemeId, 'blue');
+    assert.equal(saved.characterAppearances.cartonSwimmer16.colorSchemeId, 'purple');
+});
 
 test('响应丢失自动重试只升级一次，原本地测试档保持不变', async () => {
     const h = harness(); await h.compensate();
@@ -403,4 +612,37 @@ test('客户端只显示服务端编号，重启后稳定，本地旧档和请�
     const loaded = await h.load();
     const doc = h.db.data.get(`players/${loaded.playerId}`); doc.uid = 10002;
     await assert.rejects(restarted.backend.loadProfile(), error => error.code === 'BAD_PROFILE');
+});
+
+
+test('中途退出后任意设备可重新开赛，旧赛果和旧开赛重试不能替换新比赛', async () => {
+    for (const writerId of ['device-00001', 'another-device']) {
+        const h = harness(); await h.load();
+        const firstRequest = h.request('career', beginData);
+        const first = await h.player(firstRequest);
+        const nextRequest = h.request('career', beginData, first.revision, { writerId });
+        const next = await h.player(nextRequest);
+        assert.equal(next.ok, true); assert.notEqual(next.result.ticket.id, first.result.ticket.id);
+        assert.equal(next.profile.coins, first.profile.coins);
+        assert.equal(next.profile.career.points, first.profile.career.points);
+        assert.deepEqual(next.profile.characters, first.profile.characters);
+        assert.equal((await h.player(firstRequest)).code, 'TICKET');
+        h.advance(90000);
+        const stale = await h.player(h.request('career', settlement(first.result.ticket), next.revision));
+        assert.equal(stale.code, 'TICKET'); assert.equal(stale.profile.career.pending.id, next.result.ticket.id);
+        const finish = h.request('career', settlement(next.result.ticket), next.revision, { writerId });
+        const result = await h.player(finish);
+        assert.equal(result.ok, true); assert.equal(result.profile.coins, 480);
+        assert.deepEqual(await h.player(finish), result);
+    }
+});
+
+test('两台设备同时重新开赛仍由版本与事务保护，只创建一场新比赛', async () => {
+    const h = harness(); await h.load();
+    const old = await h.player(h.request('career', beginData));
+    const results = await Promise.all(['device-a', 'device-b'].map(writerId =>
+        h.player(h.request('career', beginData, old.revision, { writerId }))));
+    assert.equal(results.filter(r => r.ok).length, 1);
+    assert.equal(results.filter(r => r.code === 'CONFLICT').length, 1);
+    assert.equal((await h.load()).profile.career.pending.id, results.find(r => r.ok).result.ticket.id);
 });

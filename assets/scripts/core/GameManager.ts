@@ -1,5 +1,8 @@
+import { prepareVenueResources } from './RaceBundleLoader';
 import { findPlayerCharacter } from '../app/PlayerCharacterConfig';
 import { PlayerData } from '../backend/PlayerData';
+import { CloudBackendError } from '../backend/WechatCloudBackend';
+import { resumeLobbyAfterRace } from '../app/LobbySceneSession';
 import { CharacterOutlineVisibility } from '../character/CharacterOutlineVisibility';
 import { AVATARS, avatarSwimmerLookOf } from '../backend/IdentityConfig';
 import { ULTIMATE_ENERGY_BALANCE } from './UltimateEnergyBalance';
@@ -349,11 +352,16 @@ export class GameManager extends Component {
             if (this._aiDebugMode) this._aiDebugDifficulty = getAiDebugDifficulty();
             this.initializeRaceContext();
             await loading.frames();
+            LoadingOverlay.setProgress(0.1);
             await Promise.all([
                 loading.step('调参配置', done => loadSavedTuningAsync(() => done())),
                 loading.step('公共动作', done => loadSampledActionsForRace(done)),
             ]);
+            await loading.step('场馆资源', done => prepareVenueResources(fraction => {
+                if (loading.active) LoadingOverlay.setProgress(0.1 + fraction * 0.5);
+            }, done));
             await loading.step('场馆与界面', done => this.buildScene(done));
+            LoadingOverlay.setProgress(0.7);
             if (!modelDebug && !underwaterDebug) {
                 this.buildDeferredAiSwimmers();
                 this.applyAiDebugHud();
@@ -368,13 +376,17 @@ export class GameManager extends Component {
                     if (swimmer.cartoonRig.raceLoadError) throw swimmer.cartoonRig.raceLoadError;
                 }
                 if (this._preRaceIntroPanel.loadError) throw this._preRaceIntroPanel.loadError;
-                return loading.assetsPending === 0 && swimmers.every(swimmer => swimmer.cartoonRig.raceReady);
+                let ready = 0;
+                for (const swimmer of swimmers) if (swimmer.cartoonRig.raceReady) ready++;
+                LoadingOverlay.setProgress(0.7 + 0.2 * ready / swimmers.length);
+                return loading.assetsPending === 0 && ready === swimmers.length;
             });
             // 所有人物就绪后才初始化展示姿态；此时镜头计时与输入仍被门控。
             if (!modelDebug && !underwaterDebug) this.startGame();
             await loading.frames(3);
             await loading.waitFor('首屏附属资源', () => loading.assetsPending === 0);
             this.registerEvents();
+            LoadingOverlay.setProgress(1);
             loading.finish();
             // 调试入口会隐藏原玩家并建立独立预览；不能等待已停用节点的 lateUpdate。
             if (modelDebug) this.enterModelDebug('freestyle');
@@ -814,7 +826,14 @@ export class GameManager extends Component {
         this._gameFlow?.clearRaceManagerCallbacks();
         director.getScheduler().setTimeScale(1);
         setTimeScale(1);
-        director.loadScene('Login');
+        director.loadScene('Login', error => {
+            if (error) {
+                this._isReturningToLogin = false;
+                console.warn('[大厅] 返回失败，可重试', error);
+                return;
+            }
+            resumeLobbyAfterRace();
+        });
     }
 
     private initializeRaceContext() {
@@ -987,8 +1006,11 @@ export class GameManager extends Component {
                 try {
                     const result = await PlayerData.executeCareer({ type: 'settle', ticketId: ticket.id, ...input });
                     return result.receipt ?? { characterId: ticket.characterId, coinsGained: 0, message: result.message };
-                } catch {
-                    return { characterId: ticket.characterId, coinsGained: 0, message: '保存失败，下次开赛时自动重试结算' };
+                } catch (error) {
+                    console.warn('[Career] settle failed', error);
+                    return { characterId: ticket.characterId, coinsGained: 0,
+                        message: error instanceof CloudBackendError && error.definitive
+                            ? error.message : '保存失败，下次开赛时自动重试结算' };
                 }
             },
             applyPlayerDive: (result) => {

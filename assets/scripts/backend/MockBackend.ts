@@ -106,6 +106,17 @@ export class MockBackend implements IBackend {
     saveCharacterSelection(selection: PlayerCharacterSelection): Promise<PlayerProfile> {
         const profile = this.read();
         profile.characterSelection = normalizePlayerCharacterSelection(selection);
+        const { characterId, skinToneId, colorSchemeId } = profile.characterSelection;
+        profile.characterAppearances[characterId] = { skinToneId, colorSchemeId };
+        this.write(profile);
+        return Promise.resolve(profile);
+    }
+
+    saveCharacterAppearance(appearance: PlayerCharacterSelection): Promise<PlayerProfile> {
+        const profile = this.read();
+        const { characterId, skinToneId, colorSchemeId } = normalizePlayerCharacterSelection(appearance);
+        profile.characterAppearances[characterId] = { skinToneId, colorSchemeId };
+        if (profile.characterSelection.characterId === characterId) profile.characterSelection = { characterId, skinToneId, colorSchemeId };
         this.write(profile);
         return Promise.resolve(profile);
     }

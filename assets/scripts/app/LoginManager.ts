@@ -30,6 +30,7 @@ import { takeStartupHandoff } from '../../startup/StartupHandoff';
 import { StartupLoadingCover } from '../../startup/StartupLoadingCover';
 import { UiAssetBarrier } from '../ui/UiAssetBarrier';
 import { prepareProjectUiFonts } from '../ui/ProjectUiFonts';
+import { retainLobbyForRace } from './LobbySceneSession';
 
 
 const { ccclass } = _decorator;
@@ -56,8 +57,10 @@ export class LoginManager extends Component {
     private _nextInvitedRoom: string | null = null;
     private _switchingInvite = false;
     private _destroyed = false;
+    private _entryResourcesReady = false;
     private _lobbyLoading: UiAssetBarrier | null = null;
     private _lobbyCover: StartupLoadingCover | null = null;
+    private _suspendedForRace = false;
 
     onLoad() {
         const startup = takeStartupHandoff(this.node);
@@ -222,11 +225,17 @@ export class LoginManager extends Component {
     }
 
     private openPrepareRace() {
-        if (this._prepareRaceFlow || this._lobbyLoading || this._destroyed || !this._canvasNode?.isValid) {
+        if (this._lobbyLoading || this._destroyed || !this._canvasNode?.isValid) {
             return;
         }
-        this._lobbyCover ??= new StartupLoadingCover(this._loginUiRoot);
+        if (this._prepareRaceFlow) {
+            this._prepareRaceFlow.resume();
+            return;
+        }
+        this._lobbyCover ??= new StartupLoadingCover(this._loginUiRoot,
+            this._entryResourcesReady || !this._loginUiRoot ? 'transparent' : 'startup');
         this._lobbyCover.setLoading();
+        this._lobbyCover.setProgress(0);
         const loading = this._lobbyLoading = new UiAssetBarrier();
         void this.prepareLobby(loading);
     }
@@ -237,28 +246,48 @@ export class LoginManager extends Component {
             if (!mounted) return false;
             const flow = this._prepareRaceFlow;
             if (flow?.presentationError) throw flow.presentationError;
-            return !!flow?.presentationReady;
-        });
+            return !flow && this._pendingOpenRoom ? true : !!flow?.presentationReady;
+        }, 180000);
         // 先还原存档，避免先建默认角色，存档返回后再销毁重建。
-        void PlayerData.load(true).then(() => {
+        void PlayerData.load().then(async () => {
             if (this._lobbyLoading !== loading || this._destroyed || !this._canvasNode?.isValid) return;
             if (!PlayerData.loaded) { loading.fail(new Error('存档加载失败')); return; }
             try {
+                this._lobbyCover?.setProgress(0.05);
+                await new Promise<void>((resolve, reject) => loadRaceBundle(error => error ? reject(error) : resolve()));
+                if (this._lobbyLoading !== loading || this._destroyed) return;
+                this._lobbyCover?.setProgress(0.6);
                 loading.run(() => {
                     prepareProjectUiFonts();
                     this.buildHeadBar();
-                    this.buildPrepareRace();
+                    if (!this._pendingOpenRoom) this.buildPrepareRace();
                 });
+                this._lobbyCover?.setProgress(0.8);
                 mounted = true;
             } catch (error) { loading.fail(error); }
         }, error => loading.fail(error));
         try {
             await ready;
             if (this._lobbyLoading !== loading || this._destroyed) return;
+            this._entryResourcesReady = true;
+            this._lobbyCover?.setProgress(1);
             this._lobbyLoading = null;
+            if (this._pendingOpenRoom) {
+                const room = this._pendingJoinRoomId;
+                const reconnect = this._pendingReconnect;
+                this._pendingOpenRoom = false;
+                this._pendingJoinRoomId = null;
+                this._pendingReconnect = false;
+                // 同一任务内建立完整房间再移除登录遮罩，不闪过大厅。
+                const cover = this._lobbyCover; this._lobbyCover = null;
+                this.openRoom(room, reconnect);
+                cover?.dispose();
+                return;
+            }
             if (this._loginUiRoot?.isValid) this._loginUiRoot.active = false;
             this._prepareRaceFlow?.playReadyEntrance();
             this._lobbyCover?.dispose(); this._lobbyCover = null;
+
         } catch (error) {
             if (this._lobbyLoading !== loading || this._destroyed) return;
             this._lobbyLoading = null;
@@ -318,6 +347,7 @@ export class LoginManager extends Component {
     }
 
     private handleAppShowInvite(query: Record<string, string>) {
+        if (this._suspendedForRace) return;
         // 仅大厅刷新；房间中使用已确认快照，比赛场景不注册这个回调。
         if (!this._roomFlow && !this._lobbyLoading && !this._destroyed && PlayerData.loaded) {
             void PlayerData.load(true);
@@ -356,10 +386,16 @@ export class LoginManager extends Component {
         if (this._roomFlow) {
             return;
         }
+        if (!this._entryResourcesReady) {
+            this._pendingOpenRoom = true;
+            this._pendingJoinRoomId = joinRoomId;
+            this._pendingReconnect = reconnect;
+            this.openPrepareRace();
+            return;
+        }
         this.cancelLobbyLoading();
         this.buildHeadBar();
-        this._prepareRaceFlow?.dispose();
-        this._prepareRaceFlow = null;
+        this._prepareRaceFlow?.suspend();
         // NOTE: do NOT gate on _loginUiRoot here. When launched from a friend's share
         // (cold start), the room must open even if the login prefab isn't ready yet —
         // otherwise the guest lands on an empty scene ("竖屏 + 啥都没有"). Just hide the
@@ -448,19 +484,42 @@ export class LoginManager extends Component {
                     this.recoverPrepareAfterLoadFailure();
                     return;
                 }
-                // AI 测试也从大厅进入。趁节点仍有效先清理按钮动效、监听和预览；
-                // 不能等引擎销毁子节点后的 onDestroy 再解绑。加载失败不移除大厅。
-                this._prepareRaceFlow?.dispose();
-                this._prepareRaceFlow = null;
+                this.suspendForRace();
                 director.runScene(scene);
             });
         });
     }
 
     private recoverPrepareAfterLoadFailure(): void {
-        // 加载失败后的生命周期恢复，旧界面已退场，需要重新挂载可操作入口。
-        this._prepareRaceFlow?.dispose(); this._prepareRaceFlow = null;
         this.openPrepareRace(); this.toast('比赛加载失败，请重试');
+    }
+
+    private suspendForRace(): void {
+        this._suspendedForRace = true;
+        this._offAppShow?.(); this._offAppShow = null;
+        this._prepareRaceFlow?.suspend();
+        // 房间已经把网络所有权交给比赛；只释放房间界面，保留原会话。
+        this._roomFlow?.dispose(); this._roomFlow = null;
+        const popup = getUILayer(this._canvasNode, UILayer.Popup).parent!;
+        retainLobbyForRace([this._canvasNode, popup, this._prepareRaceFlow?.previewRoot ?? null],
+            () => this.resumeAfterRace());
+    }
+
+    private resumeAfterRace(): void {
+        this._suspendedForRace = false;
+        this._loadingRace = false;
+        this._offAppShow = platform().onAppShow(query => this.handleAppShowInvite(query));
+        getUILayer(this._canvasNode, UILayer.Popup).parent!.active = true;
+        this._headBar?.refresh(PlayerData.profile);
+        this._headBar?.setBack(null);
+        MusicManager.playLogin();
+        const room = consumeReturnToRoom();
+        consumeReturnToLobby();
+        if (room) this.openRoom(null, true);
+        else if (this._prepareRaceFlow) {
+            this._headBar?.setIdentityVisible(true);
+            this._prepareRaceFlow.resume(true);
+        } else this.openPrepareRace();
     }
 
     private findCanvasNode(): Node {

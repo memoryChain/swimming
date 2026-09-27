@@ -34,7 +34,8 @@
 // 版本45：逐角色等级AI、合法输入分类和资源策略；完整泳道生成身份，各端体力上限一致。
 // 版本46：角色、等级、肤色和配色作为完整开赛快照，身份初始化后才能进房。
 // 版本47：完整阵容先于赛前展示建立；加载门控改变共享随机数的消费顺序。
-export const NET_RACE_PROTOCOL_VERSION = 47;
+// 版本48：新增赛博少女，角色名册及AI抽样必须在各端一致。
+export const NET_RACE_PROTOCOL_VERSION = 48;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

@@ -1,4 +1,5 @@
 'use strict';
+const { settingsFile } = require('./build-layout');
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -93,7 +94,7 @@ function assertStartupCodeOutput(outputRoot) {
             throw new Error(`[startup-code] 主包缺少独立首屏模块 ${name}，请重新构建。`);
         }
     }
-    const settings = JSON.parse(fs.readFileSync(path.join(outputRoot, 'src/settings.json'), 'utf8'));
+    const settings = JSON.parse(fs.readFileSync(settingsFile(outputRoot), 'utf8'));
     if (settings.assets?.preloadBundles?.some(entry => {
         const name = typeof entry === 'string' ? entry : entry.bundle;
         return name === 'gameplay' || name === 'race';

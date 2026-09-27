@@ -30,7 +30,6 @@ import {
     PLAYER_SKIN_TONES,
     PlayerCharacterDefinition,
     PlayerCharacterId,
-    selectPlayerCharacter,
     selectedPlayerColorScheme,
     selectedPlayerSkinTone,
     setPlayerColorScheme,
@@ -102,6 +101,7 @@ const CHARACTER_LIST_VIEW_WIDTH = 342;
 const CHARACTER_LIST_VIEW_HEIGHT = 562;
 const SWATCH_SIZE = 56;
 const SWATCH_ART_SIZE = 46;
+const APPEARANCE_SAVE_DELAY_MS = 1200;
 
 export class PrepareRaceFlow {
     private _root: Node | null = null;
@@ -110,9 +110,12 @@ export class PrepareRaceFlow {
     private _previewRoot: Node | null = null;
     private _readyManageButton: Node | null = null;
     private _previewRotateArea: Node | null = null;
-    private readonly _onResize = (): void => this.layoutPresentation();
+    private readonly _onResize = (): void => { if (!this._suspended) this.layoutPresentation(); };
+    private _suspended = false;
     private _preview: PrepareRaceCharacterPreview | null = null;
     private _view: PrepareRaceView = 'ready';
+    private _appearancePending = false;
+    private _appearanceSaveTimer: ReturnType<typeof setTimeout> | null = null;
     private _draftCharacterId: PlayerCharacterId | null = null;
     private _activeInspectorTab: CharacterInspectorTab = 'attributes';
     private _previewRotateTouchId: number | null = null;
@@ -168,7 +171,7 @@ export class PrepareRaceFlow {
     private _eventReturn: CareerNavigation | null = null;
 
     private readonly _onProfileChange = (_profile: PlayerProfile): void => {
-        if (!this._root?.isValid || !this._content?.isValid || this._leaving) return;
+        if (this._suspended || !this._root?.isValid || !this._content?.isValid || this._leaving) return;
         if (this._view === 'ready') {
             if (this._eventPageActive) return;
             this.presentCharacter(getPlayerCharacterSelection().characterId);
@@ -191,6 +194,7 @@ export class PrepareRaceFlow {
 
     showReadyScreen(deferEntrance = false): void {
         if (this._pageTransition || (this._content?.isValid && this._view === 'ready')) return;
+        if (this._view === 'characters') this.saveAppearanceChangesInBackground();
         this.ensureRoot();
         const previous = this._content;
         const animate = !!previous?.isValid && !this._eventReturn && !this._eventPageActive;
@@ -207,7 +211,10 @@ export class PrepareRaceFlow {
         if (!this._eventPageActive || this._eventPageModal) this.presentCharacter(getPlayerCharacterSelection().characterId);
         this._callbacks.onCharacterManagementChanged?.(this._eventPageActive && !this._eventPageModal);
         this.layoutPresentation();
-        if (deferEntrance) this._motion.showImmediately();
+        if (deferEntrance) {
+            if (previous?.isValid) previous.active = false;
+            this._motion.showImmediately();
+        }
         else this.presentPageTransition(animate ? previous : null, 0, this._hasShownReady);
         this._hasShownReady = true;
     }
@@ -222,7 +229,7 @@ export class PrepareRaceFlow {
         if (this._content?.active && !this._leaving) this._motion.enter(false);
     }
 
-    showCharacterManagement(): void {
+    showCharacterManagement(deferEntrance = false): void {
         if (this._pageTransition || (this._content?.isValid && this._view === 'characters')) return;
         this.ensureRoot();
         const previous = this._content;
@@ -245,10 +252,50 @@ export class PrepareRaceFlow {
         this.presentCharacter(this._draftCharacterId);
         this._callbacks.onCharacterManagementChanged?.(true);
         this.layoutPresentation();
-        this.presentPageTransition(animate ? previous : null, 1, true);
+        if (deferEntrance) {
+            if (previous?.isValid) previous.active = false;
+            this._motion.showImmediately();
+        } else this.presentPageTransition(animate ? previous : null, 1, true);
+    }
+
+    get previewRoot(): Node | null { return this._previewRoot; }
+
+    suspend(): void {
+        if (this._suspended) return;
+        this._suspended = true;
+        this.saveAppearanceChangesInBackground();
+        this._leaving = true;
+        this._attributeTips?.hide(); this._skillTips?.hide();
+        this._previewRotateTouchId = null;
+        this._presentationTween?.stop(); this._presentationTween = null;
+        this._pageTransition = null;
+        setNodeActive(this._transitionBlocker, false);
+        this._motion.suspend();
+        for (const page of this._pages.values()) page.motion.suspend();
+        this._careerPanel?.setSuspended(true);
+        setNodeActive(this._root, false);
+        setNodeActive(this._previewRoot, false);
+    }
+
+    resume(afterRace = false): void {
+        if (!this._root?.isValid) return;
+        this._suspended = false;
+        setNodeActive(this._root, true);
+        this.activateContent('ready', 'PrepareRaceReadyContent');
+        this._draftCharacterId = null;
+        this._eventReturn = null;
+        this._careerPanel?.restoreNavigation(afterRace);
+        this._careerPanel?.setSuspended(false);
+        this.refreshReadyCharacterInfo();
+        if (!this._eventPageActive || this._eventPageModal) this.presentCharacter(getPlayerCharacterSelection().characterId);
+        this._callbacks.onCharacterManagementChanged?.(this._eventPageActive && !this._eventPageModal);
+        this._presentation.detail = 0;
+        this.layoutPresentation();
+        this._motion.showImmediately();
     }
 
     dispose(): void {
+        this.saveAppearanceChangesInBackground();
         this._leaving = true;
         this._presentationTween?.stop(); this._presentationTween = null;
         this._pageTransition = null;
@@ -721,6 +768,7 @@ export class PrepareRaceFlow {
         this.refreshCharacterCard(characterId);
         this.refreshCharacterInspector();
         this.refreshAppearanceSupport();
+        this.refreshAppearanceSwatches();
         this.refreshCharacterConfirmState();
         this.presentCharacter(characterId);
     }
@@ -919,8 +967,8 @@ export class PrepareRaceFlow {
         setButtonInteractable(this._upgradeButton, false);
         try {
             const result = await progression.spendForLevel(characterId);
-            if (this._root?.isValid) showToast(this._canvasNode, result.levelsGained > 0 ? `升级成功 · Lv.${progression.getCharacterLevel(characterId)}` : result.reason === 'maxed' ? '角色已满级' : '金币不足');
-        } catch { if (this._root?.isValid) showToast(this._canvasNode, '保存失败，请重试'); }
+            if (!this._suspended && this._root?.isValid) showToast(this._canvasNode, result.levelsGained > 0 ? `升级成功 · Lv.${progression.getCharacterLevel(characterId)}` : result.reason === 'maxed' ? '角色已满级' : '金币不足');
+        } catch { if (!this._suspended && this._root?.isValid) showToast(this._canvasNode, '保存失败，请重试'); }
         finally {
             this._upgradePending = false;
             if (this._root?.isValid) { this.refreshCharacterCard(characterId); this.refreshCharacterInspector(); }
@@ -1001,16 +1049,40 @@ export class PrepareRaceFlow {
     }
 
     private selectAppearance(view: SwatchView): void {
+        if (this._appearancePending || !this._draftCharacterId || this._leaving) return;
+        const characterId = this._draftCharacterId;
         if (view.group === 'skin') {
             const character = this._draftCharacterId ? findPlayerCharacter(this._draftCharacterId) : null;
             if (character?.supportsSkinTone === false || selectedPlayerSkinTone(this._draftCharacterId ?? undefined).id === view.id) return;
             setPlayerSkinTone(view.id as (typeof PLAYER_SKIN_TONES)[number]['id'], this._draftCharacterId ?? undefined);
         } else {
-            if (selectedPlayerColorScheme().id === view.id) return;
-            setPlayerColorScheme(view.id);
+            if (selectedPlayerColorScheme(this._draftCharacterId ?? undefined).id === view.id) return;
+            setPlayerColorScheme(view.id, characterId);
         }
         this._preview?.applyAppearance();
         this.refreshAppearanceSwatches();
+        PlayerData.stageCharacterAppearance(getPlayerCharacterSelection(characterId));
+        if (this._appearanceSaveTimer !== null) clearTimeout(this._appearanceSaveTimer);
+        this._appearanceSaveTimer = setTimeout(() => this.saveAppearanceChangesInBackground(), APPEARANCE_SAVE_DELAY_MS);
+    }
+
+    private async flushAppearanceChanges(): Promise<void> {
+        if (this._appearanceSaveTimer !== null) clearTimeout(this._appearanceSaveTimer);
+        this._appearanceSaveTimer = null;
+        try {
+            await PlayerData.flushCharacterAppearances();
+        } finally {
+            if (this._root?.isValid) {
+                this._preview?.applyAppearance();
+                this.refreshAppearanceSwatches();
+            }
+        }
+    }
+
+    private saveAppearanceChangesInBackground(): void {
+        void this.flushAppearanceChanges().catch(() => {
+            if (!this._suspended && this._root?.isValid) showToast(this._canvasNode, '保存失败，请重试');
+        });
     }
 
     private refreshAppearanceSupport(): void {
@@ -1022,7 +1094,7 @@ export class PrepareRaceFlow {
 
     private refreshAppearanceSwatches(): void {
         const skinId = selectedPlayerSkinTone(this._draftCharacterId ?? undefined).id;
-        const colorId = selectedPlayerColorScheme().id;
+        const colorId = selectedPlayerColorScheme(this._draftCharacterId ?? undefined).id;
         for (const swatch of this._swatches) {
             const selected = swatch.group === 'skin' ? swatch.id === skinId : swatch.id === colorId;
             if (swatch.selected === selected) continue;
@@ -1031,13 +1103,22 @@ export class PrepareRaceFlow {
         }
     }
 
-    private confirmDraftCharacter(): void {
-        if (this._leaving || !this._draftCharacterId) return;
-        if (getPlayerCharacterSelection().characterId !== this._draftCharacterId) selectPlayerCharacter(this._draftCharacterId);
-        void PlayerData.setCharacterSelection(getPlayerCharacterSelection()).catch((error) => {
-            console.warn('[PrepareRaceFlow] character selection save failed', error);
-        });
-        this.showReadyScreen();
+    private async confirmDraftCharacter(): Promise<void> {
+        if (this._leaving || this._appearancePending || !this._draftCharacterId) return;
+        const characterId = this._draftCharacterId;
+        this._appearancePending = true;
+        if (this._appearanceSaveTimer !== null) clearTimeout(this._appearanceSaveTimer);
+        this._appearanceSaveTimer = null;
+        try {
+            await PlayerData.setCharacterSelection(getPlayerCharacterSelection(characterId));
+            await this.flushAppearanceChanges();
+            if (this._root?.isValid && !this._leaving && this._view === 'characters'
+                && this._draftCharacterId === characterId) this.showReadyScreen();
+        } catch {
+            if (!this._suspended && this._root?.isValid) showToast(this._canvasNode, '保存失败，请重试');
+        } finally {
+            this._appearancePending = false;
+        }
     }
 
     private buildPreviewPresentation(parent: Node): void {

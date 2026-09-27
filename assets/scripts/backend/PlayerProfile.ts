@@ -11,10 +11,13 @@ import {
     createDefaultPlayerCharacterSelection,
     normalizePlayerCharacterSelection,
     PLAYER_CHARACTER_DEFINITIONS,
+    PLAYER_COLOR_SCHEMES,
     PlayerCharacterSelection,
+    PlayerCharacterAppearances,
+    normalizePlayerCharacterAppearances,
 } from '../app/PlayerCharacterConfig';
 
-export const PLAYER_PROFILE_SCHEMA = 6;
+export const PLAYER_PROFILE_SCHEMA = 7;
 
 // In-game resource display names (single source of truth for UI text).
 export const CURRENCY = {
@@ -58,6 +61,8 @@ export interface PlayerProfile {
     avatarId: string;
     // Last confirmed playable character and its cosmetic appearance.
     characterSelection: PlayerCharacterSelection;
+    // 每名角色独立外观；characterSelection 保留当前出场角色的快照。
+    characterAppearances: PlayerCharacterAppearances;
     // 金币 balance (shared wallet - spend on any character).
     coins: number;
     // Per-day rewarded-ad counter (reset when the date rolls over). Unused while
@@ -100,6 +105,7 @@ export function createDefaultProfile(): PlayerProfile {
         nickName: generateRandomNickName(),
         avatarId: defaultAvatarId(),
         characterSelection: createDefaultPlayerCharacterSelection(),
+        characterAppearances: normalizePlayerCharacterAppearances(undefined),
         coins: PROGRESSION_CONFIG.starterCoins,
         daily: { date: todayString(), adCount: 0 },
         characters: createDefaultCharacterProgress(),
@@ -149,6 +155,7 @@ export function normalizeProfile(raw: unknown): PlayerProfile {
         nickName: typeof src.nickName === 'string' && src.nickName.length > 0 ? src.nickName : base.nickName,
         avatarId: typeof src.avatarId === 'string' && src.avatarId.length > 0 ? src.avatarId : base.avatarId,
         characterSelection: normalizePlayerCharacterSelection(src.characterSelection),
+        characterAppearances: normalizePlayerCharacterAppearances(src.characterAppearances, src.characterSelection),
         coins,
         daily: {
             date: typeof src.daily?.date === 'string' ? src.daily!.date : base.daily.date,
@@ -156,6 +163,8 @@ export function normalizeProfile(raw: unknown): PlayerProfile {
         },
         characters,
     };
+    profile.characterSelection = { characterId: profile.characterSelection.characterId,
+        ...profile.characterAppearances[profile.characterSelection.characterId] };
     if ((src.schema ?? 0) < 5) profile.career.freeSigningUsed = Object.keys(characters).some(id => characters[id].level > 1);
     // Roll over the daily counter on a new day.
     if (profile.daily.date !== todayString()) {
@@ -191,4 +200,29 @@ function normalizeCareer(raw: Partial<CareerState> | undefined): CareerState {
         && (p.distance === 200 || p.distance === 400) && (p.rule === 'standard' || p.rule === 'wild')
         && Number.isInteger(p.tier) && p.tier >= 0 && p.tier <= 5 && p.ai && Number.isFinite(p.seed)) c.pending = p;
     return c;
+}
+
+/** 云端定向迁移：不规范化金币、生涯、赛事凭据或已有角色等级。 */
+export function migrateProfileAppearances(profile: PlayerProfile): boolean {
+    let changed = false;
+    if (profile.schema === 6) {
+        profile.characterAppearances = normalizePlayerCharacterAppearances(undefined, profile.characterSelection);
+        const selected = normalizePlayerCharacterSelection(profile.characterSelection).characterId;
+        profile.characterSelection = { characterId: selected, ...profile.characterAppearances[selected] };
+        profile.schema = PLAYER_PROFILE_SCHEMA;
+        changed = true;
+    }
+    if (profile.schema !== PLAYER_PROFILE_SCHEMA) return changed;
+    const defaults = createDefaultCharacterProgress();
+    for (const id of Object.keys(defaults)) {
+        if (!Object.prototype.hasOwnProperty.call(profile.characters, id)) {
+            profile.characters[id] = defaults[id];
+            changed = true;
+        }
+        if (!Object.prototype.hasOwnProperty.call(profile.characterAppearances, id)) {
+            profile.characterAppearances[id] = { skinToneId: 'warm', colorSchemeId: PLAYER_COLOR_SCHEMES[0].id };
+            changed = true;
+        }
+    }
+    return changed;
 }
