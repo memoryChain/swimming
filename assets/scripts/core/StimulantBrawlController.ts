@@ -55,10 +55,11 @@ const BEACON_VISIBLE_AHEAD_DISTANCE = 82;
 const BEACON_VISIBLE_BEHIND_DISTANCE = 8;
 const WAVE_ANNOUNCEMENT_LEAD_DISTANCE = 18;
 const PRESENTATION_INTERVAL = 1 / 20;
-const ITEM_SCALE = 0.9;
-const ITEM_MODEL_SCALE = 0.84;
-const ITEM_BASE_Y_OFFSET = 0.4;
-const ITEM_MODEL_HALF_HEIGHT = 0.68;
+const ITEM_FALLBACK_SCALE = 0.75;
+const ITEM_MODEL_SCALE = 0.70;
+const ITEM_BASE_Y_OFFSET = 0.33;
+const SODA_MODEL_TOP_HEIGHT = 0.68;
+const CALM_SLUSH_MODEL_TOP_HEIGHT = 0.91;
 const ITEM_YAW_SPEED_DEGREES = 34;
 const ITEM_BASE_LEAN_DEGREES = 8;
 const ITEM_PITCH_SWAY_DEGREES = 2.25;
@@ -73,10 +74,11 @@ const BEACON_HALO_PEAK_RADIUS = 0.72;
 const BEACON_BASE_RADIUS = 0.94;
 const BEACON_BASE_Y_OFFSET = 0.04;
 const BEACON_COLUMN_GAP = 0.24;
-const BEACON_COLUMN_BOTTOM = ITEM_BASE_Y_OFFSET
-    + ITEM_MODEL_HALF_HEIGHT * ITEM_MODEL_SCALE
-    + BEACON_COLUMN_GAP
-    - BEACON_BASE_Y_OFFSET;
+function beaconColumnBottom(kind: StimulantItemKind): number {
+    const modelTopHeight = kind === 'calm-slush' ? CALM_SLUSH_MODEL_TOP_HEIGHT : SODA_MODEL_TOP_HEIGHT;
+    return ITEM_BASE_Y_OFFSET + modelTopHeight * ITEM_MODEL_SCALE
+        + BEACON_COLUMN_GAP - BEACON_BASE_Y_OFFSET;
+}
 const BEACON_PICKUP_COLLAPSE_SECONDS = 0.28;
 const THROW_TRIGGER_AHEAD_DISTANCE = 18;
 const THROW_FORCE_LANDED_AHEAD_DISTANCE = 6;
@@ -488,7 +490,7 @@ export class StimulantBrawlController {
             const kindIndex = item.kind === 'calm-slush' ? 1 : 0;
             const node = this.createProgramCube(`StimulantCube_${item.id}`, this.visualMesh, this.visualMaterials[kindIndex]);
             node.setWorldPosition(item.x, item.baseY, item.z);
-            node.setScale(ITEM_SCALE, ITEM_SCALE, ITEM_SCALE);
+            node.setScale(ITEM_FALLBACK_SCALE, ITEM_FALLBACK_SCALE, ITEM_FALLBACK_SCALE);
             node.active = false;
             item.node = node;
             const beacon = new Node(`StimulantBeacon_${item.id}`);
@@ -804,10 +806,11 @@ function appendBeaconRibbon(
     const columns = [-1, 0, 1] as const;
     const columnAlpha = [0.08, 1, 0.08] as const;
     const base = positions.length / 3;
-    const columnHeight = BEACON_HEIGHT - BEACON_COLUMN_BOTTOM;
+    const columnBottom = beaconColumnBottom(kind);
+    const columnHeight = BEACON_HEIGHT - columnBottom;
 
     for (let row = 0; row < levels.length; row++) {
-        const y = BEACON_COLUMN_BOTTOM + levels[row] * columnHeight;
+        const y = columnBottom + levels[row] * columnHeight;
         for (let column = 0; column < columns.length; column++) {
             const offset = columns[column] * BEACON_HALF_WIDTH * widths[row];
             positions.push(axis === 'x' ? offset : 0, y, axis === 'z' ? offset : 0);

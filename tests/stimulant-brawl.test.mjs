@@ -113,11 +113,12 @@ test('心跳苏打显式预制体包含模型渲染器，加载器保留多路�
     assert.match(controller, /hasMeshRenderer/);
     assert.match(controller, /buildStimulantBeaconGeometry/);
     assert.match(controller, /BEACON_VISIBLE_AHEAD_DISTANCE = 82/);
-    assert.match(controller, /BEACON_COLUMN_BOTTOM/);
+    assert.match(controller, /beaconColumnBottom\(kind\)/);
     assert.match(controller, /BEACON_HALO_INNER_RADIUS/);
-    assert.match(controller, /ITEM_MODEL_SCALE = 0\.84/);
-    assert.match(controller, /ITEM_BASE_Y_OFFSET = 0\.4/);
-    assert.match(controller, /ITEM_MODEL_HALF_HEIGHT \* ITEM_MODEL_SCALE/);
+    assert.match(controller, /ITEM_MODEL_SCALE = 0\.70/);
+    assert.match(controller, /ITEM_FALLBACK_SCALE = 0\.75/);
+    assert.match(controller, /ITEM_BASE_Y_OFFSET = 0\.33/);
+    assert.match(controller, /modelTopHeight \* ITEM_MODEL_SCALE/);
     assert.match(controller, /WATER_FLOAT_PROFILES\.pickup/);
     assert.match(controller, /sampleWaterFloatOffset/);
     assert.match(controller, /ITEM_BASE_LEAN_DEGREES = 8/);
