@@ -185,8 +185,10 @@ export class NetRaceController {
     private _mineRelayStateListener: ((state: NetMineRelayState) => void) | null = null;
     private _minefieldImpactListener: ((mineId: number, hitLane: number, courseX: number, lateral: number, hitMask: number, revision: number, elapsedSeconds?: number) => void) | null = null;
     private _minefieldStateListener: ((state: NetMinefieldState) => void) | null = null;
-    private _entertainmentDirectorStateListener: ((state: NetEntertainmentDirectorState) => boolean | void) | null = null;
-    private _litterStateListener: ((state: LitterSnapshotState) => void) | null = null;
+    private _entertainmentDirectorStateListener: ((state: NetEntertainmentDirectorState,
+        planId: number) => boolean | void) | null = null;
+    private _litterStateListener: ((state: LitterSnapshotState, planId: number) => void) | null = null;
+    private _pendingLitterState: { state: LitterSnapshotState; planId: number } | null = null;
     private readonly _litterFragmentAssembler = new LitterSnapshotFragmentAssembler();
     private _litterContactListener: ((contact: LitterContact) => void) | null = null;
 
@@ -449,12 +451,18 @@ export class NetRaceController {
         this._minefieldStateListener = listener;
     }
 
-    setEntertainmentDirectorStateListener(listener: ((state: NetEntertainmentDirectorState) => boolean | void) | null): void {
+    setEntertainmentDirectorStateListener(listener: ((state: NetEntertainmentDirectorState,
+        planId: number) => boolean | void) | null): void {
         this._entertainmentDirectorStateListener = listener;
     }
 
-    setLitterStateListener(listener: ((state: LitterSnapshotState) => void) | null): void {
+    setLitterStateListener(listener: ((state: LitterSnapshotState, planId: number) => void) | null): void {
         this._litterStateListener = listener;
+        if (listener && this._pendingLitterState) {
+            const pending = this._pendingLitterState;
+            this._pendingLitterState = null;
+            listener(pending.state, pending.planId);
+        }
     }
 
     enqueueLitterContact(contact: LitterContact): void {
@@ -600,6 +608,7 @@ export class NetRaceController {
 
     private clearAuthorityTransientState(): void {
         this._litterFragmentAssembler.reset();
+        this._pendingLitterState = null;
         this._snapshotTargets = [];
         this._prevSnapshot = [];
         this._snapshotTime = 0;
@@ -725,6 +734,7 @@ export class NetRaceController {
         minefield?: NetMinefieldState | null,
         entertainmentDirector?: NetEntertainmentDirectorState | null,
         litter?: LitterSnapshotState | null,
+        obstaclePlanId = 0,
     ): void {
         if (this._disposed || !this._net.isSupported()) {
             return;
@@ -742,11 +752,12 @@ export class NetRaceController {
             entertainmentDirector,
             this._eventEpochs,
             this._snapSent,
+            obstaclePlanId,
         ));
         // S| 固定 0.15 秒；超过 18 槽时 L|/LF| 隔次发送，避免分片将专属流量翻倍。
         if (litter && (litter.slots.length <= 18 || (++this._denseLitterSnapshotTick & 1) === 1)) {
             const packets = encodeLitterSnapshotPackets(this._session.localPos, litter,
-                this._snapSent, this._racePrefix.length);
+                this._snapSent, this._racePrefix.length, obstaclePlanId);
             for (let index = 0; index < packets.length; index++) this.broadcastRaceMessage(packets[index]);
         }
         this.resendContactEvents();
@@ -945,7 +956,8 @@ export class NetRaceController {
                     if (snapshot.eventEpochs[slot] < this._eventEpochs[slot]) return;
                 }
                 // 导演拒绝旧轮或非法状态时，同包子玩法也必须全部拒绝。
-                if (this._entertainmentDirectorStateListener?.(snapshot.entertainmentDirector) === false) return;
+                if (this._entertainmentDirectorStateListener?.(
+                    snapshot.entertainmentDirector, snapshot.obstaclePlanId) === false) return;
                 for (let slot = 0; slot < this._eventEpochs.length; slot++) {
                     const epoch = snapshot.eventEpochs[slot];
                     if (epoch > this._eventEpochs[slot]) this._eventEpochListener?.(slot, epoch);
@@ -988,7 +1000,8 @@ export class NetRaceController {
             if (!this.acceptHostSnapshot(litter.hostPos, litter.sequence, this._hostLitterOrder)) return;
             this.adoptHostFromSnapshot(litter.hostPos);
             if (!this._isHost && litter.hostPos === this._activeHostPos) {
-                this._litterStateListener?.(litter.state);
+                if (this._litterStateListener) this._litterStateListener(litter.state, litter.planId ?? 0);
+                else this._pendingLitterState = { state: litter.state, planId: litter.planId ?? 0 };
             }
             return;
         }
@@ -1493,6 +1506,7 @@ export class NetRaceController {
             return;
         }
         this._disposed = true;
+        this._pendingLitterState = null;
         this._startDelivery?.dispose();
         this._startDelivery = null;
         if (this._goTimeoutHandle) {

@@ -82,6 +82,7 @@ export interface NetSnapshotEntry {
 export interface DecodedRaceSnapshot {
     hostPos: number;
     sequence: number;
+    obstaclePlanId: number;
     entries: NetSnapshotEntry[];
     stimulantRevision: number;
     stimulantMask: number;
@@ -252,6 +253,7 @@ export function encodeRaceSnapshot(
     entertainmentDirector?: NetEntertainmentDirectorState | null,
     eventEpochs?: readonly number[],
     sequence = -1,
+    obstaclePlanId = 0,
 ): string {
     const body = entries
         .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${encodeDraftingState(e)},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)},${encodeConditionCooldown(e.calmSlushRemaining ?? -1)}`)
@@ -288,9 +290,9 @@ export function encodeRaceSnapshot(
         .join(':') : '';
     const minefieldRevision = encodeSnapshotRevision(Math.max(0, Math.floor(minefield?.revision ?? 0)));
     const minefieldElapsedMs = Math.max(0, Math.round((minefield?.elapsedSeconds ?? 0) * 1000));
-    const minefieldActiveMask = Math.max(0, Math.floor(minefield?.activeMask ?? 0)).toString(16);
+    const minefieldActiveMask = Math.max(0, Math.floor(minefield?.activeMask ?? 0)).toString(36);
     // Slot 27 now carries the host-authoritative spawn-safe/armed state without shifting later fields.
-    const minefieldArmedMask = Math.max(0, Math.floor(minefield?.armedMask ?? 0)).toString(16);
+    const minefieldArmedMask = Math.max(0, Math.floor(minefield?.armedMask ?? 0)).toString(36);
     const minefieldWaveIndex = Math.max(0, Math.floor(minefield?.waveIndex ?? 0));
     const minefieldSlotWavesPacked = Math.max(0, Math.floor(minefield?.slotWavesPacked ?? 0)).toString(16);
     const directorRevision = encodeSnapshotRevision(Math.max(0, Math.floor(entertainmentDirector?.revision ?? 0)));
@@ -298,15 +300,15 @@ export function encodeRaceSnapshot(
     const directorEventIndex = Math.max(0, Math.floor(entertainmentDirector?.eventIndex ?? 0));
     const directorEventCount = Math.max(0, Math.floor(entertainmentDirector?.eventCount ?? 0));
     const directorRemainingMs = Math.max(0, Math.round((entertainmentDirector?.remainingSeconds ?? 0) * 1000));
-    const directorPackedEvents = Math.max(0, Math.floor(entertainmentDirector?.packedEvents ?? 0)).toString(16);
-    const directorActivatedMask = Math.max(0, Math.floor(entertainmentDirector?.activatedMask ?? 0)).toString(16);
-    const directorResidentMask = Math.max(0, Math.floor(entertainmentDirector?.residentMask ?? 0)).toString(16);
+    const directorPackedEvents = Math.max(0, Math.floor(entertainmentDirector?.packedEvents ?? 0)).toString(36);
+    const directorActivatedMask = Math.max(0, Math.floor(entertainmentDirector?.activatedMask ?? 0)).toString(36);
+    const directorResidentMask = Math.max(0, Math.floor(entertainmentDirector?.residentMask ?? 0)).toString(36);
     const directorAnchorCm = Math.max(0, Math.round((entertainmentDirector?.anchorDistance ?? 0) * 100));
     // v93 用带标记的 36 进制保留厘米精度，为比赛身份外壳留出字节预算。
     const directorEventAnchors = entertainmentDirector ? '!' + entertainmentDirector.eventAnchorDistances
         .map(distance => Math.max(0, Math.round(distance * 100)).toString(36))
         .join('.') : '';
-    const directorSpecialMask = Math.max(0, Math.floor(entertainmentDirector?.specialMask ?? 0)).toString(16);
+    const directorSpecialMask = Math.max(0, Math.floor(entertainmentDirector?.specialMask ?? 0)).toString(36);
     const directorActivationSerial = encodeSnapshotRevision(Math.max(0, Math.floor(entertainmentDirector?.activationSerial ?? 0)));
     const directorEncoreRound = encodeSnapshotRevision(Math.max(0, Math.floor(entertainmentDirector?.encoreRound ?? 0)));
     const directorEncoreEvent = Math.max(0, Math.floor((entertainmentDirector?.encoreEvent ?? -1) + 1));
@@ -314,7 +316,9 @@ export function encodeRaceSnapshot(
     const sharkBody = shark
         ? `~${Math.max(0, Math.floor(shark.sequence))},${Math.max(0, Math.floor(shark.state))},${Math.max(0, Math.round(shark.raceElapsed * 1000))},${Math.max(0, Math.round(shark.remainingSeconds * 1000))},${Math.max(0, Math.round(shark.huntOpeningGraceSeconds * 1000))},${Math.round(shark.x * 100)},${Math.round(shark.z * 100)},${Math.round(shark.facingX * 1000)},${Math.round(shark.facingZ * 1000)},${Math.round(shark.targetLane)},${Math.round(shark.knockedLane)},${Math.max(0, Math.floor(shark.huntIndex))}`
         : '';
-    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonReservedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs},${recoveryRevision},${recoveryBody},${minefieldRevision},${minefieldElapsedMs},${minefieldActiveMask},${minefieldArmedMask},${directorRevision},${directorPhase},${directorEventIndex},${directorRemainingMs},${directorPackedEvents},${directorActivatedMask},${directorResidentMask},${directorAnchorCm},${directorEventAnchors},${directorEventCount},${directorSpecialMask},${directorActivationSerial},${directorEncoreRound},${directorEncoreEvent},${directorLastActivatedEvent},${minefieldWaveIndex},${minefieldSlotWavesPacked},${collectors},${epochs}#${body}${sharkBody}`;
+    const plan = Number.isSafeInteger(obstaclePlanId) && obstaclePlanId > 0
+        ? ',' + obstaclePlanId.toString(36) : '';
+    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonReservedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs},${recoveryRevision},${recoveryBody},${minefieldRevision},${minefieldElapsedMs},${minefieldActiveMask},${minefieldArmedMask},${directorRevision},${directorPhase},${directorEventIndex},${directorRemainingMs},${directorPackedEvents},${directorActivatedMask},${directorResidentMask},${directorAnchorCm},${directorEventAnchors},${directorEventCount},${directorSpecialMask},${directorActivationSerial},${directorEncoreRound},${directorEncoreEvent},${directorLastActivatedEvent},${minefieldWaveIndex},${minefieldSlotWavesPacked},${collectors},${epochs}${plan}#${body}${sharkBody}`;
 }
 
 // Returns null if the payload is not a race snapshot (so other broadcast messages
@@ -358,25 +362,28 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     const recoveryBody = header.length > 23 ? header[23] : '';
     const minefieldRevision = decodeSnapshotRevision(header[24]);
     const minefieldElapsedMs = header.length > 25 ? parseInt(header[25], 10) : 0;
-    const minefieldActiveMask = header.length > 26 ? parseInt(header[26], 16) : 0;
-    const minefieldArmedMask = header.length > 27 ? parseInt(header[27], 16) : 0;
+    const minefieldActiveMask = header.length > 26 ? parseInt(header[26], 36) : 0;
+    const minefieldArmedMask = header.length > 27 ? parseInt(header[27], 36) : 0;
     const directorRevision = decodeSnapshotRevision(header[28]);
     const directorPhase = header.length > 29 ? parseInt(header[29], 10) : 0;
     const directorEventIndex = header.length > 30 ? parseInt(header[30], 10) : 0;
     const directorRemainingMs = header.length > 31 ? parseInt(header[31], 10) : 0;
-    const directorPackedEvents = header.length > 32 ? parseInt(header[32], 16) : 0;
-    const directorActivatedMask = header.length > 33 ? parseInt(header[33], 16) : 0;
-    const directorResidentMask = header.length > 34 ? parseInt(header[34], 16) : 0;
+    const directorPackedEvents = header.length > 32 ? parseInt(header[32], 36) : 0;
+    const directorActivatedMask = header.length > 33 ? parseInt(header[33], 36) : 0;
+    const directorResidentMask = header.length > 34 ? parseInt(header[34], 36) : 0;
     const directorAnchorCm = header.length > 35 ? parseInt(header[35], 10) : 0;
     const directorEventAnchors = header.length > 36 ? decodeCentimeterList(header[36]) : [0, 0, 0, 0, 0, 0];
     const directorEventCount = header.length > 37 ? parseInt(header[37], 10) : 0;
-    const directorSpecialMask = header.length > 38 ? parseInt(header[38], 16) : 0;
+    const directorSpecialMask = header.length > 38 ? parseInt(header[38], 36) : 0;
     const directorActivationSerial = decodeSnapshotRevision(header[39]);
     const directorEncoreRound = decodeSnapshotRevision(header[40]);
     const directorEncoreEvent = header.length > 41 ? parseInt(header[41], 10) : 0;
     const directorLastActivatedEvent = header.length > 42 ? parseInt(header[42], 10) : 0;
     const minefieldWaveIndex = header.length > 43 ? parseInt(header[43], 10) : 0;
     const minefieldSlotWavesPacked = header.length > 44 ? parseInt(header[44], 16) : 0;
+    const obstaclePlanId = header.length > 47 && /^[0-9a-z]+$/.test(header[47])
+        ? parseInt(header[47], 36) : 0;
+    if (header.length > 47 && (!Number.isSafeInteger(obstaclePlanId) || obstaclePlanId <= 0)) return null;
     const stateBody = rest.slice(hash + 1);
     const sharkSeparator = stateBody.indexOf('~');
     const body = sharkSeparator >= 0 ? stateBody.slice(0, sharkSeparator) : stateBody;
@@ -456,6 +463,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     return {
         hostPos: Number.isFinite(hostPos) ? hostPos : 0,
         sequence,
+        obstaclePlanId,
         entries,
         stimulantRevision: Number.isSafeInteger(stimulantRevision) && stimulantRevision >= 0 ? stimulantRevision : 0,
         stimulantMask: Number.isSafeInteger(stimulantMask) && stimulantMask >= 0 ? stimulantMask : 0,

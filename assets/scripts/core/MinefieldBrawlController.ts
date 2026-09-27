@@ -1,6 +1,7 @@
 import { GameState } from './GameConstants';
 import { ContactEventWindow, expandedEllipseContains, segmentHitsExpandedEllipse } from './RaceContactGeometry';
 import { SeededRandom } from './SharedRNG';
+import type { ObstacleBuoyAnchor } from './ObstacleBrawlRules';
 
 export type MinefieldRacerState = {
     active: boolean;
@@ -106,18 +107,23 @@ export class MinefieldBrawlController {
         mineCount: number = MINEFIELD_TUNING.mineCount,
         exclusionZone: MinefieldExclusionZone | null = null,
         private readonly waveTriggerDistances: readonly number[] = [],
+        plannedAnchors?: readonly ObstacleBuoyAnchor[],
     ) {
         const random = new SeededRandom((seed ^ 0x6d696e65) >>> 0);
         const halfWidth = Math.max(1, poolWidth * 0.5 - 0.8);
-        const count = Math.max(1, Math.min(INTENSE_ANCHOR_X.length, Math.floor(mineCount)));
+        const count = plannedAnchors
+            ? Math.min(INTENSE_ANCHOR_X.length, plannedAnchors.length)
+            : Math.max(1, Math.min(INTENSE_ANCHOR_X.length, Math.floor(mineCount)));
         const xOrder = random.shuffle([...(count <= ANCHOR_X.length ? ANCHOR_X : INTENSE_ANCHOR_X)]);
         const zOrder = random.shuffle([...(count <= ANCHOR_Z_RATIOS.length
             ? ANCHOR_Z_RATIOS : INTENSE_ANCHOR_Z_RATIOS)]);
-        let candidates = xOrder.map((anchorX, index) => ({
-            anchorX,
-            anchorZ: zOrder[index % zOrder.length] * halfWidth,
-        }));
-        if (exclusionZone) {
+        let candidates = plannedAnchors
+            ? plannedAnchors.map(anchor => ({ anchorX: anchor.courseX, anchorZ: anchor.lateral }))
+            : xOrder.map((anchorX, index) => ({
+                anchorX,
+                anchorZ: zOrder[index % zOrder.length] * halfWidth,
+            }));
+        if (exclusionZone && !plannedAnchors) {
             const safe = candidates.filter(candidate => !isMineAnchorExcluded(
                 candidate.anchorX, candidate.anchorZ, exclusionZone,
             ));
@@ -217,6 +223,18 @@ export class MinefieldBrawlController {
 
     mines(): readonly MinefieldMineState[] { return this.mineStates; }
     armedMineCount(): number { return this.armedOnceCount; }
+
+    /** 事件截止时撤销仍因出生安全而隐藏的浮标；已经上浮的浮标自然驻留。 */
+    cancelUnarmedMines(): void {
+        let changed = false;
+        for (const mine of this.mineStates) {
+            if (!mine.active || mine.armed) continue;
+            mine.active = false;
+            this.activeMineCount--;
+            changed = true;
+        }
+        if (changed) this.revision++;
+    }
 
     snapshotState(): MinefieldSnapshotState {
         let activeMask = 0;

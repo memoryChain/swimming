@@ -6,12 +6,13 @@ export const enum EntertainmentEventId {
     TIMED_BOMB = 1,
     WHIRLPOOL = 2,
     MINEFIELD = 3,
+    OBSTACLE = 3,
     SHARK = 4,
     CANNON = 5,
     LITTER = 6,
 }
 
-/** 阶段 F～H 已完成；正式娱乐导演从七种候选中按赛程抽取三至六种。 */
+/** 正式娱乐导演从六种候选中按赛程抽取三至六种。 */
 export const ENTERTAINMENT_LITTER_SELECTION_ENABLED = true;
 
 export const enum EntertainmentDirectorPhase {
@@ -90,8 +91,12 @@ const PERSISTENT_EVENTS_MASK = eventBit(EntertainmentEventId.STIMULANT)
     | eventBit(EntertainmentEventId.WHIRLPOOL)
     | eventBit(EntertainmentEventId.MINEFIELD)
     | eventBit(EntertainmentEventId.SHARK)
-    | eventBit(EntertainmentEventId.CANNON)
-    | eventBit(EntertainmentEventId.LITTER);
+    | eventBit(EntertainmentEventId.CANNON);
+export const ENTERTAINMENT_SELECTABLE_EVENTS: readonly EntertainmentEventId[] = [
+    EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB,
+    EntertainmentEventId.WHIRLPOOL, EntertainmentEventId.OBSTACLE,
+    EntertainmentEventId.SHARK, EntertainmentEventId.CANNON,
+];
 
 let runtimeResidentMask = 0;
 let runtimeActiveEvent: EntertainmentEventId | null = null;
@@ -115,7 +120,7 @@ export function entertainmentEventName(event: EntertainmentEventId): string {
         case EntertainmentEventId.STIMULANT: return '心跳苏打争夺';
         case EntertainmentEventId.TIMED_BOMB: return '定时水球传递';
         case EntertainmentEventId.WHIRLPOOL: return '漩涡冲浪';
-        case EntertainmentEventId.MINEFIELD: return '警示气球浮标';
+        case EntertainmentEventId.MINEFIELD: return '水上障碍场';
         case EntertainmentEventId.SHARK: return '玩具冲撞';
         case EntertainmentEventId.CANNON: return '水球点名';
         case EntertainmentEventId.LITTER: return '杂物漂流';
@@ -310,6 +315,30 @@ const SUPER_WHIRLPOOL_BROADCAST_COPIES: readonly EntertainmentBroadcastCopy[] = 
     ['泳池广播：大号旋流即将登场，绕远一点也能稳稳通过', '超级漩涡 · 看旋向，找外圈出口'],
 ];
 
+/** 同一障碍事件三种布局共用文案；不预报本轮可能不存在的物件。 */
+const OBSTACLE_BROADCAST_COPIES: readonly EntertainmentBroadcastCopy[] = [
+    ['泳池广播：前方水面有新障碍，请提前找空隙', '障碍入场 · 看清路线再通过'],
+    ['泳池广播：赛道正在重新布置，留意水面变化', '路线变化 · 提前调整横向位置'],
+    ['泳池广播：前方出现绕行练习，请看清通路', '绕行练习 · 沿着空隙继续游'],
+    ['泳池广播：水面布置了新关卡，直线未必省时', '水面关卡 · 看准空隙再前进'],
+    ['泳池广播：场务提醒，前方需要换条路线', '换线提醒 · 避开密集位置'],
+    ['泳池广播：前方路面有点热闹，请提前选边', '提前选边 · 留出转向空间'],
+    ['泳池广播：水面障碍即将就位，注意观察', '障碍就位 · 选择清楚的通路'],
+    ['泳池广播：前面多了几道选择题，答案在空隙里', '寻找空隙 · 看准再穿过去'],
+    ['泳池广播：请给转向留点距离，障碍准备上场', '转向准备 · 绕开拥挤水域'],
+    ['泳池广播：水面路线要变了，先看再游更稳', '路线更新 · 提前避开障碍'],
+    ['泳池广播：前方绕行区开放，请别只盯直线', '绕行区开启 · 及时改变路线'],
+    ['泳池广播：这一段需要观察水面，空路就在旁边', '观察水面 · 从空路继续游'],
+    ['泳池广播：障碍正慢慢到位，选手可以先找出口', '寻找出口 · 从宽处通过'],
+    ['泳池广播：前面有新布置，请照顾好前进路线', '路线留心 · 避开重障碍'],
+    ['泳池广播：水面空隙正在变化，转向要趁早', '空隙变化 · 提前横移通过'],
+    ['泳池广播：场务把障碍摆上水面，请观察前方', '场务提醒 · 留意前方空隙'],
+    ['泳池广播：前方不能闭眼直游，请先找到通道', '通道选择 · 稳住方向继续游'],
+    ['泳池广播：水面多了点东西，路线需要重新打量', '重新选路 · 从可达空隙通过'],
+    ['泳池广播：前方有一段绕行路，请提早决定方向', '绕行开始 · 提前决定方向'],
+    ['泳池广播：新的水上障碍即将登场，请看清位置', '水上障碍 · 看准位置再绕行'],
+];
+
 /**
  * 广播属于表现层，但仍用比赛种子派生独立随机流，让联机各端显示一致。
  * 与 20 互质的步长保证同一事件连续取前二十次时不重复，也不消费玩法 RNG。
@@ -361,7 +390,8 @@ function entertainmentBroadcastCopies(
     event: EntertainmentEventId,
     special: boolean,
 ): readonly EntertainmentBroadcastCopy[] {
-    return event === EntertainmentEventId.WHIRLPOOL && special
+    return event === EntertainmentEventId.OBSTACLE ? OBSTACLE_BROADCAST_COPIES
+        : event === EntertainmentEventId.WHIRLPOOL && special
         ? SUPER_WHIRLPOOL_BROADCAST_COPIES
         : ENTERTAINMENT_BROADCAST_COPIES[event];
 }
@@ -694,8 +724,7 @@ export function buildEntertainmentEventOrder(
         const count = raceDistance >= 400 ? (random.int(2) === 0 ? 5 : 6) : (random.int(2) === 0 ? 3 : 4);
         const field = [
             EntertainmentEventId.WHIRLPOOL,
-            EntertainmentEventId.MINEFIELD,
-            EntertainmentEventId.LITTER,
+            EntertainmentEventId.OBSTACLE,
         ];
         const contest = [EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB];
         const assault = [EntertainmentEventId.SHARK, EntertainmentEventId.CANNON];
@@ -792,8 +821,7 @@ function validDirectorState(state: EntertainmentDirectorState): boolean {
         && Number.isSafeInteger(state.activationSerial) && state.activationSerial >= 0
         && (state.lastActivatedEvent === null
             || (Number.isSafeInteger(state.lastActivatedEvent)
-                && state.lastActivatedEvent >= EntertainmentEventId.STIMULANT
-                && state.lastActivatedEvent <= EntertainmentEventId.LITTER))
+                && ENTERTAINMENT_SELECTABLE_EVENTS.indexOf(state.lastActivatedEvent) >= 0))
         && (state.activationSerial === 0 || state.lastActivatedEvent !== null)
         && Number.isSafeInteger(state.encoreRound) && state.encoreRound >= 0
         && (state.encoreEvent === null || ENCORE_EVENTS.indexOf(state.encoreEvent) >= 0)
@@ -807,8 +835,7 @@ function validDirectorState(state: EntertainmentDirectorState): boolean {
 function validEventOrder(events: readonly EntertainmentEventId[]): boolean {
     if (events.length < 3 || events.length > MAX_EVENT_COUNT || new Set(events).size !== events.length) return false;
     if (events.some(event => !Number.isSafeInteger(event)
-        || event < EntertainmentEventId.STIMULANT
-        || event > EntertainmentEventId.LITTER)) return false;
+        || ENTERTAINMENT_SELECTABLE_EVENTS.indexOf(event) < 0)) return false;
     const fieldCount = events.filter(event => isFieldEvent(event)).length;
     const contestCount = events.filter(event => event === EntertainmentEventId.STIMULANT
         || event === EntertainmentEventId.TIMED_BOMB).length;
@@ -820,8 +847,7 @@ function validEventOrder(events: readonly EntertainmentEventId[]): boolean {
 
 function isFieldEvent(event: EntertainmentEventId): boolean {
     return event === EntertainmentEventId.WHIRLPOOL
-        || event === EntertainmentEventId.MINEFIELD
-        || event === EntertainmentEventId.LITTER;
+        || event === EntertainmentEventId.OBSTACLE;
 }
 
 function moveFieldEventAwayFromEnd(events: EntertainmentEventId[], random: SeededRandom): void {

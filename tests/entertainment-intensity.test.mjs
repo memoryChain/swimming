@@ -138,13 +138,13 @@ test('高档双涡只生成两处，第五档包含一个超级漩涡', () => {
     assert.equal(superPair.filter(isSuperWhirlpool).length, 1);
 });
 
-test('固定组合先驻留后爆发，完成两项后不随机返场', () => {
-    const order = [EntertainmentEventId.LITTER, EntertainmentEventId.CANNON];
+test('固定组合先驻留后爆发，完成后不随机返场', () => {
+    const order = [EntertainmentEventId.OBSTACLE, EntertainmentEventId.CANNON, EntertainmentEventId.STIMULANT];
     const director = new EntertainmentModeDirector(41, 200, true, () => 1, order, false);
     assert.deepEqual(director.selectedEvents(), order);
     const activated = [];
-    for (let step = 0; step < 90; step++) {
-        const transition = director.update(1, 120, true);
+    for (let step = 0; step < 180; step++) {
+        const transition = director.update(1, 200, true);
         if (transition.activatedEvent !== null) activated.push(transition.activatedEvent);
     }
     assert.deepEqual(activated, order);

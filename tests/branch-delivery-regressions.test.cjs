@@ -394,6 +394,42 @@ test('S 与 L 任意顺序到达都交付一次，另一通道的迟到旧轮不
     }
 });
 
+test('障碍计划尚未由 S 建立时，只缓存最新一份 L，建好后交付且换主清空', () => {
+    const first = hostSnapshotSender(0);
+    const receiver = new NetRaceController({ raceId: RACE_ID, localIsHost: false, localPos: 2,
+        seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
+    const litter = new LitterBrawlController(2, 7, 200, () => null, () => {});
+    try {
+        first.sendSnapshot([], null, null, null, null, null, null, null, litter.snapshotState(), 12345);
+        const firstCycle = broadcasts.slice(-2);
+        receiver.onBroadcast(firstCycle[1]);
+        assert.ok(receiver._pendingLitterState);
+        let deliveries = 0, planSeen = 0;
+        receiver.setEntertainmentDirectorStateListener((_state, planId) => {
+            if (planId > 0) {
+                assert.equal(planId, 12345);
+                planSeen++;
+                receiver.setLitterStateListener((_litter, litterPlanId) => {
+                    assert.equal(litterPlanId, 12345);
+                    deliveries++;
+                });
+            }
+            return true;
+        });
+        receiver.onBroadcast(firstCycle[0]);
+        assert.equal(planSeen, 1);
+        assert.equal(deliveries, 1);
+        assert.equal(receiver._pendingLitterState, null);
+        receiver.setLitterStateListener(null);
+        first.sendSnapshot([], null, null, null, null, null, null, null, litter.snapshotState(), 12345);
+        receiver.onBroadcast(broadcasts.at(-1));
+        assert.ok(receiver._pendingLitterState);
+        receiver._lastSnapshotAt = 0;
+        receiver.onBroadcast(wire(encodeRaceSnapshot(1, [])));
+        assert.equal(receiver._pendingLitterState, null);
+    } finally { first.dispose(); receiver.dispose(); litter.dispose(); }
+});
+
 test('已收到有序快照后拒绝无序旧格式，非本局成员的快照不改变权威', () => {
     const sender = hostSnapshotSender(), receiver = net(), outsider = hostSnapshotSender(7);
     try {

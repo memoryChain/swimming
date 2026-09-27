@@ -1,6 +1,7 @@
 import { Camera, Color, Label, LabelOutline, Layers, Node, RenderTexture, Sprite, SpriteFrame, sys, UITransform, Vec3, view } from 'cc';
 import type { CannonImpact, CannonLaunch } from '../core/CannonBrawlController';
 import type { LitterClusterState } from '../core/LitterBrawlController';
+import type { MinefieldMineState } from '../core/MinefieldBrawlController';
 import type { SharkController } from '../entity/SharkController';
 import { SHARK_TUNING, SharkState } from '../entity/SharkTuning';
 import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
@@ -37,7 +38,7 @@ const DANGER_COLOR = new Color(255, 82, 72, 255);
 const INFO_COLOR = new Color(107, 222, 255, 255);
 const FEED_CLEAR_COLOR = new Color(13, 48, 86, 255);
 
-type FeedMode = 'none' | 'shark' | 'cannon' | 'whirlpool' | 'timed-bomb' | 'litter' | 'giant-wave';
+type FeedMode = 'none' | 'shark' | 'cannon' | 'whirlpool' | 'timed-bomb' | 'litter' | 'buoy' | 'giant-wave';
 type TimedBombResolution = 'none' | 'exploded' | 'disarmed';
 
 export type RaceEventPictureInPictureOptions = {
@@ -98,6 +99,10 @@ export class RaceEventPictureInPictureCamera {
     private timedBombBlastPositionReady = false;
     private timedBombPoseReady = false;
     private litterHoldSeconds = 0;
+    private buoyIntroShown = false;
+    private buoyHoldSeconds = 0;
+    private buoyFocusWorldX = 0;
+    private buoyFocusZ = 0;
     private litterWave = -1;
     private litterFocusWorldX = 0;
     private litterFocusZ = 0;
@@ -133,6 +138,8 @@ export class RaceEventPictureInPictureCamera {
     reset(): void {
         this.resetTimedBombTrackingState();
         this.hide();
+        this.buoyIntroShown = false;
+        this.buoyHoldSeconds = 0;
     }
 
     /** 画中画可见目标参与姿态保活；不能使用间歇关闭的 camera.enabled 判断。 */
@@ -466,7 +473,46 @@ export class RaceEventPictureInPictureCamera {
         this.resetTimedBombTrackingState();
     }
 
-    updateLitter(clusters: readonly LitterClusterState[], racing: boolean, dt: number): void {
+    updateBuoys(mines: readonly MinefieldMineState[], racing: boolean, dt: number): void {
+        if (!racing || mines.length === 0) {
+            if (this.mode === 'buoy') this.hide();
+            this.buoyIntroShown = false;
+            this.buoyHoldSeconds = 0;
+            return;
+        }
+        if (this.mode !== 'none' && this.mode !== 'buoy' && this.mode !== 'giant-wave') {
+            if (this.buoyIntroShown) this.buoyHoldSeconds = Math.max(0, this.buoyHoldSeconds - safeStep(dt));
+            return;
+        }
+        if (!this.camera || this.buoyIntroShown && this.buoyHoldSeconds <= 0) return;
+        if (!this.buoyIntroShown) {
+            let focus: MinefieldMineState | null = null;
+            for (const mine of mines) {
+                if (mine.active) { focus = mine; break; }
+            }
+            if (!focus) return;
+            this.buoyIntroShown = true;
+            this.buoyHoldSeconds = 2.5;
+            this.buoyFocusWorldX = this.options.course.distanceToWorldX(focus.courseX);
+            this.buoyFocusZ = focus.lateral;
+        }
+        if (this.mode !== 'buoy') {
+            this.litterFocusWorldX = this.buoyFocusWorldX;
+            this.litterFocusZ = this.buoyFocusZ;
+            this.mode = 'buoy';
+            this.setCeilingVisible(false);
+            this.setCopy('障碍来袭', '浮标上浮中', WARNING_COLOR);
+            this.setVisible(true);
+        }
+        this.buoyHoldSeconds = Math.max(0, this.buoyHoldSeconds - safeStep(dt));
+        if (this.buoyHoldSeconds <= 0) { this.hide(); return; }
+        if (!this.shouldRender(safeStep(dt))) return;
+        this.updateBuoyCameraPose();
+        this.finishRender();
+    }
+
+    updateLitter(clusters: readonly LitterClusterState[], racing: boolean, dt: number,
+        obstacleEvent = false): void {
         const safeDt = safeStep(dt);
         if (!racing) {
             if (this.mode === 'litter') this.hide();
@@ -475,7 +521,8 @@ export class RaceEventPictureInPictureCamera {
         }
 
         // 垃圾可抢占持续跟随的巨浪；其他事件占用时不遍历槽位或计算取景。
-        if (this.mode !== 'none' && this.mode !== 'litter' && this.mode !== 'giant-wave') return;
+        if (this.mode !== 'none' && this.mode !== 'litter' && this.mode !== 'buoy'
+            && this.mode !== 'giant-wave') return;
         if (!this.camera) return;
 
         let fallingWave = -1;
@@ -513,24 +560,21 @@ export class RaceEventPictureInPictureCamera {
         if (!continuing) {
             this.mode = 'litter';
             this.setCeilingVisible(false);
-            this.setCopy('赛道异物', '杂物投放中', WARNING_COLOR);
+            this.setCopy(obstacleEvent ? '障碍来袭' : '赛道异物', '杂物投放中', WARNING_COLOR);
             this.setVisible(true);
         }
         if (!continuing || fallingWave !== this.litterWave) {
-            let focusWorldX = 0;
-            let focusZ = 0;
-            let focusCount = 0;
+            let focus: LitterClusterState | null = null;
             for (let index = 0; index < clusters.length; index++) {
                 const cluster = clusters[index];
                 if (!cluster.active || cluster.wave !== fallingWave) continue;
-                focusWorldX += this.options.course.distanceToWorldX(cluster.courseX);
-                focusZ += cluster.lateral;
-                focusCount++;
+                // 只跟拍首组的一件杂物，画幅留给高空抛入与落水动作。
+                if (!focus || cluster.spawnOrder < focus.spawnOrder) focus = cluster;
             }
-            // 整波构图只建立一次，不被已到位垃圾的漂移或碰撞牵动。
-            if (focusCount > 0) {
-                this.litterPanToX = focusWorldX / focusCount;
-                this.litterPanToZ = focusZ / focusCount;
+            // 每波构图只建立一次，不被已到位杂物的漂移或碰撞牵动。
+            if (focus) {
+                this.litterPanToX = this.options.course.distanceToWorldX(focus.courseX);
+                this.litterPanToZ = focus.lateral;
                 if (!continuing) {
                     this.litterFocusWorldX = this.litterPanToX;
                     this.litterFocusZ = this.litterPanToZ;
@@ -609,22 +653,26 @@ export class RaceEventPictureInPictureCamera {
     }
 
     private updateLitterCameraPose(): void {
-        // 接近平视看清看台来向、空中翻转与落水；按两岸起点留出水平安全区。
-        // 54 度垂直视角与 16:9 画幅的水平半视锥正切约为 0.906。
-        const halfSpan = this.options.course.poolWidth * 0.5 + 4.6 + Math.abs(this.litterFocusZ) + 1;
-        const distance = Math.max(24, halfSpan / 0.906 + 2.5);
+        // 近景跟拍一件杂物；高抛起点和落水过程优先，允许其余障碍在画外。
         this.focus.set(
             this.litterFocusWorldX,
-            this.options.course.waterY + 2.7,
+            this.options.course.waterY + 2.6,
             this.litterFocusZ,
         );
         this.cameraPosition.set(
-            // 固定场馆同一观察侧，反向游程不把低机位推入另一端封闭看台。
-            this.litterFocusWorldX - distance,
-            this.options.course.waterY + 4.8,
+            this.litterFocusWorldX - 13,
+            this.options.course.waterY + 4.2,
             this.litterFocusZ + 0.5,
         );
-        this.applyCameraPose(54);
+        this.applyCameraPose(52);
+    }
+
+    private updateBuoyCameraPose(): void {
+        // 低机位给水下扰动、破水上浮和气球留出同一个近景。
+        this.focus.set(this.buoyFocusWorldX, this.options.course.waterY + 0.45, this.buoyFocusZ);
+        this.cameraPosition.set(this.buoyFocusWorldX - 10.5,
+            this.options.course.waterY + 1.6, this.buoyFocusZ + 0.5);
+        this.applyCameraPose(48);
     }
 
     private updateTimedBombCameraPose(dt: number): void {
@@ -878,6 +926,7 @@ export class RaceEventPictureInPictureCamera {
     }
 
     private hide(): void {
+        if (this.mode === 'buoy') this.buoyHoldSeconds = 0;
         this.setVisible(false);
         this.setCeilingVisible(true);
         this.mode = 'none';

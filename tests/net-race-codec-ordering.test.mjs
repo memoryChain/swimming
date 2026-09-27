@@ -303,6 +303,16 @@ test('18槽负坐标和高接触修订含房间前缀仍有载荷余量，量化
     assert.deepEqual(decodeLitterSnapshot(payload), { hostPos: 7, sequence: Number.MAX_SAFE_INTEGER, state });
 });
 
+test('融合障碍计划身份在 S 与 L 快照中一致往返，错误字段拒绝解析', () => {
+    const planId = 0xfedcba98;
+    const race = encodeRaceSnapshot(0, [], null, null, null, null, null, null, null, null, 1, planId);
+    const litter = encodeLitterSnapshot(0, litterState(2), 1, planId);
+    assert.equal(decodeRaceSnapshot(race).obstaclePlanId, planId);
+    assert.equal(decodeLitterSnapshot(litter).planId, planId);
+    assert.equal(decodeRaceSnapshot(race.replace(`,${planId.toString(36)}#`, ',bad!#')), null);
+    assert.equal(decodeLitterSnapshot(litter.replace(`,p${planId.toString(36)}#`, ',px!#')), null);
+});
+
 test('30槽垃圾快照至多三片，乱序与缺片不应用半份状态', () => {
     const state = litterState(30);
     for (const slot of state.slots) slot.impactRevision = 999999;
@@ -421,12 +431,14 @@ test('八泳道满状态快照保持在项目的一点五千字节回归预算�
         },
         [999999, 999999, 999999],
         Number.MAX_SAFE_INTEGER,
+        0xffffffff,
     );
     const prefix = Protocol.raceMessagePrefix('7.zzzzzzzzzzz');
     const snapshotBytes = Buffer.byteLength(prefix + payload, 'utf8');
     assert.ok(snapshotBytes <= 1536, `snapshot bytes=${snapshotBytes}`);
     const decoded = decodeRaceSnapshot(payload);
     assert.equal(decoded.sequence, Number.MAX_SAFE_INTEGER);
+    assert.equal(decoded.obstaclePlanId, 0xffffffff);
     for (const revision of [decoded.stimulantRevision, decoded.cannonRevision, decoded.mineRelay.revision,
         decoded.recovery.revision, decoded.minefield.revision, decoded.entertainmentDirector.revision,
         decoded.entertainmentDirector.activationSerial, decoded.entertainmentDirector.encoreRound]) {
@@ -434,7 +446,7 @@ test('八泳道满状态快照保持在项目的一点五千字节回归预算�
     }
     assert.deepEqual(decoded.eventEpochs, [999999, 999999, 999999]);
     assert.deepEqual(decoded.entertainmentDirector.eventAnchorDistances, [32, 96, 160, 224, 288, 360]);
-    const litterPayload = encodeLitterSnapshot(7, litterState(18), Number.MAX_SAFE_INTEGER);
+    const litterPayload = encodeLitterSnapshot(7, litterState(18), Number.MAX_SAFE_INTEGER, 0xffffffff);
     const litterBytes = Buffer.byteLength(prefix + litterPayload, 'utf8');
     assert.ok(litterBytes <= 1536, `litter snapshot bytes=${litterBytes}`);
 });

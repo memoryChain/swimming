@@ -1,6 +1,7 @@
 import type { PlayerCharacterId } from '../app/PlayerCharacterConfig';
 import type { RaceModeId } from './GameBalance';
 import type { WhirlpoolSpawnSelection } from './WhirlpoolBrawlRules';
+import type { ObstacleLayout } from './ObstacleBrawlRules';
 import { ENTERTAINMENT_TEST_COMBINATIONS, EntertainmentIntensity,
     EntertainmentTestCombination, normalizeEntertainmentIntensity } from './EntertainmentIntensity';
 
@@ -19,18 +20,21 @@ export interface AiDebugSetup {
     entertainmentIntensity?: EntertainmentIntensity | null;
     entertainmentEventIntensities?: readonly EntertainmentIntensity[];
     entertainmentTestCombination?: EntertainmentTestCombination | null;
+    obstacleLayout?: ObstacleLayout;
     raceDistance?: 200 | 400;
 }
 const pendingAiDebugSetup: AiDebugSetup = { characterId: 'cartonSwimmer6', level: 1, mode: 'beginner', seed: 20260913,
     opponentCount: 7, mixedCharacters: true, whirlpoolSelection: 'random', entertainmentIntensity: null,
     entertainmentEventIntensities: [3, 3, 3, 3, 3, 3, 3], entertainmentTestCombination: null,
-    raceDistance: 200 };
+    obstacleLayout: 'mixed', raceDistance: 200 };
 export function getAiDebugSetup(): Readonly<AiDebugSetup> { return pendingAiDebugSetup; }
 export function setAiDebugSetup(setup: AiDebugSetup) {
     pendingAiDebugSetup.giantWavePreset = setup.giantWavePreset === 'single' ? 'single' : 'three';
     pendingAiDebugSetup.characterId = setup.characterId;
     pendingAiDebugSetup.level = Number.isFinite(setup.level) ? Math.max(1, Math.min(30, Math.floor(setup.level))) : 1;
-    pendingAiDebugSetup.mode = setup.mode;
+    const oldBuoyMode = setup.mode === 'minefield-brawl';
+    const oldDebrisMode = setup.mode === 'litter-brawl';
+    pendingAiDebugSetup.mode = oldBuoyMode || oldDebrisMode ? 'obstacle-brawl' : setup.mode;
     pendingAiDebugSetup.seed = setup.seed >>> 0;
     pendingAiDebugSetup.opponentCount = setup.opponentCount === 7 ? 7 : 1;
     pendingAiDebugSetup.mixedCharacters = setup.mixedCharacters === true;
@@ -42,6 +46,9 @@ export function setAiDebugSetup(setup: AiDebugSetup) {
         normalizeEntertainmentIntensity(setup.entertainmentEventIntensities?.[index]) ?? 3);
     pendingAiDebugSetup.entertainmentTestCombination = ENTERTAINMENT_TEST_COMBINATIONS.find(
         preset => preset.id === setup.entertainmentTestCombination)?.id ?? null;
+    pendingAiDebugSetup.obstacleLayout = oldBuoyMode ? 'buoy' : oldDebrisMode ? 'debris'
+        : setup.obstacleLayout === 'debris' || setup.obstacleLayout === 'buoy'
+            ? setup.obstacleLayout : 'mixed';
     pendingAiDebugSetup.raceDistance = setup.raceDistance === 400 ? 400 : 200;
 }
 

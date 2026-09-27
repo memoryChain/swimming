@@ -166,7 +166,7 @@ test('对手人数、混合阵容和单角色设置提交到启动配置，切�
     assert.equal(starts, 2);
 });
 
-test('模式测试页签列出七合一及八个单项模式，切换不重建并以固定满员阵容启动', () => {
+test('模式测试页签列出娱乐模式及七个单项模式，切换不重建并以固定满员阵容启动', () => {
     const { Node, Label, load } = fixture();
     const { getAiDebugSetup } = load('core/GameLaunchOptions');
     const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
@@ -194,9 +194,9 @@ test('模式测试页签列出七合一及八个单项模式，切换不重建�
 
     modeTab.click();
     const choices = modeContent.children.filter(node => node.name.startsWith('ModeChoice'));
-    assert.equal(choices.length, 9);
+    assert.equal(choices.length, 8);
     assert.deepEqual(choices.map(node => node.getChildByName('Label').getComponent(Label).string), [
-        '娱乐模式', '心跳苏打大乱斗', '充气玩具鲨', '漩涡冲浪赛', '水球点名', '定时水球传递', '警示气球浮标', '杂物漂流大乱斗', '巨浪冲浪',
+        '娱乐模式', '心跳苏打大乱斗', '充气玩具鲨', '漩涡冲浪赛', '水球点名', '定时水球传递', '水上障碍场', '巨浪冲浪',
     ]);
     for (const choice of choices) {
         choice.click();
@@ -316,7 +316,7 @@ test('巨浪预设与漩涡选项互斥，反复切换保持节点并提交单�
     findNode(root, 'ModeTestTab').click();
     const nodes = descendants(root), listeners = nodes.map(n => n.events.size);
     for (let i = 0; i < 40; i++) {
-        findNode(root, 'ModeChoice8').click();
+        findNode(root, 'ModeChoice7').click();
         assert.equal(findNode(root, 'GiantWaveOptions').activeInHierarchy, true);
         assert.equal(findNode(root, 'WhirlpoolOptions').activeInHierarchy, false);
         findNode(root, 'WavePreset1').click(); findNode(root, 'WavePreset1').click();
@@ -324,12 +324,41 @@ test('巨浪预设与漩涡选项互斥，反复切换保持节点并提交单�
         assert.equal(findNode(root, 'GiantWaveOptions').activeInHierarchy, false);
         assert.equal(findNode(root, 'WhirlpoolOptions').activeInHierarchy, true);
     }
-    findNode(root, 'ModeChoice8').click();
+    findNode(root, 'ModeChoice7').click();
     assert.equal(findNode(root, 'WavePreset1').getChildByName('Selected').active, true);
     assert.deepEqual(descendants(root), nodes);
     assert.deepEqual(nodes.map(n => n.events.size), listeners);
     findNode(root, 'ModeStart').click(); findNode(root, 'ModeStart').click();
     assert.equal(starts, 1); assert.equal(getAiDebugSetup().giantWavePreset, 'single');
+});
+
+test('旧杂物与浮标测试入口迁移到同一障碍入口，三种布局切换不重建控件', () => {
+    const { Node, load } = fixture();
+    const { getAiDebugSetup, setAiDebugSetup } = load('core/GameLaunchOptions');
+    const initial = { ...getAiDebugSetup() };
+    setAiDebugSetup({ ...initial, mode: 'litter-brawl' });
+    assert.equal(getAiDebugSetup().mode, 'obstacle-brawl');
+    assert.equal(getAiDebugSetup().obstacleLayout, 'debris');
+    setAiDebugSetup({ ...initial, mode: 'minefield-brawl' });
+    assert.equal(getAiDebugSetup().mode, 'obstacle-brawl');
+    assert.equal(getAiDebugSetup().obstacleLayout, 'buoy');
+    const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
+    const root = new Node('Panel');
+    buildAiDebugSetupPicker(root, () => {}, emptyCurrencyDebug());
+    findNode(root, 'ModeTestTab').click();
+    findNode(root, 'ModeChoice6').click();
+    const layout = findNode(root, 'ObstacleLayoutOptions');
+    assert.equal(layout.activeInHierarchy, true);
+    const nodes = descendants(root), listeners = nodes.map(node => node.events.size);
+    for (let i = 0; i < 20; i++) {
+        findNode(root, 'ObstacleLayout0').click();
+        findNode(root, 'ObstacleLayout2').click();
+    }
+    findNode(root, 'ObstacleLayout1').click();
+    findNode(root, 'ModeStart').click();
+    assert.equal(getAiDebugSetup().obstacleLayout, 'buoy');
+    assert.deepEqual(descendants(root), nodes);
+    assert.deepEqual(nodes.map(node => node.events.size), listeners);
 });
 
 test('漩涡模式测试可选纯随机、小漩涡或大漩涡并保留选择', () => {

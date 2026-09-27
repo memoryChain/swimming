@@ -112,6 +112,7 @@ export type LitterClusterState = {
     throwSide: -1 | 1;
     visualVariant: number;
     impactRevision: number;
+    spawnOrder: number;
 };
 
 export type LitterRigidImpact = {
@@ -248,6 +249,10 @@ export class LitterBrawlController {
         private readonly isWaveSafe?: LitterWaveSafetyCheck,
         private readonly onContact?: (contact: LitterContact) => void,
         intensity?: LitterBrawlIntensitySettings,
+        private readonly plannedSafeCenter?: (wave: number, courseX: number) => number,
+        private readonly isPlannedSpotSafe?: (courseX: number, lateral: number) => boolean,
+        private readonly minimumWaveIntervalSeconds = 0,
+        private readonly soloLandingSearchMeters = 0,
     ) {
         this.randomSeed = ((seed ^ 0x6c697474) >>> 0) || 0x9e3779b9;
         this.randomState = this.randomSeed;
@@ -616,13 +621,21 @@ export class LitterBrawlController {
     }
 
     private updatePendingWaves(step: number, leaderDistance: number): void {
-        if (this.nextWave >= this.waveDistances.length
-            || leaderDistance < this.waveDistances[this.nextWave]) return;
+        if (this.nextWave >= this.waveDistances.length) return;
+        // 上一波入场间隔从实际投放时开始计时，不能等到下一进度锚点才开始倒计时。
+        if (this.minimumWaveIntervalSeconds > 0 && this.nextWave > 0
+            && this.blockedWaveSeconds === 0 && this.spawnRetryRemaining > 0) {
+            this.spawnRetryRemaining = Math.max(0, this.spawnRetryRemaining - step);
+        }
+        if (leaderDistance < this.waveDistances[this.nextWave]) return;
         // 对象池暂满只意味着旧垃圾尚未完成下沉，不应把后续正式波次误判为安全取消。
         if (this.freeSlotCount() < this.itemsPerWave) {
             this.spawnRetryRemaining = LITTER_BRAWL_TUNING.spawnSafetyRetrySeconds;
             return;
         }
+        // 融合事件的上一波冷却占用现有快照字段，不能算作出生安全失败。
+        if (this.minimumWaveIntervalSeconds > 0 && this.nextWave > 0
+            && this.blockedWaveSeconds === 0 && this.spawnRetryRemaining > 0) return;
         this.blockedWaveSeconds += step;
         this.spawnRetryRemaining = Math.max(0, this.spawnRetryRemaining - step);
         if (this.spawnRetryRemaining > 0) return;
@@ -631,10 +644,10 @@ export class LitterBrawlController {
             this.onWave?.(wave);
             this.nextWave++;
             this.revision++;
-            this.spawnRetryRemaining = 0;
+            this.spawnRetryRemaining = this.minimumWaveIntervalSeconds;
             this.blockedWaveSeconds = 0;
-            // 跳过多个赛程锚点时仍允许同帧补齐，但最多受固定预设波数约束。
-            this.updatePendingWaves(0, leaderDistance);
+            // 旧独立规则仍允许同帧补齐；融合障碍分批投放，避免连续轰炸。
+            if (this.minimumWaveIntervalSeconds <= 0) this.updatePendingWaves(0, leaderDistance);
             return;
         }
         if (this.blockedWaveSeconds >= LITTER_BRAWL_TUNING.maxSpawnDelaySeconds) {
@@ -652,16 +665,41 @@ export class LitterBrawlController {
         if (this.freeSlotCount() < this.itemsPerWave) return false;
         const halfWidth = this.usableHalfWidth();
         const randomStateBeforePlan = this.randomState;
-        const safeCenter = lerp(-halfWidth + LITTER_BRAWL_TUNING.safeHalfWidth,
-            halfWidth - LITTER_BRAWL_TUNING.safeHalfWidth, this.nextRandom());
         const raceAnchor = this.waveDistances[wave] + this.landingLeadDistance;
-        const courseX = courseOffset(raceAnchor);
+        let courseX = courseOffset(raceAnchor);
+        let safeCenter = this.plannedSafeCenter
+            ? this.plannedSafeCenter(wave, courseX)
+            : lerp(-halfWidth + LITTER_BRAWL_TUNING.safeHalfWidth,
+                halfWidth - LITTER_BRAWL_TUNING.safeHalfWidth, this.nextRandom());
         if (this.isWaveSafe && !this.isWaveSafe(courseX, safeCenter, LITTER_BRAWL_TUNING.safeHalfWidth)) {
-            // 等待期间必须保留同一候选通道，不能因帧数不同持续重抽并让联机布局分叉。
-            this.randomState = randomStateBeforePlan;
-            return false;
+            let found = false;
+            const forward = courseDirection(raceAnchor);
+            // 独立长局里八名选手可能分散在同一条50米泳道，按稳定顺序寻找空闲落点。
+            for (let offset = 2.5; offset <= this.soloLandingSearchMeters && !found; offset += 2.5) {
+                for (let side = 1; side >= -1; side -= 2) {
+                    const candidateX = courseX + forward * side * offset;
+                    if (candidateX < 1.2 || candidateX > 48.8) continue;
+                    const candidateCenter = this.plannedSafeCenter
+                        ? this.plannedSafeCenter(wave, candidateX) : safeCenter;
+                    if (!this.isWaveSafe(candidateX, candidateCenter, LITTER_BRAWL_TUNING.safeHalfWidth)) continue;
+                    courseX = candidateX;
+                    safeCenter = candidateCenter;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                // 等待期间保留同一随机通道，正式联机仍使用原固定落点路径。
+                this.randomState = randomStateBeforePlan;
+                return false;
+            }
         }
         const candidates = this.lateralCandidates(safeCenter, halfWidth);
+        if (this.isPlannedSpotSafe) {
+            for (let index = candidates.length - 1; index >= 0; index--) {
+                if (!this.isPlannedSpotSafe(courseX, candidates[index])) candidates.splice(index, 1);
+            }
+        }
         if (this.itemsPerWave > LITTER_BRAWL_TUNING.waveCount && candidates.length > 0) {
             // 高档把同一横向候选复用到错开的前后排；保留真实安全通道。
             const baseCount = candidates.length;

@@ -8,7 +8,7 @@ import { calculateRaceCoins } from './ProgressionBalance';
 
 export type SoloSource = 'quick' | 'league' | 'cup';
 export type RaceRule = 'standard' | 'wild' | 'stimulant' | 'shark' | 'whirlpool' | 'cannon'
-    | 'timed-bomb' | 'minefield' | 'mine-relay' | 'last-place' | 'entertainment';
+    | 'timed-bomb' | 'minefield' | 'mine-relay' | 'last-place' | 'obstacle' | 'entertainment';
 export const CAREER_RACE_RULE: RaceRule = 'wild';
 export const CAREER_VERSION = 1;
 export const LEAGUE_TARGET = 100;

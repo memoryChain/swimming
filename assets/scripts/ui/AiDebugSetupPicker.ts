@@ -28,8 +28,7 @@ const MODE_TEST_MODES: readonly RaceModeId[] = [
     'whirlpool-brawl',
     'last-place-brawl',
     'timed-bomb-brawl',
-    'minefield-brawl',
-    'litter-brawl',
+    'obstacle-brawl',
     'giant-wave-brawl',
 ];
 const MODE_TEST_DIFFICULTY = AI_DEBUG_DIFFICULTY_TIERS[2].value;
@@ -37,10 +36,9 @@ const ENTERTAINMENT_TEST_EVENTS = [
     { id: EntertainmentEventId.STIMULANT, title: '苏打' },
     { id: EntertainmentEventId.TIMED_BOMB, title: '定时水球' },
     { id: EntertainmentEventId.WHIRLPOOL, title: '漩涡' },
-    { id: EntertainmentEventId.MINEFIELD, title: '警示气球浮标' },
+    { id: EntertainmentEventId.OBSTACLE, title: '水上障碍场' },
     { id: EntertainmentEventId.SHARK, title: '玩具鲨' },
     { id: EntertainmentEventId.CANNON, title: '水炮' },
-    { id: EntertainmentEventId.LITTER, title: '杂物' },
 ] as const;
 
 type DebugButtonView = {
@@ -285,6 +283,29 @@ export function buildAiDebugSetupPicker(
         waveViews.push(selected);
     });
     setActive(waveOptions, modeTestMode === 'giant-wave-brawl');
+    const obstacleOptions = makeUiNode('ObstacleLayoutOptions', modeContent);
+    const obstacleLayoutViews = new Map<'debris' | 'buoy' | 'mixed', Node>();
+    setup.obstacleLayout = setup.obstacleLayout === 'debris' || setup.obstacleLayout === 'buoy'
+        ? setup.obstacleLayout : 'mixed';
+    ([
+        { id: 'debris', label: '杂物为主' },
+        { id: 'buoy', label: '浮标为主' },
+        { id: 'mixed', label: '混合布局' },
+    ] as const).forEach((option, index) => {
+        const choice = button(obstacleOptions, `ObstacleLayout${index}`, option.label,
+            -280 + index * 280, -108, 250, () => {
+                if (setup.obstacleLayout === option.id) return;
+                const previous = setup.obstacleLayout;
+                setup.obstacleLayout = option.id;
+                setActive(obstacleLayoutViews.get(previous) ?? null, false);
+                setActive(obstacleLayoutViews.get(option.id) ?? null, true);
+            }, 40);
+        const selected = makeRect('Selected', choice.node, 8, 34, uiColor(66, 222, 255, 255));
+        selected.setPosition(-119, 0, 0);
+        setActive(selected, option.id === setup.obstacleLayout);
+        obstacleLayoutViews.set(option.id, selected);
+    });
+    setActive(obstacleOptions, modeTestMode === 'obstacle-brawl');
     let eventChoice: DebugButtonView;
     let eventLevelChoice: DebugButtonView;
     let combinationChoice: DebugButtonView;
@@ -295,13 +316,14 @@ export function buildAiDebugSetupPicker(
         setActive(modeViews.get(current)?.selected ?? null, true);
         setActive(whirlpoolOptions, current === 'whirlpool-brawl' && setup.entertainmentIntensity === null);
         setActive(waveOptions, current === 'giant-wave-brawl');
+        setActive(obstacleOptions, current === 'obstacle-brawl');
         setActive(intensityChoice.node, current !== 'giant-wave-brawl');
         setActive(eventChoice.node, current === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
         setActive(eventLevelChoice.node, current === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
         setActive(combinationChoice.node, current === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
-        setActive(modeHint, current !== 'entertainment-brawl');
+        setActive(modeHint, current !== 'entertainment-brawl' && current !== 'obstacle-brawl');
         modeSeed.node.setPosition(current === 'entertainment-brawl' ? 150 : -100,
-            current === 'entertainment-brawl' ? -154 : -108, 0);
+            current === 'entertainment-brawl' || current === 'obstacle-brawl' ? -154 : -108, 0);
         write(intensityChoice.label, intensityText());
         write(modeStart.label, `开始测试：${getRaceModeTitle(current)}`);
     };
@@ -340,10 +362,10 @@ export function buildAiDebugSetupPicker(
                 const event = modeTestMode === 'stimulant-brawl' ? EntertainmentEventId.STIMULANT
                     : modeTestMode === 'timed-bomb-brawl' ? EntertainmentEventId.TIMED_BOMB
                     : modeTestMode === 'whirlpool-brawl' ? EntertainmentEventId.WHIRLPOOL
-                    : modeTestMode === 'minefield-brawl' ? EntertainmentEventId.MINEFIELD
+                    : modeTestMode === 'obstacle-brawl' ? EntertainmentEventId.OBSTACLE
                     : modeTestMode === 'shark-brawl' ? EntertainmentEventId.SHARK
                     : modeTestMode === 'last-place-brawl' ? EntertainmentEventId.CANNON
-                    : modeTestMode === 'litter-brawl' ? EntertainmentEventId.LITTER : -1;
+                    : -1;
                 if (event >= 0) {
                     const levels = [...(setup.entertainmentEventIntensities ?? [3, 3, 3, 3, 3, 3, 3])];
                     levels[event] = next;
@@ -413,11 +435,12 @@ export function buildAiDebugSetupPicker(
     setActive(combinationChoice.node, modeTestMode === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
     modeSeed = button(modeContent, 'ModeSeed', seedText(), -100, -108, 260, cycleSeed);
     if (modeTestMode === 'entertainment-brawl') modeSeed.node.setPosition(150, -154, 0);
+    else if (modeTestMode === 'obstacle-brawl') modeSeed.node.setPosition(-100, -154, 0);
     const modeHint = makeLabel('Hint', modeContent,
         '固定为玩家 + 7 个高手 AI · 混合角色 · 等级沿用角色页设置',
         18, uiColor(190, 210, 220));
     modeHint.setPosition(0, -152, 0);
-    setActive(modeHint, modeTestMode !== 'entertainment-brawl');
+    setActive(modeHint, modeTestMode !== 'entertainment-brawl' && modeTestMode !== 'obstacle-brawl');
     const modeStart = button(modeContent, 'ModeStart', `开始测试：${getRaceModeTitle(modeTestMode)}`, 0, -202, 420, () => {
         launch(modeTestMode, MODE_TEST_DIFFICULTY, true);
     });

@@ -80,6 +80,8 @@ export class AISwimmerController extends Component {
     private _mineRelayTargetZ: number | null = null;
     private _minefieldTargetZ: number | null = null;
     private _litterTargetZ: number | null = null;
+    private _obstacleTargetZ: number | null = null;
+    private _obstacleTargetUrgent = false;
     private _eventIntentPriority = 0;
     private _eventIntentHoldUntil = 0;
     private _safeMinZ: number | null = null;
@@ -153,6 +155,11 @@ export class AISwimmerController extends Component {
 
     setLitterTargetZ(targetZ: number | null) {
         this._litterTargetZ = targetZ !== null && Number.isFinite(targetZ) ? targetZ : null;
+    }
+
+    setObstacleTargetZ(targetZ: number | null, urgent = false) {
+        this._obstacleTargetZ = targetZ !== null && Number.isFinite(targetZ) ? targetZ : null;
+        this._obstacleTargetUrgent = this._obstacleTargetZ !== null && urgent;
     }
 
     startSwimming() {
@@ -290,10 +297,12 @@ export class AISwimmerController extends Component {
         if (this._stimulantTargetZ !== null || this._giantWaveTargetZ !== null) desiredPriority = 1;
         if (this._whirlpoolTargetZ !== null) desiredPriority = 2;
         if (this._litterTargetZ !== null) desiredPriority = 3;
+        if (this._obstacleTargetZ !== null && !this._obstacleTargetUrgent) desiredPriority = 3;
         if (this._mineRelayTargetZ !== null) desiredPriority = 4;
         if (this._sharkTargetZ !== null) desiredPriority = 5;
         if (this._cannonTargetZ !== null) desiredPriority = 6;
         if (this._minefieldTargetZ !== null) desiredPriority = 7;
+        if (this._obstacleTargetUrgent) desiredPriority = 7;
 
         const heldTarget = this.eventTargetForPriority(this._eventIntentPriority);
         if (heldTarget === null || desiredPriority > this._eventIntentPriority
@@ -308,11 +317,12 @@ export class AISwimmerController extends Component {
 
     private eventTargetForPriority(priority: number): number | null {
         switch (priority) {
-            case 7: return this._minefieldTargetZ;
+            case 7: return this._obstacleTargetUrgent ? this._obstacleTargetZ : this._minefieldTargetZ;
             case 6: return this._cannonTargetZ;
             case 5: return this._sharkTargetZ;
             case 4: return this._mineRelayTargetZ;
-            case 3: return this._litterTargetZ;
+            case 3: return this._obstacleTargetZ !== null && !this._obstacleTargetUrgent
+                ? this._obstacleTargetZ : this._litterTargetZ;
             case 2: return this._whirlpoolTargetZ;
             case 1: return this._stimulantTargetZ ?? this._giantWaveTargetZ;
             default: return null;

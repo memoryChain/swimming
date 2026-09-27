@@ -115,3 +115,41 @@ test('当前镜头不会因晚到旧波状态向后切回', () => {
     assert.equal(camera.mode, 'none');
     assert.equal(camera.focus.x, 30);
 });
+
+test('杂物近景聚焦首组高抛，浮标采用更低更近的上浮镜头', () => {
+    const { camera } = fixture();
+    const slots = wave(0, 25);
+    slots.forEach((slot, index) => { slot.lateral = index * 3 - 7.5; slot.spawnOrder = index + 1; });
+    slots[1].spawnOrder = 0;
+    camera.updateLitter(slots, true, 1 / 30);
+    assert.equal(camera.focus.z, slots[1].lateral);
+    assert.equal(camera.cameraPosition.x, 12);
+    assert.equal(camera.lastFov, 52);
+    camera.hide();
+    camera.updateBuoys([{ active: true, courseX: 30, lateral: 3 }], true, 1 / 30);
+    assert.equal(camera.focus.x, 30);
+    assert.equal(camera.cameraPosition.x, 19.5);
+    assert.equal(camera.cameraPosition.y, 1.6);
+    assert.equal(camera.lastFov, 48);
+});
+
+test('浮标画面被杂物抢占后只恢复剩余时间，过期或重开不补播旧入场', () => {
+    const { camera } = fixture();
+    const buoys = [{ active: true, courseX: 25, lateral: 3 }];
+    camera.updateBuoys(buoys, true, .1);
+    assert.equal(camera.mode, 'buoy');
+    camera.updateLitter(wave(0, 10), true, .1);
+    assert.equal(camera.mode, 'litter');
+    camera.hide();
+    camera.updateBuoys(buoys, true, .1);
+    assert.equal(camera.mode, 'buoy');
+    assert.equal(camera.focus.x, 25);
+    camera.mode = 'cannon';
+    camera.updateBuoys(buoys, true, 3);
+    camera.hide();
+    camera.updateBuoys(buoys, true, .1);
+    assert.equal(camera.mode, 'none');
+    camera.reset();
+    camera.updateBuoys(buoys, true, .1);
+    assert.equal(camera.mode, 'buoy');
+});
