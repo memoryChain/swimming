@@ -31,7 +31,7 @@ const MINE_TILT_X_DEGREES = 9;
 const MINE_TILT_Z_DEGREES = 7;
 const EXIT_SECONDS = 0.3;
 
-/** 气球喷水浮标池；爆开、下压和下潜仅消费权威命中的短期视觉状态。 */
+/** 警示气球浮标池；爆开、下压和下潜仅消费权威命中的短期视觉状态。 */
 export class MinefieldBrawlPresentation {
     private readonly mineNodes: Node[] = [];
     private readonly balloonNodes: Array<Node | null> = [];

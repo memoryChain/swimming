@@ -238,6 +238,9 @@ export class WhirlpoolBrawlController {
             root.layer = this.parent.layer;
             const p = this.course.swimPosition(spawn.distance, whirlpoolCenterZ(spawn, this.course.poolWidth));
             root.setWorldPosition(p.x, this.course.waterY + 0.035, p.z);
+            if (spawn.radiusScale !== undefined && spawn.radiusScale !== 1) {
+                root.setScale(spawn.radiusScale, 1, spawn.radiusScale);
+            }
 
             const flow = createVisualLayer(root, 'DirectionalFlow', resources.flowMesh, resources.flowMaterial, 0);
             const core = createVisualLayer(root, 'DangerCore', resources.coreMesh, resources.coreMaterial, 0.002);

@@ -25,6 +25,8 @@ import { MINE_RELAY_TUNING } from './MineRelayBrawlController';
 import { MINEFIELD_TUNING } from './MinefieldBrawlController';
 import { LITTER_BRAWL_TUNING } from './LitterBrawlController';
 import { ENTERTAINMENT_RECOVERY_TUNING } from './EntertainmentRecoveryController';
+import { ENTERTAINMENT_INTENSITY_TUNING_FIELDS, EntertainmentIntensity,
+    getEntertainmentIntensityTuning, setEntertainmentIntensityTuning } from './EntertainmentIntensity';
 
 export type TuningControl = {
     id: string;
@@ -476,7 +478,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
         ],
     },
     {
-        name: '喷水浮标',
+        name: '警示气球浮标',
         controls: [
             control('minefield.mineCount', '浮标数量', '开局生成的障碍浮标数量；重开比赛后生效。', () => MINEFIELD_TUNING.mineCount, v => MINEFIELD_TUNING.mineCount = Math.round(v), 1, 3, 10, 0),
             control('minefield.waveSecondDistance', '第二波触发距离', '单独浮标玩法中，领先选手达到该赛程距离时补齐已消失的浮标。', () => MINEFIELD_TUNING.waveSecondDistance, v => MINEFIELD_TUNING.waveSecondDistance = v, 1, 50, 95, 0, ' m'),
@@ -652,6 +654,25 @@ export const TUNING_GROUPS: TuningGroup[] = [
         ],
     },
 ];
+
+for (const [groupName, groupId] of [
+    ['杂物', 'litter'], ['浮标', 'minefield'], ['漩涡', 'whirlpool'],
+    ['补给', 'stimulant'], ['水炮', 'cannon'], ['玩具鲨', 'shark'],
+    ['定时水球', 'timedBall'],
+] as const) {
+    const fields = ENTERTAINMENT_INTENSITY_TUNING_FIELDS.filter(field => field.group === groupName);
+    const controls: TuningControl[] = [];
+    for (const level of [1, 2, 3, 4, 5] as EntertainmentIntensity[]) {
+        for (const field of fields) controls.push(
+            control(`entertainment.${groupId}.level${level}.${field.key}`,
+                `${level}档 ${field.label}`,
+                '只用于本地娱乐强度测试；下一局生效，正式与联机继续使用原规格。',
+                () => getEntertainmentIntensityTuning(level, field.key),
+                value => setEntertainmentIntensityTuning(level, field.key, value),
+                field.step, field.min, field.max, field.precision));
+    }
+    TUNING_GROUPS.push({ name: `娱乐强度 · ${groupName}`, controls });
+}
 
 export function resetTuningToDefaults() {
     applyTuningSnapshot(defaultTuningSnapshot());

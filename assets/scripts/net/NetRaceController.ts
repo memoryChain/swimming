@@ -20,7 +20,8 @@ import { raceMessagePrefix } from './NetRaceProtocol';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
 import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind, gameplayEpochSlot } from './NetRaceInput';
 import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetCannonState, NetEntertainmentDirectorState, NetEntertainmentRecoveryState, NetMinefieldState, NetMineRelayState, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
-import { decodeLitterSnapshot, encodeLitterSnapshot } from './NetLitterSnapshot';
+import { decodeLitterSnapshot, encodeLitterSnapshotPackets,
+    LitterSnapshotFragmentAssembler } from './NetLitterSnapshot';
 import type { LitterContact, LitterSnapshotState } from '../core/LitterBrawlController';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import {
@@ -128,6 +129,7 @@ export class NetRaceController {
     // Diagnostics: how many snapshots / results this client has sent + received, plus a
     // per-lane local-vs-host distance line fed by GameManager, shown on the debug HUD.
     private _snapSent = 0;
+    private _denseLitterSnapshotTick = 0;
     private _snapRecv = 0;
     private _resultSent = 0;
     private _resultRecv = 0;
@@ -185,6 +187,7 @@ export class NetRaceController {
     private _minefieldStateListener: ((state: NetMinefieldState) => void) | null = null;
     private _entertainmentDirectorStateListener: ((state: NetEntertainmentDirectorState) => boolean | void) | null = null;
     private _litterStateListener: ((state: LitterSnapshotState) => void) | null = null;
+    private readonly _litterFragmentAssembler = new LitterSnapshotFragmentAssembler();
     private _litterContactListener: ((contact: LitterContact) => void) | null = null;
 
     constructor(private readonly _session: NetRaceSessionData) {
@@ -584,6 +587,7 @@ export class NetRaceController {
     private promoteToHost(): void {
         this.invalidateAuthorityResult();
         this._isHost = true;
+        this._denseLitterSnapshotTick = 0;
         this._activeHostPos = this._session.localPos;
         this._lastSnapshotAt = Date.now();
         // The promoted host's current fixed-step simulation becomes authoritative.
@@ -595,6 +599,7 @@ export class NetRaceController {
     }
 
     private clearAuthorityTransientState(): void {
+        this._litterFragmentAssembler.reset();
         this._snapshotTargets = [];
         this._prevSnapshot = [];
         this._snapshotTime = 0;
@@ -738,7 +743,12 @@ export class NetRaceController {
             this._eventEpochs,
             this._snapSent,
         ));
-        if (litter) this.broadcastRaceMessage(encodeLitterSnapshot(this._session.localPos, litter, this._snapSent));
+        // S| 固定 0.15 秒；超过 18 槽时 L|/LF| 隔次发送，避免分片将专属流量翻倍。
+        if (litter && (litter.slots.length <= 18 || (++this._denseLitterSnapshotTick & 1) === 1)) {
+            const packets = encodeLitterSnapshotPackets(this._session.localPos, litter,
+                this._snapSent, this._racePrefix.length);
+            for (let index = 0; index < packets.length; index++) this.broadcastRaceMessage(packets[index]);
+        }
         this.resendContactEvents();
     }
 
@@ -972,7 +982,8 @@ export class NetRaceController {
             this.refreshHud();
             return;
         }
-        const litter = decodeLitterSnapshot(msg);
+        const litter = decodeLitterSnapshot(msg)
+            ?? (msg.startsWith('LF|') ? this._litterFragmentAssembler.accept(msg, Date.now()) : null);
         if (litter) {
             if (!this.acceptHostSnapshot(litter.hostPos, litter.sequence, this._hostLitterOrder)) return;
             this.adoptHostFromSnapshot(litter.hostPos);

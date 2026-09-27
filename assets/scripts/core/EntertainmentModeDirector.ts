@@ -115,7 +115,7 @@ export function entertainmentEventName(event: EntertainmentEventId): string {
         case EntertainmentEventId.STIMULANT: return '心跳苏打争夺';
         case EntertainmentEventId.TIMED_BOMB: return '定时水球传递';
         case EntertainmentEventId.WHIRLPOOL: return '漩涡冲浪';
-        case EntertainmentEventId.MINEFIELD: return '喷水浮标';
+        case EntertainmentEventId.MINEFIELD: return '警示气球浮标';
         case EntertainmentEventId.SHARK: return '玩具冲撞';
         case EntertainmentEventId.CANNON: return '水球点名';
         case EntertainmentEventId.LITTER: return '杂物漂流';
@@ -198,23 +198,23 @@ const ENTERTAINMENT_BROADCAST_COPIES: Readonly<Record<
         ['泳池广播：今天不只选手练转身，前方水面也要练', '水面转身 · 看旋向，找出口'],
     ],
     [EntertainmentEventId.MINEFIELD]: [
-        ["泳池广播：黄色气球替浮标举起了手，下方软边碰到就开喷","气球举手 · 绕开下方软边"],
-        ["泳池广播：气球浮标准备排队，别替它们按下喷水开关","浮标列队 · 看准空隙绕行"],
+        ["泳池广播：警示气球替浮标举起了手，记得绕开下方软边","气球举手 · 绕开下方软边"],
+        ["泳池广播：气球浮标准备排队，别用身体去碰下方底座","浮标列队 · 看准空隙绕行"],
         ["泳池广播：小气球今天负责提醒，底座负责送你一身清凉","清凉提醒 · 避开气球下方"],
         ["泳池广播：水面即将长出气球，根部有点怕碰","气球冒头 · 横向绕开底座"],
-        ["泳池广播：感叹号已经举高，喷水按钮就在它脚下","标记升起 · 注意水面软边"],
+        ["泳池广播：感叹号已经举高，真正要绕的是它脚下的浮标","标记升起 · 注意水面软边"],
         ["泳池广播：浮标绑好了气球，碰边就表演原地谢幕","浮标谢幕 · 绕开底座继续游"],
         ["泳池广播：气球组申请当路标，禁止用身体确认路线","气球指路 · 留出绕行空隙"],
-        ["泳池广播：本轮喷泉带着黄色招牌，远远看清就好","招牌上浮 · 绕开下方圆盘"],
+        ["泳池广播：本轮浮标挂着黄色气球，远远看清就好","招牌上浮 · 绕开下方圆盘"],
         ["泳池广播：气球不卖也不能领，下方浮标正在等碰触","气球就位 · 避开软边触碰"],
         ["泳池广播：小浮标怕大家看不见，专门系了一个感叹号","浮标亮相 · 看清底座位置"],
-        ["泳池广播：黄色气球开始站岗，碰到岗位就会开喷","气球站岗 · 横移避开底座"],
-        ["泳池广播：喷泉的帽子有点鼓，碰一下就啪地收工","鼓帽上浮 · 避开圆盘及水花"],
+        ["泳池广播：黄色气球开始站岗，下方浮标可得绕开","气球站岗 · 横移避开底座"],
+        ["泳池广播：浮标的气球有点鼓，碰到底座就啪地收工","鼓帽上浮 · 避开圆盘及水花"],
         ["泳池广播：气球浮标准备打招呼，这个招呼有点湿","清凉招呼 · 看准空隙通过"],
-        ["泳池广播：水滴图案只是预告，碰到软边才是正片","喷水预告 · 绕开气球下方"],
+        ["泳池广播：气球上的感叹号只是提醒，碰到软边才是正片","气球提醒 · 绕开气球下方"],
         ["泳池广播：气球负责高举提醒，圆盘负责守住水面","上下就位 · 及时横向绕行"],
         ["泳池广播：这批浮标自带气球，但不提供顺路接送","浮标漂来 · 留出安全空隙"],
-        ["泳池广播：感叹号想保持干燥，下面的喷口没有答应","喷口待命 · 避开下方软边"],
+        ["泳池广播：感叹号高高挂起，下方浮标正在水面等你","浮标待命 · 避开下方软边"],
         ["泳池广播：黄色气球在练平衡，别用泳帽帮它纠正","平衡练习 · 绕开水面底座"],
         ["泳池广播：浮标的新气球刚系好，碰边会让节目提前结束","气球登场 · 注意圆盘位置"],
         ["泳池广播：本轮浮标的节目是气球爆开，然后清凉退场","清凉退场 · 绕开触碰与水花"],
@@ -400,11 +400,18 @@ export class EntertainmentModeDirector {
         seed: number,
         raceDistance = 200,
         includeLitter = ENTERTAINMENT_LITTER_SELECTION_ENABLED,
+        private readonly durationForEvent?: (event: EntertainmentEventId) => number,
+        private readonly testEventOrder?: readonly EntertainmentEventId[],
+        testWhirlpoolSuper?: boolean,
     ) {
         this.seed = Number.isFinite(seed) ? seed >>> 0 : 0;
         this.raceDistance = Number.isFinite(raceDistance) ? Math.max(1, raceDistance) : 200;
-        this.events = [...buildEntertainmentEventOrder(this.seed, this.raceDistance, includeLitter)];
-        this.specialMask = buildEntertainmentSpecialMask(this.seed, this.events);
+        this.events = testEventOrder?.length
+            ? [...testEventOrder] : [...buildEntertainmentEventOrder(this.seed, this.raceDistance, includeLitter)];
+        this.specialMask = testWhirlpoolSuper === undefined
+            ? buildEntertainmentSpecialMask(this.seed, this.events)
+            : testWhirlpoolSuper && this.events.indexOf(EntertainmentEventId.WHIRLPOOL) >= 0
+                ? eventBit(EntertainmentEventId.WHIRLPOOL) : 0;
         this.publishRuntimeState();
     }
 
@@ -432,6 +439,7 @@ export class EntertainmentModeDirector {
     }
 
     selectedEvents(): readonly EntertainmentEventId[] { return this.events; }
+    secondsRemaining(): number { return this.remainingSeconds; }
 
     isSpecialEvent(event: EntertainmentEventId): boolean {
         return (this.specialMask & eventBit(event)) !== 0;
@@ -488,7 +496,9 @@ export class EntertainmentModeDirector {
                 return transition;
             }
             this.phase = EntertainmentDirectorPhase.ACTIVE;
-            this.remainingSeconds = EVENT_DURATION_SECONDS[event] * this.eventDurationScale();
+            // 五档调试传入的已是完整事件窗口；现行规格仍按赛程长度缩放。
+            this.remainingSeconds = this.durationForEvent?.(event)
+                ?? EVENT_DURATION_SECONDS[event] * this.eventDurationScale();
             this.anchorDistance = distance;
             if (this.eventIndex < this.events.length) {
                 this.eventAnchorDistances[this.eventIndex] = distance;
@@ -518,7 +528,8 @@ export class EntertainmentModeDirector {
             }
             if (this.eventIndex < this.events.length) this.eventIndex++;
             if (this.eventIndex >= this.events.length) {
-                this.scheduleEncore(event);
+                if (this.testEventOrder) this.complete();
+                else this.scheduleEncore(event);
             } else {
                 // 驻留内容继续工作；下一次强事件至少留出一段正常游泳时间，
                 // 并等领先选手抵达对应赛程锚点后才开始完整预告。

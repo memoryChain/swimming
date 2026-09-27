@@ -51,6 +51,24 @@ function heldStrokeFixture(ratio = 0.6, fixedSpeed = true) {
     return { ...h, motor, StrokeType, inputs, start };
 }
 
+test('七种娱乐强度参数登记在调参面板，并能保存、恢复默认和重新加载', () => {
+    const h = setup(); h.tuning.loadSavedTuningAsync(() => {});
+    const controls = [...h.controls.keys()].filter(id => id.startsWith('entertainment.'));
+    assert.equal(controls.length, 110);
+    const item = h.controls.get('entertainment.litter.level5.litterItemsPerWave');
+    const shark = h.controls.get('entertainment.shark.level2.sharkSpeedScale');
+    assert.equal(item.get(), 15);
+    assert.equal(shark.get(), .9);
+    item.set(12); shark.set(.82);
+    assert.equal(h.tuning.saveCurrentTuning().ok, true);
+    h.tuning.resetTuningToDefaults();
+    assert.equal(item.get(), 15);
+    assert.equal(shark.get(), .9);
+    h.tuning.loadSavedTuningAsync(() => {});
+    assert.equal(item.get(), 12);
+    assert.equal(shark.get(), .82);
+});
+
 test('角色能力参数全量注册，保存重载保持值，现有实例读取新配置且不清比赛状态', () => {
     const h = setup(); h.tuning.loadSavedTuningAsync(() => {});
     const { CHARACTER_ABILITY_TUNING } = h.loadModule('core/CharacterAbilityConfig');

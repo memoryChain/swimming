@@ -9,7 +9,7 @@ const cameraSource=fs.readFileSync(path.join(root,'assets/scripts/camera/RaceEve
 const pipHeight=Number(cameraSource.match(/timedBombBlastPosition\.x - this\.options\.course\.direction \* 2\.8,[\s\S]*?waterY \+ ([\d.]+)/)?.[1]);
 if(!Number.isFinite(pipHeight))throw new Error('无法确认现有结算画中画高度');
 data.pipCamera={eye:[-2.8,pipHeight,3.8],target:[0,.08,0],fov:56};
-const configs=[['定时水球','timed-bomb',1.25],['水球炮落点','cannon',1.08],['喷水浮标','minefield',1]];
+const configs=[['定时水球','timed-bomb',1.25],['水球炮落点','cannon',1.08],['警示气球浮标','minefield',1]];
 for(const [key,source] of [['before',before],['after',after]]){
     const h=createSplashHarness(source),sequences={};
     for(const [label,owner,intensity] of configs)for(const height of [-.8,.15,1.8]){

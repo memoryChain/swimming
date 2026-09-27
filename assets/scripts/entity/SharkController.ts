@@ -39,6 +39,9 @@ export type SharkControllerOptions = {
     onTargetApproach?: (target: Swimmer, sharkX: number, sharkZ: number) => void;
     /** 六合一可注入单轮短赛程；独立鲨鱼模式继续使用全局三轮赛程。 */
     hungerSchedule?: readonly number[];
+    /** 五档测试在本局生效的绝对追逐速度倍率。 */
+    huntSpeedScale?: number;
+    huntSeconds?: number;
     /** 最后一轮结束后继续低速巡游，作为场地残留。 */
     wanderAfterFinalHunt?: boolean;
 };
@@ -184,7 +187,7 @@ export class SharkController {
             this._remainingSeconds = Math.max(0, this._remainingSeconds - dt);
             this.retarget();
             if (this._remainingSeconds <= 0) {
-                this._remainingSeconds = SHARK_TUNING.huntSeconds;
+                this._remainingSeconds = this._opts.huntSeconds ?? SHARK_TUNING.huntSeconds;
                 this._huntOpeningGraceSeconds = SHARK_TUNING.huntOpeningGraceSeconds;
                 this._retargetSeconds = 0;
                 this.setState(SharkState.HUNT);
@@ -231,7 +234,7 @@ export class SharkController {
             }
             const distance = Math.sqrt(dx * dx + dz * dz);
             if (distance > 0.0001) {
-                const step = Math.min(distance, SHARK_TUNING.huntSpeed * dt);
+                const step = Math.min(distance, SHARK_TUNING.huntSpeed * (this._opts.huntSpeedScale ?? 1) * dt);
                 this.moveAndFace(dx / distance, dz / distance, step);
             }
         }

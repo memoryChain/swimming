@@ -30,6 +30,14 @@ export class CannonBrawlPresentation {
     private readonly cannons: Node[] = [];
     private marker: Node | null = null;
     private projectile: Node | null = null;
+    private secondMarker: Node | null = null;
+    private secondProjectile: Node | null = null;
+    private secondStrikeId = -1;
+    private secondTargetX = 0;
+    private secondTargetZ = 0;
+    private secondSourceX = 0;
+    private secondSourceY = 0;
+    private secondSourceZ = 0;
     private models: WaterPlayObstacleModels | null = null;
     private projectileModels: WaterPlayObstacleModels | null = null;
     private readonly nozzles: (Node | null)[] = [];
@@ -58,12 +66,15 @@ export class CannonBrawlPresentation {
     private readonly impactWorldPosition = new Vec3();
     private readonly muzzleLocal = new Vec3(WATER_CANNON_MUZZLE.x, WATER_CANNON_MUZZLE.y, WATER_CANNON_MUZZLE.z);
     private readonly muzzleWorld = new Vec3();
+    private readonly primaryLaunchSource = new Vec3();
+    private readonly secondLaunchSource = new Vec3();
 
     constructor(
         private readonly parent: Node,
         private readonly course: RaceCourseLayout,
         private readonly waterSplashes: EntertainmentWaterSplashPool | null,
         private readonly startStowed = false,
+        private readonly allowDual = false,
     ) {
         if (startStowed) this.deploymentPhase = CannonDeploymentPhase.STOWED;
         this.build();
@@ -72,6 +83,7 @@ export class CannonBrawlPresentation {
     reset(): void {
         if (this.disposed) return;
         this.activeStrikeId = -1;
+        this.secondStrikeId = -1;
         this.lastStrikeId = -1;
         this.lastImpactStrikeId = -1;
         this.elapsed = PRESENTATION_INTERVAL;
@@ -80,6 +92,8 @@ export class CannonBrawlPresentation {
         for (let i = 0; i < this.nozzles.length; i++) this.setNozzlePitch(i, WATER_CANNON_REST_PITCH * Math.PI / 180);
         this.setActive(this.marker, false);
         this.setActive(this.projectile, false);
+        this.setActive(this.secondMarker, false);
+        this.setActive(this.secondProjectile, false);
         this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.CANNON);
         if (this.startStowed) {
             this.deploymentPhase = CannonDeploymentPhase.STOWED;
@@ -117,6 +131,9 @@ export class CannonBrawlPresentation {
         this.deploymentPhase = CannonDeploymentPhase.EXITING;
         this.deploymentElapsed = 0;
         this.syncLaunch(null);
+        this.secondStrikeId = -1;
+        this.setActive(this.secondMarker, false);
+        this.setActive(this.secondProjectile, false);
         this.lastImpactStrikeId = this.lastStrikeId;
         this.clearRecoil();
     }
@@ -125,12 +142,25 @@ export class CannonBrawlPresentation {
         return this.standWorldX;
     }
 
-    get projectileNode(): Node | null { return this.projectile?.active ? this.projectile : null; }
+    get projectileNode(): Node | null {
+        return this.projectile?.active ? this.projectile
+            : this.secondProjectile?.active ? this.secondProjectile : null;
+    }
 
     get launchSource(): Readonly<Vec3> { return this.muzzleWorld; }
+    launchSourceFor(strikeId: number): Readonly<Vec3> {
+        return strikeId === this.secondStrikeId ? this.secondLaunchSource : this.primaryLaunchSource;
+    }
+    projectileNodeFor(strikeId: number): Node | null {
+        return strikeId === this.secondStrikeId ? this.secondProjectile : this.projectile;
+    }
 
     showLaunch(launch: CannonLaunch): void {
         if (this.disposed || !launch || launch.strikeId <= this.lastStrikeId) return;
+        if (this.allowDual && this.activeStrikeId >= 0 && this.activeStrikeId !== launch.strikeId) {
+            this.showSecondLaunch(launch);
+            return;
+        }
         if (this.deploymentPhase !== CannonDeploymentPhase.DEPLOYED) this.snapDeployed();
         this.activeStrikeId = launch.strikeId;
         this.lastStrikeId = launch.strikeId;
@@ -158,6 +188,7 @@ export class CannonBrawlPresentation {
         this.sourceX = this.muzzleWorld.x;
         this.sourceY = this.muzzleWorld.y;
         this.sourceZ = this.muzzleWorld.z;
+        this.primaryLaunchSource.set(this.sourceX, this.sourceY, this.sourceZ);
         this.recoilElapsed[this.activeCannonIndex] = 0;
         this.marker?.setWorldPosition(target.x, this.course.waterY + 0.045, target.z);
         this.marker?.setScale(1, 1, 1);
@@ -167,7 +198,52 @@ export class CannonBrawlPresentation {
         this.setActive(this.projectile, true);
     }
 
+    private showSecondLaunch(launch: CannonLaunch): void {
+        if (!this.allowDual || !this.secondMarker || !this.secondProjectile || this.secondStrikeId >= 0) return;
+        this.secondStrikeId = launch.strikeId;
+        this.lastStrikeId = launch.strikeId;
+        const target = this.course.swimPosition(launch.targetDistance, launch.targetZ);
+        this.secondTargetX = target.x;
+        this.secondTargetZ = target.z;
+        const cannonIndex = launch.strikeId & 1;
+        const side = cannonIndex === 0 ? -1 : 1;
+        const edgeZ = side * (this.course.poolWidth * 0.5 + CANNON_EDGE_OFFSET);
+        const cannon = this.cannons[cannonIndex];
+        if (cannon?.isValid) {
+            cannon.setRotationFromEuler(0,
+                Math.atan2(target.x - this.sourceWorldX(), target.z - edgeZ) * 180 / Math.PI, 0);
+            const nozzle = this.nozzles[cannonIndex];
+            if (nozzle?.isValid) {
+                const distance = Math.hypot(target.x - this.sourceWorldX(), target.z - edgeZ);
+                this.setNozzlePitch(cannonIndex,
+                    Math.atan2(Math.PI * PROJECTILE_ARC_HEIGHT - WATER_CANNON_PIVOT.y, distance));
+                Vec3.transformMat4(this.muzzleWorld, this.muzzleLocal, nozzle.worldMatrix);
+            }
+        }
+        this.secondSourceX = this.muzzleWorld.x;
+        this.secondSourceY = this.muzzleWorld.y;
+        this.secondSourceZ = this.muzzleWorld.z;
+        this.secondLaunchSource.set(this.secondSourceX, this.secondSourceY, this.secondSourceZ);
+        this.recoilElapsed[cannonIndex] = 0;
+        this.secondMarker.setWorldPosition(target.x, this.course.waterY + 0.045, target.z);
+        this.secondProjectile.setWorldPosition(this.secondSourceX, this.secondSourceY, this.secondSourceZ);
+        this.setActive(this.secondMarker, true);
+        this.setActive(this.secondProjectile, true);
+    }
+
     showImpact(impact: CannonImpact): void {
+        if (this.disposed || !impact) return;
+        if (impact.strikeId === this.secondStrikeId) {
+            this.secondStrikeId = -1;
+            this.setActive(this.secondMarker, false);
+            this.setActive(this.secondProjectile, false);
+            this.impactWorldPosition.set(this.secondTargetX, this.course.waterY + 0.035, this.secondTargetZ);
+            this.waterSplashes?.play({ owner: ENTERTAINMENT_SPLASH_OWNER.CANNON,
+                profile: ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION, position: this.impactWorldPosition,
+                yawDegrees: impact.strikeId * 53, intensity: CANNON_EXPLOSION_INTENSITY,
+                duration: IMPACT_SECONDS, layer: this.parent.layer });
+            return;
+        }
         if (this.disposed || !impact || impact.strikeId <= this.lastImpactStrikeId
             || (impact.strikeId !== this.activeStrikeId && impact.strikeId !== this.lastStrikeId)) return;
         this.lastImpactStrikeId = impact.strikeId;
@@ -187,6 +263,12 @@ export class CannonBrawlPresentation {
     }
 
     syncLaunch(launch: CannonLaunch | null): void {
+        if (launch?.strikeId === this.secondStrikeId) {
+            this.activeStrikeId = -1;
+            this.setActive(this.marker, false);
+            this.setActive(this.projectile, false);
+            return;
+        }
         if (!launch) {
             if (this.activeStrikeId >= 0) {
                 this.activeStrikeId = -1;
@@ -198,15 +280,40 @@ export class CannonBrawlPresentation {
         if (launch.strikeId !== this.activeStrikeId) this.showLaunch(launch);
     }
 
-    update(dt: number, launch: CannonLaunch | null, remainingSeconds: number, racing: boolean): void {
+    update(dt: number, launch: CannonLaunch | null, remainingSeconds: number, racing: boolean,
+        secondaryLaunch: CannonLaunch | null = null, secondaryRemainingSeconds = 0): void {
         if (this.disposed) return;
         if (!racing) {
             this.setActive(this.marker, false);
             this.setActive(this.projectile, false);
+            this.setActive(this.secondMarker, false);
+            this.setActive(this.secondProjectile, false);
             return;
         }
-        if (!launch && this.deploymentPhase === CannonDeploymentPhase.STOWED) return;
-        this.syncLaunch(launch);
+        if (!launch && !secondaryLaunch && this.deploymentPhase === CannonDeploymentPhase.STOWED) return;
+        if (this.allowDual) {
+            const primaryStillActive = this.activeStrikeId >= 0
+                && (this.activeStrikeId === launch?.strikeId || this.activeStrikeId === secondaryLaunch?.strikeId);
+            const secondStillActive = this.secondStrikeId >= 0
+                && (this.secondStrikeId === launch?.strikeId || this.secondStrikeId === secondaryLaunch?.strikeId);
+            if (!primaryStillActive) {
+                this.activeStrikeId = -1;
+                this.setActive(this.marker, false);
+                this.setActive(this.projectile, false);
+            }
+            if (!secondStillActive) {
+                this.secondStrikeId = -1;
+                this.setActive(this.secondMarker, false);
+                this.setActive(this.secondProjectile, false);
+            }
+            if (launch && launch.strikeId !== this.activeStrikeId && launch.strikeId !== this.secondStrikeId) {
+                this.showLaunch(launch);
+            }
+            if (secondaryLaunch && secondaryLaunch.strikeId !== this.activeStrikeId
+                && secondaryLaunch.strikeId !== this.secondStrikeId) this.showLaunch(secondaryLaunch);
+        } else {
+            this.syncLaunch(launch);
+        }
         const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
         this.elapsed += step;
         if (this.elapsed < PRESENTATION_INTERVAL) return;
@@ -229,9 +336,12 @@ export class CannonBrawlPresentation {
             this.setNozzleRecoil(i, t >= 1 ? 0 : -Math.sin(t * Math.PI) * 0.10);
         }
 
-        if (launch && this.activeStrikeId === launch.strikeId) {
+        const primaryLaunch = this.activeStrikeId === launch?.strikeId ? launch
+            : this.activeStrikeId === secondaryLaunch?.strikeId ? secondaryLaunch : null;
+        if (primaryLaunch) {
+            const primaryRemaining = primaryLaunch === launch ? remainingSeconds : secondaryRemainingSeconds;
             const total = Math.max(0.01, CANNON_BRAWL_TUNING.warningSeconds);
-            const progress = Math.max(0, Math.min(1, 1 - remainingSeconds / total));
+            const progress = Math.max(0, Math.min(1, 1 - primaryRemaining / total));
             const x = this.sourceX + (this.targetX - this.sourceX) * progress;
             const z = this.sourceZ + (this.targetZ - this.sourceZ) * progress;
             const y = this.sourceY + (this.course.waterY + 0.12 - this.sourceY) * progress
@@ -239,6 +349,20 @@ export class CannonBrawlPresentation {
             this.projectile?.setWorldPosition(x, y, z);
             const markerPulse = 1 + Math.sin(this.clock * 10) * 0.055;
             this.marker?.setScale(markerPulse, 1, markerPulse);
+        }
+        const secondActive = this.secondStrikeId >= 0
+            && (this.secondStrikeId === launch?.strikeId || this.secondStrikeId === secondaryLaunch?.strikeId);
+        if (secondActive) {
+            const remaining = secondaryLaunch?.strikeId === this.secondStrikeId
+                ? secondaryRemainingSeconds : remainingSeconds;
+            const progress = Math.max(0, Math.min(1, 1 - remaining / CANNON_BRAWL_TUNING.warningSeconds));
+            this.secondProjectile?.setWorldPosition(
+                this.secondSourceX + (this.secondTargetX - this.secondSourceX) * progress,
+                this.secondSourceY + (this.course.waterY + 0.12 - this.secondSourceY) * progress
+                    + Math.sin(progress * Math.PI) * PROJECTILE_ARC_HEIGHT,
+                this.secondSourceZ + (this.secondTargetZ - this.secondSourceZ) * progress);
+            const pulse = 1 + Math.sin(this.clock * 10) * 0.055;
+            this.secondMarker?.setScale(pulse, 1, pulse);
         }
     }
 
@@ -250,6 +374,8 @@ export class CannonBrawlPresentation {
         this.cannons.length = 0;
         if (this.marker?.isValid) this.marker.destroy();
         if (this.projectile?.isValid) this.projectile.destroy();
+        if (this.secondMarker?.isValid) this.secondMarker.destroy();
+        if (this.secondProjectile?.isValid) this.secondProjectile.destroy();
         this.marker = this.projectile = null;
         this.models?.dispose();
         this.projectileModels?.dispose();
@@ -280,12 +406,22 @@ export class CannonBrawlPresentation {
             this.setNozzlePitch(i, WATER_CANNON_REST_PITCH * Math.PI / 180);
         }
         this.marker = this.makeMeshNode('CannonImpactWarning', this.markerMesh, this.markerMaterial);
+        if (this.allowDual) this.secondMarker = this.makeMeshNode('CannonImpactWarning2', this.markerMesh, this.markerMaterial);
         this.projectile = new Node('CannonProjectile');
         this.projectile.setParent(this.parent);
         this.projectile.layer = this.parent.layer;
-        this.projectileModels = new WaterPlayObstacleModels('CannonWaterBall', [this.projectile], RESOURCE_PATHS.cannonWaterBallPrefabCandidates);
+        if (this.allowDual) {
+            this.secondProjectile = new Node('CannonProjectile2');
+            this.secondProjectile.setParent(this.parent);
+            this.secondProjectile.layer = this.parent.layer;
+        }
+        this.projectileModels = new WaterPlayObstacleModels('CannonWaterBall',
+            this.secondProjectile ? [this.projectile, this.secondProjectile] : [this.projectile],
+            RESOURCE_PATHS.cannonWaterBallPrefabCandidates);
         this.marker.active = false;
+        if (this.secondMarker) this.secondMarker.active = false;
         this.projectile.active = false;
+        if (this.secondProjectile) this.secondProjectile.active = false;
     }
 
     private clearRecoil(): void {

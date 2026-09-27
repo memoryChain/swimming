@@ -196,6 +196,18 @@ export class StimulantBrawlController {
         this.loadModelVisuals();
     }
 
+    startedItemCount(): number {
+        let count = 0;
+        for (const item of this.items) if (item.visualSpawnStarted) count++;
+        return count;
+    }
+
+    activeItemCount(): number {
+        let count = 0;
+        for (const item of this.items) if (item.visualLanded && !item.collected) count++;
+        return count;
+    }
+
     update(): void {
         if (this.disposed) return;
         const radiusSq = STIMULANT_BRAWL_TUNING.pickupRadius * STIMULANT_BRAWL_TUNING.pickupRadius;

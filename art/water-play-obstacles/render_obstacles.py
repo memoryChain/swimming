@@ -26,5 +26,5 @@ for name,icon,target,scale in [('WaterBallCannon','cannon',(0,-.25,.72),2.65),('
     out=ROOT/'art/ui/entertainment-banner-v1'
     shutil.copy2(SOURCE/(name+'-icon.png'),out/('icon-'+icon+'-generated-source.png'))
     shutil.copy2(SOURCE/(name+'-icon.png'),ROOT/'assets/race/ui/entertainment-banner-v1'/('icon-'+icon+'.png'))
-    title='运动场水炮' if icon=='cannon' else '气球喷水浮标'
+    title='运动场水炮' if icon=='cannon' else '警示气球浮标'
     (out/('icon-'+icon+'.svg')).write_text('<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><title>'+title+'</title><desc>作者源 art/water-play-obstacles/'+name+'.blend；由 render_obstacles.py 离线渲染，无按钮文字。</desc><image href="icon-'+icon+'-generated-source.png" width="256" height="256"/></svg>\n',encoding='utf-8')

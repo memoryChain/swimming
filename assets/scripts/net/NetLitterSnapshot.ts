@@ -1,6 +1,10 @@
 import type { LitterSnapshotSlot, LitterSnapshotState } from '../core/LitterBrawlController';
 
 const TAG = 'L|';
+const FRAGMENT_TAG = 'LF|';
+const FRAGMENT_CHUNK_LENGTH = 1200;
+const FRAGMENT_MAX_COUNT = 3;
+const FRAGMENT_TIMEOUT_MS = 1000;
 
 export type DecodedLitterSnapshot = Readonly<{
     hostPos: number;
@@ -16,6 +20,76 @@ export function encodeLitterSnapshot(hostPos: number, state: LitterSnapshotState
     const slots = state.slots.map(encodeSlot).join(':');
     const order = Number.isSafeInteger(sequence) && sequence >= 0 ? ',!' + sequence.toString(36) : '';
     return `${TAG}${Math.max(0, Math.floor(hostPos))},${Math.max(0, Math.floor(state.revision))},${Math.max(0, Math.round(state.elapsedSeconds * 1000))},${Math.max(0, Math.floor(state.nextWave))},${Math.max(0, Math.floor(state.spawnOrder))},${Math.max(0, Math.floor(state.randomState)).toString(16)},${Math.max(0, Math.round(state.spawnRetryRemaining * 1000))},${Math.max(0, Math.round(state.blockedWaveSeconds * 1000))},${Math.max(0, Math.floor(state.cancelledWaveCount))}${order}#${slots}`;
+}
+
+/** 超过单包预算时只拆 L|，不改变其编码与旧单包路径。 */
+export function encodeLitterSnapshotPackets(hostPos: number, state: LitterSnapshotState,
+    sequence: number, racePrefixBytes: number): string[] {
+    const payload = encodeLitterSnapshot(hostPos, state, sequence);
+    if (payload.length + racePrefixBytes <= 1536) return [payload];
+    if (!Number.isSafeInteger(sequence) || sequence < 0
+        || payload.length > FRAGMENT_CHUNK_LENGTH * FRAGMENT_MAX_COUNT) {
+        throw new Error('Litter snapshot exceeds bounded fragment budget');
+    }
+    const count = Math.ceil(payload.length / FRAGMENT_CHUNK_LENGTH);
+    const packets: string[] = [];
+    for (let index = 0; index < count; index++) {
+        packets.push(`${FRAGMENT_TAG}${hostPos},${sequence.toString(36)},${index},${count}#`
+            + payload.slice(index * FRAGMENT_CHUNK_LENGTH, (index + 1) * FRAGMENT_CHUNK_LENGTH));
+    }
+    return packets;
+}
+
+type LitterFragmentGroup = {
+    hostPos: number;
+    sequence: number;
+    count: number;
+    parts: string[];
+    received: number;
+    updatedAt: number;
+};
+
+/** 最多缓存两个快照序号；丢片不会把旧的完整场景清成半份。 */
+export class LitterSnapshotFragmentAssembler {
+    private readonly groups: LitterFragmentGroup[] = [];
+
+    reset(): void { this.groups.length = 0; }
+
+    accept(packet: string, nowMs: number): DecodedLitterSnapshot | null {
+        if (!packet.startsWith(FRAGMENT_TAG)) return null;
+        const hash = packet.indexOf('#', FRAGMENT_TAG.length);
+        if (hash < 0) return null;
+        const header = packet.slice(FRAGMENT_TAG.length, hash).split(',');
+        if (header.length !== 4 || !/^[0-9]+$/.test(header[0])
+            || !/^[0-9a-z]+$/.test(header[1]) || !/^[0-9]+$/.test(header[2])
+            || !/^[0-9]+$/.test(header[3])) return null;
+        const hostPos = Number(header[0]);
+        const sequence = parseInt(header[1], 36);
+        const index = Number(header[2]);
+        const count = Number(header[3]);
+        const fragment = packet.slice(hash + 1);
+        if (!Number.isSafeInteger(hostPos) || !Number.isSafeInteger(sequence)
+            || !Number.isSafeInteger(index) || !Number.isSafeInteger(count)
+            || count < 2 || count > FRAGMENT_MAX_COUNT || index < 0 || index >= count
+            || fragment.length === 0 || fragment.length > FRAGMENT_CHUNK_LENGTH) return null;
+        for (let slot = this.groups.length - 1; slot >= 0; slot--) {
+            if (nowMs - this.groups[slot].updatedAt > FRAGMENT_TIMEOUT_MS) this.groups.splice(slot, 1);
+        }
+        let group = this.groups.find(candidate => candidate.hostPos === hostPos
+            && candidate.sequence === sequence);
+        if (!group) {
+            if (this.groups.length >= 2) this.groups.shift();
+            group = { hostPos, sequence, count, parts: Array(count).fill(''), received: 0, updatedAt: nowMs };
+            this.groups.push(group);
+        }
+        if (group.count !== count || (group.parts[index] && group.parts[index] !== fragment)) return null;
+        if (!group.parts[index]) { group.parts[index] = fragment; group.received++; }
+        group.updatedAt = nowMs;
+        if (group.received !== count) return null;
+        this.groups.splice(this.groups.indexOf(group), 1);
+        const decoded = decodeLitterSnapshot(group.parts.join(''));
+        return decoded && decoded.hostPos === hostPos && decoded.sequence === sequence ? decoded : null;
+    }
 }
 
 export function decodeLitterSnapshot(payload: string): DecodedLitterSnapshot | null {

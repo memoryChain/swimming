@@ -111,6 +111,9 @@ import { getRaceModeConfig, getRaceDifficultyConfig, getRaceDistance, getRaceMod
 import { preloadStimulantBrawlModels, StimulantBrawlController } from './StimulantBrawlController';
 import { StrokeSfxManager } from '../app/StrokeSfxManager';
 import { EntertainmentWaterSplashPool } from './EntertainmentWaterSplash';
+import { entertainmentIntensityProfile, entertainmentTestCombinationEvents,
+    type EntertainmentIntensityProfile } from './EntertainmentIntensity';
+import { EntertainmentIntensityDebugHud } from '../ui/EntertainmentIntensityDebugHud';
 import { buildEntertainmentStimulantSchedule } from './StimulantBrawlRules';
 import {
     createWhirlpoolVisualResources,
@@ -120,6 +123,7 @@ import {
 } from './WhirlpoolBrawlController';
 import {
     currentWhirlpoolSpawns,
+    entertainmentGradedWhirlpoolSpawns,
     entertainmentWhirlpoolSpawn,
     isSuperWhirlpool,
     setRuntimeWhirlpoolSpawns,
@@ -354,6 +358,7 @@ export class GameManager extends Component {
     private _laneLockdownVisuals: LaneLockdownVisuals | null = null;
     private _laneLockdownRace: LaneLockdownRaceController | null = null;
     private _stimulantBrawl: StimulantBrawlController | null = null;
+    private _debugEntertainmentProfiles: (EntertainmentIntensityProfile | null)[] | null = null;
     private _entertainmentWaterSplashes: EntertainmentWaterSplashPool | null = null;
     private _entertainmentDirector: EntertainmentModeDirector | null = null;
     private _whirlpoolBrawl: WhirlpoolBrawlController | null = null;
@@ -481,6 +486,7 @@ export class GameManager extends Component {
     private _hudObservedAi: AISwimmerController | null = null;
     private _aiDebugCameraButton: Node = null;
     private _aiDebugCameraButtonLabel: Label = null;
+    private readonly _intensityDebugHud = new EntertainmentIntensityDebugHud();
     private _fieldOverviewButtonLabel: Label | null = null;
     private _gameFlow: GameFlowController = null;
     private _modelDebugFlow: ModelDebugFlowController = null;
@@ -778,6 +784,7 @@ export class GameManager extends Component {
             this.updateSharkBrawl(dt);
             this._eventPictureInPicture?.updateShark(this._shark, dt);
         }
+        this.updateEntertainmentIntensityDebugHud(netDt);
         this._entertainmentWaterSplashes?.update(dt);
         this._collisionWaterSplashes?.update(dt);
         const preRacePhase = this._raceCameraDirector.preRacePhase;
@@ -1082,7 +1089,8 @@ export class GameManager extends Component {
         }
         if (this._roomMode || this._netSession || this._aiDebugMode) {
             setSoloRaceTicket(null);
-            setSoloRaceDistance(this._netSession?.distance ?? (this._roomMode ? roomRaceDistance : null));
+            setSoloRaceDistance(this._netSession?.distance ?? (this._roomMode ? roomRaceDistance
+                : this._aiDebugMode ? getAiDebugSetup().raceDistance === 400 ? 400 : 200 : null));
             setSoloAiEvent(null);
         } else {
             const ticket = getSoloRaceTicket();
@@ -1538,6 +1546,7 @@ export class GameManager extends Component {
     }
 
     private setupEntertainmentMode() {
+        this._debugEntertainmentProfiles = null;
         this._giantWave?.dispose();
         this._giantWave = null;
         resetEntertainmentEventRuntime();
@@ -1545,8 +1554,39 @@ export class GameManager extends Component {
         this._whirlpoolActivationPreviewPending = false;
         this._whirlpoolActivationPreviewPlayed = false;
         this._cannonPreviewPending = false;
+        const debugIntensity = this._aiDebugMode && !this._netSession
+            && getAiDebugSetup().entertainmentIntensity != null;
         this._entertainmentDirector = isEntertainmentBrawlMode()
-            ? new EntertainmentModeDirector(getSharedRandomSeed(), getRaceDistance())
+            ? new EntertainmentModeDirector(getSharedRandomSeed(), getRaceDistance(), true,
+                debugIntensity ? event => {
+                    const profile = this.debugEntertainmentProfile(event);
+                    if (!profile) return 10;
+                    if (event === EntertainmentEventId.SHARK) {
+                        const count = getRaceDistance() >= 400 ? profile.sharkHunts400 : profile.sharkHunts200;
+                        return Math.max(13, count * 9 + 5);
+                    }
+                    if (event === EntertainmentEventId.TIMED_BOMB) {
+                        const count = getRaceDistance() >= 400
+                            ? profile.timedBallRounds400 : profile.timedBallRounds200;
+                        return Math.max(10, count * (profile.timedBallFuseSeconds + 1.5));
+                    }
+                    if (event === EntertainmentEventId.CANNON) {
+                        const count = getRaceDistance() >= 400
+                            ? profile.cannonStrikes400 : profile.cannonStrikes200;
+                        return Math.max(7, count * profile.cannonMinimumIntervalSeconds + 3);
+                    }
+                    if (event === EntertainmentEventId.LITTER) {
+                        const count = getRaceDistance() >= 400
+                            ? profile.litterWaves400 : profile.litterWaves200;
+                        return Math.max(8, count * 3 + 3);
+                    }
+                    return 10;
+                } : undefined,
+                debugIntensity ? entertainmentTestCombinationEvents(
+                    getAiDebugSetup().entertainmentTestCombination ?? null) ?? undefined : undefined,
+                debugIntensity
+                    ? this.debugEntertainmentProfile(EntertainmentEventId.WHIRLPOOL)!.whirlpoolSuperCount > 0
+                    : undefined)
             : null;
         // 赛前预热共用水花，首次事件不再集中创建六份网格和十个槽位。
         if (this._entertainmentDirector || isStimulantBrawlMode() || isSharkBrawlMode()
@@ -1606,6 +1646,16 @@ export class GameManager extends Component {
             return;
         }
         const current = director.currentEvent();
+        if (this._aiDebugMode && this._state === GameState.RACING
+            && director.secondsRemaining() <= dt) {
+            if (current === EntertainmentEventId.TIMED_BOMB) {
+                this._mineRelayBrawl?.cancelPendingRoundsAfterCurrent();
+            } else if (current === EntertainmentEventId.CANNON) {
+                this._cannonBrawl?.cancelPendingStrikesAfterCurrent();
+            } else if (current === EntertainmentEventId.LITTER) {
+                this._litterBrawl?.cancelPendingWaves();
+            }
+        }
         const canFinish = this.canFinishEntertainmentEvent(current);
         const transition = director.update(dt, this.entertainmentLeaderDistance(), canFinish);
         this.handleEntertainmentDirectorTransition(transition);
@@ -1694,9 +1744,11 @@ export class GameManager extends Component {
             && !isEntertainmentEventBurstActive(EntertainmentEventId.CANNON)
             && !this._cannonPreviewPending) {
             this._cannonBrawlHud?.hide();
+            this._cannonBrawl?.cancelPendingStrikesAfterCurrent();
             this._cannonBrawlPresentation?.beginExit();
             this._cannonPreviewPending = false;
         } else if (transition.finishedEvent === EntertainmentEventId.TIMED_BOMB) {
+            this._mineRelayBrawl?.cancelPendingRoundsAfterCurrent();
             this._mineRelayHud?.hide();
         } else if (transition.finishedEvent === EntertainmentEventId.LITTER) {
             this._litterBrawl?.cancelPendingWaves();
@@ -1807,7 +1859,33 @@ export class GameManager extends Component {
         return this._entertainmentDirector?.anchorDistanceForEvent(event) ?? 0;
     }
 
+    private debugEntertainmentProfile(event: EntertainmentEventId): EntertainmentIntensityProfile | null {
+        if (!this._aiDebugMode || this._netSession) return null;
+        const setup = getAiDebugSetup();
+        if (setup.entertainmentIntensity === null || setup.entertainmentIntensity === undefined) return null;
+        const mode = getRaceDifficultyConfig().id;
+        const eventMode = event === EntertainmentEventId.STIMULANT ? 'stimulant-brawl'
+            : event === EntertainmentEventId.TIMED_BOMB ? 'timed-bomb-brawl'
+            : event === EntertainmentEventId.WHIRLPOOL ? 'whirlpool-brawl'
+            : event === EntertainmentEventId.MINEFIELD ? 'minefield-brawl'
+            : event === EntertainmentEventId.SHARK ? 'shark-brawl'
+            : event === EntertainmentEventId.CANNON ? 'last-place-brawl' : 'litter-brawl';
+        if (mode !== 'entertainment-brawl' && mode !== eventMode) return null;
+        const level = mode === 'entertainment-brawl'
+            ? setup.entertainmentEventIntensities?.[event] ?? setup.entertainmentIntensity
+            : setup.entertainmentIntensity;
+        if (!this._debugEntertainmentProfiles) this._debugEntertainmentProfiles = [null, null, null, null, null, null, null];
+        return this._debugEntertainmentProfiles[event]
+            ?? (this._debugEntertainmentProfiles[event] = entertainmentIntensityProfile(level));
+    }
+
     private entertainmentWhirlpoolSpawns(anchorDistance: number) {
+        const profile = this.debugEntertainmentProfile(EntertainmentEventId.WHIRLPOOL);
+        if (profile) return entertainmentGradedWhirlpoolSpawns(
+            getSharedRandomSeed(), anchorDistance, getRaceDistance(),
+            profile.whirlpoolCount, profile.whirlpoolRadiusScale,
+            profile.whirlpoolForceScale, profile.whirlpoolSuperCount,
+        );
         return entertainmentWhirlpoolSpawn(
             getSharedRandomSeed(),
             anchorDistance,
@@ -1817,12 +1895,26 @@ export class GameManager extends Component {
     }
 
     private entertainmentCannonStrikeTriggers(): readonly number[] {
+        const profile = this.debugEntertainmentProfile(EntertainmentEventId.CANNON);
+        if (profile) {
+            const count = getRaceDistance() >= 400 ? profile.cannonStrikes400 : profile.cannonStrikes200;
+            const anchor = this.entertainmentAnchorDistance(EntertainmentEventId.CANNON);
+            return Array.from({ length: count }, (_, index) => anchor + 1 + index * 1.5);
+        }
         return (getRaceDistance() >= 400 ? [1, 3, 5, 7, 9] : [1, 3, 5])
             .map(offset => this.entertainmentAnchorDistance(EntertainmentEventId.CANNON) + offset);
     }
 
     private entertainmentTimedBombRounds(): ReadonlyArray<{ triggerDistance: number; fuseSeconds: number }> {
         const anchor = this.entertainmentAnchorDistance(EntertainmentEventId.TIMED_BOMB);
+        const profile = this.debugEntertainmentProfile(EntertainmentEventId.TIMED_BOMB);
+        if (profile) {
+            const count = getRaceDistance() >= 400 ? profile.timedBallRounds400 : profile.timedBallRounds200;
+            return Array.from({ length: count }, (_, index) => ({
+                triggerDistance: anchor + index * 12,
+                fuseSeconds: profile.timedBallFuseSeconds,
+            }));
+        }
         return getRaceDistance() >= 400
             ? [
                 { triggerDistance: anchor, fuseSeconds: 8 },
@@ -1894,13 +1986,20 @@ export class GameManager extends Component {
                 },
                 () => this._playerLaneIndex,
                 this.entertainmentWaterSplashes(),
-                isEntertainmentBrawlMode()
+                (isEntertainmentBrawlMode() || this.debugEntertainmentProfile(EntertainmentEventId.STIMULANT))
                     ? buildEntertainmentStimulantSchedule(
                         getSharedRandomSeed(),
                         LANE_LAYOUT.laneCount,
-                        this.entertainmentAnchorDistance(EntertainmentEventId.STIMULANT),
+                        isEntertainmentBrawlMode()
+                            ? this.entertainmentAnchorDistance(EntertainmentEventId.STIMULANT) : 20,
                         getRaceDistance(),
                         COURSE_LAYOUT.courseLength,
+                        (() => {
+                            const profile = this.debugEntertainmentProfile(EntertainmentEventId.STIMULANT);
+                            return profile ? getRaceDistance() >= 400
+                                ? profile.stimulantWaves400 : profile.stimulantWaves200 : undefined;
+                        })(),
+                        this.debugEntertainmentProfile(EntertainmentEventId.STIMULANT)?.stimulantItemsPerWave,
                     )
                     : undefined,
             );
@@ -1957,12 +2056,17 @@ export class GameManager extends Component {
                 ? this.entertainmentWhirlpoolSpawns(
                     this.entertainmentAnchorDistance(EntertainmentEventId.WHIRLPOOL),
                 )
+                : this.debugEntertainmentProfile(EntertainmentEventId.WHIRLPOOL)
+                    ? this.entertainmentWhirlpoolSpawns(20)
                 : whirlpoolSpawnsForSeed(
                     getSharedRandomSeed(),
                     this._aiDebugMode && !this._netSession
                         ? getAiDebugSetup().whirlpoolSelection
                         : 'random',
                 );
+            if (this.debugEntertainmentProfile(EntertainmentEventId.WHIRLPOOL)) {
+                setRuntimeWhirlpoolSpawns(spawns);
+            }
             const featuredIndex = spawns.findIndex(isSuperWhirlpool);
             this._whirlpoolBrawl = new WhirlpoolBrawlController(
                 this._worldRoot,
@@ -2202,6 +2306,7 @@ export class GameManager extends Component {
     private setupCannonBrawl() {
         this._cannonBrawl = null;
         if (!isCannonBrawlMode() || !this._raceManager) return;
+        const intensity = this.debugEntertainmentProfile(EntertainmentEventId.CANNON);
         const presentation = this.ensureCannonBrawlPresentation();
         if (isEntertainmentBrawlMode()
             && isEntertainmentEventBurstActive(EntertainmentEventId.CANNON)) {
@@ -2225,9 +2330,16 @@ export class GameManager extends Component {
             },
             launch => this.handleCannonLaunch(launch, true),
             impact => this.handleCannonImpact(impact, true),
-            isEntertainmentBrawlMode() ? this.entertainmentCannonStrikeTriggers() : undefined,
+            isEntertainmentBrawlMode() ? this.entertainmentCannonStrikeTriggers()
+                : intensity
+                    ? Array.from({ length: getRaceDistance() >= 400
+                        ? intensity.cannonStrikes400
+                        : intensity.cannonStrikes200 },
+                    (_, index) => 20 + index * 3) : undefined,
             Math.max(0, getRaceDistance() - 20),
             distance => COURSE_LAYOUT.distanceToWorldX(distance),
+            intensity?.cannonConcurrency ?? 1,
+            intensity?.cannonMinimumIntervalSeconds ?? 0,
         );
         this._netRaceController?.setCannonLaunchListener((strikeId, targetDistance, targetZ, warningSeconds, revision) => {
             const launch = { strikeId, targetDistance, targetZ, warningSeconds, revision };
@@ -2274,6 +2386,8 @@ export class GameManager extends Component {
             launch,
             controller.currentRemainingSeconds(),
             this._state === GameState.RACING,
+            controller.currentSecondaryLaunch(),
+            controller.currentSecondaryRemainingSeconds(),
         );
         this._eventPictureInPicture?.updateCannon(
             launch,
@@ -2281,8 +2395,8 @@ export class GameManager extends Component {
             this._state === GameState.RACING,
             dt,
             launch ? this._cannonBrawlPresentation?.sourceWorldX() : undefined,
-            this._cannonBrawlPresentation?.launchSource,
-            this._cannonBrawlPresentation?.projectileNode,
+            launch ? this._cannonBrawlPresentation?.launchSourceFor(launch.strikeId) : undefined,
+            launch ? this._cannonBrawlPresentation?.projectileNodeFor(launch.strikeId) : undefined,
         );
         for (let i = 0; i < this._aiControllers.length; i++) {
             const ai = this._aiControllers[i];
@@ -2324,6 +2438,7 @@ export class GameManager extends Component {
                 COURSE_LAYOUT,
                 this.entertainmentWaterSplashes(),
                 isEntertainmentBrawlMode(),
+                this.debugEntertainmentProfile(EntertainmentEventId.CANNON)?.cannonConcurrency === 2,
             );
         }
         return this._cannonBrawlPresentation;
@@ -2332,11 +2447,13 @@ export class GameManager extends Component {
     private handleCannonLaunch(launch: CannonLaunch, broadcast: boolean) {
         this._lastCannonTargetZ = launch.targetZ;
         this._cannonBrawlPresentation?.showLaunch(launch);
-        this._eventPictureInPicture?.showCannonLaunch(
-            launch,
-            this._cannonBrawlPresentation?.sourceWorldX(),
-            this._cannonBrawlPresentation?.launchSource,
-        );
+        if (this._cannonBrawl?.currentLaunch()?.strikeId === launch.strikeId) {
+            this._eventPictureInPicture?.showCannonLaunch(
+                launch,
+                this._cannonBrawlPresentation?.sourceWorldX(),
+                this._cannonBrawlPresentation?.launchSourceFor(launch.strikeId),
+            );
+        }
         if (launch.strikeId === 0 && !isEntertainmentBrawlMode()) {
             this._entertainmentEventBanner.showEvent(
                 '水球点名 · 观察落点并横移躲避',
@@ -2356,7 +2473,14 @@ export class GameManager extends Component {
     private handleCannonImpact(impact: CannonImpact, broadcast: boolean) {
         if (this._cannonBrawl?.isLatestImpact(impact)) {
             this._cannonBrawlPresentation?.showImpact(impact);
-            this._eventPictureInPicture?.showCannonImpact(impact);
+            const nextLaunch = this._cannonBrawl.currentLaunch();
+            if (nextLaunch) {
+                this._eventPictureInPicture?.showCannonLaunch(
+                    nextLaunch,
+                    this._cannonBrawlPresentation?.sourceWorldX(),
+                    this._cannonBrawlPresentation?.launchSourceFor(nextLaunch.strikeId),
+                );
+            } else this._eventPictureInPicture?.showCannonImpact(impact);
         }
         for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
             if ((impact.hitMask & (1 << lane)) === 0) continue;
@@ -2442,7 +2566,15 @@ export class GameManager extends Component {
             event => this.handleMineRelayArm(event, true),
             event => this.handleMineRelayTransfer(event, true),
             event => this.handleMineRelayResolution(event, true),
-            isEntertainmentBrawlMode() ? this.entertainmentTimedBombRounds() : undefined,
+            (isEntertainmentBrawlMode() || this.debugEntertainmentProfile(EntertainmentEventId.TIMED_BOMB))
+                ? isEntertainmentBrawlMode() ? this.entertainmentTimedBombRounds()
+                    : Array.from({ length: getRaceDistance() >= 400
+                        ? this.debugEntertainmentProfile(EntertainmentEventId.TIMED_BOMB)!.timedBallRounds400
+                        : this.debugEntertainmentProfile(EntertainmentEventId.TIMED_BOMB)!.timedBallRounds200 }, (_, index) => ({
+                        triggerDistance: 20 + index * 12,
+                        fuseSeconds: this.debugEntertainmentProfile(EntertainmentEventId.TIMED_BOMB)!.timedBallFuseSeconds,
+                    }))
+                : undefined,
             (laneA, laneB) => hasSwimmerCollisionContact(
                 this.swimmerForLane(laneA),
                 this.swimmerForLane(laneB),
@@ -2725,6 +2857,8 @@ export class GameManager extends Component {
         this._netRaceController?.setMinefieldImpactListener(null);
         this._netRaceController?.setMinefieldStateListener(null);
         if (!isMinefieldBrawlMode() || !this._raceManager) return;
+        const mineCount = this.debugEntertainmentProfile(EntertainmentEventId.MINEFIELD)?.mineCount
+            ?? (isEntertainmentBrawlMode() ? 5 : MINEFIELD_TUNING.mineCount);
         StrokeSfxManager.preloadBuoyPop();
         this._minefieldBrawl = new MinefieldBrawlController(
             LANE_LAYOUT.laneCount,
@@ -2742,7 +2876,7 @@ export class GameManager extends Component {
                 return state;
             },
             impact => this.handleMinefieldImpact(impact, true),
-            isEntertainmentBrawlMode() ? 5 : MINEFIELD_TUNING.mineCount,
+            mineCount,
             isEntertainmentBrawlMode()
                 && this._entertainmentDirector?.isSpecialEvent(EntertainmentEventId.WHIRLPOOL)
                 ? {
@@ -2762,7 +2896,7 @@ export class GameManager extends Component {
             this._minefieldPresentation = new MinefieldBrawlPresentation(
                 this._worldRoot,
                 COURSE_LAYOUT,
-                isEntertainmentBrawlMode() ? 5 : MINEFIELD_TUNING.mineCount,
+                mineCount,
                 this.entertainmentWaterSplashes(),
                 () => StrokeSfxManager.playBuoyPop(),
             );
@@ -2853,7 +2987,14 @@ export class GameManager extends Component {
         this._litterPresentation = null;
         this._playerLitterSlowed = false;
         if (!isLitterBrawlMode() || !this._raceManager) return;
-        const schedule = isEntertainmentBrawlMode()
+        const profile = this.debugEntertainmentProfile(EntertainmentEventId.LITTER);
+        const schedule = profile
+            ? buildEntertainmentLitterSchedule(
+                isEntertainmentBrawlMode() ? this.entertainmentAnchorDistance(EntertainmentEventId.LITTER) : 20,
+                getRaceDistance(),
+                getRaceDistance() >= 400 ? profile.litterWaves400 : profile.litterWaves200,
+            )
+            : isEntertainmentBrawlMode()
             ? buildEntertainmentLitterSchedule(
                 this.entertainmentAnchorDistance(EntertainmentEventId.LITTER),
                 getRaceDistance(),
@@ -2895,6 +3036,7 @@ export class GameManager extends Component {
                 )
                 : undefined,
             contact => this._netRaceController?.enqueueLitterContact(contact),
+            profile ? { itemsPerWave: profile.litterItemsPerWave, poolSize: profile.litterPoolSize } : undefined,
         );
         this._netRaceController?.setLitterStateListener(state => {
             this._litterBrawl?.applySnapshotState(state);
@@ -2907,7 +3049,7 @@ export class GameManager extends Component {
             this._litterPresentation = new LitterBrawlPresentation(
                 this._worldRoot,
                 COURSE_LAYOUT,
-                LITTER_BRAWL_TUNING.poolSize,
+                profile?.litterPoolSize ?? LITTER_BRAWL_TUNING.poolSize,
                 this.entertainmentWaterSplashes(),
             );
         }
@@ -3092,7 +3234,20 @@ export class GameManager extends Component {
                 '玩具冲撞',
             ),
             hungerSchedule: isEntertainmentBrawlMode()
-                ? (getRaceDistance() >= 400 ? [0, 9] : [0])
+                ? (() => {
+                    const profile = this.debugEntertainmentProfile(EntertainmentEventId.SHARK);
+                    if (!profile) return getRaceDistance() >= 400 ? [0, 9] : [0];
+                    const count = getRaceDistance() >= 400 ? profile.sharkHunts400 : profile.sharkHunts200;
+                    return Array.from({ length: count }, (_, index) => index * 9);
+                })()
+                : this.debugEntertainmentProfile(EntertainmentEventId.SHARK)
+                    ? Array.from({ length: getRaceDistance() >= 400
+                        ? this.debugEntertainmentProfile(EntertainmentEventId.SHARK)!.sharkHunts400
+                        : this.debugEntertainmentProfile(EntertainmentEventId.SHARK)!.sharkHunts200 },
+                    (_, index) => 15 + index * 9) : undefined,
+            huntSpeedScale: this.debugEntertainmentProfile(EntertainmentEventId.SHARK)?.sharkSpeedScale,
+            huntSeconds: this.debugEntertainmentProfile(EntertainmentEventId.SHARK)
+                ? (this.debugEntertainmentProfile(EntertainmentEventId.SHARK)!.sharkHunts200 > 1 ? 3 : undefined)
                 : undefined,
             wanderAfterFinalHunt: isEntertainmentBrawlMode(),
         });
@@ -4367,7 +4522,7 @@ export class GameManager extends Component {
                             : isTimedBombBrawlMode()
                                 ? '水球随机发放；贴近对手转交，最后锁定后无法转交；到时喷水并由浮圈托住调整'
                                 : isMinefieldBrawlMode()
-                                    ? '喷水浮标缓慢漂移；触碰后喷水并搭圈调整，水花会推开附近选手'
+                                    ? '警示气球标出水面浮标；碰到底座会爆球、搭圈调整，水花推开附近选手'
                                     : isLitterBrawlMode()
                                         ? '杂物从看台方向抛入，注意落点；硬瓶弹开减速，软餐盒可穿但持续拖慢'
                                     : '率先完成全程者获胜',
@@ -4476,6 +4631,7 @@ export class GameManager extends Component {
             this._finishRankOverlay.bind(this._raceHud);
             this._preRaceIntroPanel.build(this._raceHud, visibleSize.width, visibleSize.height);
             this.buildAiDebugCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
+            this.buildEntertainmentIntensityDebugHud(this._raceHud, visibleSize.width, visibleSize.height);
             // Networked race: an overhead whole-field toggle to compare AI positions
             // across clients.
             if (this._netSession) {
@@ -5037,6 +5193,91 @@ export class GameManager extends Component {
             this._aiCameraIndex = -1;
             this._gameFlow?.setCameraFollowAi(false);
         }
+    }
+
+    private buildEntertainmentIntensityDebugHud(raceHud: Node, width: number, height: number): void {
+        if (!this._aiDebugMode || this._netSession || getAiDebugSetup().entertainmentIntensity == null) return;
+        this._intensityDebugHud.build(raceHud, width, height);
+    }
+
+    private updateEntertainmentIntensityDebugHud(dt: number): void {
+        if (!this._intensityDebugHud.consumeSample(dt, this._state === GameState.RACING)) return;
+        let event = this._entertainmentDirector?.currentEvent() ?? null;
+        if (event === null && !isEntertainmentBrawlMode()) {
+            for (let id = EntertainmentEventId.STIMULANT; id <= EntertainmentEventId.LITTER; id++) {
+                if (this.debugEntertainmentProfile(id)) { event = id; break; }
+            }
+        }
+        if (event === null) event = this._intensityDebugHud.previousEvent();
+        if (event === null) return;
+        const profile = this.debugEntertainmentProfile(event);
+        if (!profile) return;
+        const longRace = getRaceDistance() >= 400;
+        let planned = 0;
+        let actual = 0;
+        let active = 0;
+        let cancelled = 0;
+        let name = '';
+        switch (event) {
+            case EntertainmentEventId.STIMULANT:
+                name = '补给';
+                planned = profile.stimulantItemsPerWave * (longRace ? profile.stimulantWaves400 : profile.stimulantWaves200);
+                actual = this._stimulantBrawl?.startedItemCount() ?? 0;
+                active = this._stimulantBrawl?.activeItemCount() ?? 0;
+                break;
+            case EntertainmentEventId.TIMED_BOMB:
+                name = '定时水球';
+                planned = longRace ? profile.timedBallRounds400 : profile.timedBallRounds200;
+                actual = this._mineRelayBrawl?.startedRoundCount() ?? 0;
+                active = this._mineRelayBrawl?.currentArm() ? 1 : 0;
+                cancelled = Math.max(0, (this._mineRelayBrawl?.completedRoundCount() ?? 0)
+                    - (actual - active));
+                break;
+            case EntertainmentEventId.WHIRLPOOL:
+                name = '漩涡';
+                planned = profile.whirlpoolCount;
+                active = this._whirlpoolBrawl ? currentWhirlpoolSpawns().length : 0;
+                actual = active;
+                break;
+            case EntertainmentEventId.MINEFIELD:
+                name = '浮标';
+                planned = profile.mineCount;
+                actual = this._minefieldBrawl?.armedMineCount() ?? 0;
+                if (this._minefieldBrawl) {
+                    for (const mine of this._minefieldBrawl.mines()) {
+                        if (mine.active && mine.armed) active++;
+                    }
+                }
+                break;
+            case EntertainmentEventId.SHARK:
+                name = '玩具鲨';
+                planned = longRace ? profile.sharkHunts400 : profile.sharkHunts200;
+                active = this._shark?.active ? 1 : 0;
+                actual = (this._shark?.huntIndex ?? 0)
+                    + (this._shark?.state === SharkState.WARNING || this._shark?.state === SharkState.HUNT
+                        || this._shark?.state === SharkState.BITE ? 1 : 0);
+                break;
+            case EntertainmentEventId.CANNON:
+                name = '水炮';
+                planned = longRace ? profile.cannonStrikes400 : profile.cannonStrikes200;
+                actual = this._cannonBrawl?.launchedStrikeCount() ?? 0;
+                active = (this._cannonBrawl?.currentLaunch() ? 1 : 0)
+                    + (this._cannonBrawl?.currentSecondaryLaunch() ? 1 : 0);
+                cancelled = Math.max(0, (this._cannonBrawl?.completedStrikeCount() ?? 0) - (actual - active));
+                break;
+            case EntertainmentEventId.LITTER:
+                name = '杂物';
+                planned = profile.litterItemsPerWave * (longRace ? profile.litterWaves400 : profile.litterWaves200);
+                actual = this._litterBrawl?.spawnedItemCount() ?? 0;
+                active = this._litterBrawl?.activeCount() ?? 0;
+                cancelled = (this._litterBrawl?.cancelledCount() ?? 0) * profile.litterItemsPerWave;
+                break;
+        }
+        const setup = getAiDebugSetup();
+        const level = isEntertainmentBrawlMode()
+            ? setup.entertainmentEventIntensities?.[event] ?? setup.entertainmentIntensity ?? 3
+            : setup.entertainmentIntensity ?? 3;
+        this._intensityDebugHud.present(event, level, name, planned, actual, active, cancelled);
     }
 
     // 只投影玩家身份标记及兼容速度读数，不再创建或投影旧完美区圆盘。

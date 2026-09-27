@@ -112,6 +112,7 @@ export class MineRelayBrawlController {
     private appliedCarrierExplosionMask = 0;
     private resolvedCarrierLanesPacked = 0;
     private activeArm: MineRelayArm | null = null;
+    private armedRoundCount = 0;
     private remainingSeconds = 0;
     private transferCooldownSeconds = 0;
     private returnProtectionSeconds = 0;
@@ -149,6 +150,7 @@ export class MineRelayBrawlController {
         this.appliedCarrierExplosionMask = 0;
         this.resolvedCarrierLanesPacked = 0;
         this.activeArm = null;
+        this.armedRoundCount = 0;
         this.remainingSeconds = 0;
         this.transferCooldownSeconds = 0;
         this.returnProtectionSeconds = 0;
@@ -255,6 +257,7 @@ export class MineRelayBrawlController {
             || (this.completedRoundMask & (1 << event.roundId)) !== 0) return false;
         this.revision = event.revision;
         this.activeArm = { ...event };
+        this.armedRoundCount++;
         this.remainingSeconds = event.fuseSeconds;
         this.transferCooldownSeconds = MINE_RELAY_TUNING.initialTransferCooldownSeconds;
         this.returnProtectionSeconds = 0;
@@ -401,6 +404,7 @@ export class MineRelayBrawlController {
     currentArm(): MineRelayArm | null { return this.activeArm; }
     currentCarrierLane(): number { return this.activeArm?.carrierLane ?? -1; }
     currentRemainingSeconds(): number { return this.remainingSeconds; }
+    startedRoundCount(): number { return this.armedRoundCount; }
     isLocked(): boolean { return !!this.activeArm && this.remainingSeconds <= MINE_RELAY_TUNING.lockSeconds; }
     completedRoundCount(): number { return countBits(this.completedRoundMask, this.rounds.length); }
     remainingRoundCount(): number { return Math.max(0, this.rounds.length - this.completedRoundCount()); }

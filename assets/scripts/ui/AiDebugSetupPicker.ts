@@ -15,10 +15,14 @@ import {
     uiColor,
 } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
+import { ENTERTAINMENT_INTENSITY_LABELS, ENTERTAINMENT_TEST_COMBINATIONS,
+    EntertainmentIntensity, normalizeEntertainmentIntensity } from '../core/EntertainmentIntensity';
+import { EntertainmentEventId } from '../core/EntertainmentModeDirector';
 
 const PANEL_WIDTH = 880;
 const PANEL_HEIGHT = 620;
 const MODE_TEST_MODES: readonly RaceModeId[] = [
+    'entertainment-brawl',
     'stimulant-brawl',
     'shark-brawl',
     'whirlpool-brawl',
@@ -29,6 +33,15 @@ const MODE_TEST_MODES: readonly RaceModeId[] = [
     'giant-wave-brawl',
 ];
 const MODE_TEST_DIFFICULTY = AI_DEBUG_DIFFICULTY_TIERS[2].value;
+const ENTERTAINMENT_TEST_EVENTS = [
+    { id: EntertainmentEventId.STIMULANT, title: '苏打' },
+    { id: EntertainmentEventId.TIMED_BOMB, title: '定时水球' },
+    { id: EntertainmentEventId.WHIRLPOOL, title: '漩涡' },
+    { id: EntertainmentEventId.MINEFIELD, title: '警示气球浮标' },
+    { id: EntertainmentEventId.SHARK, title: '玩具鲨' },
+    { id: EntertainmentEventId.CANNON, title: '水炮' },
+    { id: EntertainmentEventId.LITTER, title: '杂物' },
+] as const;
 
 type DebugButtonView = {
     node: Node;
@@ -102,6 +115,9 @@ export function buildAiDebugSetupPicker(
     close = () => root.destroy(),
 ) {
     const setup = { ...getAiDebugSetup() };
+    setup.entertainmentEventIntensities = [...(setup.entertainmentEventIntensities ?? [3, 3, 3, 3, 3, 3, 3])];
+    setup.entertainmentIntensity = normalizeEntertainmentIntensity(setup.entertainmentIntensity);
+    setup.raceDistance = setup.raceDistance === 400 ? 400 : 200;
     const raceModes: RaceDifficulty[] = ['beginner', 'competitive', 'championship'];
     let raceMode: RaceDifficulty = raceModes.indexOf(setup.mode as RaceDifficulty) >= 0
         ? setup.mode as RaceDifficulty
@@ -211,7 +227,7 @@ export function buildAiDebugSetupPicker(
         launch(raceMode, tier.value, false);
     }));
 
-    makeLabel('Subtitle', modeContent, '选择一个单项娱乐模式，使用固定阵容和种子开始测试', 18, uiColor(190, 210, 220)).setPosition(0, 218, 0);
+    makeLabel('Subtitle', modeContent, '选择娱乐事件与强度，固定阵容和种子重测', 18, uiColor(190, 210, 220)).setPosition(0, 218, 0);
     const modeViews = new Map<RaceModeId, { selected: Node; label: Label | null }>();
     const whirlpoolSelectionViews = new Map<typeof setup.whirlpoolSelection, Node>();
     const whirlpoolOptions = makeUiNode('WhirlpoolOptions', modeContent);
@@ -251,7 +267,7 @@ export function buildAiDebugSetupPicker(
         setActive(selected, option.id === setup.whirlpoolSelection);
         whirlpoolSelectionViews.set(option.id, selected);
     });
-    setActive(whirlpoolOptions, modeTestMode === 'whirlpool-brawl');
+    setActive(whirlpoolOptions, modeTestMode === 'whirlpool-brawl' && setup.entertainmentIntensity === null);
     const waveOptions = makeUiNode('GiantWaveOptions', modeContent);
     const waveViews: Node[] = [];
     setup.giantWavePreset = setup.giantWavePreset === 'single' ? 'single' : 'three';
@@ -269,12 +285,24 @@ export function buildAiDebugSetupPicker(
         waveViews.push(selected);
     });
     setActive(waveOptions, modeTestMode === 'giant-wave-brawl');
+    let eventChoice: DebugButtonView;
+    let eventLevelChoice: DebugButtonView;
+    let combinationChoice: DebugButtonView;
+    let selectedEventIndex = 0;
     const updateModeSelection = (previous: RaceModeId | null, current: RaceModeId) => {
         if (previous === current) return;
         if (previous) setActive(modeViews.get(previous)?.selected ?? null, false);
         setActive(modeViews.get(current)?.selected ?? null, true);
-        setActive(whirlpoolOptions, current === 'whirlpool-brawl');
+        setActive(whirlpoolOptions, current === 'whirlpool-brawl' && setup.entertainmentIntensity === null);
         setActive(waveOptions, current === 'giant-wave-brawl');
+        setActive(intensityChoice.node, current !== 'giant-wave-brawl');
+        setActive(eventChoice.node, current === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
+        setActive(eventLevelChoice.node, current === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
+        setActive(combinationChoice.node, current === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
+        setActive(modeHint, current !== 'entertainment-brawl');
+        modeSeed.node.setPosition(current === 'entertainment-brawl' ? 150 : -100,
+            current === 'entertainment-brawl' ? -154 : -108, 0);
+        write(intensityChoice.label, intensityText());
         write(modeStart.label, `开始测试：${getRaceModeTitle(current)}`);
     };
     for (let index = 0; index < MODE_TEST_MODES.length; index++) {
@@ -291,8 +319,105 @@ export function buildAiDebugSetupPicker(
         setActive(selected, testMode === modeTestMode);
         modeViews.set(testMode, { selected, label: card.label });
     }
-    modeSeed = button(modeContent, 'ModeSeed', seedText(), 0, -108, 340, cycleSeed);
-    makeLabel('Hint', modeContent, '固定为玩家 + 7 个高手 AI · 混合角色 · 等级沿用角色页设置', 18, uiColor(190, 210, 220)).setPosition(0, -152, 0);
+    const intensityText = () => setup.entertainmentIntensity === null
+        ? '原规格'
+        : modeTestMode === 'entertainment-brawl'
+            ? setup.entertainmentEventIntensities?.every(value => value === setup.entertainmentIntensity)
+                ? `统一强度 ${setup.entertainmentIntensity}` : '逐项强度配置'
+            : `强度 ${setup.entertainmentIntensity} · ${ENTERTAINMENT_INTENSITY_LABELS[setup.entertainmentIntensity - 1]}`;
+    const intensityChoice = button(modeContent, 'IntensityChoice', intensityText(), 0, -50, 250, () => {
+        const next = setup.entertainmentIntensity === null ? 1 : setup.entertainmentIntensity === 5
+            ? null : (setup.entertainmentIntensity + 1) as EntertainmentIntensity;
+        setup.entertainmentIntensity = next;
+        setActive(whirlpoolOptions, modeTestMode === 'whirlpool-brawl' && next === null);
+        setActive(eventChoice.node, modeTestMode === 'entertainment-brawl' && next !== null);
+        setActive(eventLevelChoice.node, modeTestMode === 'entertainment-brawl' && next !== null);
+        setActive(combinationChoice.node, modeTestMode === 'entertainment-brawl' && next !== null);
+        if (next !== null) {
+            if (modeTestMode === 'entertainment-brawl') {
+                setup.entertainmentEventIntensities = [next, next, next, next, next, next, next];
+            } else {
+                const event = modeTestMode === 'stimulant-brawl' ? EntertainmentEventId.STIMULANT
+                    : modeTestMode === 'timed-bomb-brawl' ? EntertainmentEventId.TIMED_BOMB
+                    : modeTestMode === 'whirlpool-brawl' ? EntertainmentEventId.WHIRLPOOL
+                    : modeTestMode === 'minefield-brawl' ? EntertainmentEventId.MINEFIELD
+                    : modeTestMode === 'shark-brawl' ? EntertainmentEventId.SHARK
+                    : modeTestMode === 'last-place-brawl' ? EntertainmentEventId.CANNON
+                    : modeTestMode === 'litter-brawl' ? EntertainmentEventId.LITTER : -1;
+                if (event >= 0) {
+                    const levels = [...(setup.entertainmentEventIntensities ?? [3, 3, 3, 3, 3, 3, 3])];
+                    levels[event] = next;
+                    setup.entertainmentEventIntensities = levels;
+                }
+            }
+            applyCombinationMinimums();
+        }
+        write(intensityChoice.label, intensityText());
+        write(eventLevelChoice.label, eventLevelText());
+    }, 40);
+    setActive(intensityChoice.node, modeTestMode !== 'giant-wave-brawl');
+    const distanceChoice = button(modeContent, 'DistanceChoice', `${setup.raceDistance} 米`, 270, -50, 145, () => {
+        setup.raceDistance = setup.raceDistance === 400 ? 200 : 400;
+        write(distanceChoice.label, `${setup.raceDistance} 米`);
+    }, 40);
+    const eventLevelText = () => {
+        const event = ENTERTAINMENT_TEST_EVENTS[selectedEventIndex];
+        const level = setup.entertainmentEventIntensities?.[event.id] ?? 3;
+        return `${event.title}：${level} 档 · ${ENTERTAINMENT_INTENSITY_LABELS[level - 1]}`;
+    };
+    eventChoice = button(modeContent, 'EventChoice', '逐项设置：苏打', -145, -108, 255, () => {
+        selectedEventIndex = (selectedEventIndex + 1) % ENTERTAINMENT_TEST_EVENTS.length;
+        write(eventChoice.label, `逐项设置：${ENTERTAINMENT_TEST_EVENTS[selectedEventIndex].title}`);
+        write(eventLevelChoice.label, eventLevelText());
+    }, 40);
+    eventLevelChoice = button(modeContent, 'EventLevelChoice', eventLevelText(), 150, -108, 255, () => {
+        const levels = [...(setup.entertainmentEventIntensities ?? [3, 3, 3, 3, 3, 3, 3])];
+        const event = ENTERTAINMENT_TEST_EVENTS[selectedEventIndex].id;
+        const minimum = setup.entertainmentTestCombination === 'litter-whirlpool'
+            && event === EntertainmentEventId.WHIRLPOOL
+            || setup.entertainmentTestCombination === 'minefield-cannon'
+            && event === EntertainmentEventId.CANNON ? 4 : 1;
+        levels[event] = levels[event] === 5 ? minimum : Math.max(minimum, levels[event] + 1) as EntertainmentIntensity;
+        setup.entertainmentEventIntensities = levels;
+        write(eventLevelChoice.label, eventLevelText());
+        write(intensityChoice.label, intensityText());
+    }, 40);
+    setActive(eventChoice.node, modeTestMode === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
+    setActive(eventLevelChoice.node, modeTestMode === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
+    const applyCombinationMinimums = () => {
+        const event = setup.entertainmentTestCombination === 'litter-whirlpool'
+            ? EntertainmentEventId.WHIRLPOOL
+            : setup.entertainmentTestCombination === 'minefield-cannon'
+                ? EntertainmentEventId.CANNON : -1;
+        if (event < 0) return;
+        const levels = [...(setup.entertainmentEventIntensities ?? [3, 3, 3, 3, 3, 3, 3])];
+        if (levels[event] >= 4) return;
+        levels[event] = 4;
+        setup.entertainmentEventIntensities = levels;
+    };
+    const combinationText = () => `组合：${ENTERTAINMENT_TEST_COMBINATIONS.find(
+        item => item.id === setup.entertainmentTestCombination)?.label ?? '随机轮换'}`;
+    applyCombinationMinimums();
+    write(eventLevelChoice.label, eventLevelText());
+    write(intensityChoice.label, intensityText());
+    combinationChoice = button(modeContent, 'CombinationChoice', combinationText(), -145, -154, 255, () => {
+        const previous = ENTERTAINMENT_TEST_COMBINATIONS.findIndex(
+            item => item.id === setup.entertainmentTestCombination);
+        setup.entertainmentTestCombination = previous >= ENTERTAINMENT_TEST_COMBINATIONS.length - 1
+            ? null : ENTERTAINMENT_TEST_COMBINATIONS[previous + 1].id;
+        applyCombinationMinimums();
+        write(combinationChoice.label, combinationText());
+        write(eventLevelChoice.label, eventLevelText());
+        write(intensityChoice.label, intensityText());
+    }, 40);
+    setActive(combinationChoice.node, modeTestMode === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
+    modeSeed = button(modeContent, 'ModeSeed', seedText(), -100, -108, 260, cycleSeed);
+    if (modeTestMode === 'entertainment-brawl') modeSeed.node.setPosition(150, -154, 0);
+    const modeHint = makeLabel('Hint', modeContent,
+        '固定为玩家 + 7 个高手 AI · 混合角色 · 等级沿用角色页设置',
+        18, uiColor(190, 210, 220));
+    modeHint.setPosition(0, -152, 0);
+    setActive(modeHint, modeTestMode !== 'entertainment-brawl');
     const modeStart = button(modeContent, 'ModeStart', `开始测试：${getRaceModeTitle(modeTestMode)}`, 0, -202, 420, () => {
         launch(modeTestMode, MODE_TEST_DIFFICULTY, true);
     });

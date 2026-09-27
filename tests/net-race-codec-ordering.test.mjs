@@ -29,7 +29,8 @@ const {
     isCompatibleProtocolVersion,
 } = Protocol;
 const { conditionQualityScale } = ConditionBalance;
-const { decodeLitterSnapshot, encodeLitterSnapshot } = LitterCodec;
+const { decodeLitterSnapshot, encodeLitterSnapshot, encodeLitterSnapshotPackets,
+    LitterSnapshotFragmentAssembler } = LitterCodec;
 const { decodeRaceResult, encodeRaceResult } = ResultCodec;
 
 function entry(overrides = {}) {
@@ -302,6 +303,42 @@ test('18槽负坐标和高接触修订含房间前缀仍有载荷余量，量化
     assert.deepEqual(decodeLitterSnapshot(payload), { hostPos: 7, sequence: Number.MAX_SAFE_INTEGER, state });
 });
 
+test('30槽垃圾快照至多三片，乱序与缺片不应用半份状态', () => {
+    const state = litterState(30);
+    for (const slot of state.slots) slot.impactRevision = 999999;
+    const prefix = Protocol.raceMessagePrefix('7.zzzzzzzzzzz');
+    const packets = encodeLitterSnapshotPackets(7, state, Number.MAX_SAFE_INTEGER, prefix.length);
+    assert.ok(packets.length >= 2 && packets.length <= 3);
+    const bytes = packets.map(packet => Buffer.byteLength(prefix + packet));
+    assert.ok(bytes.every(size => size <= 1536), `分片单包大小：${bytes.join(',')}`);
+    assert.ok(bytes.reduce((sum, size) => sum + size, 0) / .3 <= 15 * 1024,
+        `分片流量超出15KiB/s预算：${bytes.join(',')}`);
+    const assembler = new LitterSnapshotFragmentAssembler();
+    assert.equal(assembler.accept(packets[1], 0), null);
+    assert.equal(assembler.accept(packets[1], 1), null);
+    if (packets.length === 3) assert.equal(assembler.accept(packets[2], 2), null);
+    assert.deepEqual(assembler.accept(packets[0], 3)?.state, state);
+    assert.equal(assembler.accept(packets[0], 4), null);
+    const expired = new LitterSnapshotFragmentAssembler();
+    assert.equal(expired.accept(packets[0], 0), null);
+    assert.equal(expired.accept(packets[1], 1105), null);
+});
+
+test('三片垃圾快照按房主和序号隔离，交叉包不能拼成场景', () => {
+    const state = litterState(18);
+    const raw = encodeLitterSnapshot(7, state, 42);
+    const a = raw.slice(0, 300);
+    const b = raw.slice(300, 600);
+    const c = raw.slice(600);
+    const assembler = new LitterSnapshotFragmentAssembler();
+    assert.equal(assembler.accept(`LF|7,16,0,3#${a}`, 0), null);
+    assert.equal(assembler.accept(`LF|6,16,1,3#${b}`, 1), null);
+    assert.equal(assembler.accept(`LF|7,16,1,3#${b}`, 2), null);
+    assert.deepEqual(assembler.accept(`LF|7,16,2,3#${c}`, 3)?.state, state);
+    assert.equal(assembler.accept(`LF|7,17,0,3#${a}`, 4), null);
+    assert.equal(assembler.accept(`LF|7,16,1,3#${b}`, 5), null);
+});
+
 test('整包序号支持旧格式读取与安全整数边界，非法序号不能降级成无序快照', () => {
     const race = sequence => encodeRaceSnapshot(0, [entry()], null, null, null, null, null, null, null, null, sequence);
     const litter = sequence => encodeLitterSnapshot(0, litterState(0), sequence);
@@ -528,7 +565,7 @@ test('an attributed P| or frame self cannot update another registered lane', () 
 });
 
 test('lobby protocol hello rejects missing or mixed versions', () => {
-    assert.equal(NET_RACE_PROTOCOL_VERSION, 105);
+    assert.equal(NET_RACE_PROTOCOL_VERSION, 106);
     const hello = decodeProtocolHello(encodeProtocolHello(4));
     assert.deepEqual(hello, { pos: 4, version: NET_RACE_PROTOCOL_VERSION });
     assert.equal(decodeProtocolHello('PV|4|bad'), null);

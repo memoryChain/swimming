@@ -71,6 +71,10 @@ export class CannonBrawlController {
     private appliedImpactMask = 0;
     private activeLaunch: CannonLaunch | null = null;
     private activeRemainingSeconds = 0;
+    private secondaryLaunch: CannonLaunch | null = null;
+    private secondaryRemainingSeconds = 0;
+    private secondsSinceLaunch = Number.POSITIVE_INFINITY;
+    private launchedCount = 0;
     private lastTargetLane = -1;
 
     constructor(
@@ -84,6 +88,8 @@ export class CannonBrawlController {
         private readonly finishSafeDistance: number = CANNON_BRAWL_TUNING.finishSafeDistance,
         // 独立规则调用可直接传空间坐标；比赛必须注入实际场景的折返换算。
         private readonly distanceToWorldX: (distance: number) => number = distance => distance,
+        private readonly maxConcurrentLaunches: 1 | 2 = 1,
+        private readonly minimumLaunchIntervalSeconds = 0,
     ) {}
 
     reset(): void {
@@ -92,6 +98,10 @@ export class CannonBrawlController {
         this.appliedImpactMask = 0;
         this.activeLaunch = null;
         this.activeRemainingSeconds = 0;
+        this.secondaryLaunch = null;
+        this.secondaryRemainingSeconds = 0;
+        this.secondsSinceLaunch = Number.POSITIVE_INFINITY;
+        this.launchedCount = 0;
         this.lastTargetLane = -1;
     }
 
@@ -100,15 +110,37 @@ export class CannonBrawlController {
         this.reset();
     }
 
+    /** 主导演截止后保留已经发射的水球，取消尚未开始的计划。 */
+    cancelPendingStrikesAfterCurrent(): void {
+        const previous = this.completedStrikeMask;
+        for (let id = 0; id < this.strikeTriggers.length; id++) {
+            if (this.activeLaunch?.strikeId === id || this.secondaryLaunch?.strikeId === id) continue;
+            this.completedStrikeMask |= 1 << id;
+        }
+        if (this.completedStrikeMask !== previous) this.revision++;
+    }
+
     update(dt: number, state: GameState, authoritative: boolean): void {
         if (state !== GameState.RACING) return;
         const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
-        if (this.activeLaunch) {
+        this.secondsSinceLaunch += step;
+        const primary = this.activeLaunch;
+        const secondary = this.secondaryLaunch;
+        if (primary) {
             this.activeRemainingSeconds = Math.max(0, this.activeRemainingSeconds - step);
-            if (authoritative && this.activeRemainingSeconds <= 0) this.resolveActiveStrike();
-            return;
         }
+        if (secondary) {
+            this.secondaryRemainingSeconds = Math.max(0, this.secondaryRemainingSeconds - step);
+        }
+        const primaryDue = !!primary && this.activeRemainingSeconds <= 0;
+        const secondaryDue = !!secondary && this.secondaryRemainingSeconds <= 0;
+        if (authoritative && primaryDue) this.resolveActiveStrike(primary!);
+        if (authoritative && secondaryDue
+            && (this.activeLaunch?.strikeId === secondary!.strikeId
+                || this.secondaryLaunch?.strikeId === secondary!.strikeId)) this.resolveActiveStrike(secondary!);
         if (!authoritative) return;
+        if ((this.activeLaunch ? 1 : 0) + (this.secondaryLaunch ? 1 : 0) >= this.maxConcurrentLaunches
+            || this.secondsSinceLaunch < this.minimumLaunchIntervalSeconds) return;
         const strikeId = this.nextStrikeId();
         if (strikeId < 0 || this.activeCount() <= 0
             || this.leaderDistance() < this.strikeTriggers[strikeId]) return;
@@ -124,9 +156,17 @@ export class CannonBrawlController {
     applyLaunch(launch: CannonLaunch): boolean {
         if (!isValidLaunch(launch) || launch.revision <= this.revision
             || launch.strikeId >= this.strikeTriggers.length) return false;
+        if (this.activeLaunch && (this.maxConcurrentLaunches !== 2 || this.secondaryLaunch)) return false;
         this.revision = launch.revision;
-        this.activeLaunch = { ...launch };
-        this.activeRemainingSeconds = launch.warningSeconds;
+        if (this.activeLaunch && this.maxConcurrentLaunches === 2 && !this.secondaryLaunch) {
+            this.secondaryLaunch = { ...launch };
+            this.secondaryRemainingSeconds = launch.warningSeconds;
+        } else if (!this.activeLaunch) {
+            this.activeLaunch = { ...launch };
+            this.activeRemainingSeconds = launch.warningSeconds;
+        } else return false;
+        this.secondsSinceLaunch = 0;
+        this.launchedCount++;
         this.lastTargetLane = this.nearestActiveLane(launch.targetZ);
         return true;
     }
@@ -143,14 +183,19 @@ export class CannonBrawlController {
         this.completedStrikeMask |= impactBit;
         this.appliedImpactMask |= impactBit;
         if (this.activeLaunch?.strikeId === impact.strikeId) {
-            this.activeLaunch = null;
-            this.activeRemainingSeconds = 0;
+            this.activeLaunch = this.secondaryLaunch;
+            this.activeRemainingSeconds = this.secondaryRemainingSeconds;
+            this.secondaryLaunch = null;
+            this.secondaryRemainingSeconds = 0;
+        } else if (this.secondaryLaunch?.strikeId === impact.strikeId) {
+            this.secondaryLaunch = null;
+            this.secondaryRemainingSeconds = 0;
         }
         return true;
     }
 
     isLatestImpact(impact: CannonImpact): boolean {
-        return impact.revision === this.revision && this.activeLaunch === null;
+        return impact.revision === this.revision;
     }
 
     applySnapshotState(state: CannonBrawlState): CannonSnapshotApplyResult {
@@ -206,6 +251,10 @@ export class CannonBrawlController {
         return this.activeLaunch;
     }
 
+    currentSecondaryLaunch(): CannonLaunch | null { return this.secondaryLaunch; }
+    currentSecondaryRemainingSeconds(): number { return this.secondaryRemainingSeconds; }
+    launchedStrikeCount(): number { return this.launchedCount; }
+
     currentRemainingSeconds(): number {
         return this.activeRemainingSeconds;
     }
@@ -231,39 +280,63 @@ export class CannonBrawlController {
     }
 
     threatForRacer(distance: number, lateral: number): 'core' | 'splash' | 'safe' {
-        const launch = this.activeLaunch;
-        if (!launch) return 'safe';
-        if (insideEllipse(
-            this.distanceToWorldX(distance) - this.distanceToWorldX(launch.targetDistance),
-            lateral - launch.targetZ,
-            CANNON_BRAWL_TUNING.coreAlongRadius,
-            CANNON_BRAWL_TUNING.coreLateralRadius,
-        )) return 'core';
-        return insideEllipse(
-            this.distanceToWorldX(distance) - this.distanceToWorldX(launch.targetDistance),
-            lateral - launch.targetZ,
-            CANNON_BRAWL_TUNING.splashAlongRadius,
-            CANNON_BRAWL_TUNING.splashLateralRadius,
-        ) ? 'splash' : 'safe';
+        let splash = false;
+        const worldX = this.distanceToWorldX(distance);
+        for (let index = 0; index < 2; index++) {
+            const launch = index === 0 ? this.activeLaunch : this.secondaryLaunch;
+            if (!launch) continue;
+            const along = worldX - this.distanceToWorldX(launch.targetDistance);
+            const across = lateral - launch.targetZ;
+            if (insideEllipse(along, across,
+                CANNON_BRAWL_TUNING.coreAlongRadius, CANNON_BRAWL_TUNING.coreLateralRadius)) return 'core';
+            if (insideEllipse(along, across,
+                CANNON_BRAWL_TUNING.splashAlongRadius, CANNON_BRAWL_TUNING.splashLateralRadius)) splash = true;
+        }
+        return splash ? 'splash' : 'safe';
     }
 
     targetZForAi(distance: number, currentZ: number, discipline: number): number | null {
-        const launch = this.activeLaunch;
-        if (!launch) return null;
-        const elapsed = CANNON_BRAWL_TUNING.warningSeconds - this.activeRemainingSeconds;
         const reactionDelay = 0.58 - Math.max(0, Math.min(1, discipline)) * 0.43;
-        if (elapsed < reactionDelay
-            || Math.abs(this.distanceToWorldX(distance) - this.distanceToWorldX(launch.targetDistance))
-                > CANNON_BRAWL_TUNING.splashAlongRadius + 2) return null;
+        const first = this.activeLaunch;
+        const second = this.secondaryLaunch;
+        const racerX = this.distanceToWorldX(distance);
+        const firstRelevant = !!first
+            && CANNON_BRAWL_TUNING.warningSeconds - this.activeRemainingSeconds >= reactionDelay
+            && Math.abs(racerX - this.distanceToWorldX(first.targetDistance))
+                <= CANNON_BRAWL_TUNING.splashAlongRadius + 2;
+        const secondRelevant = !!second
+            && CANNON_BRAWL_TUNING.warningSeconds - this.secondaryRemainingSeconds >= reactionDelay
+            && Math.abs(racerX - this.distanceToWorldX(second.targetDistance))
+                <= CANNON_BRAWL_TUNING.splashAlongRadius + 2;
+        const launch = firstRelevant ? first : secondRelevant ? second : null;
+        if (!launch) return null;
         const halfWidth = Math.max(0.8, this.poolWidth * 0.5 - 0.7);
         const margin = CANNON_BRAWL_TUNING.splashLateralRadius + CANNON_BRAWL_TUNING.aiSafetyMargin;
         const positiveTarget = Math.min(halfWidth, launch.targetZ + margin);
         const negativeTarget = Math.max(-halfWidth, launch.targetZ - margin);
         const positiveRoom = halfWidth - launch.targetZ;
         const negativeRoom = launch.targetZ + halfWidth;
-        if (positiveRoom > negativeRoom) return positiveTarget;
-        if (negativeRoom > positiveRoom) return negativeTarget;
-        return currentZ >= launch.targetZ ? positiveTarget : negativeTarget;
+        const preferred = positiveRoom > negativeRoom ? positiveTarget
+            : negativeRoom > positiveRoom ? negativeTarget
+                : currentZ >= launch.targetZ ? positiveTarget : negativeTarget;
+        const other = launch === first ? second : first;
+        if (!other || Math.abs(racerX - this.distanceToWorldX(other.targetDistance))
+            > CANNON_BRAWL_TUNING.splashAlongRadius + 2) return preferred;
+        if (Math.abs(preferred - other.targetZ) >= margin) return preferred;
+        let best = preferred;
+        let bestTravel = Number.POSITIVE_INFINITY;
+        for (let index = 0; index < 4; index++) {
+            const candidate = index === 0 ? negativeTarget : index === 1 ? positiveTarget
+                : index === 2 ? -halfWidth : halfWidth;
+            if (Math.abs(candidate - launch.targetZ) < margin
+                || Math.abs(candidate - other.targetZ) < margin) continue;
+            const travel = Math.abs(candidate - currentZ);
+            if (travel < bestTravel) {
+                best = candidate;
+                bestTravel = travel;
+            }
+        }
+        return best;
     }
 
     private createLaunch(strikeId: number): CannonLaunch | null {
@@ -283,7 +356,21 @@ export class CannonBrawlController {
             this.finishSafeDistance,
             Math.max(0, racer.distance + lead + rng.range(-0.35, 0.35)),
         );
-        const targetZ = Math.max(-halfWidth, Math.min(halfWidth, racer.lateral + rng.range(-0.16, 0.16)));
+        let targetZ = Math.max(-halfWidth, Math.min(halfWidth, racer.lateral + rng.range(-0.16, 0.16)));
+        // 双发之间至少留出一条横移通道；放不下时取消本发，不制造必中的封路。
+        if (this.activeLaunch) {
+            const separation = CANNON_BRAWL_TUNING.splashLateralRadius * 2 + 0.7;
+            const firstZ = this.activeLaunch.targetZ;
+            if (Math.abs(targetZ - firstZ) < separation) {
+                const negative = firstZ - separation;
+                const positive = firstZ + separation;
+                if (negative >= -halfWidth && positive <= halfWidth) {
+                    targetZ = Math.abs(targetZ - negative) < Math.abs(targetZ - positive) ? negative : positive;
+                } else if (negative >= -halfWidth) targetZ = negative;
+                else if (positive <= halfWidth) targetZ = positive;
+                else return null;
+            }
+        }
         this.lastTargetLane = targetLane;
         return {
             strikeId,
@@ -313,9 +400,7 @@ export class CannonBrawlController {
         return -1;
     }
 
-    private resolveActiveStrike(): void {
-        const launch = this.activeLaunch;
-        if (!launch) return;
+    private resolveActiveStrike(launch: CannonLaunch): void {
         let hitMask = 0;
         let knockedLane = -1;
         let bestCoreDistance = Number.POSITIVE_INFINITY;
@@ -362,7 +447,8 @@ export class CannonBrawlController {
 
     private nextStrikeId(): number {
         for (let id = 0; id < this.strikeTriggers.length; id++) {
-            if ((this.completedStrikeMask & (1 << id)) === 0) return id;
+            if ((this.completedStrikeMask & (1 << id)) === 0
+                && this.activeLaunch?.strikeId !== id && this.secondaryLaunch?.strikeId !== id) return id;
         }
         return -1;
     }

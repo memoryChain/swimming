@@ -1,6 +1,8 @@
 import type { PlayerCharacterId } from '../app/PlayerCharacterConfig';
 import type { RaceModeId } from './GameBalance';
 import type { WhirlpoolSpawnSelection } from './WhirlpoolBrawlRules';
+import { ENTERTAINMENT_TEST_COMBINATIONS, EntertainmentIntensity,
+    EntertainmentTestCombination, normalizeEntertainmentIntensity } from './EntertainmentIntensity';
 
 export type MainGameLaunchMode = 'race' | 'model-debug' | 'ai-debug' | 'underwater-debug';
 
@@ -13,9 +15,16 @@ export interface AiDebugSetup {
     opponentCount: 1 | 7;
     mixedCharacters: boolean;
     whirlpoolSelection: WhirlpoolSpawnSelection;
+    /** null 表示原规格回归；五档仅在本地调试比赛生效。 */
+    entertainmentIntensity?: EntertainmentIntensity | null;
+    entertainmentEventIntensities?: readonly EntertainmentIntensity[];
+    entertainmentTestCombination?: EntertainmentTestCombination | null;
+    raceDistance?: 200 | 400;
 }
 const pendingAiDebugSetup: AiDebugSetup = { characterId: 'cartonSwimmer6', level: 1, mode: 'beginner', seed: 20260913,
-    opponentCount: 7, mixedCharacters: true, whirlpoolSelection: 'random' };
+    opponentCount: 7, mixedCharacters: true, whirlpoolSelection: 'random', entertainmentIntensity: null,
+    entertainmentEventIntensities: [3, 3, 3, 3, 3, 3, 3], entertainmentTestCombination: null,
+    raceDistance: 200 };
 export function getAiDebugSetup(): Readonly<AiDebugSetup> { return pendingAiDebugSetup; }
 export function setAiDebugSetup(setup: AiDebugSetup) {
     pendingAiDebugSetup.giantWavePreset = setup.giantWavePreset === 'single' ? 'single' : 'three';
@@ -28,6 +37,12 @@ export function setAiDebugSetup(setup: AiDebugSetup) {
     pendingAiDebugSetup.whirlpoolSelection = setup.whirlpoolSelection === 'normal' || setup.whirlpoolSelection === 'super'
         ? setup.whirlpoolSelection
         : 'random';
+    pendingAiDebugSetup.entertainmentIntensity = normalizeEntertainmentIntensity(setup.entertainmentIntensity);
+    pendingAiDebugSetup.entertainmentEventIntensities = Array.from({ length: 7 }, (_, index) =>
+        normalizeEntertainmentIntensity(setup.entertainmentEventIntensities?.[index]) ?? 3);
+    pendingAiDebugSetup.entertainmentTestCombination = ENTERTAINMENT_TEST_COMBINATIONS.find(
+        preset => preset.id === setup.entertainmentTestCombination)?.id ?? null;
+    pendingAiDebugSetup.raceDistance = setup.raceDistance === 400 ? 400 : 200;
 }
 
 /** 只在本地 AI 测试赛使用；所有对手共用所选等级和智力，多角色沿用赛事随机阵容。 */

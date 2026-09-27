@@ -10,7 +10,7 @@
 - [就位截图](offline-buoy-ready.png)、[爆开截图](offline-buoy-pop.png)、[消耗后截图](offline-buoy-spent.png)、[七套共存截图](offline-buoy-seven.png)均为独立浏览器画面。
 - 命中当帧喷水和轻压，气球约 0.10 秒内爆开，底座约 0.30 秒下潜。已武装时入场高度最低为水面下 0.04m，且不等待槽位错开，避免有判定却不可见；未武装可继续水下扰动与展开。成熟快照直接恢复就位，已消耗快照不补声画。
 - 系带锚点为底座局部 (-0.32, 0.195, 0.05)m，源网格底环到锚点误差约 1e-8m；同源回退与导入网格保持同一局部坐标。晚加载只交换两块网格，保留气球展开／爆开状态。
-- 更新浮标二十组广播与同源图标，维持“喷水浮标”入口及原身份。未改水炮、C 水球、D 鲨鱼资源、命中控制器、协议或 B1／B2 池；任务前后保护文件哈希一致。
+- 更新浮标二十组广播与同源图标，维持“警示气球浮标”入口及原身份。未改水炮、C 水球、D 鲨鱼资源、命中控制器、协议或 B1／B2 池；任务前后保护文件哈希一致。
 - 最终娱乐回归 247／247、性能与生命周期 98／98、联机 45／45、E 专项 13／13、设置 5／5；专项包含七套连续二十轮节点／网格／材质稳定及音效静音／并发／晚加载验证。源模型六面、封闭边界、连接、正体积和原速状态已离线检查。
 - 指定类型检查、字体生成及检查（1,581 字符／276 文件）、纹理 fix／check（281 项）通过。现有 Creator 会话生成了新气球网格和短音元数据，主模型 UUID 保留；未启动／重启／截图 Creator。
 
@@ -68,7 +68,7 @@ npx.cmd --yes --package typescript@5.4.5 -c "node art/water-play-obstacles/audit
 | --- | --- | --- | --- |
 | 蓝白运动场水炮 | [WaterBallCannon.blend](WaterBallCannon.blend) | [WaterBallCannon.glb](../../assets/race/items/WaterBallCannon.glb) | [自包含离线预览](cannon-review.html) |
 | 蓝青飞行水球 | [CannonWaterBall.blend](CannonWaterBall.blend) | [CannonWaterBall.glb](../../assets/race/items/CannonWaterBall.glb) | [细节与镜头对照](cannon-polish-review.html) |
-| 气球喷水浮标 | [SprayBuoy.blend](SprayBuoy.blend) | [SprayBuoy.glb](../../assets/race/items/SprayBuoy.glb) | [自包含离线预览](buoy-review.html) |
+| 警示气球浮标 | [SprayBuoy.blend](SprayBuoy.blend) | [SprayBuoy.glb](../../assets/race/items/SprayBuoy.glb) | [自包含离线预览](buoy-review.html) |
 
 两个 HTML 均可直接用浏览器打开，无 CDN、外部图片或服务器依赖。可看原速／慢放、三种角度和时间轴；页面嵌入作者源六面图及 72px 图标。水炮画中画取当前实际方法的参数；浮标页的小窗只是离线近景，游戏没有浮标画中画。
 

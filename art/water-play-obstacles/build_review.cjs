@@ -53,7 +53,7 @@ for(const kind of ['cannon','buoy']){
     }
     const asset=kind==='cannon'?'WaterBallCannon':'SprayBuoy';
     const views=['front','back','left','right','top','bottom','review','icon'].map(view=>({view,url:'data:image/png;base64,'+fs.readFileSync(path.join(out,asset+'-'+view+'.png')).toString('base64')}));
-    const data={kind,title:kind==='cannon'?'运动场水炮':'气球喷水浮标',total,geometries,frames,crowdFrames,views,audit:JSON.parse(fs.readFileSync(path.join(out,'asset-audit.json'),'utf8'))[asset],
+    const data={kind,title:kind==='cannon'?'运动场水炮':'警示气球浮标',total,geometries,frames,crowdFrames,views,audit:JSON.parse(fs.readFileSync(path.join(out,'asset-audit.json'),'utf8'))[asset],
         popSound:kind==='buoy'?'data:audio/wav;base64,'+fs.readFileSync(path.join(out,'buoy_balloon_pop.wav')).toString('base64'):null,
         reference:JSON.parse(fs.readFileSync(path.join(root,'art/water-splash-b2/recovery-reference.json'),'utf8'))};
     fs.writeFileSync(path.join(out,kind+'-review.html'),template.replace('/*__DATA__*/',JSON.stringify(data)).replaceAll('__TITLE__',data.title));

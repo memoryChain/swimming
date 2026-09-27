@@ -6,6 +6,8 @@ export type WhirlpoolSpawn = {
     centerFraction: number;
     spin: -1 | 1;
     variant: WhirlpoolVariant;
+    radiusScale?: number;
+    forceScale?: number;
 };
 
 export type WhirlpoolVariant = 'normal' | 'super';
@@ -132,6 +134,29 @@ export function entertainmentWhirlpoolSpawn(
     }];
 }
 
+/** 五档测试使用独立种子布局；原规格的随机超级概率保持不变。 */
+export function entertainmentGradedWhirlpoolSpawns(
+    seed: number,
+    anchorDistance: number,
+    raceDistance: number,
+    count: 1 | 2,
+    radiusScale: number,
+    forceScale: number,
+    superCount: 0 | 1,
+): readonly WhirlpoolSpawn[] {
+    const first = entertainmentWhirlpoolSpawn(seed, anchorDistance, raceDistance, false)[0];
+    if (count === 1) return [{ ...first, radiusScale, forceScale }];
+    const secondDistance = superCount > 0
+        ? nextPoolCenterDistance(first.distance + 10, raceDistance - 8)
+        : first.distance + 14 <= raceDistance - 10 ? first.distance + 14 : null;
+    if (secondDistance === null) return [{ ...first, centerFraction: -0.18, radiusScale, forceScale }];
+    return [
+        { ...first, centerFraction: -0.18, radiusScale, forceScale },
+        { id: 1, distance: secondDistance, centerFraction: superCount > 0 ? 0.04 : 0.18,
+            spin: first.spin === 1 ? -1 : 1, variant: superCount > 0 ? 'super' : 'normal' },
+    ];
+}
+
 export const WHIRLPOOL_BRAWL_TUNING = {
     alongRadius: 5.2,
     lateralRadius: 4.2,
@@ -208,9 +233,11 @@ export function sampleWhirlpoolInfluence(
     for (const spawn of spawns) {
         const superVariant = spawn.variant === 'super';
         const alongRadius = Math.max(0.5, WHIRLPOOL_BRAWL_TUNING.alongRadius
-            * (superVariant ? WHIRLPOOL_SUPER_TUNING.alongRadiusScale : 1));
+            * (superVariant ? WHIRLPOOL_SUPER_TUNING.alongRadiusScale : 1)
+            * (spawn.radiusScale ?? 1));
         const lateralRadius = Math.max(0.5, WHIRLPOOL_BRAWL_TUNING.lateralRadius
-            * (superVariant ? WHIRLPOOL_SUPER_TUNING.lateralRadiusScale : 1));
+            * (superVariant ? WHIRLPOOL_SUPER_TUNING.lateralRadiusScale : 1)
+            * (spawn.radiusScale ?? 1));
         const baseCoreRadius = WHIRLPOOL_BRAWL_TUNING.lateralRadius
             * WHIRLPOOL_BRAWL_TUNING.coreRadiusRatio;
         const coreRadius = Math.max(0.05, Math.min(0.8,
@@ -279,15 +306,16 @@ export function sampleWhirlpoolInfluence(
                 * (superVariant ? WHIRLPOOL_SUPER_TUNING.coreBackwardScale : 1) * core;
         const lateralForce = radialLateral + tangentLateral;
 
-        out.forwardAcceleration += forward;
-        out.lateralAcceleration += lateralForce;
-        out.yawAcceleration += lateralForce * WHIRLPOOL_BRAWL_TUNING.yawAccelerationScale;
-        out.rollAcceleration += -lateralForce * WHIRLPOOL_BRAWL_TUNING.rollAccelerationScale;
+        const forceScale = spawn.forceScale ?? 1;
+        out.forwardAcceleration += forward * forceScale;
+        out.lateralAcceleration += lateralForce * forceScale;
+        out.yawAcceleration += lateralForce * forceScale * WHIRLPOOL_BRAWL_TUNING.yawAccelerationScale;
+        out.rollAcceleration += -lateralForce * forceScale * WHIRLPOOL_BRAWL_TUNING.rollAccelerationScale;
         if (capture > out.captureIntensity) {
             out.captureIntensity = capture;
             out.captureDrag = capture
                 * WHIRLPOOL_BRAWL_TUNING.capturePropulsionDrag
-                * (superVariant ? WHIRLPOOL_SUPER_TUNING.captureDragScale : 1);
+                * (superVariant ? WHIRLPOOL_SUPER_TUNING.captureDragScale : 1) * forceScale;
         }
         if (smoothFalloff > out.intensity) {
             out.intensity = smoothFalloff;

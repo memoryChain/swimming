@@ -53,6 +53,11 @@ export type LitterBrawlSchedule = Readonly<{
     landingLeadDistance: number;
 }>;
 
+export type LitterBrawlIntensitySettings = Readonly<{
+    itemsPerWave: number;
+    poolSize: number;
+}>;
+
 export const LITTER_BRAWL_INDEPENDENT_SCHEDULE: LitterBrawlSchedule = {
     waveDistances: LITTER_BRAWL_TUNING.waveDistances,
     landingLeadDistance: LITTER_BRAWL_TUNING.landingLeadDistance,
@@ -62,12 +67,16 @@ export const LITTER_BRAWL_INDEPENDENT_SCHEDULE: LitterBrawlSchedule = {
 export function buildEntertainmentLitterSchedule(
     anchorDistance: number,
     raceDistance: number,
+    waveCount?: number,
 ): LitterBrawlSchedule {
     const safeRaceDistance = Number.isFinite(raceDistance) ? Math.max(1, raceDistance) : 200;
     const safeAnchor = Number.isFinite(anchorDistance) ? Math.max(0, anchorDistance) : 0;
-    const offsets = safeRaceDistance >= 400
+    const defaultOffsets = safeRaceDistance >= 400
         ? LITTER_BRAWL_ENTERTAINMENT_TUNING.longWaveOffsets
         : LITTER_BRAWL_ENTERTAINMENT_TUNING.shortWaveOffsets;
+    const offsets = waveCount === undefined ? defaultOffsets
+        : Array.from({ length: Math.max(1, Math.min(6, Math.floor(waveCount))) }, (_, index) =>
+            index * (safeRaceDistance >= 400 ? 6 : 7));
     const maxTriggerDistance = Math.max(0, safeRaceDistance
         - LITTER_BRAWL_TUNING.landingLeadDistance
         - LITTER_BRAWL_ENTERTAINMENT_TUNING.finishSafetyDistance);
@@ -226,6 +235,7 @@ export class LitterBrawlController {
     private landingLeadDistance = LITTER_BRAWL_INDEPENDENT_SCHEDULE.landingLeadDistance;
     private readonly previousRacerCourseX: number[];
     private readonly previousRacerLateral: number[];
+    private readonly itemsPerWave: number;
 
     constructor(
         private readonly laneCount: number,
@@ -237,10 +247,12 @@ export class LitterBrawlController {
         schedule: LitterBrawlSchedule = LITTER_BRAWL_INDEPENDENT_SCHEDULE,
         private readonly isWaveSafe?: LitterWaveSafetyCheck,
         private readonly onContact?: (contact: LitterContact) => void,
+        intensity?: LitterBrawlIntensitySettings,
     ) {
         this.randomSeed = ((seed ^ 0x6c697474) >>> 0) || 0x9e3779b9;
         this.randomState = this.randomSeed;
-        this.slots = Array.from({ length: LITTER_BRAWL_TUNING.poolSize }, (_, id): LitterSlot => ({
+        this.itemsPerWave = intensity?.itemsPerWave ?? LITTER_BRAWL_TUNING.waveCount;
+        this.slots = Array.from({ length: intensity?.poolSize ?? LITTER_BRAWL_TUNING.poolSize }, (_, id): LitterSlot => ({
             id,
             active: false,
             generation: 0,
@@ -322,6 +334,8 @@ export class LitterBrawlController {
     activeCount(): number {
         return this.activeSlotCount;
     }
+
+    spawnedItemCount(): number { return this.spawnOrder; }
 
     cancelledCount(): number {
         return this.cancelledWaveCount;
@@ -605,7 +619,7 @@ export class LitterBrawlController {
         if (this.nextWave >= this.waveDistances.length
             || leaderDistance < this.waveDistances[this.nextWave]) return;
         // 对象池暂满只意味着旧垃圾尚未完成下沉，不应把后续正式波次误判为安全取消。
-        if (this.freeSlotCount() < LITTER_BRAWL_TUNING.waveCount) {
+        if (this.freeSlotCount() < this.itemsPerWave) {
             this.spawnRetryRemaining = LITTER_BRAWL_TUNING.spawnSafetyRetrySeconds;
             return;
         }
@@ -635,7 +649,7 @@ export class LitterBrawlController {
     }
 
     private spawnWave(wave: number): boolean {
-        if (this.freeSlotCount() < LITTER_BRAWL_TUNING.waveCount) return false;
+        if (this.freeSlotCount() < this.itemsPerWave) return false;
         const halfWidth = this.usableHalfWidth();
         const randomStateBeforePlan = this.randomState;
         const safeCenter = lerp(-halfWidth + LITTER_BRAWL_TUNING.safeHalfWidth,
@@ -648,20 +662,29 @@ export class LitterBrawlController {
             return false;
         }
         const candidates = this.lateralCandidates(safeCenter, halfWidth);
-        if (candidates.length < LITTER_BRAWL_TUNING.waveCount) {
+        if (this.itemsPerWave > LITTER_BRAWL_TUNING.waveCount && candidates.length > 0) {
+            // 高档把同一横向候选复用到错开的前后排；保留真实安全通道。
+            const baseCount = candidates.length;
+            while (candidates.length < this.itemsPerWave) {
+                candidates.push(candidates[candidates.length % baseCount]);
+            }
+        }
+        if (candidates.length < this.itemsPerWave) {
             this.randomState = randomStateBeforePlan;
             return false;
         }
         const bottleVariantOffset = Math.floor(this.nextRandom() * 3);
         const formationVariant = Math.floor(this.nextRandom() * 3);
         let bottleOrdinal = 0;
-        for (let index = 0; index < LITTER_BRAWL_TUNING.waveCount; index++) {
+        for (let index = 0; index < this.itemsPerWave; index++) {
             const slot = this.nextSlot();
             // 波次必须完整生成；前面的容量检查保证这里不会出现半波垃圾。
             if (!slot) return false;
             const candidateIndex = Math.min(candidates.length - 1, Math.floor(this.nextRandom() * candidates.length));
             const lateral = candidates.splice(candidateIndex, 1)[0];
-            const kind: LitterKind = index === 1 || index === 4 ? 'soft' : 'rigid';
+            const kind: LitterKind = this.itemsPerWave === LITTER_BRAWL_TUNING.waveCount
+                ? (index === 1 || index === 4 ? 'soft' : 'rigid')
+                : (index >= Math.floor(this.itemsPerWave * 2 / 3) ? 'soft' : 'rigid');
             const localSpawnOrder = this.spawnOrder++;
             slot.active = true;
             this.activeSlotCount++;
@@ -811,14 +834,20 @@ export class LitterBrawlController {
     }
 
     private burstDelayForSpawnOrder(spawnOrder: number): number {
-        const indexInWave = Math.max(0, spawnOrder) % LITTER_BRAWL_TUNING.waveCount;
+        const indexInWave = Math.max(0, spawnOrder) % this.itemsPerWave;
         return Math.floor(indexInWave / 2) * LITTER_BRAWL_TUNING.burstGroupIntervalSeconds;
     }
 
     private formationAlongOffset(variant: number, index: number): number {
-        if (variant === 0) return (index - 2.5) * 0.34;
-        if (variant === 1) return (Math.floor(index / 2) - 1) * 0.72 + (index % 2 === 0 ? -0.14 : 0.14);
-        return (index % 2 === 0 ? -0.65 : 0.65) + (Math.floor(index / 2) - 1) * 0.18;
+        if (this.itemsPerWave === LITTER_BRAWL_TUNING.waveCount) {
+            if (variant === 0) return (index - 2.5) * 0.34;
+            if (variant === 1) return (Math.floor(index / 2) - 1) * 0.72 + (index % 2 === 0 ? -0.14 : 0.14);
+            return (index % 2 === 0 ? -0.65 : 0.65) + (Math.floor(index / 2) - 1) * 0.18;
+        }
+        const pairs = Math.ceil(this.itemsPerWave / 2);
+        const row = Math.floor(index / 2) - (pairs - 1) * 0.5;
+        return row * (variant === 0 ? 0.72 : variant === 1 ? 0.8 : 0.88)
+            + (index % 2 === 0 ? -0.16 : 0.16);
     }
 
     private beginRetirement(slot: LitterSlot): void {

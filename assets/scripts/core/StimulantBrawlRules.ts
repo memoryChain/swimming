@@ -52,12 +52,16 @@ export function buildEntertainmentStimulantSchedule(
     anchorDistance: number,
     raceDistance = 200,
     courseLength = 50,
+    waveCount?: number,
+    itemsPerWave = STIMULANT_BRAWL_TUNING.itemsPerWave,
 ): StimulantSpawn[] {
     const longRace = raceDistance >= 400;
     const lastAnchor = longRace ? 365 : 175;
     const lastSpawn = longRace ? 390 : 194;
     const anchor = Math.max(0, Math.min(lastAnchor, Number.isFinite(anchorDistance) ? anchorDistance : 0));
-    const offsets = longRace ? [5, 13, 21, 29] : [6, 19];
+    const offsets = waveCount === undefined ? (longRace ? [5, 13, 21, 29] : [6, 19])
+        : Array.from({ length: Math.max(1, Math.min(6, Math.floor(waveCount))) }, (_, index) =>
+            (longRace ? 5 : 6) + index * (longRace ? 8 : 13));
     const distances = keepEntertainmentSpawnsClearOfTurnWalls(
         offsets.map(offset => Math.min(lastSpawn, anchor + offset)),
         anchor,
@@ -65,7 +69,7 @@ export function buildEntertainmentStimulantSchedule(
         courseLength,
         raceDistance,
     );
-    return buildScheduleAtDistances(seed ^ 0x454e5453, laneCount, distances);
+    return buildScheduleAtDistances(seed ^ 0x454e5453, laneCount, distances, itemsPerWave);
 }
 
 /**
@@ -131,6 +135,7 @@ function buildScheduleAtDistances(
     seed: number,
     laneCount: number,
     distances: readonly number[],
+    itemsPerWave = STIMULANT_BRAWL_TUNING.itemsPerWave,
 ): StimulantSpawn[] {
     const rng = new SeededRandom((seed ^ 0x51a7e11d) >>> 0);
     const kindRng = new SeededRandom((seed ^ 0x43414c4d) >>> 0);
@@ -145,7 +150,7 @@ function buildScheduleAtDistances(
         const kind = waveKinds[publicWave];
         const lanes = Array.from({ length: safeLaneCount }, (_, index) => index);
         rng.shuffle(lanes);
-        const count = Math.min(STIMULANT_BRAWL_TUNING.itemsPerWave, safeLaneCount);
+        const count = Math.min(Math.max(1, Math.floor(itemsPerWave)), safeLaneCount);
         let selected = lanes.slice(0, count);
         let laneKey = selected.slice().sort((a, b) => a - b).join(',');
         if (laneKey === previousLaneKey && safeLaneCount > count) {

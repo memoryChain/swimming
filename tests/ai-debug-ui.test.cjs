@@ -166,7 +166,7 @@ test('对手人数、混合阵容和单角色设置提交到启动配置，切�
     assert.equal(starts, 2);
 });
 
-test('模式测试页签列出八个单项娱乐模式，切换不重建并以固定满员阵容启动', () => {
+test('模式测试页签列出七合一及八个单项模式，切换不重建并以固定满员阵容启动', () => {
     const { Node, Label, load } = fixture();
     const { getAiDebugSetup } = load('core/GameLaunchOptions');
     const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
@@ -194,11 +194,10 @@ test('模式测试页签列出八个单项娱乐模式，切换不重建并以�
 
     modeTab.click();
     const choices = modeContent.children.filter(node => node.name.startsWith('ModeChoice'));
-    assert.equal(choices.length, 8);
+    assert.equal(choices.length, 9);
     assert.deepEqual(choices.map(node => node.getChildByName('Label').getComponent(Label).string), [
-        '心跳苏打大乱斗', '充气玩具鲨', '漩涡冲浪赛', '水球点名', '定时水球传递', '喷水浮标', '杂物漂流大乱斗', '巨浪冲浪',
+        '娱乐模式', '心跳苏打大乱斗', '充气玩具鲨', '漩涡冲浪赛', '水球点名', '定时水球传递', '警示气球浮标', '杂物漂流大乱斗', '巨浪冲浪',
     ]);
-    assert.equal(choices.some(node => node.getChildByName('Label').getComponent(Label).string === '娱乐模式'), false);
     for (const choice of choices) {
         choice.click();
         assert.equal(choices.filter(node => node.getChildByName('Selected').active).length, 1);
@@ -211,6 +210,57 @@ test('模式测试页签列出八个单项娱乐模式，切换不重建并以�
     assert.equal(getAiDebugSetup().mode, 'giant-wave-brawl');
     assert.equal(getAiDebugSetup().opponentCount, 7);
     assert.equal(getAiDebugSetup().mixedCharacters, true);
+});
+
+test('七合一可逐项设强度、固定组合与四百米，切档不重建控件', () => {
+    const { Node, Label, load } = fixture();
+    const { getAiDebugSetup } = load('core/GameLaunchOptions');
+    const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
+    const root = new Node('Panel'); let starts = 0;
+    buildAiDebugSetupPicker(root, () => starts++, emptyCurrencyDebug());
+    findNode(root, 'ModeTestTab').click();
+    const nodes = descendants(root), listeners = nodes.map(node => node.events.size);
+    const intensity = findNode(root, 'IntensityChoice');
+    const combination = findNode(root, 'CombinationChoice');
+    const event = findNode(root, 'EventChoice');
+    const level = findNode(root, 'EventLevelChoice');
+    for (let i = 0; i < 5; i++) intensity.click();
+    combination.click(); combination.click();
+    event.click(); event.click();
+    assert.match(level.getChildByName('Label').getComponent(Label).string, /漩涡：5 档/);
+    level.click();
+    assert.match(level.getChildByName('Label').getComponent(Label).string, /漩涡：4 档/);
+    findNode(root, 'DistanceChoice').click();
+    assert.deepEqual(descendants(root), nodes);
+    assert.deepEqual(nodes.map(node => node.events.size), listeners);
+    findNode(root, 'ModeStart').click();
+    const setup = getAiDebugSetup();
+    assert.equal(starts, 1);
+    assert.equal(setup.mode, 'entertainment-brawl');
+    assert.equal(setup.entertainmentIntensity, 5);
+    assert.equal(setup.entertainmentEventIntensities[2], 4);
+    assert.equal(setup.entertainmentTestCombination, 'litter-whirlpool');
+    assert.equal(setup.raceDistance, 400);
+});
+
+test('五档比赛统计限频并在隐藏后停止采样和文字写入', () => {
+    const { Node, Label, load } = fixture();
+    const { EntertainmentIntensityDebugHud } = load('ui/EntertainmentIntensityDebugHud');
+    const hud = new EntertainmentIntensityDebugHud();
+    const root = new Node('RaceHud');
+    hud.build(root, 1280, 720);
+    const labelNode = findNode(root, 'EntertainmentIntensityStats');
+    const label = labelNode.getComponent(Label);
+    assert.equal(hud.consumeSample(0.1, true), false);
+    assert.equal(hud.consumeSample(0.1, true), true);
+    hud.present(6, 5, '杂物', 45, 15, 15, 0);
+    const text = label.string;
+    assert.match(text, /计划45 已触发15 在场15\/峰值15/);
+    assert.equal(hud.consumeSample(0.01, true), false);
+    labelNode.active = false;
+    assert.equal(hud.consumeSample(1, true), false);
+    hud.present(6, 5, '杂物', 45, 30, 30, 0);
+    assert.equal(label.string, text);
 });
 
 test('货币调试页可分别增减两种货币、切换数额并保持节点稳定', async () => {
@@ -266,15 +316,15 @@ test('巨浪预设与漩涡选项互斥，反复切换保持节点并提交单�
     findNode(root, 'ModeTestTab').click();
     const nodes = descendants(root), listeners = nodes.map(n => n.events.size);
     for (let i = 0; i < 40; i++) {
-        findNode(root, 'ModeChoice7').click();
+        findNode(root, 'ModeChoice8').click();
         assert.equal(findNode(root, 'GiantWaveOptions').activeInHierarchy, true);
         assert.equal(findNode(root, 'WhirlpoolOptions').activeInHierarchy, false);
         findNode(root, 'WavePreset1').click(); findNode(root, 'WavePreset1').click();
-        findNode(root, 'ModeChoice2').click();
+        findNode(root, 'ModeChoice3').click();
         assert.equal(findNode(root, 'GiantWaveOptions').activeInHierarchy, false);
         assert.equal(findNode(root, 'WhirlpoolOptions').activeInHierarchy, true);
     }
-    findNode(root, 'ModeChoice7').click();
+    findNode(root, 'ModeChoice8').click();
     assert.equal(findNode(root, 'WavePreset1').getChildByName('Selected').active, true);
     assert.deepEqual(descendants(root), nodes);
     assert.deepEqual(nodes.map(n => n.events.size), listeners);
@@ -291,7 +341,7 @@ test('漩涡模式测试可选纯随机、小漩涡或大漩涡并保留选择',
     findNode(root, 'ModeTestTab').click();
     const options = findNode(root, 'WhirlpoolOptions');
     assert.equal(options.activeInHierarchy, false);
-    findNode(root, 'ModeChoice2').click();
+    findNode(root, 'ModeChoice3').click();
     assert.equal(options.activeInHierarchy, true);
     const choices = options.children.filter(node => node.name.startsWith('WhirlpoolSelection'));
     assert.deepEqual(choices.map(node => node.getChildByName('Label').getComponent(Label).string), [
@@ -301,9 +351,9 @@ test('漩涡模式测试可选纯随机、小漩涡或大漩涡并保留选择',
     choices[2].click();
     assert.equal(choices.filter(node => node.getChildByName('Selected').active).length, 1);
     assert.equal(choices[2].getChildByName('Selected').active, true);
-    findNode(root, 'ModeChoice1').click();
-    assert.equal(options.activeInHierarchy, false);
     findNode(root, 'ModeChoice2').click();
+    assert.equal(options.activeInHierarchy, false);
+    findNode(root, 'ModeChoice3').click();
     assert.equal(options.activeInHierarchy, true);
     assert.equal(choices[2].getChildByName('Selected').active, true);
     findNode(root, 'ModeStart').click();

@@ -66,6 +66,8 @@ export const MINEFIELD_TUNING = {
 
 const ANCHOR_X = [6.5, 12.5, 19.5, 27, 34.5, 41, 46] as const;
 const ANCHOR_Z_RATIOS = [-0.54, 0.34, -0.12, 0.58, -0.4, 0.1, 0.46] as const;
+const INTENSE_ANCHOR_X = [...ANCHOR_X, 9, 16, 23, 37, 44] as const;
+const INTENSE_ANCHOR_Z_RATIOS = [...ANCHOR_Z_RATIOS, 0.65, -0.65, 0.02, -0.22, 0.22] as const;
 const SLOT_WAVE_BITS = 2;
 const MAX_SLOT_WAVE = 3;
 
@@ -82,6 +84,7 @@ export class MinefieldBrawlController {
     private elapsed = 0;
     private waveIndex = 0;
     private activeMineCount = 0;
+    private armedOnceCount = 0;
     private lastSnapshotRevision = -1;
     private lastSnapshotElapsed = -1;
     private readonly mineStates: MinefieldMineState[] = [];
@@ -106,9 +109,10 @@ export class MinefieldBrawlController {
     ) {
         const random = new SeededRandom((seed ^ 0x6d696e65) >>> 0);
         const halfWidth = Math.max(1, poolWidth * 0.5 - 0.8);
-        const xOrder = random.shuffle([...ANCHOR_X]);
-        const zOrder = random.shuffle([...ANCHOR_Z_RATIOS]);
-        const count = Math.max(1, Math.min(ANCHOR_X.length, Math.floor(mineCount)));
+        const count = Math.max(1, Math.min(INTENSE_ANCHOR_X.length, Math.floor(mineCount)));
+        const xOrder = random.shuffle([...(count <= ANCHOR_X.length ? ANCHOR_X : INTENSE_ANCHOR_X)]);
+        const zOrder = random.shuffle([...(count <= ANCHOR_Z_RATIOS.length
+            ? ANCHOR_Z_RATIOS : INTENSE_ANCHOR_Z_RATIOS)]);
         let candidates = xOrder.map((anchorX, index) => ({
             anchorX,
             anchorZ: zOrder[index % zOrder.length] * halfWidth,
@@ -145,7 +149,8 @@ export class MinefieldBrawlController {
         });
         for (let wave = 1; wave <= this.waveTriggerDistances.length; wave++) {
             const waveRandom = new SeededRandom((seed ^ 0x6d696e65 ^ Math.imul(wave, 0x9e3779b1)) >>> 0);
-            const waveZOrder = waveRandom.shuffle([...ANCHOR_Z_RATIOS]);
+            const waveZOrder = waveRandom.shuffle([...(count <= ANCHOR_Z_RATIOS.length
+                ? ANCHOR_Z_RATIOS : INTENSE_ANCHOR_Z_RATIOS)]);
             const lateral: number[] = [];
             const phaseAlong: number[] = [];
             const phaseLateral: number[] = [];
@@ -211,6 +216,7 @@ export class MinefieldBrawlController {
     }
 
     mines(): readonly MinefieldMineState[] { return this.mineStates; }
+    armedMineCount(): number { return this.armedOnceCount; }
 
     snapshotState(): MinefieldSnapshotState {
         let activeMask = 0;
@@ -418,9 +424,11 @@ export class MinefieldBrawlController {
      * 只有房主确认扩大后的出生安全区连续清空后才启用，避免刷新同帧直接爆炸。
      */
     private resetSpawnSafety(): void {
+        this.armedOnceCount = 0;
         for (let id = 0; id < this.mineStates.length; id++) {
             const mine = this.mineStates[id];
             mine.armed = mine.active && !this.isSpawnBlocked(mine);
+            if (mine.armed) this.armedOnceCount++;
             this.spawnClearSeconds[id] = 0;
         }
     }
@@ -435,7 +443,10 @@ export class MinefieldBrawlController {
             }
             const clearSeconds = this.spawnClearSeconds[id] + dt;
             this.spawnClearSeconds[id] = clearSeconds;
-            if (clearSeconds >= MINEFIELD_TUNING.spawnClearSeconds) mine.armed = true;
+            if (clearSeconds >= MINEFIELD_TUNING.spawnClearSeconds) {
+                mine.armed = true;
+                this.armedOnceCount++;
+            }
         }
     }
 
