@@ -108,6 +108,7 @@ export class MinefieldBrawlController {
         exclusionZone: MinefieldExclusionZone | null = null,
         private readonly waveTriggerDistances: readonly number[] = [],
         plannedAnchors?: readonly ObstacleBuoyAnchor[],
+        private readonly stagedBatchCounts?: readonly number[],
     ) {
         const random = new SeededRandom((seed ^ 0x6d696e65) >>> 0);
         const halfWidth = Math.max(1, poolWidth * 0.5 - 0.8);
@@ -139,7 +140,7 @@ export class MinefieldBrawlController {
             this.mineStates.push({
                 id,
                 generation: 0,
-                active: true,
+                active: !stagedBatchCounts,
                 armed: false,
                 courseX: anchorX,
                 lateral: anchorZ,
@@ -161,7 +162,7 @@ export class MinefieldBrawlController {
             const phaseAlong: number[] = [];
             const phaseLateral: number[] = [];
             for (let id = 0; id < count; id++) {
-                lateral.push(waveZOrder[id % waveZOrder.length] * halfWidth);
+                lateral.push(stagedBatchCounts ? this.anchorLateral[id] : waveZOrder[id % waveZOrder.length] * halfWidth);
                 phaseAlong.push(waveRandom.range(0, Math.PI * 2));
                 phaseLateral.push(waveRandom.range(0, Math.PI * 2));
             }
@@ -169,7 +170,7 @@ export class MinefieldBrawlController {
         }
         this.previousRacerCourseX = new Array(laneCount).fill(Number.NaN);
         this.previousRacerLateral = new Array(laneCount).fill(Number.NaN);
-        this.activeMineCount = this.mineStates.length;
+        this.activeMineCount = stagedBatchCounts ? 0 : this.mineStates.length;
         this.updateMinePositions();
         this.resetSpawnSafety();
     }
@@ -179,12 +180,13 @@ export class MinefieldBrawlController {
         this.impactEvents.reset();
         this.elapsed = 0;
         this.waveIndex = 0;
-        this.activeMineCount = this.mineStates.length;
+        this.activeMineCount = this.stagedBatchCounts ? 0 : this.mineStates.length;
+        this.armedOnceCount = 0;
         this.lastSnapshotRevision = -1;
         this.lastSnapshotElapsed = -1;
         for (const mine of this.mineStates) {
             mine.generation = 0;
-            mine.active = true;
+            mine.active = !this.stagedBatchCounts;
             mine.armed = false;
         }
         this.applyWaveLayoutToAllSlots(0);
@@ -407,9 +409,15 @@ export class MinefieldBrawlController {
         if (nextWave <= this.waveIndex || nextWave >= this.waveLayouts.length) return;
         this.waveIndex = nextWave;
         this.revision++;
+        let firstNewSlot = 0;
+        let lastNewSlot = this.mineStates.length;
+        if (this.stagedBatchCounts) {
+            for (let wave = 0; wave < nextWave - 1; wave++) firstNewSlot += this.stagedBatchCounts[wave] ?? 0;
+            lastNewSlot = Math.min(this.mineStates.length, firstNewSlot + (this.stagedBatchCounts[nextWave - 1] ?? 0));
+        }
         for (let id = 0; id < this.mineStates.length; id++) {
             const mine = this.mineStates[id];
-            if (mine.active) continue;
+            if (mine.active || (this.stagedBatchCounts && (id < firstNewSlot || id >= lastNewSlot))) continue;
             this.configureSlotForWave(id, nextWave);
             mine.active = true;
             mine.armed = false;

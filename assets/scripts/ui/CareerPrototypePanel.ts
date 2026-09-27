@@ -5,6 +5,7 @@ import { LEAGUES, cupName, roundName, SoloSource, RaceRule } from '../progressio
 import { setSoloRaceTicket, consumeSoloReturn } from '../progression/SoloRaceSession';
 import { getRaceModeConfig, RaceModeId, setRaceDifficulty, setSoloRaceDistance } from '../core/GameBalance';
 import { SeededRandom } from '../core/SharedRNG';
+import { getEntertainmentRaceGrade, setEntertainmentRaceGrade } from '../core/GameLaunchOptions';
 import { makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { styleCurrencyNumberLabel, styleProjectUiLabel } from './ProjectUiFonts';
 import { careerArt, careerButtonFeedback } from './CareerUiArt';
@@ -19,6 +20,7 @@ export class CareerPrototypePanel {
     private source: 'league' | 'cup' = 'league';
     private distance = PlayerData.profile.career.quick.distance;
     private rule = PlayerData.profile.career.quick.rule;
+    private entertainmentGrade = getEntertainmentRaceGrade();
     private busy = false;
     private confirmAbandon = false;
     private status = '';
@@ -92,6 +94,11 @@ export class CareerPrototypePanel {
             tier: value => { if (value >= 0 && value < LEAGUES.length && this.tier !== value) { this.tier = value; this.confirmAbandon = false; this.status = ''; this.refresh(); } },
             distance: value => { if (this.distance !== value) { this.distance = value; this.refresh(); } },
             rule: value => this.setRule(value),
+            entertainmentGrade: () => {
+                this.entertainmentGrade = this.entertainmentGrade === 5 ? 1 : (this.entertainmentGrade + 1) as 1 | 2 | 3 | 4 | 5;
+                setEntertainmentRaceGrade(this.entertainmentGrade);
+                this.refresh();
+            },
             start: source => { void this.begin(source ?? (this.screen === 'quick' ? 'quick' : 'league')); },
             cancelAbandon: () => { this.confirmAbandon = false; this.refresh(); },
             abandon: () => {
@@ -163,7 +170,7 @@ export class CareerPrototypePanel {
                 : points < 100 ? `再获${100 - points}积分，开放晋级杯` : '晋级杯已开放，前往挑战');
         } else {
             this.page.refresh({ screen: this.screen, source: this.source, tier: this.tier,
-                characterId: id, distance: this.distance, rule: this.rule, busy: this.busy,
+                characterId: id, distance: this.distance, rule: this.rule, entertainmentGrade: this.entertainmentGrade, busy: this.busy,
                 confirmAbandon: this.confirmAbandon, status: this.status, profile: p });
         }
         const visible = this.screen !== 'home';

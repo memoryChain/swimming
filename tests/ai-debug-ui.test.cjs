@@ -71,6 +71,44 @@ const emptyCurrencyDebug = () => ({
     adjust: async () => ({ coins: 0, breakthroughGems: 0 }),
 });
 
+test('AI 测试身份在场景创建前生效，整局事件不会读取快速比赛档位', () => {
+    const tsPath = process.env.TYPESCRIPT_PATH || process.env.PATH.split(path.delimiter)
+        .map(p => path.resolve(p, '../typescript/lib/typescript.js')).find(p => fs.existsSync(p));
+    const ts = require(tsPath);
+    const file = path.resolve(__dirname, '../assets/scripts/core/GameManager.ts');
+    const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
+    const cls = source.statements.find(node => ts.isClassDeclaration(node) && node.name.text === 'GameManager');
+    const onLoad = cls.members.find(node => node.name?.getText(source) === 'onLoad');
+    const code = ts.transpileModule(`class Fixture { ${onLoad.getText(source)} }; Fixture`, {
+        compilerOptions: { target: ts.ScriptTarget.ES2020 },
+    }).outputText;
+    let launchConsumed = 0;
+    let modeAtSceneBuild = null;
+    const Fixture = vm.runInNewContext(code, {
+        game: { frameRate: 0 }, Layers: { Enum: { UI_2D: 25 } }, console: { log() {} },
+        loadSavedTuningAsync: callback => callback(),
+        loadSampledActionsForRace: callback => callback(null),
+        consumeMainGameLaunchMode: () => { launchConsumed++; return 'ai-debug'; },
+        getAiDebugDifficulty: () => 0.75,
+        getRaceDifficultyConfig: () => ({ id: 'entertainment-brawl' }),
+        logTextureFormatDiagnostics() {}, LoadingOverlay: { hide() {} },
+    });
+    const game = new Fixture();
+    game.node = { layer: 0 };
+    game._aiDebugMode = false;
+    game._aiDebugDifficulty = 0.8;
+    game.scheduleOnce = callback => callback();
+    game.buildScene = callback => { modeAtSceneBuild = game._aiDebugMode; callback(); };
+    for (const name of ['registerEvents', 'debug', 'applyAiDebugHud', 'startGame']) {
+        game[name] = () => {};
+    }
+    game.paintError = error => { throw error; };
+    game.onLoad();
+    assert.equal(modeAtSceneBuild, true);
+    assert.equal(game._aiDebugDifficulty, 0.75);
+    assert.equal(launchConsumed, 1);
+});
+
 test('测试入口反复切换角色等级赛程不增加节点或监听，启动只提交一次', () => {
     const { Node, Label, load } = fixture();
     const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
@@ -212,7 +250,7 @@ test('模式测试页签列出娱乐模式及七个单项模式，切换不重�
     assert.equal(getAiDebugSetup().mixedCharacters, true);
 });
 
-test('七合一可逐项设强度、固定组合与四百米，切档不重建控件', () => {
+test('综合娱乐整局与单项测试互斥，切换保留档位且不重建控件', () => {
     const { Node, Label, load } = fixture();
     const { getAiDebugSetup } = load('core/GameLaunchOptions');
     const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
@@ -220,16 +258,39 @@ test('七合一可逐项设强度、固定组合与四百米，切档不重建�
     buildAiDebugSetupPicker(root, () => starts++, emptyCurrencyDebug());
     findNode(root, 'ModeTestTab').click();
     const nodes = descendants(root), listeners = nodes.map(node => node.events.size);
+    const route = findNode(root, 'EntertainmentTestRoute');
+    const grade = findNode(root, 'EntertainmentRaceGrade');
     const intensity = findNode(root, 'IntensityChoice');
     const combination = findNode(root, 'CombinationChoice');
     const event = findNode(root, 'EventChoice');
     const level = findNode(root, 'EventLevelChoice');
-    for (let i = 0; i < 5; i++) intensity.click();
+    assert.equal(grade.active, true);
+    assert.equal(intensity.active, false);
+    assert.match(route.getChildByName('Label').getComponent(Label).string, /整局分级/);
+    assert.match(findNode(root, 'ModeStart').getChildByName('Label').getComponent(Label).string, /整局 3 档/);
+    grade.click();
+    assert.match(grade.getChildByName('Label').getComponent(Label).string, /整局强度 4 档/);
+    assert.match(findNode(root, 'ModeStart').getChildByName('Label').getComponent(Label).string, /整局 4 档/);
+    route.click();
+    assert.equal(grade.active, false);
+    assert.equal(intensity.active, true);
+    assert.match(route.getChildByName('Label').getComponent(Label).string, /单项强度测试/);
+    assert.match(findNode(root, 'ModeStart').getChildByName('Label').getComponent(Label).string, /单项强度/);
+    intensity.click(); intensity.click();
     combination.click(); combination.click();
     event.click(); event.click();
     assert.match(level.getChildByName('Label').getComponent(Label).string, /漩涡：5 档/);
     level.click();
     assert.match(level.getChildByName('Label').getComponent(Label).string, /漩涡：4 档/);
+    route.click();
+    assert.equal(grade.active, true);
+    assert.equal(intensity.active, false);
+    assert.equal(event.active, false);
+    assert.equal(combination.active, false);
+    assert.match(grade.getChildByName('Label').getComponent(Label).string, /整局强度 4 档/);
+    route.click();
+    assert.equal(intensity.active, true);
+    assert.match(intensity.getChildByName('Label').getComponent(Label).string, /逐项强度配置/);
     findNode(root, 'DistanceChoice').click();
     assert.deepEqual(descendants(root), nodes);
     assert.deepEqual(nodes.map(node => node.events.size), listeners);
@@ -238,9 +299,33 @@ test('七合一可逐项设强度、固定组合与四百米，切档不重建�
     assert.equal(starts, 1);
     assert.equal(setup.mode, 'entertainment-brawl');
     assert.equal(setup.entertainmentIntensity, 5);
+    assert.equal(setup.entertainmentRaceGrade, 4);
     assert.equal(setup.entertainmentEventIntensities[2], 4);
     assert.equal(setup.entertainmentTestCombination, 'litter-whirlpool');
     assert.equal(setup.raceDistance, 400);
+});
+
+test('综合娱乐整局分级开赛只提交整局档位，单项原规格保持独立', () => {
+    const { Node, Label, load } = fixture();
+    const { getAiDebugSetup } = load('core/GameLaunchOptions');
+    const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
+    const root = new Node('Panel'); let starts = 0;
+    buildAiDebugSetupPicker(root, () => starts++, emptyCurrencyDebug());
+    findNode(root, 'ModeTestTab').click();
+    const grade = findNode(root, 'EntertainmentRaceGrade');
+    const intensity = findNode(root, 'IntensityChoice');
+    grade.click();
+    findNode(root, 'ModeChoice1').click();
+    assert.equal(grade.active, false);
+    assert.equal(intensity.active, true);
+    assert.equal(intensity.getChildByName('Label').getComponent(Label).string, '原规格');
+    findNode(root, 'ModeChoice0').click();
+    assert.equal(grade.active, true);
+    assert.equal(intensity.active, false);
+    findNode(root, 'ModeStart').click();
+    assert.equal(starts, 1);
+    assert.equal(getAiDebugSetup().entertainmentRaceGrade, 4);
+    assert.equal(getAiDebugSetup().entertainmentIntensity, null);
 });
 
 test('五档比赛统计限频并在隐藏后停止采样和文字写入', () => {

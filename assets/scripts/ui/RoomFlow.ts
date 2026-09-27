@@ -18,6 +18,8 @@ import { NetRoomInfo } from '../net/INetRoom';
 import { NetRaceMember, setNetRaceSession } from '../net/NetRaceSession';
 import { NetRaceStartDelivery, acknowledgeRaceStart, decodeStartRoster, startMessageFitsBudget } from '../net/NetRaceStartDelivery';
 import { SeededRandom } from '../core/SharedRNG';
+import { getEntertainmentRaceGrade, setEntertainmentRaceGrade } from '../core/GameLaunchOptions';
+import { buildEntertainmentRacePlan, normalizeEntertainmentRaceGrade, type EntertainmentRaceGrade } from '../core/EntertainmentRacePlan';
 import { platform } from '../platform/PlatformManager';
 import { resolveLocalModifierDigest } from '../progression/RaceModifiers';
 import { decodeModifierDigest, encodeModifierDigest } from '../net/NetRaceModifierCodec';
@@ -45,6 +47,7 @@ const MAX_SLOTS = 8;
 const IDENTITY_SEP = '|';
 let lastRoomMode: RaceModeId | null = null;
 let lastRoomDistance: RoomRaceDistance | null = null;
+let lastRoomGrade: EntertainmentRaceGrade | null = null;
 
 type SlotMember = {
     clientId?: number;
@@ -64,6 +67,7 @@ export class RoomFlow {
     private _leaving = false;
     private _mode: RaceModeId = normalizePublicRaceMode(getSelectedRaceDifficulty());
     private _distance: RoomRaceDistance = getRaceDistance(this._mode) === 400 ? 400 : 200;
+    private _entertainmentGrade: EntertainmentRaceGrade = getEntertainmentRaceGrade();
     private _rulesId = '';
     private _rulesRevision = 0;
     private _rulesOwnerPos = -1;
@@ -124,6 +128,7 @@ export class RoomFlow {
     ) {
         if (_reconnect && lastRoomMode) this._mode = lastRoomMode;
         if (_reconnect && lastRoomDistance) this._distance = lastRoomDistance;
+        if (_reconnect && lastRoomGrade) this._entertainmentGrade = lastRoomGrade;
         if (_reconnect) {
             // Returning after a race: keep whatever role we had (owner stays owner).
             let owner = false;
@@ -147,6 +152,7 @@ export class RoomFlow {
             primary: () => this._isHost ? this.startRace() : this.toggleReady(),
             invite: () => this.invite(),
             mode: (value, distance) => this.changeMode(value, distance),
+            entertainmentGrade: () => this.changeEntertainmentGrade(),
             kick: member => { void this.kickMember(member); },
         });
         this._root = this._view.root;
@@ -575,7 +581,7 @@ export class RoomFlow {
             members, isHost: this._isHost, ready: this._localReady,
             busy: this._startRequested || this._readyPending || this._kickPending || this._leaving,
             canStart, roomNumber: this._netReal ? this._roomId || '获取中…' : '本地预览',
-            hint, mode: this._mode, distance: this._distance,
+            hint, mode: this._mode, distance: this._distance, entertainmentGrade: this._entertainmentGrade,
         });
     }
 
@@ -648,11 +654,25 @@ export class RoomFlow {
         this.render();
     }
 
+    private changeEntertainmentGrade(): void {
+        if (!this._isHost || this._mode !== 'entertainment-brawl' || this._startRequested
+            || this._kickPending || this._leaving) return;
+        this._entertainmentGrade = this._entertainmentGrade === 5
+            ? 1 : (this._entertainmentGrade + 1) as EntertainmentRaceGrade;
+        setEntertainmentRaceGrade(this._entertainmentGrade);
+        this._rulesRevision++;
+        for (const pos of Object.keys(this._ruleReady)) delete this._ruleReady[Number(pos)];
+        this._statusHint = this._netReal ? '强度已切换，等待成员重新准备' : null;
+        this.broadcastRules();
+        this.render();
+    }
+
     private broadcastRules() {
         if (!this._netReal || !this._accessInfo || this._localPos < 0) return;
         if (this._isHost) {
             if (!this._rulesId) this._rulesId = String(Date.now());
-            netRoom().broadcast(JSON.stringify({ t: 'rules', owner: this._localPos, id: this._rulesId, rev: this._rulesRevision, mode: this._mode, distance: this._distance }));
+            netRoom().broadcast(JSON.stringify({ t: 'rules', owner: this._localPos, id: this._rulesId, rev: this._rulesRevision,
+                mode: this._mode, distance: this._distance, entertainmentGrade: this._entertainmentGrade }));
         } else if (this._rulesId) {
             netRoom().broadcast(JSON.stringify({ t: 'rulesReady', pos: this._localPos, key: this.ruleKey(), seq: this._readyVersion, ready: this._localReady && !this._readyPending }));
         }
@@ -672,7 +692,8 @@ export class RoomFlow {
         if (data?.t !== 'rules') return false;
         const owner = this._members.find(m => m.owner);
         if (this._isHost || !owner || data.owner !== owner.pos || typeof data.id !== 'string' ||
-            !Number.isSafeInteger(data.rev) || data.rev < 0 || !isRoomModeSelection(data.mode, data.distance)) return true;
+            !Number.isSafeInteger(data.rev) || data.rev < 0 || !isRoomModeSelection(data.mode, data.distance)
+            || !normalizeEntertainmentRaceGrade(data.entertainmentGrade)) return true;
         if (!/^\d{13,16}$/.test(data.id)) return true;
         if (this._rulesOwnerPos === owner.pos && Number(data.id) < Number(this._rulesId)) return true;
         if (data.id === this._rulesId && data.rev < this._rulesRevision) return true;
@@ -686,6 +707,7 @@ export class RoomFlow {
             this._rulesRevision = data.rev;
             this._mode = data.mode;
             this._distance = data.distance;
+            this._entertainmentGrade = data.entertainmentGrade;
             this._localReady = false;
             this._localReadyRule = '';
             this._readyVersion++;
@@ -728,6 +750,8 @@ export class RoomFlow {
             setRaceDifficulty(this._mode);
             lastRoomMode = this._mode;
             lastRoomDistance = this._distance;
+            lastRoomGrade = this._entertainmentGrade;
+            setEntertainmentRaceGrade(this._entertainmentGrade);
             this.stopRulesTimer();
             // Editor / local preview: launch the placeholder single-player race.
             this._callbacks.onStartLocalRace(this._members.length, this._distance);
@@ -763,6 +787,8 @@ export class RoomFlow {
         // startGame-success fallback (WechatGameRoom) then delivers the start signal.
         this._pendingSeed = SeededRandom.entropySeed();
         this._pendingRaceId = createNetRaceId(this._localPos);
+        const entertainmentPlanId = this._mode === 'entertainment-brawl'
+            ? buildEntertainmentRacePlan(this._pendingSeed, this._distance, this._entertainmentGrade).identity : 0;
         this.setHint('开始中…');
         // Consolidated start: carry the shared seed AND the full 养成 digest map (collected
         // from lobby broadcasts, plus our own) in ONE message. This removes the seed-vs-
@@ -782,6 +808,8 @@ export class RoomFlow {
             roster,
             mode: this._mode,
             distance: this._distance,
+            entertainmentGrade: this._entertainmentGrade,
+            entertainmentPlanId,
             rules: this.ruleKey(),
         });
         if (!this._pendingMembers || !startMessageFitsBudget(this._pendingStartMessage)) {
@@ -928,10 +956,16 @@ export class RoomFlow {
                     return;
                 }
                 if (!this._isHost && (!this._localReady || data.rules !== this.ruleKey()
-                    || data.mode !== this._mode || data.distance !== this._distance)) {
+                    || data.mode !== this._mode || data.distance !== this._distance
+                    || data.entertainmentGrade !== this._entertainmentGrade)) {
                     this.setHint('赛制或准备状态未确认，请重新准备'); return;
                 }
-                if (!isRoomModeSelection(data.mode, data.distance)) return;
+                if (!isRoomModeSelection(data.mode, data.distance)
+                    || !normalizeEntertainmentRaceGrade(data.entertainmentGrade)) return;
+                if (!Number.isSafeInteger(data.entertainmentPlanId)
+                    || data.entertainmentPlanId < 0
+                    || data.entertainmentPlanId !== (data.mode === 'entertainment-brawl'
+                        ? buildEntertainmentRacePlan(data.seed, data.distance, data.entertainmentGrade).identity : 0)) return;
                 if (!startMessageFitsBudget(msg)) return;
                 const members = decodeStartRoster(data.roster, data.mods, owner.pos, this._localPos);
                 if (!members) return;
@@ -940,6 +974,7 @@ export class RoomFlow {
                 this._latestStartStamp = stamp;
                 this._mode = data.mode;
                 this._distance = data.distance;
+                this._entertainmentGrade = data.entertainmentGrade;
                 setRaceDifficulty(this._mode);
                 this._pendingSeed = data.seed >>> 0;
                 this._pendingRaceId = data.raceId;
@@ -1007,6 +1042,7 @@ export class RoomFlow {
         this._startDelivery = null;
         lastRoomMode = this._mode;
         lastRoomDistance = this._distance;
+        lastRoomGrade = this._entertainmentGrade;
         this.stopRulesTimer();
         this.clearStartTimeout();
         // Clear our ready as the race begins so the server doesn't carry a stale
@@ -1024,6 +1060,9 @@ export class RoomFlow {
             localIsHost: this._pendingRaceId.startsWith(`${this._localPos}.`),
             localPos: this._localPos >= 0 ? this._localPos : (this._isHost ? 0 : 0),
             distance: this._distance,
+            entertainmentGrade: this._entertainmentGrade,
+            entertainmentPlanId: this._mode === 'entertainment-brawl'
+                ? buildEntertainmentRacePlan(this._pendingSeed, this._distance, this._entertainmentGrade).identity : 0,
         });
         this._callbacks.onStartNetRace();
     }

@@ -85,7 +85,7 @@ import { EntertainmentRecoveryHud } from '../ui/EntertainmentRecoveryHud';
 import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
 import { MineRelayBrawlHud } from '../ui/MineRelayBrawlHud';
 import { DebugLogController } from './DebugLogController';
-import { consumeMainGameLaunchMode, consumeRoomMode, consumeRoomRaceDistance, getAiDebugSetup, getAiDebugDifficulty, resolveAiDebugBuildOptions, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
+import { consumeMainGameLaunchMode, consumeRoomMode, consumeRoomRaceDistance, getAiDebugSetup, getAiDebugDifficulty, getEntertainmentRaceGrade, resolveAiDebugBuildOptions, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
 import { consumeNetRaceSession, NetRaceSessionData } from '../net/NetRaceSession';
 import { NetRaceController } from '../net/NetRaceController';
 import { buildNetLanePlan, NetLanePlan } from '../net/NetLanePlan';
@@ -114,7 +114,8 @@ import { EntertainmentWaterSplashPool } from './EntertainmentWaterSplash';
 import { entertainmentIntensityProfile, entertainmentTestCombinationEvents,
     type EntertainmentIntensityProfile } from './EntertainmentIntensity';
 import { EntertainmentIntensityDebugHud } from '../ui/EntertainmentIntensityDebugHud';
-import { buildEntertainmentStimulantSchedule } from './StimulantBrawlRules';
+import { avoidGradedSupplyBuoys, buildEntertainmentStimulantSchedule, buildGradedStimulantSchedule } from './StimulantBrawlRules';
+import { buildEntertainmentRacePlan, type EntertainmentMainStage, type EntertainmentRacePlan } from './EntertainmentRacePlan';
 import {
     createWhirlpoolVisualResources,
     disposeWhirlpoolVisualResources,
@@ -152,6 +153,7 @@ import { ObstacleBrawlController } from './ObstacleBrawlController';
 import { buildObstaclePlan, buildObstacleSoloLitterSchedule, OBSTACLE_MIN_WAVE_INTERVAL_SECONDS, OBSTACLE_SOLO_ANCHOR_DISTANCE, OBSTACLE_SOLO_LANDING_SEARCH_METERS, type ObstaclePlan } from './ObstacleBrawlRules';
 import {
     EntertainmentEventId,
+    EntertainmentDirectorPhase,
     EntertainmentModeDirector,
     EntertainmentDirectorTransition,
     ENTERTAINMENT_SELECTABLE_EVENTS,
@@ -365,6 +367,10 @@ export class GameManager extends Component {
     private _debugEntertainmentProfiles: (EntertainmentIntensityProfile | null)[] | null = null;
     private _entertainmentWaterSplashes: EntertainmentWaterSplashPool | null = null;
     private _entertainmentDirector: EntertainmentModeDirector | null = null;
+    private _entertainmentRacePlan: EntertainmentRacePlan | null = null;
+    private _gradedEntertainmentProfiles: readonly EntertainmentIntensityProfile[] | null = null;
+    private _gradedObstaclePreviewShown = false;
+    private _gradedSuppliesLocked = false;
     private _whirlpoolBrawl: WhirlpoolBrawlController | null = null;
     private _giantWave: GiantWaveController | null = null;
     private _drafting: DraftingController | null = null;
@@ -535,6 +541,12 @@ export class GameManager extends Component {
                     return;
                 }
                 try {
+                    // The race plan and its resident events are built inside buildScene.
+                    // Resolve the launch kind first so AI tests use their chosen grade,
+                    // event overrides, distance and seed while those systems initialize.
+                    const launchMode = consumeMainGameLaunchMode();
+                    this._aiDebugMode = launchMode === 'ai-debug';
+                    if (this._aiDebugMode) this._aiDebugDifficulty = getAiDebugDifficulty();
                     this.buildScene((error) => {
                         if (error) {
                             this.paintError(error);
@@ -543,18 +555,13 @@ export class GameManager extends Component {
                         try {
                             this.registerEvents();
                             this.debug('3D runtime initialized');
-                            const launchMode = consumeMainGameLaunchMode();
                             if (launchMode === 'model-debug') {
                                 this.enterModelDebug('freestyle');
                             } else if (launchMode === 'underwater-debug') {
                                 this.enterUnderwaterDebug();
                             } else {
-                                this._aiDebugMode = launchMode === 'ai-debug';
                                 if (!this._aiDebugMode && getRaceDifficultyConfig().id === 'giant-wave-brawl') {
                                     setRaceMode('competitive');
-                                }
-                                if (this._aiDebugMode) {
-                                    this._aiDebugDifficulty = getAiDebugDifficulty();
                                 }
                                 this.applyAiDebugHud();
                                 this.startGame();
@@ -1101,6 +1108,7 @@ export class GameManager extends Component {
             setSoloRaceDistance(this._netSession?.distance ?? (this._roomMode ? roomRaceDistance
                 : this._aiDebugMode ? getAiDebugSetup().raceDistance === 400 ? 400 : 200 : null));
             setSoloAiEvent(null);
+            if (this._aiDebugMode && !this._netSession) reseedSharedRandom(getAiDebugSetup().seed);
         } else {
             const ticket = getSoloRaceTicket();
             setSoloRaceDistance(ticket?.distance ?? null);
@@ -1206,6 +1214,13 @@ export class GameManager extends Component {
             setState: (state) => {
                 const previousState = this._state;
                 this._state = state;
+                if (state === GameState.READY && previousState !== GameState.READY && this._stimulantBrawl) {
+                    // Single-player replay keeps this scene; discard old pickups before the next race is built.
+                    this._stimulantBrawl.dispose();
+                    this._stimulantBrawl = null;
+                    this._netRaceController?.setStimulantPickupListener(null);
+                    this._netRaceController?.setStimulantStateListener(null);
+                }
                 if (previousState === GameState.RACING && state !== GameState.RACING) {
                     this._collisionWaterSplashes?.reset();
                     this._entertainmentEventBanner.hide();
@@ -1218,13 +1233,6 @@ export class GameManager extends Component {
                     this._sharkLockOnOverlay.hide();
                 }
                 this.syncConditionPhase(state);
-                if (state === GameState.READY && previousState !== GameState.READY && this._stimulantBrawl) {
-                    // Single-player replay keeps this scene; discard old pickups before the next race is built.
-                    this._stimulantBrawl.dispose();
-                    this._stimulantBrawl = null;
-                    this._netRaceController?.setStimulantPickupListener(null);
-                    this._netRaceController?.setStimulantStateListener(null);
-                }
                 if (state === GameState.COUNTDOWN || state === GameState.DIVING || state === GameState.RACING) {
                     this._netRaceController?.flushPlayerQuits();
                 }
@@ -1572,6 +1580,10 @@ export class GameManager extends Component {
 
     private setupEntertainmentMode() {
         this._debugEntertainmentProfiles = null;
+        this._entertainmentRacePlan = null;
+        this._gradedEntertainmentProfiles = null;
+        this._gradedObstaclePreviewShown = false;
+        this._gradedSuppliesLocked = false;
         this._obstacleBrawl = null;
         this._obstaclePlan = null;
         this._giantWave?.dispose();
@@ -1583,6 +1595,19 @@ export class GameManager extends Component {
         this._cannonPreviewPending = false;
         const debugIntensity = this._aiDebugMode && !this._netSession
             && getAiDebugSetup().entertainmentIntensity != null;
+        if (isEntertainmentBrawlMode() && !debugIntensity) {
+            this._entertainmentRacePlan = buildEntertainmentRacePlan(
+                getSharedRandomSeed(), getRaceDistance(),
+                this._netSession ? this._netSession.entertainmentGrade : this._aiDebugMode
+                    ? getAiDebugSetup().entertainmentRaceGrade ?? 3 : getEntertainmentRaceGrade(),
+                this._aiDebugMode ? getAiDebugSetup().obstacleLayout : undefined,
+            );
+            if (this._netSession && this._entertainmentRacePlan.identity !== this._netSession.entertainmentPlanId) {
+                throw new Error('Entertainment race plan does not match host start configuration');
+            }
+            this._gradedEntertainmentProfiles = [1, 2, 3, 4, 5].map(level =>
+                entertainmentIntensityProfile(level as 1 | 2 | 3 | 4 | 5));
+        }
         this._entertainmentDirector = isEntertainmentBrawlMode()
             ? new EntertainmentModeDirector(getSharedRandomSeed(), getRaceDistance(), true,
                 debugIntensity ? event => {
@@ -1613,7 +1638,8 @@ export class GameManager extends Component {
                     getAiDebugSetup().entertainmentTestCombination ?? null) ?? undefined : undefined,
                 debugIntensity
                     ? this.debugEntertainmentProfile(EntertainmentEventId.WHIRLPOOL)!.whirlpoolSuperCount > 0
-                    : undefined)
+                    : undefined,
+                this._entertainmentRacePlan ?? undefined)
             : null;
         // 赛前预热共用水花，首次事件不再集中创建六份网格和十个槽位。
         if (this._entertainmentDirector || isStimulantBrawlMode() || isSharkBrawlMode()
@@ -1662,13 +1688,27 @@ export class GameManager extends Component {
     private updateEntertainmentMode(dt: number) {
         const director = this._entertainmentDirector;
         if (!director || this._modelDebugFlow?.active || this._state !== GameState.RACING) return;
+        if (this._entertainmentRacePlan && !this._gradedObstaclePreviewShown
+            && (this._raceManager?.elapsedSeconds ?? 0) >= 4
+            && director.phaseId() !== EntertainmentDirectorPhase.PREVIEW
+            && director.phaseId() !== EntertainmentDirectorPhase.ACTIVE) {
+            this._gradedObstaclePreviewShown = true;
+            if ((this._raceManager?.elapsedSeconds ?? 0) < 10) this._entertainmentEventBanner.showDirectorEvent(
+                entertainmentPreviewCopy(EntertainmentEventId.OBSTACLE, false, getSharedRandomSeed(), 1),
+                'warning', 6000, entertainmentBannerIcon(EntertainmentEventId.OBSTACLE), '广播通知',
+            );
+        }
         if (this._netRaceController && !this._netRaceController.isHost) return;
         if (this._raceManager?.hasAnyFinisher()) {
+            if (this._entertainmentRacePlan && !this._gradedSuppliesLocked && this._stimulantBrawl) {
+                this._stimulantBrawl.cancelPendingWaves();
+                this._gradedSuppliesLocked = true;
+            }
             if (director.currentEvent() === EntertainmentEventId.TIMED_BOMB
                 && isTimedBombBrawlMode()) {
                 this._mineRelayBrawl?.cancelPendingRoundsAfterCurrent();
             }
-            if (director.currentEvent() === EntertainmentEventId.OBSTACLE) {
+            if (this._entertainmentRacePlan || director.currentEvent() === EntertainmentEventId.OBSTACLE) {
                 this._obstacleBrawl?.stopSpawning(!this._netRaceController || this._netRaceController.isHost);
             }
             this.handleEntertainmentDirectorTransition(director.lockAfterFirstFinish());
@@ -1682,7 +1722,7 @@ export class GameManager extends Component {
             return;
         }
         const current = director.currentEvent();
-        if (this._aiDebugMode && this._state === GameState.RACING
+        if (this._aiDebugMode && !this._entertainmentRacePlan && this._state === GameState.RACING
             && director.secondsRemaining() <= dt) {
             if (current === EntertainmentEventId.TIMED_BOMB) {
                 this._mineRelayBrawl?.cancelPendingRoundsAfterCurrent();
@@ -1700,7 +1740,10 @@ export class GameManager extends Component {
     private canFinishEntertainmentEvent(event: EntertainmentEventId | null): boolean {
         if (event === EntertainmentEventId.TIMED_BOMB) {
             return !!this._mineRelayBrawl
-                && (this._mineRelayBrawl.activeCount() <= 1
+                && (this._entertainmentRacePlan
+                    ? this._mineRelayBrawl.currentArm() === null
+                        && this._mineRelayBrawl.remainingRoundCount() === 0
+                    : this._mineRelayBrawl.activeCount() <= 1
                     || (this._mineRelayBrawl.currentArm() === null
                         && this._mineRelayBrawl.remainingRoundCount() === 0));
         }
@@ -1895,7 +1938,37 @@ export class GameManager extends Component {
         return this._entertainmentDirector?.anchorDistanceForEvent(event) ?? 0;
     }
 
+    private canSpawnGradedObstacleWave(): boolean {
+        if (!this._entertainmentRacePlan) return true;
+        if ((this._raceManager?.elapsedSeconds ?? 0) < 10 || (this._raceManager?.hasAnyFinisher() ?? false)) return false;
+        const phase = this._entertainmentDirector?.phaseId();
+        return phase === EntertainmentDirectorPhase.OPENING || phase === EntertainmentDirectorPhase.COMPLETE
+            || (phase === EntertainmentDirectorPhase.GAP && (this._entertainmentDirector?.secondsRemaining() ?? 0) <= 0);
+    }
+
+    private gradedEntertainmentStage(event: EntertainmentEventId): EntertainmentMainStage | null {
+        const plan = this._entertainmentRacePlan;
+        const director = this._entertainmentDirector;
+        if (!plan || !director || director.currentEvent() !== event) return null;
+        const index = director.snapshot().eventIndex;
+        if (index < plan.stages.length) return plan.stages[index];
+        const intensity = event === EntertainmentEventId.CANNON ? 3
+            : event === EntertainmentEventId.SHARK ? 3
+                : plan.grade === 3 ? 1 : plan.grade === 4 ? 2 : 3;
+        return { event, intensity, previewProgress: 0, actionCount: event === EntertainmentEventId.CANNON ? 3 : 1,
+            durationSeconds: event === EntertainmentEventId.SHARK ? 14
+                : event === EntertainmentEventId.CANNON ? 9.9
+                    : plan.grade === 3 ? 11.5 : plan.grade === 4 ? 10.5 : 10,
+            required: false };
+    }
+
     private debugEntertainmentProfile(event: EntertainmentEventId): EntertainmentIntensityProfile | null {
+        if (this._entertainmentRacePlan) {
+            const intensity = event === EntertainmentEventId.OBSTACLE
+                ? this._entertainmentRacePlan.obstacle.intensity
+                : this.gradedEntertainmentStage(event)?.intensity;
+            return intensity ? this._gradedEntertainmentProfiles?.[intensity - 1] ?? null : null;
+        }
         if (!this._aiDebugMode || this._netSession) return null;
         const setup = getAiDebugSetup();
         if (setup.entertainmentIntensity === null || setup.entertainmentIntensity === undefined) return null;
@@ -1920,8 +1993,8 @@ export class GameManager extends Component {
         const profile = this.debugEntertainmentProfile(EntertainmentEventId.WHIRLPOOL);
         if (profile) return entertainmentGradedWhirlpoolSpawns(
             getSharedRandomSeed(), anchorDistance, getRaceDistance(),
-            profile.whirlpoolCount, profile.whirlpoolRadiusScale,
-            profile.whirlpoolForceScale, profile.whirlpoolSuperCount,
+            this._entertainmentRacePlan ? 1 : profile.whirlpoolCount, profile.whirlpoolRadiusScale,
+            profile.whirlpoolForceScale, this._entertainmentRacePlan ? 0 : profile.whirlpoolSuperCount,
         );
         return entertainmentWhirlpoolSpawn(
             getSharedRandomSeed(),
@@ -1934,9 +2007,11 @@ export class GameManager extends Component {
     private entertainmentCannonStrikeTriggers(): readonly number[] {
         const profile = this.debugEntertainmentProfile(EntertainmentEventId.CANNON);
         if (profile) {
-            const count = getRaceDistance() >= 400 ? profile.cannonStrikes400 : profile.cannonStrikes200;
+            const count = this.gradedEntertainmentStage(EntertainmentEventId.CANNON)?.actionCount
+                ?? (getRaceDistance() >= 400 ? profile.cannonStrikes400 : profile.cannonStrikes200);
             const anchor = this.entertainmentAnchorDistance(EntertainmentEventId.CANNON);
-            return Array.from({ length: count }, (_, index) => anchor + 1 + index * 1.5);
+            const interval = this._entertainmentRacePlan ? profile.cannonMinimumIntervalSeconds : 1.5;
+            return Array.from({ length: count }, (_, index) => anchor + 1 + index * interval);
         }
         return (getRaceDistance() >= 400 ? [1, 3, 5, 7, 9] : [1, 3, 5])
             .map(offset => this.entertainmentAnchorDistance(EntertainmentEventId.CANNON) + offset);
@@ -1946,7 +2021,8 @@ export class GameManager extends Component {
         const anchor = this.entertainmentAnchorDistance(EntertainmentEventId.TIMED_BOMB);
         const profile = this.debugEntertainmentProfile(EntertainmentEventId.TIMED_BOMB);
         if (profile) {
-            const count = getRaceDistance() >= 400 ? profile.timedBallRounds400 : profile.timedBallRounds200;
+            const count = this.gradedEntertainmentStage(EntertainmentEventId.TIMED_BOMB)?.actionCount
+                ?? (getRaceDistance() >= 400 ? profile.timedBallRounds400 : profile.timedBallRounds200);
             return Array.from({ length: count }, (_, index) => ({
                 triggerDistance: anchor + index * 12,
                 fuseSeconds: profile.timedBallFuseSeconds,
@@ -2023,7 +2099,18 @@ export class GameManager extends Component {
                 },
                 () => this._playerLaneIndex,
                 this.entertainmentWaterSplashes(),
-                (isEntertainmentBrawlMode() || this.debugEntertainmentProfile(EntertainmentEventId.STIMULANT))
+                this._entertainmentRacePlan
+                    ? avoidGradedSupplyBuoys(
+                        buildGradedStimulantSchedule(
+                            getSharedRandomSeed(), LANE_LAYOUT.laneCount,
+                            getRaceDistance(), COURSE_LAYOUT.courseLength,
+                            this._entertainmentRacePlan.supply.waveDistances,
+                            this._entertainmentRacePlan.supply.itemsPerWave,
+                        ),
+                        Array.from({ length: LANE_LAYOUT.laneCount }, (_, lane) => LANE_LAYOUT.centerZ(lane)),
+                        this._obstaclePlan?.buoyAnchors ?? [], COURSE_LAYOUT.courseLength,
+                    )
+                    : (isEntertainmentBrawlMode() || this.debugEntertainmentProfile(EntertainmentEventId.STIMULANT))
                     ? buildEntertainmentStimulantSchedule(
                         getSharedRandomSeed(),
                         LANE_LAYOUT.laneCount,
@@ -2889,13 +2976,21 @@ export class GameManager extends Component {
 
     private setupObstacleBrawl(): void {
         this._obstacleBrawl = null;
+        const graded = this._entertainmentRacePlan?.obstacle;
         const profile = this.debugEntertainmentProfile(EntertainmentEventId.OBSTACLE);
         this._obstaclePlan = buildObstaclePlan(
             getSharedRandomSeed(),
             this.obstacleAnchorDistance(),
             COURSE_LAYOUT.poolWidth,
-            profile ?? undefined,
-            isObstacleBrawlMode() ? getAiDebugSetup().obstacleLayout
+            graded && profile ? { ...profile,
+                mineCount: graded.buoyBatchCounts.reduce((sum, count) => sum + count, 0),
+                obstacleMixedBuoyCount: graded.buoyBatchCounts.reduce((sum, count) => sum + count, 0),
+                litterItemsPerWave: Math.max(1, graded.litterWaveCounts[1] ?? graded.litterWaveCounts[0] ?? 1),
+                obstacleMixedLitterCount: Math.max(1, graded.litterWaveCounts[1] ?? graded.litterWaveCounts[0] ?? 1),
+                litterPoolSize: Math.max(1, graded.litterPoolSize),
+                obstacleMixedPoolSize: Math.max(1, graded.litterPoolSize),
+            } : profile ?? undefined,
+            graded ? graded.layout : isObstacleBrawlMode() ? getAiDebugSetup().obstacleLayout
                 : this._aiDebugMode && !this._netSession
                     && getAiDebugSetup().entertainmentTestCombination === 'litter-minefield'
                     ? 'mixed' : undefined,
@@ -2990,10 +3085,13 @@ export class GameManager extends Component {
                         * WHIRLPOOL_SUPER_TUNING.lateralRadiusScale + 1.6,
                 }
                 : null,
-            isEntertainmentBrawlMode() || isObstacleBrawlMode()
+            this._entertainmentRacePlan
+                ? this._entertainmentRacePlan.obstacle.buoyBatchDistances
+                : isEntertainmentBrawlMode() || isObstacleBrawlMode()
                 ? []
                 : [MINEFIELD_TUNING.waveSecondDistance, MINEFIELD_TUNING.waveThirdDistance],
             this._obstaclePlan?.buoyAnchors,
+            this._entertainmentRacePlan?.obstacle.buoyBatchCounts,
         );
         if (this._worldRoot?.isValid) {
             this._minefieldPresentation = new MinefieldBrawlPresentation(
@@ -3027,7 +3125,7 @@ export class GameManager extends Component {
             this._state,
             !this._netRaceController || this._netRaceController.isHost,
             this.entertainmentLeaderDistance(),
-            !(this._raceManager?.hasAnyFinisher() ?? false),
+            !(this._raceManager?.hasAnyFinisher() ?? false) && this.canSpawnGradedObstacleWave(),
         );
         const visible = this._state === GameState.PRECOUNTDOWN || this._state === GameState.COUNTDOWN
             || this._state === GameState.DIVING || this._state === GameState.GLIDING
@@ -3100,7 +3198,11 @@ export class GameManager extends Component {
         if (obstaclePlan && obstaclePlan.litterItemsPerWave <= 0) return;
         const profile = this.debugEntertainmentProfile(obstaclePlan
             ? EntertainmentEventId.OBSTACLE : EntertainmentEventId.LITTER);
-        const schedule = obstaclePlan && isObstacleBrawlMode()
+        const schedule = this._entertainmentRacePlan
+            ? { waveDistances: this._entertainmentRacePlan.obstacle.litterWaveDistances,
+                waveCounts: this._entertainmentRacePlan.obstacle.litterWaveCounts,
+                landingLeadDistance: LITTER_BRAWL_TUNING.landingLeadDistance }
+            : obstaclePlan && isObstacleBrawlMode()
             ? buildObstacleSoloLitterSchedule(
                 getRaceDistance(), getAiDebugSetup().entertainmentIntensity ?? 3,
             )
@@ -3177,6 +3279,7 @@ export class GameManager extends Component {
             } : undefined,
             obstaclePlan ? OBSTACLE_MIN_WAVE_INTERVAL_SECONDS : 0,
             obstaclePlan && isObstacleBrawlMode() ? OBSTACLE_SOLO_LANDING_SEARCH_METERS : 0,
+            this._entertainmentRacePlan ? () => this.canSpawnGradedObstacleWave() : undefined,
         );
         this._netRaceController?.setLitterStateListener((state, planId) => {
             if (planId > 0 && this._obstaclePlan?.identity !== planId) return;
@@ -3380,7 +3483,8 @@ export class GameManager extends Component {
                 ? (() => {
                     const profile = this.debugEntertainmentProfile(EntertainmentEventId.SHARK);
                     if (!profile) return getRaceDistance() >= 400 ? [0, 9] : [0];
-                    const count = getRaceDistance() >= 400 ? profile.sharkHunts400 : profile.sharkHunts200;
+                    const count = this.gradedEntertainmentStage(EntertainmentEventId.SHARK)?.actionCount
+                        ?? (getRaceDistance() >= 400 ? profile.sharkHunts400 : profile.sharkHunts200);
                     return Array.from({ length: count }, (_, index) => index * 9);
                 })()
                 : this.debugEntertainmentProfile(EntertainmentEventId.SHARK)

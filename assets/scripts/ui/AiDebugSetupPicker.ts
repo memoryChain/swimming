@@ -115,6 +115,10 @@ export function buildAiDebugSetupPicker(
     const setup = { ...getAiDebugSetup() };
     setup.entertainmentEventIntensities = [...(setup.entertainmentEventIntensities ?? [3, 3, 3, 3, 3, 3, 3])];
     setup.entertainmentIntensity = normalizeEntertainmentIntensity(setup.entertainmentIntensity);
+    setup.entertainmentRaceGrade = setup.entertainmentRaceGrade ?? 3;
+    let entertainmentTestRoute: 'graded' | 'legacy' = setup.entertainmentIntensity === null ? 'graded' : 'legacy';
+    let legacyEntertainmentIntensity: EntertainmentIntensity = setup.entertainmentIntensity ?? 3;
+    let soloIntensity: EntertainmentIntensity | null = setup.entertainmentIntensity;
     setup.raceDistance = setup.raceDistance === 400 ? 400 : 200;
     const raceModes: RaceDifficulty[] = ['beginner', 'competitive', 'championship'];
     let raceMode: RaceDifficulty = raceModes.indexOf(setup.mode as RaceDifficulty) >= 0
@@ -309,23 +313,67 @@ export function buildAiDebugSetupPicker(
     let eventChoice: DebugButtonView;
     let eventLevelChoice: DebugButtonView;
     let combinationChoice: DebugButtonView;
+    const modeStartText = () => modeTestMode === 'entertainment-brawl'
+        ? entertainmentTestRoute === 'graded'
+            ? `开始测试：娱乐模式 · 整局 ${setup.entertainmentRaceGrade} 档`
+            : '开始测试：娱乐模式 · 单项强度'
+        : `开始测试：${getRaceModeTitle(modeTestMode)}`;
+    const raceRouteChoice = button(modeContent, 'EntertainmentTestRoute',
+        entertainmentTestRoute === 'graded' ? '方案：整局分级' : '方案：单项强度测试', -270, -50, 250, () => {
+            if (entertainmentTestRoute === 'graded') {
+                entertainmentTestRoute = 'legacy';
+                setup.entertainmentIntensity = legacyEntertainmentIntensity;
+            } else {
+                legacyEntertainmentIntensity = setup.entertainmentIntensity ?? legacyEntertainmentIntensity;
+                entertainmentTestRoute = 'graded';
+                setup.entertainmentIntensity = null;
+            }
+            write(raceRouteChoice.label, entertainmentTestRoute === 'graded'
+                ? '方案：整局分级' : '方案：单项强度测试');
+            setActive(raceGradeChoice.node, entertainmentTestRoute === 'graded');
+            setActive(intensityChoice.node, entertainmentTestRoute === 'legacy');
+            setActive(eventChoice.node, entertainmentTestRoute === 'legacy');
+            setActive(eventLevelChoice.node, entertainmentTestRoute === 'legacy');
+            setActive(combinationChoice.node, entertainmentTestRoute === 'legacy');
+            write(intensityChoice.label, intensityText());
+            write(modeStart.label, modeStartText());
+        }, 40);
+    setActive(raceRouteChoice.node, modeTestMode === 'entertainment-brawl');
+    const raceGradeChoice = button(modeContent, 'EntertainmentRaceGrade',
+        `整局强度 ${setup.entertainmentRaceGrade} 档`, 0, -50, 250, () => {
+            const grade = setup.entertainmentRaceGrade ?? 3;
+            setup.entertainmentRaceGrade = grade === 5 ? 1 : (grade + 1) as 1 | 2 | 3 | 4 | 5;
+            write(raceGradeChoice.label, `整局强度 ${setup.entertainmentRaceGrade} 档`);
+            write(modeStart.label, modeStartText());
+        }, 40);
+    setActive(raceGradeChoice.node, modeTestMode === 'entertainment-brawl' && entertainmentTestRoute === 'graded');
     let selectedEventIndex = 0;
     const updateModeSelection = (previous: RaceModeId | null, current: RaceModeId) => {
         if (previous === current) return;
+        if (previous === 'entertainment-brawl') {
+            if (entertainmentTestRoute === 'legacy') legacyEntertainmentIntensity = setup.entertainmentIntensity ?? legacyEntertainmentIntensity;
+            setup.entertainmentIntensity = soloIntensity;
+        } else if (current === 'entertainment-brawl') {
+            soloIntensity = setup.entertainmentIntensity;
+            setup.entertainmentIntensity = entertainmentTestRoute === 'graded' ? null : legacyEntertainmentIntensity;
+        }
         if (previous) setActive(modeViews.get(previous)?.selected ?? null, false);
         setActive(modeViews.get(current)?.selected ?? null, true);
         setActive(whirlpoolOptions, current === 'whirlpool-brawl' && setup.entertainmentIntensity === null);
         setActive(waveOptions, current === 'giant-wave-brawl');
         setActive(obstacleOptions, current === 'obstacle-brawl');
-        setActive(intensityChoice.node, current !== 'giant-wave-brawl');
-        setActive(eventChoice.node, current === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
-        setActive(eventLevelChoice.node, current === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
-        setActive(combinationChoice.node, current === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
+        setActive(raceRouteChoice.node, current === 'entertainment-brawl');
+        setActive(raceGradeChoice.node, current === 'entertainment-brawl' && entertainmentTestRoute === 'graded');
+        setActive(intensityChoice.node, current === 'entertainment-brawl'
+            ? entertainmentTestRoute === 'legacy' : current !== 'giant-wave-brawl');
+        setActive(eventChoice.node, current === 'entertainment-brawl' && entertainmentTestRoute === 'legacy');
+        setActive(eventLevelChoice.node, current === 'entertainment-brawl' && entertainmentTestRoute === 'legacy');
+        setActive(combinationChoice.node, current === 'entertainment-brawl' && entertainmentTestRoute === 'legacy');
         setActive(modeHint, current !== 'entertainment-brawl' && current !== 'obstacle-brawl');
         modeSeed.node.setPosition(current === 'entertainment-brawl' ? 150 : -100,
             current === 'entertainment-brawl' || current === 'obstacle-brawl' ? -154 : -108, 0);
         write(intensityChoice.label, intensityText());
-        write(modeStart.label, `开始测试：${getRaceModeTitle(current)}`);
+        write(modeStart.label, modeStartText());
     };
     for (let index = 0; index < MODE_TEST_MODES.length; index++) {
         const testMode = MODE_TEST_MODES[index];
@@ -349,8 +397,11 @@ export function buildAiDebugSetupPicker(
             : `强度 ${setup.entertainmentIntensity} · ${ENTERTAINMENT_INTENSITY_LABELS[setup.entertainmentIntensity - 1]}`;
     const intensityChoice = button(modeContent, 'IntensityChoice', intensityText(), 0, -50, 250, () => {
         const next = setup.entertainmentIntensity === null ? 1 : setup.entertainmentIntensity === 5
-            ? null : (setup.entertainmentIntensity + 1) as EntertainmentIntensity;
+            ? modeTestMode === 'entertainment-brawl' ? 1 : null
+            : (setup.entertainmentIntensity + 1) as EntertainmentIntensity;
         setup.entertainmentIntensity = next;
+        if (modeTestMode === 'entertainment-brawl') legacyEntertainmentIntensity = next ?? 3;
+        else soloIntensity = next;
         setActive(whirlpoolOptions, modeTestMode === 'whirlpool-brawl' && next === null);
         setActive(eventChoice.node, modeTestMode === 'entertainment-brawl' && next !== null);
         setActive(eventLevelChoice.node, modeTestMode === 'entertainment-brawl' && next !== null);
@@ -377,7 +428,8 @@ export function buildAiDebugSetupPicker(
         write(intensityChoice.label, intensityText());
         write(eventLevelChoice.label, eventLevelText());
     }, 40);
-    setActive(intensityChoice.node, modeTestMode !== 'giant-wave-brawl');
+    setActive(intensityChoice.node, modeTestMode === 'entertainment-brawl'
+        ? entertainmentTestRoute === 'legacy' : modeTestMode !== 'giant-wave-brawl');
     const distanceChoice = button(modeContent, 'DistanceChoice', `${setup.raceDistance} 米`, 270, -50, 145, () => {
         setup.raceDistance = setup.raceDistance === 400 ? 200 : 400;
         write(distanceChoice.label, `${setup.raceDistance} 米`);
@@ -404,8 +456,8 @@ export function buildAiDebugSetupPicker(
         write(eventLevelChoice.label, eventLevelText());
         write(intensityChoice.label, intensityText());
     }, 40);
-    setActive(eventChoice.node, modeTestMode === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
-    setActive(eventLevelChoice.node, modeTestMode === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
+    setActive(eventChoice.node, modeTestMode === 'entertainment-brawl' && entertainmentTestRoute === 'legacy');
+    setActive(eventLevelChoice.node, modeTestMode === 'entertainment-brawl' && entertainmentTestRoute === 'legacy');
     const applyCombinationMinimums = () => {
         const event = setup.entertainmentTestCombination === 'litter-whirlpool'
             ? EntertainmentEventId.WHIRLPOOL
@@ -432,7 +484,7 @@ export function buildAiDebugSetupPicker(
         write(eventLevelChoice.label, eventLevelText());
         write(intensityChoice.label, intensityText());
     }, 40);
-    setActive(combinationChoice.node, modeTestMode === 'entertainment-brawl' && setup.entertainmentIntensity !== null);
+    setActive(combinationChoice.node, modeTestMode === 'entertainment-brawl' && entertainmentTestRoute === 'legacy');
     modeSeed = button(modeContent, 'ModeSeed', seedText(), -100, -108, 260, cycleSeed);
     if (modeTestMode === 'entertainment-brawl') modeSeed.node.setPosition(150, -154, 0);
     else if (modeTestMode === 'obstacle-brawl') modeSeed.node.setPosition(-100, -154, 0);
@@ -441,7 +493,7 @@ export function buildAiDebugSetupPicker(
         18, uiColor(190, 210, 220));
     modeHint.setPosition(0, -152, 0);
     setActive(modeHint, modeTestMode !== 'entertainment-brawl' && modeTestMode !== 'obstacle-brawl');
-    const modeStart = button(modeContent, 'ModeStart', `开始测试：${getRaceModeTitle(modeTestMode)}`, 0, -202, 420, () => {
+    const modeStart = button(modeContent, 'ModeStart', modeStartText(), 0, -202, 420, () => {
         launch(modeTestMode, MODE_TEST_DIFFICULTY, true);
     });
 

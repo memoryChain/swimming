@@ -1,5 +1,6 @@
 import { SeededRandom } from './SharedRNG';
 import { WHIRLPOOL_SUPER_CHANCE } from './WhirlpoolBrawlRules';
+import type { EntertainmentRacePlan } from './EntertainmentRacePlan';
 
 export const enum EntertainmentEventId {
     STIMULANT = 0,
@@ -429,19 +430,24 @@ export class EntertainmentModeDirector {
     constructor(
         seed: number,
         raceDistance = 200,
-        includeLitter = ENTERTAINMENT_LITTER_SELECTION_ENABLED,
+        private readonly includeLitter = ENTERTAINMENT_LITTER_SELECTION_ENABLED,
         private readonly durationForEvent?: (event: EntertainmentEventId) => number,
         private readonly testEventOrder?: readonly EntertainmentEventId[],
         testWhirlpoolSuper?: boolean,
+        private readonly gradedPlan?: EntertainmentRacePlan,
     ) {
         this.seed = Number.isFinite(seed) ? seed >>> 0 : 0;
         this.raceDistance = Number.isFinite(raceDistance) ? Math.max(1, raceDistance) : 200;
-        this.events = testEventOrder?.length
-            ? [...testEventOrder] : [...buildEntertainmentEventOrder(this.seed, this.raceDistance, includeLitter)];
-        this.specialMask = testWhirlpoolSuper === undefined
+        this.events = gradedPlan ? gradedPlan.stages.map(stage => stage.event) : testEventOrder?.length
+            ? [...testEventOrder] : [...buildEntertainmentEventOrder(this.seed, this.raceDistance, this.includeLitter)];
+        this.specialMask = gradedPlan ? 0 : testWhirlpoolSuper === undefined
             ? buildEntertainmentSpecialMask(this.seed, this.events)
             : testWhirlpoolSuper && this.events.indexOf(EntertainmentEventId.WHIRLPOOL) >= 0
                 ? eventBit(EntertainmentEventId.WHIRLPOOL) : 0;
+        if (gradedPlan && this.events.length === 0) {
+            this.phase = EntertainmentDirectorPhase.COMPLETE;
+            this.remainingSeconds = 0;
+        }
         this.publishRuntimeState();
     }
 
@@ -450,6 +456,10 @@ export class EntertainmentModeDirector {
         this.phase = EntertainmentDirectorPhase.OPENING;
         this.eventIndex = 0;
         this.remainingSeconds = OPENING_SECONDS;
+        if (this.gradedPlan && this.events.length === 0) {
+            this.phase = EntertainmentDirectorPhase.COMPLETE;
+            this.remainingSeconds = 0;
+        }
         this.activatedMask = 0;
         this.residentMask = 0;
         this.activationSerial = 0;
@@ -469,6 +479,7 @@ export class EntertainmentModeDirector {
     }
 
     selectedEvents(): readonly EntertainmentEventId[] { return this.events; }
+    phaseId(): EntertainmentDirectorPhase { return this.phase; }
     secondsRemaining(): number { return this.remainingSeconds; }
 
     isSpecialEvent(event: EntertainmentEventId): boolean {
@@ -514,6 +525,11 @@ export class EntertainmentModeDirector {
         if (this.remainingSeconds > 0) return transition;
 
         if (this.phase === EntertainmentDirectorPhase.OPENING || this.phase === EntertainmentDirectorPhase.GAP) {
+            if (this.gradedPlan && this.eventIndex >= this.events.length
+                && distance > this.raceDistance * 0.78) {
+                this.complete();
+                return transition;
+            }
             if (!this.readyForPreview(distance)) return transition;
             this.phase = EntertainmentDirectorPhase.PREVIEW;
             this.remainingSeconds = this.previewSeconds();
@@ -527,7 +543,13 @@ export class EntertainmentModeDirector {
             }
             this.phase = EntertainmentDirectorPhase.ACTIVE;
             // 五档调试传入的已是完整事件窗口；现行规格仍按赛程长度缩放。
-            this.remainingSeconds = this.durationForEvent?.(event)
+            this.remainingSeconds = this.gradedPlan?.stages[this.eventIndex]?.durationSeconds
+                ?? (this.gradedPlan && this.encoreEvent !== null
+                    ? this.encoreEvent === EntertainmentEventId.SHARK ? 14
+                        : this.encoreEvent === EntertainmentEventId.CANNON ? 9.9
+                            : this.gradedPlan.grade === 3 ? 11.5 : this.gradedPlan.grade === 4 ? 10.5 : 10
+                    : undefined)
+                ?? this.durationForEvent?.(event)
                 ?? EVENT_DURATION_SECONDS[event] * this.eventDurationScale();
             this.anchorDistance = distance;
             if (this.eventIndex < this.events.length) {
@@ -558,7 +580,8 @@ export class EntertainmentModeDirector {
             }
             if (this.eventIndex < this.events.length) this.eventIndex++;
             if (this.eventIndex >= this.events.length) {
-                if (this.testEventOrder) this.complete();
+                if (this.gradedPlan ? this.gradedPlan.grade < 3 || this.encoreRound >= this.gradedPlan.encoreLimit
+                    : !!this.testEventOrder) this.complete();
                 else this.scheduleEncore(event);
             } else {
                 // 驻留内容继续工作；下一次强事件至少留出一段正常游泳时间，
@@ -598,7 +621,8 @@ export class EntertainmentModeDirector {
             state?.packedEvents ?? 0,
             state?.eventCount ?? 0,
         );
-        if (!validDirectorState(state) || !validEventOrder(authoritativeEvents)
+        if (!validDirectorState(state, !!this.gradedPlan)
+            || !this.acceptsEventOrder(authoritativeEvents)
             || (state.specialMask !== 0 && authoritativeEvents.indexOf(EntertainmentEventId.WHIRLPOOL) < 0)
             || state.revision < this.revision) return transition;
         transition.snapshotAccepted = true;
@@ -658,6 +682,13 @@ export class EntertainmentModeDirector {
         return transition;
     }
 
+    private acceptsEventOrder(events: readonly EntertainmentEventId[]): boolean {
+        if (!this.gradedPlan) return validEventOrder(events);
+        const planned = this.gradedPlan.stages;
+        return events.length === planned.length
+            && events.every((event, index) => event === planned[index].event);
+    }
+
     private complete(): void {
         this.phase = EntertainmentDirectorPhase.COMPLETE;
         this.remainingSeconds = 0;
@@ -671,7 +702,14 @@ export class EntertainmentModeDirector {
         this.encoreRound++;
         const random = new SeededRandom((this.seed ^ ENTERTAINMENT_ENCORE_RANDOM_SALT
             ^ Math.imul(this.encoreRound, 0x9e3779b1)) >>> 0);
-        const candidates = ENCORE_EVENTS.filter(event => event !== previousEvent);
+        const candidates = this.gradedPlan
+            ? (this.gradedPlan.grade === 3 ? [EntertainmentEventId.TIMED_BOMB]
+                : this.gradedPlan.grade === 4
+                    ? [EntertainmentEventId.TIMED_BOMB, EntertainmentEventId.CANNON]
+                    : [EntertainmentEventId.TIMED_BOMB, EntertainmentEventId.CANNON, EntertainmentEventId.SHARK])
+                .filter(event => this.gradedPlan?.grade === 3 || event !== previousEvent)
+            : ENCORE_EVENTS.filter(event => event !== previousEvent);
+        if (candidates.length === 0) { this.complete(); return; }
         this.encoreEvent = candidates[random.int(candidates.length)];
         this.phase = EntertainmentDirectorPhase.GAP;
         this.remainingSeconds = ENCORE_GAP_MIN_SECONDS + random.next() * ENCORE_GAP_VARIATION_SECONDS;
@@ -679,7 +717,8 @@ export class EntertainmentModeDirector {
     }
 
     private publishRuntimeState(): void {
-        runtimeResidentMask = this.residentMask;
+        runtimeResidentMask = this.residentMask | (this.gradedPlan
+            ? eventBit(EntertainmentEventId.STIMULANT) | eventBit(EntertainmentEventId.OBSTACLE) : 0);
         runtimeActiveEvent = isActiveDirectorPhase(this.phase) ? this.currentEvent() : null;
     }
 
@@ -694,22 +733,26 @@ export class EntertainmentModeDirector {
     }
 
     private previewSeconds(): number {
+        if (this.gradedPlan) return 6;
         if (this.events.length >= 5) return LONG_RACE_PREVIEW_SECONDS;
         return this.events.length === 4 ? FOUR_EVENT_PREVIEW_SECONDS : THREE_EVENT_PREVIEW_SECONDS;
     }
 
     private eventDurationScale(): number {
+        if (this.gradedPlan) return 1;
         if (this.events.length >= 5) return LONG_RACE_DURATION_SCALE;
         return this.events.length === 4 ? FOUR_EVENT_DURATION_SCALE : 1;
     }
 
     private gapSeconds(): number {
+        if (this.gradedPlan) return this.gradedPlan.raceDistance === 400 ? 8 : 5;
         return this.events.length >= 5 ? LONG_RACE_GAP_SECONDS : SHORT_RACE_GAP_SECONDS;
     }
 
     private readyForPreview(distance: number): boolean {
         if (this.eventIndex >= this.events.length) return this.encoreEvent !== null;
-        const progress = EVENT_PROGRESS_BY_COUNT[this.events.length]?.[this.eventIndex] ?? 0;
+        const progress = this.gradedPlan?.stages[this.eventIndex]?.previewProgress
+            ?? EVENT_PROGRESS_BY_COUNT[this.events.length]?.[this.eventIndex] ?? 0;
         return distance >= this.raceDistance * progress;
     }
 }
@@ -791,7 +834,7 @@ export function packEntertainmentEvents(events: readonly EntertainmentEventId[])
 }
 
 export function unpackEntertainmentEvents(packed: number, eventCount: number): readonly EntertainmentEventId[] {
-    const count = Number.isSafeInteger(eventCount) && eventCount >= 3 && eventCount <= MAX_EVENT_COUNT
+    const count = Number.isSafeInteger(eventCount) && eventCount >= 0 && eventCount <= MAX_EVENT_COUNT
         ? eventCount
         : 0;
     return Array.from({ length: count }, (_, index) => (
@@ -806,11 +849,12 @@ function isActiveDirectorPhase(phase: EntertainmentDirectorPhase): boolean {
         || phase === EntertainmentDirectorPhase.CLOSING;
 }
 
-function validDirectorState(state: EntertainmentDirectorState): boolean {
+function validDirectorState(state: EntertainmentDirectorState, graded = false): boolean {
     return !!state
         && Number.isSafeInteger(state.revision) && state.revision >= 0
         && Number.isSafeInteger(state.phase) && state.phase >= 0 && state.phase <= EntertainmentDirectorPhase.CLOSING
-        && Number.isSafeInteger(state.eventCount) && state.eventCount >= 3 && state.eventCount <= MAX_EVENT_COUNT
+        && Number.isSafeInteger(state.eventCount)
+        && state.eventCount >= (graded ? 0 : 3) && state.eventCount <= MAX_EVENT_COUNT
         && Number.isSafeInteger(state.eventIndex) && state.eventIndex >= 0 && state.eventIndex <= state.eventCount
         && Number.isFinite(state.remainingSeconds) && state.remainingSeconds >= 0
         && Number.isSafeInteger(state.packedEvents) && state.packedEvents >= 0

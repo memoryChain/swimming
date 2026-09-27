@@ -210,6 +210,16 @@ export class StimulantBrawlController {
         return count;
     }
 
+    /** 首位完赛后撤销尚未投出的补给；已在空中或池中的道具照常保留。 */
+    cancelPendingWaves(): void {
+        for (const item of this.items) {
+            if (item.collected || item.visualSpawnStarted) continue;
+            item.collected = true;
+            if (item.node?.isValid && item.node.active) item.node.active = false;
+            if (item.beaconNode?.isValid && item.beaconNode.active) item.beaconNode.active = false;
+        }
+    }
+
     update(): void {
         if (this.disposed) return;
         const radiusSq = STIMULANT_BRAWL_TUNING.pickupRadius * STIMULANT_BRAWL_TUNING.pickupRadius;

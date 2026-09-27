@@ -12,11 +12,13 @@ type ButtonSurface = 'panel' | 'rule' | 'primary';
 export interface EventPageState {
     screen: 'quick' | 'career'; source: 'league' | 'cup'; tier: number;
     characterId: PlayerCharacterId; distance: 200 | 400; rule: RaceRule;
+    entertainmentGrade: 1 | 2 | 3 | 4 | 5;
     busy: boolean; confirmAbandon: boolean; status: string; profile: PlayerProfile;
 }
 export interface EventPageActions {
     home(): void; tier(value: number): void;
     distance(value: 200 | 400): void; rule(value: RaceRule): void;
+    entertainmentGrade(): void;
     start(source?: SoloSource): void; abandon(): void; cancelAbandon?(): void;
 }
 const INK = uiColor(9,45,66), WHITE = uiColor(255,255,255);
@@ -47,6 +49,7 @@ export class CareerEventPage {
     private readonly abandon: Control;
     private readonly quick: Node;
     private readonly quickChoices: Control[];
+    private readonly gradeChoice: Control;
     private readonly quickStart: Control;
     private readonly footer: Label;
     private snapshot: EventPageState | null = null;
@@ -100,9 +103,10 @@ export class CareerEventPage {
             this.button(this.quick,'Distance400','400米\n约三分钟',-285,-85,490,112,()=>actions.distance(400),'panel'),
             this.button(this.quick,'RuleStandard','标准竞速\n专注节奏',285,90,490,62,()=>actions.rule('standard')),
             this.button(this.quick,'RuleWild','狂野模式\n自由竞速',285,15,490,62,()=>actions.rule('wild')),
-            this.button(this.quick,'RuleEntertainment','娱乐模式\n随机事件',285,-60,490,62,()=>actions.rule('entertainment')),
+            this.button(this.quick,'RuleEntertainment','娱乐模式\n五档强度',285,-60,490,62,()=>actions.rule('entertainment')),
         ];
-        this.text(this.quick,'QuickNotes','AI按角色等级与生涯进度自动匹配\n完赛获得金币，不增加联赛积分',0,-195,1050,75,23);
+        this.gradeChoice=this.button(this.quick,'EntertainmentGrade','娱乐强度 3 · 混战',-285,-160,490,58,actions.entertainmentGrade,'panel');
+        this.text(this.quick,'QuickNotes','AI按角色等级与生涯进度自动匹配\n完赛获得金币，不增加联赛积分',0,-225,1050,60,21);
         this.quickStart=this.button(this.quick,'StartEvent','开始比赛',370,-285,380,60,()=>actions.start('quick'),'primary');
         this.footer=this.text(this.root,'EventStatus','',100,-345,930,26,17);this.footer.color=WHITE;
         this.rules=makeRect('RulesOverlay',this.root,3000,1600,uiColor(0,22,46,190));this.rules.addComponent(BlockInputEvents);
@@ -193,6 +197,11 @@ export class CareerEventPage {
             const ruleIndex=s.rule==='standard'?2:s.rule==='wild'?3:4;
             const fixedShortEvent=s.rule!=='standard'&&s.rule!=='wild'&&s.rule!=='entertainment';
             this.quickChoices.forEach((n,i)=>{this.enabled(n,!s.busy&&!(i===1&&fixedShortEvent));this.active(n.selected,i===(s.distance===200?0:1)||i===ruleIndex);});
+            this.active(this.gradeChoice.root,s.rule==='entertainment');
+            if(s.rule==='entertainment') {
+                this.enabled(this.gradeChoice,!s.busy);
+                this.write(this.gradeChoice.label,`娱乐强度 ${s.entertainmentGrade} · ${['轻松','热闹','混战','惊险','狂欢'][s.entertainmentGrade-1]}`);
+            }
             this.enabled(this.quickStart,!s.busy);this.write(this.quickStart.label,`开始比赛 · ${s.distance}米`);this.active(this.abandon.root,false);
         }
         this.write(this.footer,s.status||(s.busy?'正在保存并准备比赛…':isMap?'联赛账号共享 · 杯赛跟随角色':'好友对战无成长奖励'));

@@ -50,6 +50,8 @@ export const LITTER_BRAWL_ENTERTAINMENT_TUNING = {
 
 export type LitterBrawlSchedule = Readonly<{
     waveDistances: readonly number[];
+    /** Optional whole-race counts; absent for existing single-event and solo schedules. */
+    waveCounts?: readonly number[];
     landingLeadDistance: number;
 }>;
 
@@ -233,6 +235,8 @@ export class LitterBrawlController {
     private lastSnapshotRevision = -1;
     private lastSnapshotElapsed = -1;
     private waveDistances: readonly number[] = LITTER_BRAWL_INDEPENDENT_SCHEDULE.waveDistances;
+    private waveCounts: readonly number[] | null = null;
+    private waveStartOrders: readonly number[] = [];
     private landingLeadDistance = LITTER_BRAWL_INDEPENDENT_SCHEDULE.landingLeadDistance;
     private readonly previousRacerCourseX: number[];
     private readonly previousRacerLateral: number[];
@@ -253,6 +257,7 @@ export class LitterBrawlController {
         private readonly isPlannedSpotSafe?: (courseX: number, lateral: number) => boolean,
         private readonly minimumWaveIntervalSeconds = 0,
         private readonly soloLandingSearchMeters = 0,
+        private readonly canSpawnWave?: () => boolean,
     ) {
         this.randomSeed = ((seed ^ 0x6c697474) >>> 0) || 0x9e3779b9;
         this.randomState = this.randomSeed;
@@ -495,7 +500,7 @@ export class LitterBrawlController {
         for (const slot of this.slots) {
             if (!slot.active) continue;
             slot.age += step;
-            const activeAge = slot.age - this.burstDelayForSpawnOrder(slot.spawnOrder);
+            const activeAge = slot.age - this.burstDelayForSpawnOrder(slot.spawnOrder, slot.wave);
             if (activeAge < 0) {
                 slot.phase = 'falling';
                 slot.phaseProgress = -1;
@@ -628,8 +633,9 @@ export class LitterBrawlController {
             this.spawnRetryRemaining = Math.max(0, this.spawnRetryRemaining - step);
         }
         if (leaderDistance < this.waveDistances[this.nextWave]) return;
+        if (this.canSpawnWave && !this.canSpawnWave()) return;
         // 对象池暂满只意味着旧垃圾尚未完成下沉，不应把后续正式波次误判为安全取消。
-        if (this.freeSlotCount() < this.itemsPerWave) {
+        if (this.freeSlotCount() < this.itemsInWave(this.nextWave)) {
             this.spawnRetryRemaining = LITTER_BRAWL_TUNING.spawnSafetyRetrySeconds;
             return;
         }
@@ -662,7 +668,8 @@ export class LitterBrawlController {
     }
 
     private spawnWave(wave: number): boolean {
-        if (this.freeSlotCount() < this.itemsPerWave) return false;
+        const itemsInWave = this.itemsInWave(wave);
+        if (this.freeSlotCount() < itemsInWave) return false;
         const halfWidth = this.usableHalfWidth();
         const randomStateBeforePlan = this.randomState;
         const raceAnchor = this.waveDistances[wave] + this.landingLeadDistance;
@@ -700,40 +707,40 @@ export class LitterBrawlController {
                 if (!this.isPlannedSpotSafe(courseX, candidates[index])) candidates.splice(index, 1);
             }
         }
-        if (this.itemsPerWave > LITTER_BRAWL_TUNING.waveCount && candidates.length > 0) {
+        if (itemsInWave > LITTER_BRAWL_TUNING.waveCount && candidates.length > 0) {
             // 高档把同一横向候选复用到错开的前后排；保留真实安全通道。
             const baseCount = candidates.length;
-            while (candidates.length < this.itemsPerWave) {
+            while (candidates.length < itemsInWave) {
                 candidates.push(candidates[candidates.length % baseCount]);
             }
         }
-        if (candidates.length < this.itemsPerWave) {
+        if (candidates.length < itemsInWave) {
             this.randomState = randomStateBeforePlan;
             return false;
         }
         const bottleVariantOffset = Math.floor(this.nextRandom() * 3);
         const formationVariant = Math.floor(this.nextRandom() * 3);
         let bottleOrdinal = 0;
-        for (let index = 0; index < this.itemsPerWave; index++) {
+        for (let index = 0; index < itemsInWave; index++) {
             const slot = this.nextSlot();
             // 波次必须完整生成；前面的容量检查保证这里不会出现半波垃圾。
             if (!slot) return false;
             const candidateIndex = Math.min(candidates.length - 1, Math.floor(this.nextRandom() * candidates.length));
             const lateral = candidates.splice(candidateIndex, 1)[0];
-            const kind: LitterKind = this.itemsPerWave === LITTER_BRAWL_TUNING.waveCount
+            const kind: LitterKind = itemsInWave === LITTER_BRAWL_TUNING.waveCount
                 ? (index === 1 || index === 4 ? 'soft' : 'rigid')
-                : (index >= Math.floor(this.itemsPerWave * 2 / 3) ? 'soft' : 'rigid');
+                : (index >= Math.floor(itemsInWave * 2 / 3) ? 'soft' : 'rigid');
             const localSpawnOrder = this.spawnOrder++;
             slot.active = true;
             this.activeSlotCount++;
             slot.generation++;
             slot.wave = wave;
             slot.phase = 'falling';
-            slot.phaseProgress = this.burstDelayForSpawnOrder(localSpawnOrder) > 0 ? -1 : 0;
+            slot.phaseProgress = this.burstDelayForSpawnOrder(index) > 0 ? -1 : 0;
             slot.kind = kind;
             slot.age = 0;
             slot.anchorCourseX = clamp(
-                courseX + this.formationAlongOffset(formationVariant, index) + (this.nextRandom() - 0.5) * 0.24,
+                courseX + this.formationAlongOffset(formationVariant, index, itemsInWave) + (this.nextRandom() - 0.5) * 0.24,
                 1.2,
                 48.8,
             );
@@ -871,18 +878,24 @@ export class LitterBrawlController {
         return this.slots.length - this.activeSlotCount;
     }
 
-    private burstDelayForSpawnOrder(spawnOrder: number): number {
-        const indexInWave = Math.max(0, spawnOrder) % this.itemsPerWave;
+    private itemsInWave(wave: number): number {
+        return this.waveCounts?.[wave] ?? this.itemsPerWave;
+    }
+
+    private burstDelayForSpawnOrder(spawnOrder: number, wave = -1): number {
+        const indexInWave = this.waveCounts && wave >= 0
+            ? Math.max(0, spawnOrder - (this.waveStartOrders[wave] ?? 0))
+            : Math.max(0, spawnOrder) % this.itemsPerWave;
         return Math.floor(indexInWave / 2) * LITTER_BRAWL_TUNING.burstGroupIntervalSeconds;
     }
 
-    private formationAlongOffset(variant: number, index: number): number {
-        if (this.itemsPerWave === LITTER_BRAWL_TUNING.waveCount) {
+    private formationAlongOffset(variant: number, index: number, count: number): number {
+        if (count === LITTER_BRAWL_TUNING.waveCount) {
             if (variant === 0) return (index - 2.5) * 0.34;
             if (variant === 1) return (Math.floor(index / 2) - 1) * 0.72 + (index % 2 === 0 ? -0.14 : 0.14);
             return (index % 2 === 0 ? -0.65 : 0.65) + (Math.floor(index / 2) - 1) * 0.18;
         }
-        const pairs = Math.ceil(this.itemsPerWave / 2);
+        const pairs = Math.ceil(count / 2);
         const row = Math.floor(index / 2) - (pairs - 1) * 0.5;
         return row * (variant === 0 ? 0.72 : variant === 1 ? 0.8 : 0.88)
             + (index % 2 === 0 ? -0.16 : 0.16);
@@ -959,7 +972,7 @@ export class LitterBrawlController {
         slot.wave = source.wave;
         slot.kind = source.kind;
         slot.phase = source.phase;
-        const activeAge = source.age - this.burstDelayForSpawnOrder(source.spawnOrder);
+        const activeAge = source.age - this.burstDelayForSpawnOrder(source.spawnOrder, source.wave);
         slot.phaseProgress = source.phase === 'falling'
             ? activeAge < 0 ? -1 : clamp01(activeAge / LITTER_BRAWL_TUNING.fallingSeconds)
             : source.phase === 'retiring'
@@ -1003,6 +1016,15 @@ export class LitterBrawlController {
             distances.push(distance);
         }
         this.waveDistances = distances;
+        this.waveCounts = schedule.waveCounts?.length === distances.length
+            && schedule.waveCounts.every(count => Number.isInteger(count) && count > 0 && count <= this.slots.length)
+            ? schedule.waveCounts : null;
+        if (this.waveCounts) {
+            const starts: number[] = [];
+            let order = 0;
+            for (const count of this.waveCounts) { starts.push(order); order += count; }
+            this.waveStartOrders = starts;
+        } else this.waveStartOrders = [];
         this.landingLeadDistance = Number.isFinite(schedule?.landingLeadDistance)
             ? Math.max(0, schedule.landingLeadDistance)
             : LITTER_BRAWL_TUNING.landingLeadDistance;

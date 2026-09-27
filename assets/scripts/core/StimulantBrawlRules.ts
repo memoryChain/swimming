@@ -85,6 +85,72 @@ export function buildEntertainmentStimulantSchedule(
     return buildScheduleAtDistances(seed ^ 0x454e5453, laneCount, distances, itemsPerWave);
 }
 
+/** Whole-race public supplies: preserve the existing physical-pool and wall safety planner. */
+export function buildGradedStimulantSchedule(
+    seed: number,
+    laneCount: number,
+    raceDistance: number,
+    courseLength: number,
+    preferredWaveDistances: readonly number[],
+    itemsPerWave: number,
+): StimulantSpawn[] {
+    const longRace = raceDistance >= 400;
+    const distances = planStimulantWaveDistances(
+        preferredWaveDistances,
+        0,
+        longRace ? 390 : 194,
+        courseLength,
+        raceDistance,
+        4,
+    );
+    return buildScheduleAtDistances(seed ^ 0x454e5453, laneCount, distances, itemsPerWave);
+}
+
+/** 开赛前把补给换到同波的安全泳道，避免与本局固定浮标锚点重叠。 */
+export function avoidGradedSupplyBuoys(
+    schedule: readonly StimulantSpawn[],
+    laneCenters: readonly number[],
+    anchors: readonly Readonly<{ courseX: number; lateral: number }>[],
+    courseLength: number,
+): StimulantSpawn[] {
+    if (anchors.length === 0 || laneCenters.length === 0) return [...schedule];
+    const result: StimulantSpawn[] = [];
+    for (let start = 0; start < schedule.length;) {
+        let end = start + 1;
+        while (end < schedule.length && schedule[end].wave === schedule[start].wave) end++;
+        const wave = schedule.slice(start, end);
+        const chosen = new Array<number>(wave.length).fill(-1);
+        const used = new Set<number>();
+        const place = (index: number): boolean => {
+            if (index >= wave.length) return true;
+            const spawn = wave[index];
+            const leg = Math.floor(spawn.distance / courseLength);
+            const local = spawn.distance % courseLength;
+            const courseX = leg % 2 === 0 ? local : courseLength - local;
+            for (let offset = 0; offset < laneCenters.length; offset++) {
+                const lane = (spawn.laneIndex + offset) % laneCenters.length;
+                if (used.has(lane)) continue;
+                const lateral = laneCenters[lane] + spawn.lateralOffset;
+                if (anchors.some(anchor => Math.abs(anchor.courseX - courseX) < 2.5
+                    && Math.abs(anchor.lateral - lateral) < 2.1)) continue;
+                chosen[index] = lane;
+                used.add(lane);
+                if (place(index + 1)) return true;
+                used.delete(lane);
+            }
+            chosen[index] = -1;
+            return false;
+        };
+        if (!place(0)) throw new Error('No safe lane assignment for graded entertainment supplies');
+        for (let index = 0; index < wave.length; index++) {
+            const spawn = wave[index];
+            result.push(chosen[index] === spawn.laneIndex ? spawn : { ...spawn, laneIndex: chosen[index] });
+        }
+        start = end;
+    }
+    return result;
+}
+
 /**
  * 折返后不同赛程距离可能对应同一实体水域。按四分之一米网格一次性排点，
  * 同时避开折返墙、先前波次的实体位置，并为尾段剩余波次预留前向间距。

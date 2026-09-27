@@ -33,6 +33,9 @@ export interface NetRaceSessionData {
     localPos: number;
     // Room-authoritative race length. Entertainment mode may use either short or long pacing.
     distance: 200 | 400;
+    /** Host-selected whole-race entertainment grade, frozen by the start handshake. */
+    entertainmentGrade: 1 | 2 | 3 | 4 | 5;
+    entertainmentPlanId: number;
 }
 
 let _session: NetRaceSessionData | null = null;

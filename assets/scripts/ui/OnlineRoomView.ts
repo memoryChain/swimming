@@ -29,6 +29,7 @@ export type OnlineMember = {
 export type OnlineRoomState = {
     members: OnlineMember[]; isHost: boolean; ready: boolean; busy: boolean;
     canStart: boolean; roomNumber: string; hint: string; mode: RaceModeId; distance: RoomRaceDistance;
+    entertainmentGrade: 1 | 2 | 3 | 4 | 5;
 };
 type Card = { background: Sprite; avatar: Sprite; ring: Sprite; nickname: Label; role: Label;
     badge: Label; badgeBg: Sprite; plus: Label; empty: Label; member?: OnlineMember; signature: string };
@@ -69,7 +70,8 @@ export class OnlineRoomView {
     private confirmingKick = false;
 
     constructor(parent: Node, private readonly actions: {
-        exit(): void; primary(): void; invite(): void; mode(value: RaceModeId, distance: RoomRaceDistance): void; kick(member: OnlineMember): void;
+        exit(): void; primary(): void; invite(): void; mode(value: RaceModeId, distance: RoomRaceDistance): void;
+        entertainmentGrade(): void; kick(member: OnlineMember): void;
     }) {
         this.root = makeUiNode('OnlineRoom', parent);
         const bg = this.picture(this.root, 'Background', RESOURCE_PATHS.characterUi.background, 0, 0, 1280, 720);
@@ -101,6 +103,10 @@ export class OnlineRoomView {
         this.modePermission = this.text(p, 'RulesPermission', '', 272, 478, 151, 28, 17);
         this.modePermission.horizontalAlign = Label.HorizontalAlign.RIGHT;
         this.modePermission.color = MUTED;
+        this.touch(p, 'EntertainmentGradeHit', 270, 472, 158, 34, () => {
+            if (this.state?.isHost && !this.state.busy && this.state.mode === 'entertainment-brawl')
+                actions.entertainmentGrade();
+        });
         this.picture(p, 'ModeBackground', ART.modePanel, 102, 514, 328, 66);
         this.modeText = this.text(p, 'Mode', '', 166, 525, 123, 34, 22, false);
         this.distanceText = this.text(p, 'Distance', '', 310, 526, 50, 34, 23, false, 'latin');
@@ -177,7 +183,9 @@ export class OnlineRoomView {
         assign(this.count, `${state.members.length}/8`);
         assign(this.modeText, ROOM_MODES.find(m => m.id === state.mode && m.distance === state.distance)?.label ?? getRaceModeTitle(state.mode));
         assign(this.distanceText, String(state.distance));
-        assign(this.modePermission, state.isHost ? '仅房主可切换' : '房主设置');
+        assign(this.modePermission, state.mode === 'entertainment-brawl'
+            ? state.isHost ? `强度 ${state.entertainmentGrade} 档 ›` : `强度 ${state.entertainmentGrade} 档`
+            : state.isHost ? '仅房主可切换' : '房主设置');
         visible(this.modeArrow.node, state.isHost);
         if (!state.isHost || state.busy) visible(this.drawer, false);
         for (let i = 0; i < ROOM_MODES.length; i++) {

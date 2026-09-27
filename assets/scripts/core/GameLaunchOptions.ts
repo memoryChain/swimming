@@ -1,7 +1,9 @@
 import type { PlayerCharacterId } from '../app/PlayerCharacterConfig';
+import { sys } from 'cc';
 import type { RaceModeId } from './GameBalance';
 import type { WhirlpoolSpawnSelection } from './WhirlpoolBrawlRules';
 import type { ObstacleLayout } from './ObstacleBrawlRules';
+import { normalizeEntertainmentRaceGrade, type EntertainmentRaceGrade } from './EntertainmentRacePlan';
 import { ENTERTAINMENT_TEST_COMBINATIONS, EntertainmentIntensity,
     EntertainmentTestCombination, normalizeEntertainmentIntensity } from './EntertainmentIntensity';
 
@@ -18,6 +20,8 @@ export interface AiDebugSetup {
     whirlpoolSelection: WhirlpoolSpawnSelection;
     /** null 表示原规格回归；五档仅在本地调试比赛生效。 */
     entertainmentIntensity?: EntertainmentIntensity | null;
+    /** 综合娱乐整局档位；与单项测试强度独立。 */
+    entertainmentRaceGrade?: EntertainmentRaceGrade;
     entertainmentEventIntensities?: readonly EntertainmentIntensity[];
     entertainmentTestCombination?: EntertainmentTestCombination | null;
     obstacleLayout?: ObstacleLayout;
@@ -25,9 +29,23 @@ export interface AiDebugSetup {
 }
 const pendingAiDebugSetup: AiDebugSetup = { characterId: 'cartonSwimmer6', level: 1, mode: 'beginner', seed: 20260913,
     opponentCount: 7, mixedCharacters: true, whirlpoolSelection: 'random', entertainmentIntensity: null,
+    entertainmentRaceGrade: 3,
     entertainmentEventIntensities: [3, 3, 3, 3, 3, 3, 3], entertainmentTestCombination: null,
     obstacleLayout: 'mixed', raceDistance: 200 };
 export function getAiDebugSetup(): Readonly<AiDebugSetup> { return pendingAiDebugSetup; }
+
+const ENTERTAINMENT_GRADE_STORAGE_KEY = 'speed-swimming.entertainment-grade.v1';
+function loadEntertainmentRaceGrade(): EntertainmentRaceGrade {
+    try { return normalizeEntertainmentRaceGrade(Number(sys.localStorage.getItem(ENTERTAINMENT_GRADE_STORAGE_KEY))) ?? 3; }
+    catch { return 3; }
+}
+let selectedEntertainmentRaceGrade: EntertainmentRaceGrade = loadEntertainmentRaceGrade();
+export function getEntertainmentRaceGrade(): EntertainmentRaceGrade { return selectedEntertainmentRaceGrade; }
+export function setEntertainmentRaceGrade(value: number): void {
+    selectedEntertainmentRaceGrade = normalizeEntertainmentRaceGrade(value) ?? 3;
+    try { sys.localStorage.setItem(ENTERTAINMENT_GRADE_STORAGE_KEY, String(selectedEntertainmentRaceGrade)); }
+    catch { /* 本地存储不可用时仅保留本次会话选择。 */ }
+}
 export function setAiDebugSetup(setup: AiDebugSetup) {
     pendingAiDebugSetup.giantWavePreset = setup.giantWavePreset === 'single' ? 'single' : 'three';
     pendingAiDebugSetup.characterId = setup.characterId;
@@ -42,6 +60,7 @@ export function setAiDebugSetup(setup: AiDebugSetup) {
         ? setup.whirlpoolSelection
         : 'random';
     pendingAiDebugSetup.entertainmentIntensity = normalizeEntertainmentIntensity(setup.entertainmentIntensity);
+    pendingAiDebugSetup.entertainmentRaceGrade = normalizeEntertainmentRaceGrade(setup.entertainmentRaceGrade) ?? 3;
     pendingAiDebugSetup.entertainmentEventIntensities = Array.from({ length: 7 }, (_, index) =>
         normalizeEntertainmentIntensity(setup.entertainmentEventIntensities?.[index]) ?? 3);
     pendingAiDebugSetup.entertainmentTestCombination = ENTERTAINMENT_TEST_COMBINATIONS.find(

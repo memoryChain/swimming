@@ -107,7 +107,7 @@ function nodes(n) { return [n, ...n.children.flatMap(nodes)]; }
 function find(n, name) { return nodes(n).find(n => n.name === name); }
 const host = { pos: 0, self: false, owner: true, ready: true, avatarId: 'coral', nickName: '小龟9460', character: '肌肉男', level: 2 };
 const guest = { ...host, pos: 2, self: true, owner: false, ready: false, nickName: '海风07', avatarId: 'lime' };
-function state(overrides = {}) { return { members: [host, guest], isHost: false, ready: false, busy: false, canStart: false, roomNumber: '826419', hint: '', mode: 'competitive', distance: 200, ...overrides }; }
+function state(overrides = {}) { return { members: [host, guest], isHost: false, ready: false, busy: false, canStart: false, roomNumber: '826419', hint: '', mode: 'competitive', distance: 200, entertainmentGrade: 3, ...overrides }; }
 test('宽屏侧栏避让安全区，标题、箭头和点击区域随三角装饰整体适配', () => {
     const { makeScreenEdgeGroup } = load(path.join(root, 'assets/scripts/ui/RuntimeUiFactory.ts'));
     const worldX = n => n.position.x + (n.parent ? worldX(n.parent) : 0);
@@ -432,7 +432,7 @@ test('房主超时改赛制后取消访客的旧开赛，迟到平台信号只�
         takeStartTimeout(f.h)();
         f.h.changeMode('championship', 400);
         f.send({ t: 'rules', owner: 0, id: f.h._rulesId, rev: f.h._rulesRevision,
-            mode: f.h._mode, distance: f.h._distance });
+            mode: f.h._mode, distance: f.h._distance, entertainmentGrade: f.h._entertainmentGrade });
         assert.equal(f.g._startRequested, false);
         assert.equal(f.g._pendingRaceId, '');
         assert.equal(f.g._pendingMembers, null);
@@ -574,7 +574,7 @@ test('访客拒绝无身份、错误房主身份、旧赛制的 start，非法�
     const g = flow(); g._reconnect = true; g._localReady = true;
     try {
         const start = { t: 'start', pv: NET_RACE_PROTOCOL_VERSION, seed: 7,
-            mode: g._mode, distance: g._distance, rules: g.ruleKey() };
+            mode: g._mode, distance: g._distance, entertainmentGrade: g._entertainmentGrade, rules: g.ruleKey() };
         for (const patch of [{}, { raceId: '0.bad|S|' }, { raceId: '2.wronghost' }, { raceId: '0.valid', rules: 'old:1' }]) {
             g.handleBroadcast(JSON.stringify({ ...start, ...patch }));
             assert.equal(g._raceEntered, false); assert.equal(g._pendingRaceId, '');
@@ -697,18 +697,59 @@ test('赛制改变使旧准备失效，旧版本及乱序 ACK 不能恢复准备
     h.handleRules({ t: 'rulesReady', pos: 2, key, seq: 5, ready: true }); assert.equal(h.allMembersReady(), false);
     h.changeMode('beginner'); h.handleRules({ t: 'rulesReady', pos: 2, key, seq: 7, ready: true }); assert.equal(h.allMembersReady(), false);
     const g = flow(); g._localReady = true;
-    g.handleRules({ t: 'rules', owner: 0, id: h._rulesId, rev: h._rulesRevision, mode: 'beginner', distance: 200 });
+    g.handleRules({ t: 'rules', owner: 0, id: h._rulesId, rev: h._rulesRevision, mode: 'beginner', distance: 200, entertainmentGrade: 3 });
     await Promise.resolve(); assert.equal(g._localReady, false); assert.equal(g._mode, 'beginner');
-    g.handleRules({ t: 'rules', owner: 0, id: h._rulesId, rev: 0, mode: 'championship', distance: 400 }); assert.equal(g._mode, 'beginner');
+    g.handleRules({ t: 'rules', owner: 0, id: h._rulesId, rev: 0, mode: 'championship', distance: 400, entertainmentGrade: 3 }); assert.equal(g._mode, 'beginner');
     h.dispose(); g.dispose();
 });
 test('准备请求途中赛制改变，不接受旧请求的成功回调', async () => {
     const g = flow(); let resolve;
     net.updateReady = () => new Promise(r => { resolve = r; });
     const pending = g.setReady(true);
-    g.handleRules({ t: 'rules', owner: 0, id: g._rulesId, rev: 2, mode: 'beginner', distance: 200 });
+    g.handleRules({ t: 'rules', owner: 0, id: g._rulesId, rev: 2, mode: 'beginner', distance: 200, entertainmentGrade: 3 });
     net.updateReady = async () => {}; resolve(); await pending;
     assert.equal(g._localReady, false); assert.equal(g._localReadyRule, ''); g.dispose();
+});
+test('娱乐房间只允许房主点击强度，访客看到房主档位', () => {
+    let changed = 0;
+    const v = new OnlineRoomView(new Node('root'), { exit() {}, primary() {}, invite() {},
+        mode() {}, entertainmentGrade() { changed++; }, kick() {} });
+    v.update(state({ mode: 'entertainment-brawl', entertainmentGrade: 5 }));
+    find(v.root, 'EntertainmentGradeHit').click();
+    assert.equal(changed, 0);
+    assert.match(v.modePermission.string, /强度 5 档/);
+    v.update(state({ isHost: true, mode: 'entertainment-brawl', entertainmentGrade: 5 }));
+    find(v.root, 'EntertainmentGradeHit').click();
+    assert.equal(changed, 1);
+    v.update(state({ isHost: true, mode: 'competitive' }));
+    find(v.root, 'EntertainmentGradeHit').click();
+    assert.equal(changed, 1);
+});
+test('房主切换娱乐强度会使旧准备失效，开赛后双方使用同一档位', () => {
+    const f = startRetryFixture();
+    try {
+        f.h.changeMode('entertainment-brawl', 400);
+        const rules = () => ({ t: 'rules', owner: 0, id: f.h._rulesId, rev: f.h._rulesRevision,
+            mode: f.h._mode, distance: f.h._distance, entertainmentGrade: f.h._entertainmentGrade });
+        f.g.handleRules(rules());
+        const oldKey = f.h.ruleKey();
+        f.h._ruleReady[2] = oldKey;
+        f.h.changeEntertainmentGrade();
+        assert.equal(f.h.allMembersReady(), false);
+        f.g.handleRules(rules());
+        assert.equal(f.g._entertainmentGrade, f.h._entertainmentGrade);
+        assert.equal(f.g._localReady, false);
+        f.g._localReady = true;
+        f.h._ruleReady[2] = f.h.ruleKey();
+        f.h.startRace();
+        assert.equal(f.messages[0].entertainmentGrade, f.h._entertainmentGrade);
+        f.send({ ...f.messages[0], entertainmentPlanId: f.messages[0].entertainmentPlanId + 1 });
+        assert.equal(f.g._startRequested, false);
+        f.send(f.messages[0]);
+        f.h.onNetGameStart(); f.g.onNetGameStart();
+        assert.deepEqual(f.sessions.map(session => session.entertainmentGrade),
+            [f.h._entertainmentGrade, f.h._entertainmentGrade]);
+    } finally { f.dispose(); }
 });
 test('踢人前复查成员身份，座位换人不能误踢', async () => {
     const h = flow(true); let kicked = 0; net.kickMember = async () => { kicked++; };
