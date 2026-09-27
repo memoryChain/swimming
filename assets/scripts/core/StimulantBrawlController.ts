@@ -170,7 +170,7 @@ export class StimulantBrawlController {
         for (let lane = 0; lane < laneLayout.laneCount; lane++) {
             this.pickupRacers[lane] = racerForLane(lane);
         }
-        this.items = (schedule ?? buildStimulantSchedule(seed, laneLayout.laneCount)).map(spawn => {
+        this.items = (schedule ?? buildStimulantSchedule(seed, laneLayout.laneCount, course.courseLength)).map(spawn => {
             const laneZ = laneLayout.centerZ(spawn.laneIndex) + spawn.lateralOffset;
             const p = course.swimPosition(spawn.distance, laneZ);
             return {

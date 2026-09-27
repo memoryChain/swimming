@@ -36,13 +36,23 @@ export const STIMULANT_PUBLIC_WAVE_DISTANCES = [35, 60, 85, 110, 135, 160, 185] 
 export const STIMULANT_ENTERTAINMENT_WALL_CLEARANCE = 4;
 const STIMULANT_ENTERTAINMENT_MIN_LEAD_DISTANCE = 4;
 const STIMULANT_ENTERTAINMENT_MIN_WAVE_GAP = 4;
+const STIMULANT_WORLD_WAVE_GAP = 2.5;
+const STIMULANT_WAVE_GRID_PER_METER = 4;
 
 /**
  * 只依赖主机种子的固定赛程。
  * 七波各三瓶并随机分散到不同泳道；所有瓶子都是公共争抢目标。
  */
-export function buildStimulantSchedule(seed: number, laneCount = 8): StimulantSpawn[] {
-    return buildScheduleAtDistances(seed, laneCount, STIMULANT_PUBLIC_WAVE_DISTANCES);
+export function buildStimulantSchedule(seed: number, laneCount = 8, courseLength = 50): StimulantSpawn[] {
+    const distances = planStimulantWaveDistances(
+        STIMULANT_PUBLIC_WAVE_DISTANCES,
+        STIMULANT_PUBLIC_WAVE_DISTANCES[0],
+        194,
+        courseLength,
+        200,
+        0,
+    );
+    return buildScheduleAtDistances(seed, laneCount, distances);
 }
 
 /** 六合一短事件：两波各三瓶，位置以房主激活时的权威赛程距离为锚点。 */
@@ -58,77 +68,112 @@ export function buildEntertainmentStimulantSchedule(
     const longRace = raceDistance >= 400;
     const lastAnchor = longRace ? 365 : 175;
     const lastSpawn = longRace ? 390 : 194;
-    const anchor = Math.max(0, Math.min(lastAnchor, Number.isFinite(anchorDistance) ? anchorDistance : 0));
+    const anchor = Math.round(Math.max(0, Math.min(
+        lastAnchor, Number.isFinite(anchorDistance) ? anchorDistance : 0,
+    )) * STIMULANT_WAVE_GRID_PER_METER) / STIMULANT_WAVE_GRID_PER_METER;
     const offsets = waveCount === undefined ? (longRace ? [5, 13, 21, 29] : [6, 19])
         : Array.from({ length: Math.max(1, Math.min(6, Math.floor(waveCount))) }, (_, index) =>
             (longRace ? 5 : 6) + index * (longRace ? 8 : 13));
-    const distances = keepEntertainmentSpawnsClearOfTurnWalls(
+    const distances = planStimulantWaveDistances(
         offsets.map(offset => Math.min(lastSpawn, anchor + offset)),
         anchor,
         lastSpawn,
         courseLength,
         raceDistance,
+        STIMULANT_ENTERTAINMENT_MIN_LEAD_DISTANCE,
     );
     return buildScheduleAtDistances(seed ^ 0x454e5453, laneCount, distances, itemsPerWave);
 }
 
 /**
- * 动态投放不得落在折返墙附近。整批仍保持赛程前进方向上的稳定顺序，
- * 同时给第一波和相邻波次保留最小前向距离，避免修正后贴脸或堆叠。
+ * 折返后不同赛程距离可能对应同一实体水域。按四分之一米网格一次性排点，
+ * 同时避开折返墙、先前波次的实体位置，并为尾段剩余波次预留前向间距。
+ * 如果末段没有足够安全位置，按规范裁减尾波，绝不把多波钳到同一落点。
  */
-function keepEntertainmentSpawnsClearOfTurnWalls(
+function planStimulantWaveDistances(
     distances: readonly number[],
     anchorDistance: number,
     lastSpawnDistance: number,
     courseLength: number,
     raceDistance: number,
+    minimumLeadDistance: number,
 ): number[] {
-    const result: number[] = [];
-    let minimumDistance = Math.min(
-        lastSpawnDistance,
-        anchorDistance + STIMULANT_ENTERTAINMENT_MIN_LEAD_DISTANCE,
-    );
-    for (const rawDistance of distances) {
-        const candidate = Math.max(minimumDistance, Math.min(lastSpawnDistance, rawDistance));
-        const safeDistance = moveStimulantSpawnClearOfTurnWall(
-            candidate,
-            minimumDistance,
-            lastSpawnDistance,
-            courseLength,
-            raceDistance,
-        );
-        result.push(safeDistance);
-        minimumDistance = Math.min(
-            lastSpawnDistance,
-            safeDistance + STIMULANT_ENTERTAINMENT_MIN_WAVE_GAP,
-        );
+    const grid = STIMULANT_WAVE_GRID_PER_METER;
+    const first = Math.round((anchorDistance + minimumLeadDistance) * grid);
+    const last = Math.round(lastSpawnDistance * grid);
+    const leg = Math.max(1, Math.round((Number.isFinite(courseLength) ? courseLength : 50) * grid));
+    const race = Math.round(raceDistance * grid);
+    const minGap = STIMULANT_ENTERTAINMENT_MIN_WAVE_GAP * grid;
+    const worldGap = STIMULANT_WORLD_WAVE_GAP * grid;
+    const wallClearance = STIMULANT_ENTERTAINMENT_WALL_CLEARANCE * grid;
+    const maxCount = Math.min(distances.length, Math.floor((last - first) / minGap) + 1);
+
+    for (let count = maxCount; count > 0; count--) {
+        const planned: number[] = [];
+        let feasible = true;
+        for (let index = 0; index < count; index++) {
+            const minimum = index === 0 ? first : planned[index - 1] + minGap;
+            const maximum = last - (count - 1 - index) * minGap;
+            const preferred = Math.min(maximum, Math.max(minimum, Math.round(distances[index] * grid)));
+            const candidate = nearestSafeStimulantWave(
+                preferred, minimum, maximum, planned, leg, race, wallClearance, worldGap,
+            );
+            if (candidate === null) {
+                feasible = false;
+                break;
+            }
+            planned.push(candidate);
+        }
+        if (feasible) return planned.map(distance => distance / grid);
     }
-    return result;
+    return [];
 }
 
-function moveStimulantSpawnClearOfTurnWall(
-    distance: number,
-    minimumDistance: number,
-    maximumDistance: number,
+function nearestSafeStimulantWave(
+    preferred: number,
+    minimum: number,
+    maximum: number,
+    previous: readonly number[],
     courseLength: number,
     raceDistance: number,
-): number {
-    if (!Number.isFinite(courseLength) || courseLength <= 0) return distance;
-    const wallIndex = Math.round(distance / courseLength);
-    const wallDistance = wallIndex * courseLength;
-    if (wallIndex <= 0 || wallDistance >= raceDistance) return distance;
-    if (Math.abs(distance - wallDistance) >= STIMULANT_ENTERTAINMENT_WALL_CLEARANCE) return distance;
-
-    const beforeWall = wallDistance - STIMULANT_ENTERTAINMENT_WALL_CLEARANCE;
-    const afterWall = wallDistance + STIMULANT_ENTERTAINMENT_WALL_CLEARANCE;
-    const canUseBefore = beforeWall >= minimumDistance;
-    const canUseAfter = afterWall <= maximumDistance;
-    if (canUseBefore && canUseAfter) {
-        return distance - beforeWall <= afterWall - distance ? beforeWall : afterWall;
+    wallClearance: number,
+    worldGap: number,
+): number | null {
+    for (let delta = 0; delta <= maximum - minimum; delta++) {
+        const after = preferred + delta;
+        if (after <= maximum && safeStimulantWavePosition(
+            after, previous, courseLength, raceDistance, wallClearance, worldGap,
+        )) return after;
+        const before = preferred - delta;
+        if (delta > 0 && before >= minimum && safeStimulantWavePosition(
+            before, previous, courseLength, raceDistance, wallClearance, worldGap,
+        )) return before;
     }
-    if (canUseBefore) return beforeWall;
-    if (canUseAfter) return afterWall;
-    return distance;
+    return null;
+}
+
+function safeStimulantWavePosition(
+    distance: number,
+    previous: readonly number[],
+    courseLength: number,
+    raceDistance: number,
+    wallClearance: number,
+    worldGap: number,
+): boolean {
+    for (let wall = courseLength; wall < raceDistance; wall += courseLength) {
+        if (Math.abs(distance - wall) < wallClearance) return false;
+    }
+    const physical = stimulantPhysicalPoolOffset(distance, courseLength);
+    for (const prior of previous) {
+        if (Math.abs(physical - stimulantPhysicalPoolOffset(prior, courseLength)) < worldGap) return false;
+    }
+    return true;
+}
+
+function stimulantPhysicalPoolOffset(distance: number, courseLength: number): number {
+    const leg = Math.floor(distance / courseLength);
+    const progress = distance % courseLength;
+    return leg % 2 === 0 ? progress : courseLength - progress;
 }
 
 function buildScheduleAtDistances(

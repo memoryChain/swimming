@@ -92,7 +92,8 @@
 // 版本104：狂野／娱乐尾迹跟游，原完赛位合并水面资格和来源，一字符不增包长。
 // 版本105：尾迹起划即时撤销旧房主任期、大位移和已失效来源的优惠；不增网络字段。
 // 版本106：为高密度杂物加入最多三片 LF| 快照；普通 18 槽仍走原 L| 单包。
-export const NET_RACE_PROTOCOL_VERSION = 106;
+// 版本108：苏打与冰沙波次改按实体泳池位置避让；不同排点算法的客户端不得混房。
+export const NET_RACE_PROTOCOL_VERSION = 108;
 
 let lastRaceStamp = 0;
 

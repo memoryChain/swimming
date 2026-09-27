@@ -26,6 +26,26 @@ const { createDefaultProfile, normalizeProfile } = PlayerProfile;
 const { sampleWaterFloatOffset, WATER_FLOAT_PROFILES } = WaterFloatMotion;
 const { StrokeHeartRateModel } = StrokeHeartRate;
 
+function physicalPoolOffset(distance, courseLength = 50) {
+    const leg = Math.floor(distance / courseLength);
+    const legOffset = distance % courseLength;
+    return leg % 2 === 0 ? legOffset : courseLength - legOffset;
+}
+
+function assertWavePositionsSeparated(schedule, courseLength = 50) {
+    const waves = [...new Set(schedule.map(item => item.wave))];
+    const distances = waves.map(wave => schedule.find(item => item.wave === wave).distance);
+    for (let first = 0; first < distances.length; first++) {
+        for (let second = first + 1; second < distances.length; second++) {
+            assert.ok(
+                Math.abs(physicalPoolOffset(distances[first], courseLength)
+                    - physicalPoolOffset(distances[second], courseLength)) >= 2.4 - 1e-9,
+                `第 ${waves[first]}、${waves[second]} 波落在同一实体水域：${distances[first]} / ${distances[second]}`,
+            );
+        }
+    }
+}
+
 test('水面漂浮物共用双波形规则并按物体质量分档', () => {
     const pickup = WATER_FLOAT_PROFILES.pickup;
     const samples = Array.from({ length: 120 }, (_, index) => (
@@ -90,6 +110,74 @@ test('六合一苏打动态投放避开折返墙并保持波次间距', () => {
             }
         }
     }
+});
+
+test('独立七波与尾段高强度补给不会复用同一实体落点', () => {
+    for (let seed = 1; seed <= 32; seed++) {
+        assertWavePositionsSeparated(buildStimulantSchedule(seed));
+    }
+    for (const [raceDistance, anchor, waveCount] of [[200, 175, 4], [400, 365, 6]]) {
+        const schedule = buildEntertainmentStimulantSchedule(
+            123456, 8, anchor, raceDistance, 50, waveCount, 5,
+        );
+        assert.equal(new Set(schedule.map(item => item.wave)).size, waveCount);
+        assertWavePositionsSeparated(schedule);
+    }
+    for (const [raceDistance, lastAnchor, waveCount] of [[200, 175, 4], [400, 365, 6]]) {
+        for (let anchor = 0; anchor <= lastAnchor; anchor += 2.5) {
+            const schedule = buildEntertainmentStimulantSchedule(
+                123456, 8, anchor, raceDistance, 50, waveCount, 5,
+            );
+            const distances = [...new Set(schedule.map(item => item.distance))];
+            assert.equal(distances.length, waveCount, `赛程 ${raceDistance} 米、锚点 ${anchor} 米应保留全部计划波次`);
+            assertWavePositionsSeparated(schedule);
+            for (let index = 1; index < distances.length; index++) {
+                assert.ok(distances[index] - distances[index - 1] >= 4);
+            }
+            for (const distance of distances) {
+                for (let wall = 50; wall < raceDistance; wall += 50) {
+                    assert.ok(Math.abs(distance - wall) >= STIMULANT_ENTERTAINMENT_WALL_CLEARANCE);
+                }
+            }
+        }
+    }
+});
+
+test('同场景重赛进入准备态时清除上一局补给，重复准备态不再清理', () => {
+    const source = readFileSync(
+        new URL('../assets/scripts/core/GameManager.ts', import.meta.url), 'utf8',
+    );
+    const begin = source.indexOf('setState: (state) => {');
+    const end = source.indexOf('getState: () => this._state,', begin);
+    assert.ok(begin >= 0 && end > begin);
+    const callbackSource = source.slice(begin + 'setState: (state) => '.length, end)
+        .trim().replace(/,$/, '');
+    const GameState = {
+        READY: 'ready', FINISHED: 'finished', PRECOUNTDOWN: 'precountdown',
+        RACING: 'racing', COUNTDOWN: 'countdown', DIVING: 'diving',
+        AWARDS: 'awards', GLIDING: 'gliding',
+    };
+    const setState = new Function('GameState', `return function(state) ${callbackSource}`)(GameState);
+    let destroyed = 0;
+    const listeners = [];
+    const manager = {
+        _state: GameState.FINISHED,
+        _stimulantBrawl: { dispose() { destroyed++; } },
+        _netRaceController: {
+            setStimulantPickupListener(value) { listeners.push(value); },
+            setStimulantStateListener(value) { listeners.push(value); },
+        },
+        syncConditionPhase() {},
+        _awardsPresentation: { hide() {} },
+    };
+    setState.call(manager, GameState.READY);
+    assert.equal(destroyed, 1);
+    assert.equal(manager._stimulantBrawl, null);
+    assert.deepEqual(listeners, [null, null]);
+
+    manager._stimulantBrawl = { dispose() { destroyed++; } };
+    setState.call(manager, GameState.READY);
+    assert.equal(destroyed, 1);
 });
 
 test('心跳苏打显式预制体包含模型渲染器，加载器保留多路径、单方块兜底和远距光柱', () => {
@@ -178,7 +266,8 @@ test('心跳苏打赛程由种子稳定生成七波公共争抢且不再包含�
         assert.equal(items.length, 3);
         assert.equal(new Set(items.map(item => item.laneIndex)).size, 3);
         assert.ok(items.every(item => Math.abs(item.lateralOffset) >= 0.36 && Math.abs(item.lateralOffset) <= 0.72));
-        assert.ok(items.every(item => item.distance === STIMULANT_PUBLIC_WAVE_DISTANCES[wave - 1]));
+        assert.equal(new Set(items.map(item => item.distance)).size, 1);
+        assert.ok(items.every(item => Math.abs(item.distance - STIMULANT_PUBLIC_WAVE_DISTANCES[wave - 1]) <= 3));
         const laneKey = items.map(item => item.laneIndex).sort((x, y) => x - y).join(',');
         assert.notEqual(laneKey, previousLaneKey);
         previousLaneKey = laneKey;

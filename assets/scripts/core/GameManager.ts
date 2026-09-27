@@ -1206,6 +1206,13 @@ export class GameManager extends Component {
                     this._sharkLockOnOverlay.hide();
                 }
                 this.syncConditionPhase(state);
+                if (state === GameState.READY && previousState !== GameState.READY && this._stimulantBrawl) {
+                    // Single-player replay keeps this scene; discard old pickups before the next race is built.
+                    this._stimulantBrawl.dispose();
+                    this._stimulantBrawl = null;
+                    this._netRaceController?.setStimulantPickupListener(null);
+                    this._netRaceController?.setStimulantStateListener(null);
+                }
                 if (state === GameState.COUNTDOWN || state === GameState.DIVING || state === GameState.RACING) {
                     this._netRaceController?.flushPlayerQuits();
                 }
