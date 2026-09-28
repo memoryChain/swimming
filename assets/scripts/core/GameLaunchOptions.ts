@@ -1,5 +1,6 @@
 import type { PlayerCharacterId } from '../app/PlayerCharacterConfig';
 import { sys } from 'cc';
+import { SeededRandom } from './SharedRNG';
 import type { RaceModeId } from './GameBalance';
 import type { WhirlpoolSpawnSelection } from './WhirlpoolBrawlRules';
 import type { ObstacleLayout } from './ObstacleBrawlRules';
@@ -18,6 +19,7 @@ export interface AiDebugSetup {
     level: number;
     mode: RaceModeId;
     seed: number;
+    seedMode?: 'random' | 'fixed';
     opponentCount: 1 | 7;
     mixedCharacters: boolean;
     whirlpoolSelection: WhirlpoolSpawnSelection;
@@ -31,11 +33,22 @@ export interface AiDebugSetup {
     raceDistance?: 200 | 400;
 }
 const pendingAiDebugSetup: AiDebugSetup = { characterId: 'cartonSwimmer6', level: 1, mode: 'beginner', seed: 20260913,
+    seedMode: 'random',
     opponentCount: 7, mixedCharacters: true, whirlpoolSelection: 'random', entertainmentIntensity: null,
     entertainmentRaceGrade: 3,
     entertainmentEventIntensities: [3, 3, 3, 3, 3, 3, 3, 1, 3, 3], entertainmentTestCombination: null,
     obstacleLayout: 'mixed', raceDistance: 200 };
 export function getAiDebugSetup(): Readonly<AiDebugSetup> { return pendingAiDebugSetup; }
+
+/** 每次进入或重开测试赛仅调用一次；固定模式沿用上一局种子。 */
+export function prepareAiDebugRaceSeed(): number {
+    if (pendingAiDebugSetup.seedMode === 'random') {
+        const previous = pendingAiDebugSetup.seed;
+        const next = SeededRandom.entropySeed();
+        pendingAiDebugSetup.seed = next !== 0 && next !== previous ? next : ((previous + 1) >>> 0) || 1;
+    }
+    return pendingAiDebugSetup.seed;
+}
 
 const ENTERTAINMENT_GRADE_STORAGE_KEY = 'speed-swimming.entertainment-grade.v1';
 function loadEntertainmentRaceGrade(): EntertainmentRaceGrade {
@@ -63,6 +76,7 @@ export function setAiDebugSetup(setup: AiDebugSetup) {
     const oldDebrisMode = setup.mode === 'litter-brawl';
     pendingAiDebugSetup.mode = oldBuoyMode || oldDebrisMode ? 'obstacle-brawl' : setup.mode;
     pendingAiDebugSetup.seed = setup.seed >>> 0;
+    pendingAiDebugSetup.seedMode = setup.seedMode === 'random' ? 'random' : 'fixed';
     pendingAiDebugSetup.opponentCount = setup.opponentCount === 7 ? 7 : 1;
     pendingAiDebugSetup.mixedCharacters = setup.mixedCharacters === true;
     pendingAiDebugSetup.whirlpoolSelection = setup.whirlpoolSelection === 'normal' || setup.whirlpoolSelection === 'super'

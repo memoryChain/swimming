@@ -88,7 +88,7 @@ import { EntertainmentRecoveryHud } from '../ui/EntertainmentRecoveryHud';
 import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
 import { MineRelayBrawlHud } from '../ui/MineRelayBrawlHud';
 import { DebugLogController } from './DebugLogController';
-import { consumeMainGameLaunchMode, consumeRoomMode, consumeRoomRaceDistance, getAiDebugSetup, getAiDebugDifficulty, getEntertainmentRaceGrade, resolveAiDebugBuildOptions, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
+import { consumeMainGameLaunchMode, consumeRoomMode, consumeRoomRaceDistance, getAiDebugSetup, prepareAiDebugRaceSeed, getAiDebugDifficulty, getEntertainmentRaceGrade, resolveAiDebugBuildOptions, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
 import { consumeNetRaceSession, NetRaceSessionData } from '../net/NetRaceSession';
 import { NetRaceController } from '../net/NetRaceController';
 import { buildNetLanePlan, NetLanePlan } from '../net/NetLanePlan';
@@ -98,7 +98,7 @@ import { NetSnapshotEntry } from '../net/NetRaceSnapshot';
 import type { NetTurtleBusState } from '../net/NetTurtleBusSnapshot';
 import type { GeyserWorldState, NetGeyserState } from '../net/NetGeyserSnapshot';
 import { NET_SIM_STEP } from '../net/NetSimClock';
-import { getSharedRandomSeed, reseedSharedRandom } from './SharedRNG';
+import { getSharedRandomSeed, reseedSharedRandom, SeededRandom } from './SharedRNG';
 import { getSoloRaceTicket, setSoloRaceTicket, markSoloReturn } from '../progression/SoloRaceSession';
 import { setSoloRaceDistance } from './GameBalance';
 import { centeredLaneStart, aiIndexInLaneRange } from '../competitor/RaceLaneAllocation';
@@ -1087,6 +1087,30 @@ export class GameManager extends Component {
         this._swimmerNameOverlay.resetTracking();
     }
 
+    /** 随机体验重开重新编排；固定测试和联机会话沿用各自的种子。 */
+    private refreshRandomRaceForReplay(): void {
+        if (this._netSession || this._roomMode || this._modelDebugFlow?.active) return;
+        if (this._aiDebugMode) {
+            if (getAiDebugSetup().seedMode !== 'random') return;
+            reseedSharedRandom(prepareAiDebugRaceSeed());
+        } else {
+            if (!isEntertainmentBrawlMode() || getSoloRaceTicket()) return;
+            reseedSharedRandom(SeededRandom.entropySeed());
+        }
+        this.setupEntertainmentMode();
+        if (!isEntertainmentBrawlMode()) {
+            this.setupSharkBrawl();
+            this.setupCannonBrawl();
+            this.setupMineRelayBrawl();
+            if (isObstacleBrawlMode()) this.setupObstacleBrawl();
+            else {
+                this.setupMinefieldBrawl();
+                this.setupLitterBrawl();
+            }
+        }
+        if (getRaceDifficultyConfig().id === 'turtle-bus-brawl') this.createTurtleBus(false);
+    }
+
     // Re-roll the AI lineup before each replay so tapping "再来一次" faces a freshly
     // shuffled set of opponents (names + difficulty) in new lane positions. Skipped
     // AI 测试保留选定阵容，便于重赛对比。
@@ -1163,6 +1187,7 @@ export class GameManager extends Component {
             setSoloRaceDistance(ticket?.distance ?? null);
             setSoloAiEvent(ticket?.ai ?? null);
             if (ticket) reseedSharedRandom(ticket.seed);
+            else if (isEntertainmentBrawlMode()) reseedSharedRandom(SeededRandom.entropySeed());
         }
         if (this._netSession) {
             // Networked race: every client reseeds SharedRNG with the host's seed so
@@ -1285,6 +1310,10 @@ export class GameManager extends Component {
                     this._sharkLockOnOverlay.hide();
                 }
                 this.syncConditionPhase(state);
+                // 所有重赛入口均经过 READY；只刷新一次，避免主按钮绕过重赛按钮逻辑。
+                if (state === GameState.READY && previousState !== GameState.READY) {
+                    this.refreshRandomRaceForReplay();
+                }
                 if (state === GameState.COUNTDOWN || state === GameState.DIVING || state === GameState.RACING) {
                     this._netRaceController?.flushPlayerQuits();
                 }

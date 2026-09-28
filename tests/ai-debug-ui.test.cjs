@@ -71,6 +71,95 @@ const emptyCurrencyDebug = () => ({
     adjust: async () => ({ coins: 0, breakthroughGems: 0 }),
 });
 
+test('随机体验只在开赛换种子，切回固定模式可以复现上一局且切换不重建控件', () => {
+    const { Node, Label, load } = fixture();
+    const { getAiDebugSetup, setAiDebugSetup, prepareAiDebugRaceSeed } = load('core/GameLaunchOptions');
+    const { SeededRandom } = load('core/SharedRNG');
+    const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
+    let draws = 0;
+    SeededRandom.entropySeed = () => 9000 + ++draws;
+    const panel = new Node('Panel');
+    buildAiDebugSetupPicker(panel, () => {}, emptyCurrencyDebug());
+    const nodes = descendants(panel), listeners = nodes.map(n => n.events.size);
+    assert.match(findNode(panel, 'ModeSeed').getChildByName('Label').getComponent(Label).string, /随机体验/);
+    for (let i = 0; i < 20; i++) findNode(panel, 'ModeSeed').click();
+    assert.equal(draws, 0);
+    assert.deepEqual(descendants(panel), nodes);
+    assert.deepEqual(nodes.map(n => n.events.size), listeners);
+    findNode(panel, 'ModeStart').click();
+    assert.equal(getAiDebugSetup().seed, 9001);
+    assert.equal(prepareAiDebugRaceSeed(), 9002, '随机重赛换种子');
+    const replay = new Node('Replay');
+    buildAiDebugSetupPicker(replay, () => {}, emptyCurrencyDebug());
+    findNode(replay, 'ModeSeed').click();
+    assert.match(findNode(replay, 'ModeSeed').getChildByName('Label').getComponent(Label).string, /固定种子 9002/);
+    findNode(replay, 'ModeStart').click();
+    assert.equal(getAiDebugSetup().seed, 9002);
+    assert.equal(prepareAiDebugRaceSeed(), 9002);
+    assert.equal(draws, 2);
+    setAiDebugSetup({ ...getAiDebugSetup(), seedMode: 'random' });
+    SeededRandom.entropySeed = () => 9002;
+    assert.equal(prepareAiDebugRaceSeed(), 9003, '重复熵值不造成同一种子');
+});
+
+test('重开随机赛重新编排一次，固定复现和联机不更换种子或导演', () => {
+    const { root } = fixture();
+    const tsPath = process.env.TYPESCRIPT_PATH || process.env.PATH.split(path.delimiter)
+        .map(p => path.resolve(p, '../typescript/lib/typescript.js')).find(p => fs.existsSync(p));
+    const ts = require(tsPath);
+    const file = path.join(root, 'assets/scripts/core/GameManager.ts');
+    const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
+    const cls = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text === 'GameManager');
+    const method = cls.members.find(n => n.name?.getText(source) === 'refreshRandomRaceForReplay');
+    let seedMode = 'random', seed = 10, builds = 0, mode = 'entertainment-brawl', ticket = null;
+    const seeds = [];
+    const Subject = vm.runInNewContext(ts.transpileModule(`class Subject { ${method.getText(source)} }; Subject`, {
+        compilerOptions: { target: ts.ScriptTarget.ES2020 },
+    }).outputText, { getAiDebugSetup: () => ({ seedMode }), prepareAiDebugRaceSeed: () => ++seed,
+        reseedSharedRandom: value => seeds.push(value), SeededRandom: { entropySeed: () => ++seed },
+        isEntertainmentBrawlMode: () => mode === 'entertainment-brawl', getSoloRaceTicket: () => ticket,
+        isObstacleBrawlMode: () => mode === 'obstacle-brawl',
+        getRaceDifficultyConfig: () => ({ id: mode }) });
+    const game = new Subject();
+    game._aiDebugMode = true;
+    game.setupEntertainmentMode = () => builds++;
+    game.refreshRandomRaceForReplay();
+    assert.deepEqual(seeds, [11]); assert.equal(builds, 1);
+    seedMode = 'fixed'; game.refreshRandomRaceForReplay();
+    seedMode = 'random'; game._netSession = {}; game.refreshRandomRaceForReplay();
+    assert.equal(builds, 1); assert.deepEqual(seeds, [11]);
+    game._netSession = null; game._aiDebugMode = false;
+    game.refreshRandomRaceForReplay();
+    assert.equal(builds, 2); assert.deepEqual(seeds, [11, 12]);
+    ticket = {}; game.refreshRandomRaceForReplay();
+    assert.equal(builds, 2);
+    ticket = null;
+    let setState;
+    const visit = node => {
+        if (ts.isPropertyAssignment(node) && node.name.getText(source) === 'setState') setState = node.initializer;
+        ts.forEachChild(node, visit);
+    };
+    visit(cls.members.find(n => n.name?.getText(source) === 'createGameFlow'));
+    const GameState = { READY: 0, RACING: 1, AWARDS: 2, PRECOUNTDOWN: 3, DIVING: 4, COUNTDOWN: 5, GLIDING: 6, FINISHED: 7 };
+    const makeSetState = vm.runInNewContext(ts.transpileModule(`function make() { return ${setState.getText(source)}; }; make`, {
+        compilerOptions: { target: ts.ScriptTarget.ES2020 },
+    }).outputText, { GameState });
+    game._state = GameState.FINISHED;
+    game.syncConditionPhase = () => {};
+    game._awardsPresentation = { hide() {} };
+    const transition = makeSetState.call(game);
+    transition(GameState.READY); transition(GameState.READY);
+    assert.equal(builds, 3, '重赛公共状态入口仅重新编排一次');
+    game._aiDebugMode = true; mode = 'cannon-brawl';
+    const setups = [];
+    for (const name of ['setupSharkBrawl', 'setupCannonBrawl', 'setupMineRelayBrawl', 'setupMinefieldBrawl', 'setupLitterBrawl']) {
+        game[name] = () => setups.push(name);
+    }
+    game.refreshRandomRaceForReplay();
+    assert.equal(builds, 4);
+    assert.equal(setups.length, 5, '单项重赛重建规则控制器，不能仅修改种子读数');
+});
+
 test('AI 测试身份在场景创建前生效，整局事件不会读取快速比赛档位', () => {
     const tsPath = process.env.TYPESCRIPT_PATH || process.env.PATH.split(path.delimiter)
         .map(p => path.resolve(p, '../typescript/lib/typescript.js')).find(p => fs.existsSync(p));

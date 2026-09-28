@@ -33,7 +33,7 @@ export type EntertainmentSupplyBudget = Readonly<{
 
 export type EntertainmentRacePlan = Readonly<{
     version: 1;
-    balanceVersion: 4;
+    balanceVersion: 5;
     identity: number;
     seed: number;
     raceDistance: 200 | 400;
@@ -110,38 +110,42 @@ function mainStage(event: EntertainmentEventId, intensity: EntertainmentRaceGrad
 
 function buildMainStages(seed: number, raceDistance: 200 | 400, grade: EntertainmentRaceGrade): EntertainmentMainStage[] {
     const longRace = raceDistance === 400;
-    // 独立子流：环境选择不改变障碍、补给和强事件的随机序列。
-    const choice = new SeededRandom((seed ^ 0x454e5633) >>> 0).int(100);
-    const event = choice < 20 ? EntertainmentEventId.TURTLE_BUS
+    // 场地事件与挑战数量不变，随机选择插入段落；独立子流不扰动补给和障碍。
+    const random = new SeededRandom((seed ^ 0x454e5635) >>> 0);
+    const choice = random.int(100);
+    const environment = choice < 20 ? EntertainmentEventId.TURTLE_BUS
         : choice < 50 ? EntertainmentEventId.WHIRLPOOL
             : choice < 75 ? EntertainmentEventId.GEYSER : EntertainmentEventId.GIANT_WAVE;
-    const environmentLevel = Math.max(1, grade - 1) as EntertainmentRaceGrade;
-    const opening = (progress: number, required = false) => mainStage(event,
-        event === EntertainmentEventId.TURTLE_BUS ? 1
-            : event === EntertainmentEventId.WHIRLPOOL ? grade === 2 ? 1 : 2 : environmentLevel,
-        progress, 1, event === EntertainmentEventId.TURTLE_BUS ? 15
-            : event === EntertainmentEventId.GEYSER ? geyserSpec(environmentLevel).actionSeconds
-                : event === EntertainmentEventId.GIANT_WAVE ? ENTERTAINMENT_GIANT_WAVE_SECONDS : 8, required);
-    switch (grade) {
-        case 1: return choice < 20 ? [mainStage(EntertainmentEventId.TURTLE_BUS, 1, 0.24, 1, 15, false)] : [];
-        case 2: return [opening(longRace ? 0.26 : 0.32, true)];
-        case 3: return longRace ? [
-            opening(0.16),
-            mainStage(EntertainmentEventId.TIMED_BOMB, 1, 0.40, 1, 11.5, true),
-            mainStage(EntertainmentEventId.TIMED_BOMB, 1, 0.66, 1, 11.5, false),
-        ] : [opening(0.20), mainStage(EntertainmentEventId.TIMED_BOMB, 1, 0.54, 1, 11.5, true)];
-        case 4: return longRace ? [opening(0.14),
-            mainStage(EntertainmentEventId.TIMED_BOMB, 2, 0.38, 1, 10.5, false),
-            mainStage(EntertainmentEventId.CANNON, 2, 0.64, 3, 10.8, true),
-        ] : [opening(0.20), mainStage(EntertainmentEventId.CANNON, 2, 0.52, 2, 8.2, true)];
-        case 5: return longRace ? [opening(0.12),
-            mainStage(EntertainmentEventId.CANNON, 4, 0.36, 6, 9, false),
-            mainStage(EntertainmentEventId.SHARK, 3, 0.62, 1, 14, true),
-        ] : [opening(0.12),
-            mainStage(EntertainmentEventId.CANNON, 3, 0.36, 3, 9.9, false),
-            mainStage(EntertainmentEventId.SHARK, 3, 0.62, 1, 14, true),
-        ];
-    }
+    if (grade === 1) return choice < 20
+        ? [mainStage(environment, 1, 0.24 + random.next() * 0.26, 1, 15, false)] : [];
+    const challenges = grade === 2 ? [] : grade === 3
+        ? longRace ? [EntertainmentEventId.TIMED_BOMB, EntertainmentEventId.TIMED_BOMB] : [EntertainmentEventId.TIMED_BOMB]
+        : grade === 4 ? longRace ? [EntertainmentEventId.TIMED_BOMB, EntertainmentEventId.CANNON] : [EntertainmentEventId.CANNON]
+            : [EntertainmentEventId.CANNON, EntertainmentEventId.SHARK];
+    const environmentIndex = random.int(challenges.length + 1);
+    challenges.splice(environmentIndex, 0, environment);
+    const anchors = challenges.length === 1 ? [0.26 + random.next() * 0.26]
+        : challenges.length === 2 ? [0.20, 0.52] : longRace ? [0.14, 0.38, 0.64] : [0.14, 0.36, 0.58];
+    return challenges.map((event, index) => {
+        // 前段先留给轻障碍和补给；炮击、鲨鱼有最低进度门槛，完整预告另计。
+        let progress = anchors[index] + (random.next() * 2 - 1) * 0.015;
+        if (event === EntertainmentEventId.CANNON) progress = Math.max(progress, index === 0 ? 0.28 : 0.36);
+        if (event === EntertainmentEventId.SHARK) progress = Math.max(progress, 0.48);
+        const environmentLevel = Math.max(1, grade - (index === 0 ? 2 : 1)) as EntertainmentRaceGrade;
+        if (event === environment) return mainStage(event,
+            event === EntertainmentEventId.TURTLE_BUS ? 1 : event === EntertainmentEventId.WHIRLPOOL
+                ? Math.min(2, environmentLevel) as EntertainmentRaceGrade : environmentLevel,
+            progress, 1, event === EntertainmentEventId.TURTLE_BUS ? 15
+                : event === EntertainmentEventId.GEYSER ? geyserSpec(environmentLevel).actionSeconds
+                    : event === EntertainmentEventId.GIANT_WAVE ? ENTERTAINMENT_GIANT_WAVE_SECONDS : 8,
+            grade === 2);
+        if (event === EntertainmentEventId.TIMED_BOMB) return mainStage(event, grade === 3 ? 1 : 2,
+            progress, 1, grade === 3 ? 11.5 : 10.5, grade === 3 && challenges.indexOf(event) === index);
+        if (event === EntertainmentEventId.CANNON) return mainStage(event, grade === 4 ? 2 : longRace ? 4 : 3,
+            progress, grade === 4 ? longRace ? 3 : 2 : longRace ? 6 : 3,
+            grade === 4 ? longRace ? 10.8 : 8.2 : longRace ? 9 : 9.9, grade === 4);
+        return mainStage(event, 3, progress, 1, 14, true);
+    });
 }
 
 /** Deterministic opening configuration; no scene nodes or per-frame allocations. */
@@ -169,7 +173,7 @@ export function buildEntertainmentRacePlan(seed: number, distance: number,
     const supplyWaves = longRace ? numbers.supplyWaves400 : numbers.supplyWaves200;
     const plan = {
         version: 1,
-        balanceVersion: 4,
+        balanceVersion: 5,
         seed: safeSeed,
         raceDistance,
         grade,

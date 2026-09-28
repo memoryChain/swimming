@@ -106,7 +106,8 @@
 // v120：综合巨浪、低档机会事件及顺逆浪推进与姿态权威同步。
 // v121：联机喷泉固定调参、海龟切主清理待应用状态、巨浪远端推进遵从权威。
 // v122：喷泉大小掩码、混排时序和大口轨迹；整局计划 balanceVersion 4。
-export const NET_RACE_PROTOCOL_VERSION = 122;
+// v123：整局场地事件按种子穿插前中后段，保留分档挑战预算及强事件门槛。
+export const NET_RACE_PROTOCOL_VERSION = 123;
 
 let lastRaceStamp = 0;
 

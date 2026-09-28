@@ -1,5 +1,5 @@
 import { BlockInputEvents, Button, Label, Node, UITransform, view } from 'cc';
-import { getAiDebugSetup, setAiDebugSetup } from '../core/GameLaunchOptions';
+import { getAiDebugSetup, setAiDebugSetup, prepareAiDebugRaceSeed } from '../core/GameLaunchOptions';
 import { getRaceDistance, getRaceModeTitle, RaceDifficulty, RaceModeId } from '../core/GameBalance';
 import { PLAYER_CHARACTER_DEFINITIONS } from '../app/PlayerCharacterConfig';
 import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
@@ -222,10 +222,10 @@ export function buildAiDebugSetupPicker(
         raceMode = raceModes[(raceModes.indexOf(raceMode) + 1) % raceModes.length];
         write(mode.label, modeText());
     });
-    const seedText = () => `种子 ${setup.seed}`;
+    const seedText = () => setup.seedMode === 'random' ? '随机体验 · 每局刷新' : `固定种子 ${setup.seed}`;
     let modeSeed: DebugButtonView;
     const cycleSeed = () => {
-        setup.seed = setup.seed === 20260913 ? 42 : setup.seed === 42 ? 12345 : 20260913;
+        setup.seedMode = setup.seedMode === 'random' ? 'fixed' : 'random';
         write(seed.label, seedText());
         write(modeSeed.label, seedText());
     };
@@ -241,13 +241,14 @@ export function buildAiDebugSetupPicker(
             setup.mixedCharacters = true;
         }
         setAiDebugSetup(setup);
+        prepareAiDebugRaceSeed();
         start(difficulty);
     };
     AI_DEBUG_DIFFICULTY_TIERS.forEach((tier, i) => button(aiContent, `Tier${i}`, tier.label, 210, 166 - i * 72, 290, () => {
         launch(raceMode, tier.value, false);
     }));
 
-    makeLabel('Subtitle', modeContent, '选择娱乐事件与强度，固定阵容和种子重测', 18, uiColor(190, 210, 220)).setPosition(0, 218, 0);
+    makeLabel('Subtitle', modeContent, '选择事件与强度；点击随机体验可切换固定种子复现', 18, uiColor(190, 210, 220)).setPosition(0, 218, 0);
     const modeViews = new Map<RaceModeId, { selected: Node; label: Label | null }>();
     const whirlpoolSelectionViews = new Map<typeof setup.whirlpoolSelection, Node>();
     const whirlpoolOptions = makeUiNode('WhirlpoolOptions', modeContent);
