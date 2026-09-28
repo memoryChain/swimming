@@ -59,6 +59,7 @@ export const enum NetInputKind {
     MinefieldImpact = 'i', // host-authoritative obstacle mine id, direct lane, position, hit mask and revision
     LitterContact = 'g', // host-authoritative garbage slot contact, resulting trajectory and revision
     EntertainmentKnockdown = 'u', // host-authoritative global recovery lane/reason/distance/revision
+    GeyserHit = 'y', // host-authoritative vent hit id, lane and strength
 }
 
 export interface NetInputEvent {
@@ -110,6 +111,18 @@ export interface NetInputEvent {
     litterLateral?: number;
     litterBounceAlong?: number;
     litterBounceLateral?: number;
+    geyserHitId?: number;
+    geyserStrength?: number;
+    geyserDistance?: number;
+    geyserLateral?: number;
+    geyserY?: number;
+    geyserSpeed?: number;
+    geyserHeading?: number;
+    geyserSurfaceY?: number;
+    geyserDuration?: number;
+    geyserPeakHeight?: number;
+    geyserEntryScale?: number;
+    geyserExitScale?: number;
 }
 
 export interface DecodedInputFrame {
@@ -140,7 +153,8 @@ export function gameplayEpochSlot(kind: NetInputKind): number {
     if (kind === NetInputKind.CannonLaunch || kind === NetInputKind.CannonImpact) return 0;
     if (kind === NetInputKind.MineRelayArm || kind === NetInputKind.MineRelayTransfer
         || kind === NetInputKind.MineRelayResolution) return 1;
-    return kind === NetInputKind.SharkKnockdown ? 2 : -1;
+    if (kind === NetInputKind.SharkKnockdown) return 2;
+    return kind === NetInputKind.GeyserHit ? 3 : -1;
 }
 
 function encodeEventBody(event: NetInputEvent): string {
@@ -177,6 +191,11 @@ function encodeEventBody(event: NetInputEvent): string {
             return `${NetInputKind.LitterContact}${Math.max(0, Math.floor(event.litterSlotId ?? 0))},${Math.max(0, Math.floor(event.litterGeneration ?? 0))},${event.litterKind === 1 ? 1 : 0},${Math.max(0, Math.floor(event.litterLane ?? 0))},${event.litterAway === 1 ? 1 : 0},${Math.round((event.litterCourseX ?? 0) * 100)},${Math.round((event.litterLateral ?? 0) * 1000)},${Math.round((event.litterBounceAlong ?? 0) * 1000)},${Math.round((event.litterBounceLateral ?? 0) * 1000)},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.EntertainmentKnockdown:
             return `${NetInputKind.EntertainmentKnockdown}${Math.max(0, Math.floor(event.recoveryLane ?? 0))},${Math.max(0, Math.floor(event.recoveryReason ?? 0))},${Math.max(0, Math.round((event.knockedDistance ?? 0) * 100))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
+        case NetInputKind.GeyserHit:
+            return `${NetInputKind.GeyserHit}${Math.max(0, Math.floor(event.geyserHitId ?? 0))},${Math.max(0, Math.floor(event.targetLane ?? 0))},${event.geyserStrength === 2 ? 2 : 1}`
+                + (event.geyserStrength === 2 && event.geyserDistance !== undefined
+                    ? `,${Math.round(event.geyserDistance * 100)},${Math.round((event.geyserLateral ?? 0) * 1000)},${Math.round((event.geyserY ?? 0) * 1000)},${Math.round((event.geyserSpeed ?? 0) * 100)},${Math.round((event.geyserHeading ?? 0) * 1000)},${Math.round((event.geyserSurfaceY ?? 0) * 1000)},${Math.round((event.geyserDuration ?? 1) * 1000)},${Math.round((event.geyserPeakHeight ?? 1.2) * 1000)},${Math.round((event.geyserEntryScale ?? 0.75) * 1000)},${Math.round((event.geyserExitScale ?? 0.6) * 1000)}`
+                    : '');
         case NetInputKind.DiveRelease: {
             const power = Math.max(0, Math.min(POWER_SCALE, Math.round((event.power ?? 0) * POWER_SCALE)));
             if (Number.isFinite(event.launchSpeed) && (event.launchSpeed ?? -1) >= 0) {
@@ -348,6 +367,25 @@ function decodeToken(token: string): NetInputEvent | null {
                     knockedDistance: values[2] / 100,
                     revision: values[3],
                 }
+                : null;
+        }
+        case NetInputKind.GeyserHit: {
+            const values = token.slice(1).split(',').map(value => parseInt(value, 10));
+            return (values.length === 3 || values.length === 13) && values[0] > 0 && values[1] >= 0
+                && (values[2] === 1 || values[2] === 2)
+                && (values.length === 3 ? values[2] === 1 : (values[2] === 2 && values[3] >= 0 && values[6] >= 0
+                    && values[9] > 0 && values[10] >= 0 && values[11] >= 0 && values[12] >= 0))
+                && values.every(Number.isSafeInteger)
+                ? { kind, geyserHitId: values[0], targetLane: values[1], geyserStrength: values[2],
+                    ...(values.length === 13 ? {
+                        geyserDistance: values[3] / 100, geyserLateral: values[4] / 1000,
+                        geyserY: values[5] / 1000, geyserSpeed: values[6] / 100,
+                        geyserHeading: values[7] / 1000,
+                        geyserSurfaceY: values[8] / 1000, geyserDuration: values[9] / 1000,
+                        geyserPeakHeight: values[10] / 1000,
+                        geyserEntryScale: values[11] / 1000,
+                        geyserExitScale: values[12] / 1000,
+                    } : {}) }
                 : null;
         }
         case NetInputKind.DiveRelease: {

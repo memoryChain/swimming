@@ -429,7 +429,7 @@ test('八泳道满状态快照保持在项目的一点五千字节回归预算�
             encoreRound: 999999, encoreEvent: 5, anchorDistance: 400,
             eventAnchorDistances: [32, 96, 160, 224, 288, 360],
         },
-        [999999, 999999, 999999],
+        [999999, 999999, 999999, 999999],
         Number.MAX_SAFE_INTEGER,
         0xffffffff,
     );
@@ -444,7 +444,7 @@ test('八泳道满状态快照保持在项目的一点五千字节回归预算�
         decoded.entertainmentDirector.activationSerial, decoded.entertainmentDirector.encoreRound]) {
         assert.equal(revision, 999999);
     }
-    assert.deepEqual(decoded.eventEpochs, [999999, 999999, 999999]);
+    assert.deepEqual(decoded.eventEpochs, [999999, 999999, 999999, 999999]);
     assert.deepEqual(decoded.entertainmentDirector.eventAnchorDistances, [32, 96, 160, 224, 288, 360]);
     const litterPayload = encodeLitterSnapshot(7, litterState(18), Number.MAX_SAFE_INTEGER, 0xffffffff);
     const litterBytes = Buffer.byteLength(prefix + litterPayload, 'utf8');
@@ -577,8 +577,9 @@ test('an attributed P| or frame self cannot update another registered lane', () 
 });
 
 test('lobby protocol hello rejects missing or mixed versions', () => {
-    assert.ok(NET_RACE_PROTOCOL_VERSION >= 117);
+    assert.ok(NET_RACE_PROTOCOL_VERSION >= 116);
     assert.equal(isCompatibleProtocolVersion(116), false, '缺少海龟抓握保护的客户端不能混房');
+    assert.equal(isCompatibleProtocolVersion(115), false, '旧喷泉命中规则不能与新版混房');
     const hello = decodeProtocolHello(encodeProtocolHello(4));
     assert.deepEqual(hello, { pos: 4, version: NET_RACE_PROTOCOL_VERSION });
     assert.equal(decodeProtocolHello('PV|4|bad'), null);

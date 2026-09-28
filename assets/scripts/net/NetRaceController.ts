@@ -21,9 +21,11 @@ import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
 import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind, gameplayEpochSlot } from './NetRaceInput';
 import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetCannonState, NetEntertainmentDirectorState, NetEntertainmentRecoveryState, NetMinefieldState, NetMineRelayState, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
 import { decodeTurtleBusPacket, encodeTurtleBusPacket, type NetTurtleBusState } from './NetTurtleBusSnapshot';
+import { decodeGeyserPacket, encodeGeyserPacket, type NetGeyserState } from './NetGeyserSnapshot';
 import { decodeLitterSnapshot, encodeLitterSnapshotPackets,
     LitterSnapshotFragmentAssembler } from './NetLitterSnapshot';
 import type { LitterContact, LitterSnapshotState } from '../core/LitterBrawlController';
+import type { ForcedLaunchStart } from '../swimmer/ForcedLaunchModel';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import {
     MonotonicSequenceTracker,
@@ -96,6 +98,7 @@ export class NetRaceController {
     private readonly _hostSnapshotOrder = new MonotonicSequenceTracker();
     private readonly _hostLitterOrder = new MonotonicSequenceTracker();
     private readonly _hostTurtleOrder = new MonotonicSequenceTracker();
+    private readonly _hostGeyserOrder = new MonotonicSequenceTracker();
     private readonly _hostAuthorityOrder = new MonotonicSequenceTracker();
     // Remote-human swimmers keyed by their seat (posNum). Decoded input for a pos is
     // replayed onto its controller. Registered by GameManager after the roster builds.
@@ -169,7 +172,7 @@ export class NetRaceController {
     private readonly _authoritativeEvents: NetInputEvent[] = [];
     private readonly _contactRecoveryEvents: Array<{ event: NetInputEvent; expiresAt: number }> = [];
     private _contactRecoveryCursor = 0;
-    private readonly _eventEpochs = [0, 0, 0];
+    private readonly _eventEpochs = [0, 0, 0, 0];
     private readonly _deferredGameplayEvents: Array<{ sender: number; event: NetInputEvent }> = [];
     private _eventEpochListener: ((slot: number, epoch: number) => void) | null = null;
     private _stimulantPickupListener: ((itemId: number, collectorLane: number, revision: number) => void) | null = null;
@@ -178,6 +181,8 @@ export class NetRaceController {
     private _sharkStateListener: ((state: NetSharkState) => void) | null = null;
     private _cannonLaunchListener: ((strikeId: number, targetDistance: number, targetZ: number, warningSeconds: number, revision: number) => void) | null = null;
     private _cannonImpactListener: ((strikeId: number, hitMask: number, knockedLane: number, knockedDistance: number, revision: number, targetZ?: number, elapsedSeconds?: number) => void) | null = null;
+    private _geyserHitListener: ((hitId: number, lane: number, strength: 1 | 2,
+        elapsedSeconds?: number, start?: ForcedLaunchStart | null) => void) | null = null;
     private _cannonStateListener: ((state: NetCannonState) => void) | null = null;
     private _entertainmentKnockdownListener: ((lane: number, reason: number, distance: number, revision: number) => void) | null = null;
     private _recoveryStateListener: ((state: NetEntertainmentRecoveryState) => void) | null = null;
@@ -191,6 +196,8 @@ export class NetRaceController {
         planId: number) => boolean | void) | null = null;
     private _turtleBusStateListener: ((state: NetTurtleBusState | null) => void) | null = null;
     private _pendingTurtleBusState: NetTurtleBusState | null = null;
+    private _geyserStateListener: ((state: NetGeyserState | null) => void) | null = null;
+    private _pendingGeyserState: NetGeyserState | null = null;
     private _litterStateListener: ((state: LitterSnapshotState, planId: number) => void) | null = null;
     private _pendingLitterState: { state: LitterSnapshotState; planId: number } | null = null;
     private readonly _litterFragmentAssembler = new LitterSnapshotFragmentAssembler();
@@ -227,7 +234,7 @@ export class NetRaceController {
     }
 
     setGameplayEventEpoch(slot: number, epoch: number): void {
-        if (Number.isInteger(slot) && slot >= 0 && slot < 3
+        if (Number.isInteger(slot) && slot >= 0 && slot < 4
             && Number.isSafeInteger(epoch) && epoch >= this._eventEpochs[slot]) {
             this._eventEpochs[slot] = epoch;
         }
@@ -261,6 +268,7 @@ export class NetRaceController {
             case NetInputKind.SharkKnockdown: return !!this._sharkKnockdownListener;
             case NetInputKind.CannonLaunch: return !!this._cannonLaunchListener;
             case NetInputKind.CannonImpact: return !!this._cannonImpactListener;
+            case NetInputKind.GeyserHit: return !!this._geyserHitListener;
             case NetInputKind.MineRelayArm: return !!this._mineRelayArmListener;
             case NetInputKind.MineRelayTransfer: return !!this._mineRelayTransferListener;
             case NetInputKind.MineRelayResolution: return !!this._mineRelayResolutionListener;
@@ -460,12 +468,42 @@ export class NetRaceController {
         this._entertainmentDirectorStateListener = listener;
     }
 
+    enqueueGeyserHit(hitId: number, lane: number, strength: 1 | 2,
+        elapsedSeconds: number, start: ForcedLaunchStart | null): void {
+        if (!this._isHost || this._disposed) return;
+        const event: NetInputEvent = { kind: NetInputKind.GeyserHit,
+            eventEpoch: this._eventEpochs[3], effectTime: elapsedSeconds,
+            geyserHitId: hitId, targetLane: lane, geyserStrength: strength,
+            ...(start ? { geyserDistance: start.distance, geyserLateral: start.lateral,
+                geyserY: start.y, geyserSpeed: start.speed, geyserHeading: start.heading,
+                geyserSurfaceY: start.surfaceY, geyserDuration: start.duration,
+                geyserPeakHeight: start.peakHeight, geyserEntryScale: start.entryScale,
+                geyserExitScale: start.exitScale } : {}) };
+        this._authoritativeEvents.push(event);
+        this.rememberContactEvent(event);
+    }
+
+    setGeyserHitListener(listener: ((hitId: number, lane: number, strength: 1 | 2,
+        elapsedSeconds?: number, start?: ForcedLaunchStart | null) => void) | null): void {
+        this._geyserHitListener = listener;
+        if (listener) this.flushDeferredGameplayEvents();
+    }
+
     setTurtleBusStateListener(listener: ((state: NetTurtleBusState | null) => void) | null): void {
         this._turtleBusStateListener = listener;
         if (listener && this._pendingTurtleBusState) {
             const pending = this._pendingTurtleBusState;
             this._pendingTurtleBusState = null;
             listener(pending);
+        }
+    }
+
+    setGeyserStateListener(listener: ((state: NetGeyserState | null) => void) | null): void {
+        this._geyserStateListener = listener;
+        if (listener && this._pendingGeyserState) {
+            const state = this._pendingGeyserState;
+            this._pendingGeyserState = null;
+            listener(state);
         }
     }
 
@@ -620,6 +658,8 @@ export class NetRaceController {
     }
 
     private clearAuthorityTransientState(): void {
+        this._pendingGeyserState = null;
+        this._geyserStateListener?.(null);
         this._litterFragmentAssembler.reset();
         this._pendingLitterState = null;
         this._pendingTurtleBusState = null;
@@ -750,6 +790,7 @@ export class NetRaceController {
         litter?: LitterSnapshotState | null,
         obstaclePlanId = 0,
         turtleBus?: NetTurtleBusState | null,
+        geyser?: NetGeyserState | null,
     ): void {
         if (this._disposed || !this._net.isSupported()) {
             return;
@@ -772,6 +813,10 @@ export class NetRaceController {
         if (turtleBus) {
             const packet = encodeTurtleBusPacket(this._session.localPos, this._snapSent, turtleBus);
             if (packet) this.broadcastRaceMessage(packet);
+        }
+        if (geyser) {
+            const packet = encodeGeyserPacket(this._session.localPos, this._snapSent, geyser);
+            if (packet && packet.length + this._racePrefix.length <= 1536) this.broadcastRaceMessage(packet);
         }
         // S| 固定 0.15 秒；超过 18 槽时 L|/LF| 隔次发送，避免分片将专属流量翻倍。
         if (litter && (litter.slots.length <= 18 || (++this._denseLitterSnapshotTick & 1) === 1)) {
@@ -971,13 +1016,13 @@ export class NetRaceController {
             // condition targets; otherwise packet arrival order would make AI jump
             // between two authorities during migration.
             if (!this._isHost && snapshot.hostPos === this._activeHostPos) {
-                for (let slot = 0; slot < this._eventEpochs.length; slot++) {
+                for (let slot = 0; slot < snapshot.eventEpochs.length; slot++) {
                     if (snapshot.eventEpochs[slot] < this._eventEpochs[slot]) return;
                 }
                 // 导演拒绝旧轮或非法状态时，同包子玩法也必须全部拒绝。
                 if (this._entertainmentDirectorStateListener?.(
                     snapshot.entertainmentDirector, snapshot.obstaclePlanId) === false) return;
-                for (let slot = 0; slot < this._eventEpochs.length; slot++) {
+                for (let slot = 0; slot < snapshot.eventEpochs.length; slot++) {
                     const epoch = snapshot.eventEpochs[slot];
                     if (epoch > this._eventEpochs[slot]) this._eventEpochListener?.(slot, epoch);
                 }
@@ -1011,6 +1056,17 @@ export class NetRaceController {
                 this.flushDeferredGameplayEvents();
             }
             this.refreshHud();
+            return;
+        }
+        const geyser = decodeGeyserPacket(msg);
+        if (geyser) {
+            if (!this.acceptHostSnapshot(geyser.hostPos, geyser.sequence, this._hostGeyserOrder)) return;
+            this.adoptHostFromSnapshot(geyser.hostPos);
+            if (!this._isHost && geyser.hostPos === this._activeHostPos
+                && geyser.state.world.serial >= this._eventEpochs[3]) {
+                if (this._geyserStateListener) this._geyserStateListener(geyser.state);
+                else this._pendingGeyserState = geyser.state;
+            }
             return;
         }
         const turtle = decodeTurtleBusPacket(msg);
@@ -1392,7 +1448,9 @@ export class NetRaceController {
                 if (this._deferredGameplayEvents.length < 128
                     && !this._deferredGameplayEvents.some(p => p.sender === senderPos
                         && p.event.kind === event.kind && (p.event.eventEpoch ?? 0) === epoch
-                        && p.event.revision === event.revision && p.event.sharkSequence === event.sharkSequence)) {
+                        && p.event.revision === event.revision && p.event.sharkSequence === event.sharkSequence
+                        && p.event.geyserHitId === event.geyserHitId
+                        && p.event.geyserStrength === event.geyserStrength)) {
                     this._deferredGameplayEvents.push({ sender: senderPos, event });
                 }
                 continue;
@@ -1425,6 +1483,21 @@ export class NetRaceController {
                 this._entertainmentKnockdownListener?.(
                     event.recoveryLane, event.recoveryReason, event.knockedDistance, event.revision,
                 );
+            } else if (event.kind === NetInputKind.GeyserHit) {
+                if (event.geyserHitId === undefined || event.targetLane === undefined
+                    || (event.geyserStrength !== 1 && event.geyserStrength !== 2)) continue;
+                const start = event.geyserDistance === undefined ? null : {
+                    distance: event.geyserDistance, lateral: event.geyserLateral ?? 0,
+                    y: event.geyserY ?? 0, speed: event.geyserSpeed ?? 0,
+                    heading: event.geyserHeading ?? 0,
+                    surfaceY: event.geyserSurfaceY ?? 0,
+                    duration: event.geyserDuration ?? 1,
+                    peakHeight: event.geyserPeakHeight ?? 1.2,
+                    entryScale: event.geyserEntryScale ?? 0.75,
+                    exitScale: event.geyserExitScale ?? 0.6,
+                };
+                this._geyserHitListener?.(event.geyserHitId, event.targetLane,
+                    event.geyserStrength, event.effectTime, start);
             } else if (event.kind === NetInputKind.MineRelayArm) {
                 if (event.mineRoundId === undefined || event.mineCarrierLane === undefined
                     || event.fuseSeconds === undefined || event.revision === undefined) continue;
@@ -1547,6 +1620,8 @@ export class NetRaceController {
         this._pendingPlayerQuits.clear();
         this.clearPendingAuthorityEvents();
         this._eventEpochListener = null;
+        this._geyserStateListener = null;
+        this._pendingGeyserState = null;
         // Stop capturing local input once the networked race ends.
         setNetInputCaptureActive(false);
         if (this._hudRoot?.isValid) {

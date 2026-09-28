@@ -261,7 +261,7 @@ export function encodeRaceSnapshot(
     const revision = encodeSnapshotRevision(Math.max(0, Math.floor(stimulant?.revision ?? 0)));
     const mask = Math.max(0, Math.floor(stimulant?.collectedMask ?? 0)).toString(16);
     const collectors = encodeStimulantLedger(stimulant);
-    const epochs = eventEpochs ? '!' + eventEpochs.slice(0, 3).map(value => safeNonNegativeInteger(value).toString(36)).join('.') : '';
+    const epochs = encodeEventEpochs(eventEpochs);
     const cannonRevision = encodeSnapshotRevision(Math.max(0, Math.floor(cannon?.revision ?? 0)));
     // 复用保留槽位记录整包序号，其他字段位置不变；0 保留为旧格式。
     const cannonReservedMask = Number.isSafeInteger(sequence) && sequence >= 0
@@ -539,10 +539,28 @@ function decodeCentimeterList(body: string): number[] {
     return values;
 }
 
+function encodeEventEpochs(epochs?: readonly number[]): string {
+    if (!epochs) return '';
+    const values = [0, 1, 2, 3].map(slot => safeNonNegativeInteger(epochs[slot]));
+    // 两两合成 40 位安全整数，四槽仍小于旧满载主快照预算。
+    const base = 0x100000;
+    if (values.every(value => value < base)) return '^'
+        + (values[0] + values[1] * base).toString(36) + '.'
+        + (values[2] + values[3] * base).toString(36);
+    return '!' + values.map(value => value.toString(36)).join('.');
+}
+
 function decodeEventEpochs(body: string): number[] {
+    if (/^\^[0-9a-z]+\.[0-9a-z]+$/.test(body)) {
+        const pair = body.slice(1).split('.').map(value => parseInt(value, 36));
+        const base = 0x100000;
+        if (pair.every(value => Number.isSafeInteger(value) && value >= 0 && value < base * base))
+            return [pair[0] % base, Math.floor(pair[0] / base), pair[1] % base, Math.floor(pair[1] / base)];
+        return [0, 0, 0, 0];
+    }
     const compact = body.startsWith('!');
     if (compact) body = body.slice(1);
-    if (!(compact ? /^[0-9a-z]+\.[0-9a-z]+\.[0-9a-z]+$/ : /^\d+\.\d+\.\d+$/).test(body)) return [0, 0, 0];
+    if (!(compact ? /^[0-9a-z]+(?:\.[0-9a-z]+){3}$/ : /^\d+(?:\.\d+){3}$/).test(body)) return [0, 0, 0, 0];
     return body.split('.').map(value => safeNonNegativeInteger(parseInt(value, compact ? 36 : 10)));
 }
 

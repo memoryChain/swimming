@@ -12,6 +12,7 @@ export const enum EntertainmentEventId {
     CANNON = 5,
     LITTER = 6,
     TURTLE_BUS = 7,
+    GEYSER = 8,
 }
 
 /** 正式娱乐导演从六种候选中按赛程抽取三至六种。 */
@@ -89,6 +90,7 @@ const EVENT_DURATION_SECONDS: Readonly<Record<EntertainmentEventId, number>> = {
     [EntertainmentEventId.CANNON]: 7,
     [EntertainmentEventId.LITTER]: 8,
     [EntertainmentEventId.TURTLE_BUS]: 15,
+    [EntertainmentEventId.GEYSER]: 10,
 };
 const PERSISTENT_EVENTS_MASK = eventBit(EntertainmentEventId.STIMULANT)
     | eventBit(EntertainmentEventId.WHIRLPOOL)
@@ -99,7 +101,7 @@ export const ENTERTAINMENT_SELECTABLE_EVENTS: readonly EntertainmentEventId[] = 
     EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB,
     EntertainmentEventId.WHIRLPOOL, EntertainmentEventId.OBSTACLE,
     EntertainmentEventId.SHARK, EntertainmentEventId.CANNON,
-    EntertainmentEventId.TURTLE_BUS,
+    EntertainmentEventId.TURTLE_BUS, EntertainmentEventId.GEYSER,
 ];
 
 let runtimeResidentMask = 0;
@@ -129,6 +131,7 @@ export function entertainmentEventName(event: EntertainmentEventId): string {
         case EntertainmentEventId.CANNON: return '水球点名';
         case EntertainmentEventId.LITTER: return '杂物漂流';
         case EntertainmentEventId.TURTLE_BUS: return '海龟班车';
+        case EntertainmentEventId.GEYSER: return '海底喷泉';
     }
 }
 
@@ -316,6 +319,28 @@ const ENTERTAINMENT_BROADCAST_COPIES: Readonly<Record<
         ['泳池广播：海龟司机已经探头，车尾的圈也跟着来了', '探头入场 · 抢到空圈'],
         ['泳池广播：海龟班车要带大家兜一段，到站会潜走', '搭车一段 · 放手继续游'],
         ['泳池广播：今天的顺风车由海龟驾驶，四圈同时开放', '海龟发车 · 空圈先到先得'],
+    ],
+    [EntertainmentEventId.GEYSER]: [
+        ['泳池广播：池底正在冒泡，水柱即将冲出', '喷泉来袭 · 看泡泡绕开喷口'],
+        ['泳池广播：水下传来一阵咕噜声，请提前选路', '池底加压 · 抓住喷发间隙'],
+        ['泳池广播：前方水面开始鼓起，留意脚下', '冒泡预警 · 侧移避开水柱'],
+        ['泳池广播：喷口准备轮流开工，直线冲刺要看时机', '轮流喷发 · 看准空档通过'],
+        ['泳池广播：池底泡泡越来越密，喷泉要醒了', '喷泉苏醒 · 别停在泡泡中心'],
+        ['泳池广播：水面打起了嗝，下一口可能更大', '水柱将起 · 提前留出侧路'],
+        ['泳池广播：泳池底部正在蓄压，请观察水纹', '蓄压完成 · 穿过喷口间隙'],
+        ['泳池广播：几处水下喷口准备交替登场', '错峰喷发 · 选择空位前进'],
+        ['泳池广播：小泡泡在水面排队，马上轮到大水柱', '大水柱来 · 绕过翻涌区域'],
+        ['泳池广播：水底有股气流正在往上顶', '水流上冲 · 离开水面警戒圈'],
+        ['泳池广播：池底突然热闹起来，别让水柱抢节奏', '节奏被顶 · 落水接着划'],
+        ['泳池广播：前方泡泡串成线，喷口位置已露出来', '喷口现身 · 记住下一轮位置'],
+        ['泳池广播：水面轻轻抖动，喷泉正在准备', '喷泉开场 · 利用短暂歇息'],
+        ['泳池广播：池底水压正在上升，路线还能调整', '水压上升 · 从安全侧绕行'],
+        ['泳池广播：几股水柱要轮流试试谁游得稳', '轮番上冲 · 避免落水连碰'],
+        ['泳池广播：水下喷口已锁定，泡泡就是提示', '泡泡提示 · 不要硬冲中心'],
+        ['泳池广播：水面鼓包出现，喷发马上开始', '鼓包破水 · 抓紧横移'],
+        ['泳池广播：喷泉正在蓄势，刚好可以换条路线', '换线时机 · 避开水柱中心'],
+        ['泳池广播：池底有几口喷泉准备接力', '喷泉接力 · 看准喷发节奏'],
+        ['泳池广播：泡泡一冒头，就该注意前面的水柱了', '喷泉来袭 · 落水继续前进'],
     ],
 };
 
@@ -615,7 +640,8 @@ export class EntertainmentModeDirector {
                             : this.gradedPlan.grade === 3 ? 11.5 : this.gradedPlan.grade === 4 ? 10.5 : 10
                     : undefined)
                 ?? this.durationForEvent?.(event)
-                ?? EVENT_DURATION_SECONDS[event] * this.eventDurationScale();
+                ?? (event === EntertainmentEventId.GEYSER
+                    ? EVENT_DURATION_SECONDS[event] : EVENT_DURATION_SECONDS[event] * this.eventDurationScale());
             this.anchorDistance = distance;
             if (this.eventIndex < this.events.length) {
                 this.eventAnchorDistances[this.eventIndex] = distance;
@@ -842,6 +868,7 @@ export function buildEntertainmentEventOrder(
         const field = [
             EntertainmentEventId.WHIRLPOOL,
             EntertainmentEventId.OBSTACLE,
+            EntertainmentEventId.GEYSER,
         ];
         const contest = [EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB,
             EntertainmentEventId.TURTLE_BUS];
@@ -867,20 +894,23 @@ export function buildEntertainmentEventOrder(
             EntertainmentEventId.SHARK,
             EntertainmentEventId.CANNON,
             EntertainmentEventId.TURTLE_BUS,
+            EntertainmentEventId.GEYSER,
         ];
         random.shuffle(events);
         events.length = random.int(2) === 0 ? 5 : 6;
         moveNonClosingEventAwayFromEnd(events, random);
         return events;
     }
-    const field = random.int(2) === 0 ? EntertainmentEventId.WHIRLPOOL : EntertainmentEventId.MINEFIELD;
+    const fieldCandidates = [EntertainmentEventId.WHIRLPOOL, EntertainmentEventId.MINEFIELD,
+        EntertainmentEventId.GEYSER];
+    const field = fieldCandidates[random.int(fieldCandidates.length)];
     const contest = [EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB,
         EntertainmentEventId.TURTLE_BUS][random.int(3)];
     const assault = random.int(2) === 0 ? EntertainmentEventId.SHARK : EntertainmentEventId.CANNON;
     const events = [field, contest, assault];
     if (random.int(2) === 0) {
         const remaining = [
-            field === EntertainmentEventId.WHIRLPOOL ? EntertainmentEventId.MINEFIELD : EntertainmentEventId.WHIRLPOOL,
+            ...fieldCandidates.filter(event => event !== field),
             ...[EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB,
                 EntertainmentEventId.TURTLE_BUS].filter(event => event !== contest),
             assault === EntertainmentEventId.SHARK ? EntertainmentEventId.CANNON : EntertainmentEventId.SHARK,
@@ -906,7 +936,7 @@ export function buildEntertainmentSpecialMask(
 export function packEntertainmentEvents(events: readonly EntertainmentEventId[]): number {
     let packed = 0;
     for (let index = 0; index < Math.min(MAX_EVENT_COUNT, events.length); index++) {
-        packed |= (events[index] & 0x7) << (index * 3);
+        packed |= (events[index] & 0xf) << (index * 4);
     }
     return packed >>> 0;
 }
@@ -916,7 +946,7 @@ export function unpackEntertainmentEvents(packed: number, eventCount: number): r
         ? eventCount
         : 0;
     return Array.from({ length: count }, (_, index) => (
-        (packed >>> (index * 3)) & 0x7
+        (packed >>> (index * 4)) & 0xf
     ) as EntertainmentEventId);
 }
 
@@ -970,7 +1000,8 @@ function validEventOrder(events: readonly EntertainmentEventId[]): boolean {
 
 function isFieldEvent(event: EntertainmentEventId): boolean {
     return event === EntertainmentEventId.WHIRLPOOL
-        || event === EntertainmentEventId.OBSTACLE;
+        || event === EntertainmentEventId.OBSTACLE
+        || event === EntertainmentEventId.GEYSER;
 }
 
 function isNonClosingEvent(event: EntertainmentEventId): boolean {

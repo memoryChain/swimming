@@ -20,9 +20,9 @@ const { entertainmentIntensityProfile } = IntensityModule;
 
 test('整局五档在两种距离及三种布局下遵守配额、白名单与容量', () => {
     const supplyTotals = [[6, 12], [9, 16], [12, 20], [16, 24], [20, 30]];
-    const allowed = [[], [E.WHIRLPOOL], [E.WHIRLPOOL, E.TURTLE_BUS, E.TIMED_BOMB],
-        [E.WHIRLPOOL, E.TURTLE_BUS, E.TIMED_BOMB, E.CANNON],
-        [E.WHIRLPOOL, E.TURTLE_BUS, E.TIMED_BOMB, E.CANNON, E.SHARK]];
+    const allowed = [[], [E.WHIRLPOOL], [E.WHIRLPOOL, E.TURTLE_BUS, E.TIMED_BOMB, E.GEYSER],
+        [E.WHIRLPOOL, E.TURTLE_BUS, E.TIMED_BOMB, E.CANNON, E.GEYSER],
+        [E.WHIRLPOOL, E.TURTLE_BUS, E.TIMED_BOMB, E.CANNON, E.SHARK, E.GEYSER]];
     for (let grade = 1; grade <= 5; grade++) {
         assert.equal(normalizeEntertainmentRaceGrade(grade), grade);
         for (const distance of [200, 400]) for (const layout of ['debris', 'buoy', 'mixed']) {
@@ -92,10 +92,11 @@ test('导演按五档主挑战运行，一级没有主事件，重复水球保�
     assert.equal(easy.update(30, 180).previewEvent, null);
     const longPlan = buildEntertainmentRacePlan(31, 400, 3, 'mixed');
     const director = new EntertainmentModeDirector(31, 400, true, undefined, undefined, undefined, longPlan);
-    assert.deepEqual(director.selectedEvents(), [E.WHIRLPOOL, E.TIMED_BOMB, E.TIMED_BOMB]);
-    assert.equal(director.update(4, 64).previewEvent, E.WHIRLPOOL);
-    assert.equal(director.update(6, 70).activatedEvent, E.WHIRLPOOL);
-    assert.equal(director.update(8, 120).finishedEvent, E.WHIRLPOOL);
+    const opening = longPlan.stages[0].event;
+    assert.deepEqual(director.selectedEvents(), [opening, E.TIMED_BOMB, E.TIMED_BOMB]);
+    assert.equal(director.update(4, 64).previewEvent, opening);
+    assert.equal(director.update(6, 70).activatedEvent, opening);
+    assert.equal(director.update(longPlan.stages[0].durationSeconds, 120).finishedEvent, opening);
     assert.equal(director.update(8, 160).previewEvent, E.TIMED_BOMB);
     assert.equal(director.update(6, 165).activatedEvent, E.TIMED_BOMB);
     assert.equal(director.update(12, 260).finishedEvent, E.TIMED_BOMB);

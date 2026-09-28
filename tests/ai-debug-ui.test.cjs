@@ -204,7 +204,7 @@ test('对手人数、混合阵容和单角色设置提交到启动配置，切�
     assert.equal(starts, 2);
 });
 
-test('模式测试页签列出娱乐模式及八个单项模式，切换不重建并以固定满员阵容启动', () => {
+test('模式测试页签列出娱乐模式及九个单项模式，切换不重建并以固定满员阵容启动', () => {
     const { Node, Label, load } = fixture();
     const { getAiDebugSetup } = load('core/GameLaunchOptions');
     const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
@@ -232,9 +232,9 @@ test('模式测试页签列出娱乐模式及八个单项模式，切换不重�
 
     modeTab.click();
     const choices = modeContent.children.filter(node => node.name.startsWith('ModeChoice'));
-    assert.equal(choices.length, 9);
+    assert.equal(choices.length, 10);
     assert.deepEqual(choices.map(node => node.getChildByName('Label').getComponent(Label).string), [
-        '娱乐模式', '心跳苏打大乱斗', '充气玩具鲨', '漩涡冲浪赛', '水球点名', '定时水球传递', '水上障碍场', '巨浪冲浪', '海龟班车试玩',
+        '娱乐模式', '心跳苏打大乱斗', '充气玩具鲨', '漩涡冲浪赛', '水球点名', '定时水球传递', '水上障碍场', '巨浪冲浪', '海龟班车试玩', '海底喷泉',
     ]);
     for (const choice of choices) {
         choice.click();
@@ -245,9 +245,33 @@ test('模式测试页签列出娱乐模式及八个单项模式，切换不重�
     findNode(modeContent, 'ModeStart').click();
     assert.equal(starts, 1);
     assert.equal(difficulty, 0.75);
-    assert.equal(getAiDebugSetup().mode, 'turtle-bus-brawl');
+    assert.equal(getAiDebugSetup().mode, 'geyser-brawl');
     assert.equal(getAiDebugSetup().opponentCount, 7);
     assert.equal(getAiDebugSetup().mixedCharacters, true);
+});
+
+test('喷泉强度逐档显示实际喷口数，启动保留五档且切换不重建控件', () => {
+    const { Node, Label, load } = fixture();
+    const { getAiDebugSetup } = load('core/GameLaunchOptions');
+    const { geyserSpec } = load('core/GeyserBrawlRules');
+    const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
+    const root = new Node('Panel');
+    buildAiDebugSetupPicker(root, () => {}, emptyCurrencyDebug());
+    findNode(root, 'ModeTestTab').click();
+    findNode(root, 'ModeChoice9').click();
+    const nodes = descendants(root), listeners = nodes.map(n => n.events.size);
+    const intensity = findNode(root, 'IntensityChoice');
+    assert.equal(intensity.getChildByName('Label').getComponent(Label).string, '默认 2 档 · 4 个喷口');
+    for (let level = 1; level <= 5; level++) {
+        intensity.click();
+        assert.equal(intensity.getChildByName('Label').getComponent(Label).string,
+            `强度 ${level} · ${geyserSpec(level).ventCount} 个喷口`);
+    }
+    assert.deepEqual(descendants(root), nodes);
+    assert.deepEqual(nodes.map(n => n.events.size), listeners);
+    findNode(root, 'ModeStart').click();
+    assert.equal(getAiDebugSetup().mode, 'geyser-brawl');
+    assert.equal(getAiDebugSetup().entertainmentIntensity, 5);
 });
 
 test('综合娱乐整局与单项测试互斥，切换保留档位且不重建控件', () => {

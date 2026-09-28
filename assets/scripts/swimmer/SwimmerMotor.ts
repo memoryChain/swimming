@@ -1474,6 +1474,22 @@ export class SwimmerMotor {
         this._rightArmMotionRemaining = 0;
     }
 
+    /** 喷泉击飞只取消未完成的划水，不清除比赛状态或已有收益。 */
+    beginForcedLaunch(): void {
+        this.beginTurtleGrip();
+        this.clearKnockback();
+        this.ability.suspend();
+    }
+
+    /** 受迫轨迹是本步唯一的水平位移来源。 */
+    setForcedLaunchPosition(distance: number, lateral: number, speed: number): void {
+        this._distance = Math.max(0, Math.min(getRaceDistance(), distance));
+        this.setLateralOffset(lateral);
+        this._currentSpeed = Math.max(0, speed);
+        this._currentAcceleration = 0;
+        this._speedCapBonus = Math.max(0, this._currentSpeed - SWIMMER_BALANCE.maxSpeed);
+    }
+
     clearTurtleTow(): void {
         if (Number.isFinite(this._turtleTowTargetDistance) && this._isRacing) {
             this._speedCapBonus = Math.max(this._speedCapBonus,

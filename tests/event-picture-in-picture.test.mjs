@@ -110,14 +110,14 @@ test('炮火、首个漩涡、鲨鱼、定时炸弹和垃圾投放复用事件�
 
 test('垃圾画中画只观察当前飞行槽位并在最后一组落水后短暂保留', () => {
     assert.match(camera, /type FeedMode = [^\n]*'litter'/);
-    assert.match(camera, /updateLitter\(clusters: readonly LitterClusterState\[\], racing: boolean, dt: number\)/);
+    assert.match(camera, /updateLitter\(clusters: readonly LitterClusterState\[\], racing: boolean, dt: number,\s*obstacleEvent = false\)/);
     assert.match(camera, /cluster\.phase !== 'falling' \|\| cluster\.phaseProgress < 0/);
     assert.match(camera, /if \(cluster\.wave > fallingWave\) fallingWave = cluster\.wave/);
     assert.match(camera, /this\.litterHoldSeconds = LITTER_LANDING_HOLD_SECONDS/);
-    assert.match(camera, /this\.setCopy\('赛道异物', '杂物投放中', WARNING_COLOR\)/);
-    assert.match(camera, /distanceToWorldX\(cluster\.courseX\)/);
+    assert.match(camera, /this\.setCopy\(obstacleEvent \? '障碍来袭' : '赛道异物', '杂物投放中', WARNING_COLOR\)/);
+    assert.match(camera, /distanceToWorldX\(focus\.courseX\)/);
     assert.match(camera, /this\.setCeilingVisible\(false\)/);
-    assert.match(camera, /if \(this\.mode !== 'none' && this\.mode !== 'litter' && this\.mode !== 'giant-wave'\) return/);
+    assert.match(camera, /if \(this\.mode !== 'none' && this\.mode !== 'litter' && this\.mode !== 'buoy'\s*&& this\.mode !== 'giant-wave'\) return/);
     const litterUpdate = camera.match(/updateLitter\([\s\S]*?\n    }\n\n    dispose/)?.[0] ?? '';
     assert.doesNotMatch(litterUpdate, /\.filter\(|\.map\(|new Vec|new Array|\[\.\.\./);
 });
@@ -128,7 +128,7 @@ test('调试入口的独立垃圾模式会创建并驱动共享画中画', () =>
     assert.match(creation, /isLitterBrawlMode\(\)/);
     assert.match(
         gameManager,
-        /updateLitter\(\s*clusters,\s*hasActiveLitter && isLitterBrawlMode\(\) && this\._state === GameState\.RACING,\s*dt,\s*\)/,
+        /updateLitter\(\s*clusters,\s*hasActiveLitter && isLitterBrawlMode\(\) && this\._state === GameState\.RACING,\s*dt,\s*!!this\._obstaclePlan,\s*\)/,
     );
 });
 

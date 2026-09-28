@@ -1,5 +1,6 @@
 import { CHARACTER_ABILITY_TUNING } from './CharacterAbilityConfig';
 import { GIANT_WAVE_TUNING } from './GiantWaveRules';
+import { GEYSER_TUNING } from './GeyserBrawlRules';
 import { DRAFTING_TUNING } from '../swimmer/DraftingRules';
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
@@ -538,6 +539,18 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('litter.retireSeconds', '缓慢下沉时长', '杂物停止影响比赛后，在原位置附近缓慢下沉直至回收的时间。', () => LITTER_BRAWL_TUNING.retireSeconds, v => LITTER_BRAWL_TUNING.retireSeconds = v, 0.2, 1.5, 8, 1, ' s'),
             control('litter.safeHalfWidth', '安全空隙半宽', '每波保留的主要无杂物通道半宽。', () => LITTER_BRAWL_TUNING.safeHalfWidth, v => LITTER_BRAWL_TUNING.safeHalfWidth = v, 0.05, 0.8, 3, 2, ' m'),
             control('litter.aiLookAhead', 'AI 预判距离', 'AI 在多远处开始把安全空隙当作横向绕行目标。', () => LITTER_BRAWL_TUNING.aiLookAhead, v => LITTER_BRAWL_TUNING.aiLookAhead = v, 0.25, 2, 14, 2, ' m'),
+        ],
+    },
+    {
+        name: '海底喷泉',
+        controls: [
+            control('geyser.burstSeconds', '喷发持续时间', '完整预警后水柱可命中的时间，擦边仍可继续进入核心。', () => GEYSER_TUNING.burstSeconds, v => GEYSER_TUNING.burstSeconds = v, 0.05, 0.35, 1, 2, ' s'),
+            control('geyser.coreRadius', '核心命中半径', '水柱中心把泳者顶离水面的范围。', () => GEYSER_TUNING.coreRadius, v => GEYSER_TUNING.coreRadius = v, 0.05, 0.3, 1.2, 2, ' m'),
+            control('geyser.edgeRadius', '边缘擦中半径', '外围只减速不腾空的范围，须大于核心半径。', () => GEYSER_TUNING.edgeRadius, v => GEYSER_TUNING.edgeRadius = v, 0.05, 0.8, 1.8, 2, ' m'),
+            control('geyser.peakHeight', '腾空峰值', '角色被水柱顶起的最高高度。', () => GEYSER_TUNING.peakHeight, v => GEYSER_TUNING.peakHeight = v, 0.1, 0.4, 2, 1, ' m'),
+            control('geyser.flightSeconds', '空中时长', '水面泳者从起飞到落水的时间。', () => GEYSER_TUNING.flightSeconds, v => GEYSER_TUNING.flightSeconds = v, 0.05, 0.5, 1.6, 2, ' s'),
+            control('geyser.exitSpeedScale', '落水保速比例', '落水后保留命中前速度的比例。', () => GEYSER_TUNING.exitSpeedScale, v => GEYSER_TUNING.exitSpeedScale = v, 0.05, 0.3, 1, 2),
+            control('geyser.edgeSlowdownScale', '边缘减速比例', '擦中水柱边缘时保留的速度比例。', () => GEYSER_TUNING.edgeSlowdownScale, v => GEYSER_TUNING.edgeSlowdownScale = v, 0.05, 0.5, 1, 2),
         ],
     },
     {

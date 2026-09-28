@@ -2,6 +2,9 @@ import { abilityValue } from '../core/CharacterAbilityConfig';
 import type { CharacterAbilitySnapshot } from '../swimmer/CharacterAbilityState';
 import { CONDITION_BALANCE } from '../core/ConditionBalance';
 import { DOLPHIN_JUMP } from '../core/DolphinJumpConfig';
+import { GEYSER_TUNING, GeyserHitLedger } from '../core/GeyserBrawlRules';
+import type { GeyserLaneState } from '../net/NetGeyserSnapshot';
+import { sampleForcedLaunch, type ForcedLaunchStart, type ForcedLaunchSample } from '../swimmer/ForcedLaunchModel';
 import { _decorator, Camera, Component, Node, Quat, Tween, Vec3, tween } from 'cc';
 import { CHARACTER_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
 import type { CharacterAction } from '../character/CharacterActionConfig';
@@ -93,7 +96,7 @@ export class Swimmer extends Component {
     draftingTargetZ: number | null = null;
     draftingTargetSpeed = 0;
     get draftingEligible(): boolean {
-        return this._motor.isRacing && this.node.active && !this._entertainmentKnocked
+        return this._motor.isRacing && this.node.active && !this._entertainmentKnocked && !this._forcedLaunch
             && !this._phases.isFlipTurnActive && !this._phases.isDolphinJumpActive
             && !this._phases.isUnderwater && this._motor.ability.depth <= 0.2
             && this.distance < getRaceDistance();
@@ -117,6 +120,13 @@ export class Swimmer extends Component {
     private _lateralMinWorld = Number.NEGATIVE_INFINITY;
     private _lateralMaxWorld = Number.POSITIVE_INFINITY;
     private _entertainmentKnocked = false;
+    private _forcedLaunch: ForcedLaunchStart | null = null;
+    private _forcedLaunchAge = 0;
+    private _forcedLaunchHitId = 0;
+    private _forcedLaunchGrace = 0;
+    private _forcedLaunchEdge = 0;
+    private readonly _geyserHits = new GeyserHitLedger();
+    private readonly _forcedLaunchSample: ForcedLaunchSample = { distance: 0, lateral: 0, y: 0, speed: 0, done: false };
     private _entertainmentInvulnerable = false;
     private readonly _entertainmentLandingStartPosition = new Vec3();
     private readonly _entertainmentLandingEndPosition = new Vec3();
@@ -195,6 +205,7 @@ export class Swimmer extends Component {
     get isCollisionActive(): boolean {
         return this._motor.isRacing
             && this.node.active
+            && this._forcedLaunch === null
             && !this._entertainmentKnocked
             && !this._entertainmentInvulnerable
             && !this._phases.isFlipTurnActive
@@ -206,6 +217,7 @@ export class Swimmer extends Component {
     get isSharkTargetable(): boolean {
         return this._motor.isRacing
             && this.node.active
+            && this._forcedLaunch === null
             && !this._entertainmentKnocked
             && !this._entertainmentInvulnerable
             && !this._phases.isFlipTurnActive
@@ -524,6 +536,7 @@ export class Swimmer extends Component {
 
     beginEntertainmentKnockout(): void {
         if (this._entertainmentKnocked) return;
+        this.clearForcedLaunch();
         this._entertainmentKnocked = true;
         this._entertainmentInvulnerable = false;
         this.syncEntertainmentRecoveryBodyVisibility(true);
@@ -675,6 +688,7 @@ export class Swimmer extends Component {
     }
 
     respawnAfterEntertainmentHit(distance: number, worldZ: number, initialSpeed: number): void {
+        this.clearForcedLaunch();
         // 先隐藏再复位，避免旧位置到新位置在同一渲染帧中硬跳。
         this.syncEntertainmentRecoveryBodyVisibility(false);
         Tween.stopAllByTarget(this.node);
@@ -713,6 +727,116 @@ export class Swimmer extends Component {
     }
 
     get isEntertainmentKnocked(): boolean { return this._entertainmentKnocked; }
+    get isForcedLaunchActive(): boolean { return this._forcedLaunch !== null; }
+    get forcedLaunchStart(): ForcedLaunchStart | null { return this._forcedLaunch; }
+    get geyserHitEligible(): boolean {
+        return this._motor.isRacing && this.node.active && !this._entertainmentKnocked
+            && !this._entertainmentInvulnerable && !this._phases.isFlipTurnActive
+            && this._forcedLaunch === null && this._forcedLaunchGrace <= 0
+            && this._courseLayout.distanceToCurrentCourseEnd(this.distance, getRaceDistance()) > 3;
+    }
+
+    /** 命中由单机或房主裁定；ID 对重复包和同轮多喷口幂等。 */
+    applyGeyserHit(hitId: number, strength: 1 | 2, lateSeconds = 0,
+        authorityStart?: ForcedLaunchStart | null, authoritative = false): boolean {
+        if (!this._geyserHits.accepts(hitId, strength)) return false;
+        const hitY = authorityStart?.y ?? this.node.position.y;
+        const duration = authorityStart?.duration ?? (hitY < this._courseLayout.swimY - 0.08
+            ? GEYSER_TUNING.submergedFlightSeconds : GEYSER_TUNING.flightSeconds);
+        if (lateSeconds >= (strength === 1 ? GEYSER_TUNING.edgeSeconds : duration)) {
+            this._geyserHits.record(hitId, strength);
+            return false;
+        }
+        if (!this.geyserHitEligible && !(authoritative && this._motor.isRacing && this.node.active
+            && !this._entertainmentKnocked && !this._entertainmentInvulnerable
+            && !this._phases.isFlipTurnActive && !this._forcedLaunch
+            && this._courseLayout.distanceToCurrentCourseEnd(this.distance, getRaceDistance()) > 3)) return false;
+        if (strength === 1 && this._forcedLaunchEdge > 0) return false;
+        this._geyserHits.record(hitId, strength);
+        if (strength === 1) {
+            this._forcedLaunchEdge = GEYSER_TUNING.edgeSeconds;
+            // 擦边只抑制短时间内重复减速，不能提供核心命中免疫。
+            this._motor.setForcedLaunchPosition(this.distance, this._motor.lateralOffset,
+                this._motor.currentSpeed * GEYSER_TUNING.edgeSlowdownScale);
+            this._motor.applyCollisionPitchImpulse(0.35);
+            return true;
+        }
+        if (this._phases.isDolphinJumpActive) {
+            this._phases.clearFlipTurnPhase();
+            this._phases.clearDiveUnderwaterPhase();
+        }
+        this.clearGiantWave();
+        this._forcedLaunch = {
+            distance: authorityStart?.distance ?? this.distance,
+            lateral: authorityStart?.lateral ?? this._motor.lateralOffset,
+            y: authorityStart?.y ?? this.node.position.y,
+            surfaceY: authorityStart?.surfaceY ?? this._courseLayout.swimY,
+            speed: authorityStart?.speed ?? this._motor.currentSpeed,
+            heading: authorityStart?.heading ?? this._motor.heading,
+            duration,
+            peakHeight: authorityStart?.peakHeight ?? GEYSER_TUNING.peakHeight,
+            entryScale: authorityStart?.entryScale ?? GEYSER_TUNING.entrySpeedScale,
+            exitScale: authorityStart?.exitScale ?? GEYSER_TUNING.exitSpeedScale,
+        };
+        this._forcedLaunchAge = Math.max(0, Math.min(this._forcedLaunch.duration - 0.01, lateSeconds));
+        this._forcedLaunchHitId = hitId;
+        this._forcedLaunchEdge = 0;
+        this._forcedLaunchGrace = 0;
+        this._motor.beginForcedLaunch();
+        this.cartoonRig?.setStrokeHeld(StrokeType.LEFT, false);
+        this.cartoonRig?.setStrokeHeld(StrokeType.RIGHT, false);
+        this.cartoonRig?.triggerTakeoffSplash(0.65);
+        return true;
+    }
+
+    clearForcedLaunch(resetId = false): void {
+        this._forcedLaunch = null;
+        this._forcedLaunchAge = 0;
+        this._forcedLaunchGrace = 0;
+        this._forcedLaunchEdge = 0;
+        if (resetId) this._geyserHits.reset();
+    }
+
+    snapshotGeyserLane(serial: number, lane: number): GeyserLaneState {
+        const ledger = this._geyserHits.snapshot(serial, lane);
+        const start = this._forcedLaunch && Math.floor(this._forcedLaunchHitId / 1000) === serial
+            ? this._forcedLaunch : null;
+        return { lane, ...ledger, grace: this._forcedLaunchGrace, edge: this._forcedLaunchEdge,
+            hitId: start ? this._forcedLaunchHitId : 0, launchAge: start ? this._forcedLaunchAge : 0, start };
+    }
+
+    restoreGeyserLane(serial: number, state: GeyserLaneState, lateSeconds: number): void {
+        const late = Math.max(0, lateSeconds);
+        const age = state.launchAge + late;
+        if (this._forcedLaunch && state.start && this._forcedLaunchHitId !== state.hitId
+            && Math.floor(this._forcedLaunchHitId / 1000) === serial) {
+            const slot = this._forcedLaunchHitId % 1000 - state.lane - 1;
+            const bit = 1 << (Math.floor(slot / 128) * 10 + (slot % 128) / 8);
+            // 权威已记得旧飞行且进入下一次命中，替换落后的本地阶段。
+            if (state.cores & bit) this._forcedLaunch = null;
+        }
+        // 先判断本地是否已经消费，再合并账本。已落水的 owner 不因旧活动快照重新起飞。
+        if (state.start && age < state.start.duration) {
+            if (this._forcedLaunch && this._forcedLaunchHitId === state.hitId) {
+                this._forcedLaunchAge = Math.max(this._forcedLaunchAge, age);
+            } else if (this._geyserHits.accepts(state.hitId, 2)) {
+                this.applyGeyserHit(state.hitId, 2, age, state.start, true);
+            }
+        }
+        if (this._forcedLaunch && Math.floor(this._forcedLaunchHitId / 1000) === serial) {
+            const slot = this._forcedLaunchHitId % 1000 - state.lane - 1;
+            const bit = 1 << (Math.floor(slot / 128) * 10 + (slot % 128) / 8);
+            if ((state.cores & bit) && (!state.start || age >= state.start.duration)) {
+                this._forcedLaunch = null;
+                this.node.setPosition(this.node.position.x, this._courseLayout.swimY, this.node.position.z);
+            }
+        }
+        this._geyserHits.merge(serial, state.lane, state.edges, state.cores);
+        const completedGrace = state.start && age >= state.start.duration
+            ? Math.max(0, GEYSER_TUNING.rehitGraceSeconds - (age - state.start.duration)) : 0;
+        this._forcedLaunchGrace = Math.max(this._forcedLaunchGrace, state.grace - late, completedGrace, 0);
+        this._forcedLaunchEdge = Math.max(this._forcedLaunchEdge, state.edge - late, 0);
+    }
     private _recoveryBodyVisible = true;
     get isRecoveryBodyVisible(): boolean { return this._recoveryBodyVisible; }
     get isEntertainmentInvulnerable(): boolean { return this._entertainmentInvulnerable; }
@@ -751,6 +875,7 @@ export class Swimmer extends Component {
     }
 
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {
+        this.clearForcedLaunch(true);
         this._entertainmentKnocked = false;
         this._entertainmentInvulnerable = false;
         this.syncEntertainmentRecoveryBodyVisibility(true);
@@ -911,6 +1036,7 @@ export class Swimmer extends Component {
     }
 
     stopRace() {
+        this.clearForcedLaunch();
         this._movementSpeed = 0;
         Tween.stopAllByTarget(this.node);
         this._phases.clearFlipTurnPhase(true);
@@ -1001,6 +1127,30 @@ export class Swimmer extends Component {
         const phaseZBeforeStep = positionBeforeStep.z;
         this._ultimate.setAbilityGainScale(this._motor.ability.id === 'frogHop' ? abilityValue('frogEnergyGain', 0.1, 3) : 1);
         this._ultimate.tick(dt);
+        if (this._forcedLaunchGrace > 0) this._forcedLaunchGrace = Math.max(0, this._forcedLaunchGrace - dt);
+        if (this._forcedLaunchEdge > 0) this._forcedLaunchEdge = Math.max(0, this._forcedLaunchEdge - dt);
+        if (this._forcedLaunch) {
+            const launch = this._forcedLaunch;
+            this._forcedLaunchAge = Math.min(launch.duration, this._forcedLaunchAge + Math.max(0, dt));
+            const sample = sampleForcedLaunch(launch, this._forcedLaunchAge, this._forcedLaunchSample);
+            const courseEnd = this._courseLayout.currentCourseEndDistance(launch.distance, getRaceDistance());
+            const distance = Math.min(courseEnd - 0.05, sample.distance);
+            this._motor.setForcedLaunchPosition(distance, sample.lateral, sample.speed);
+            this._motor.ability.suspend();
+            this._motor.tickRestingHeartRate(dt, false);
+            this.updatePerfectComboIdle(dt);
+            this.applyCoursePosition(this._motor.distance);
+            this.node.setPosition(this.node.position.x, sample.y, this.node.position.z);
+            this.updateBodyMotion(dt);
+            this.updateMovementSpeed(phaseXBeforeStep, phaseZBeforeStep, dt);
+            if (sample.done || distance >= courseEnd - 0.05) {
+                this._forcedLaunch = null;
+                this._forcedLaunchGrace = GEYSER_TUNING.rehitGraceSeconds;
+                this.node.setPosition(this.node.position.x, this._courseLayout.swimY, this.node.position.z);
+                this.cartoonRig?.triggerSplashBurst(0.85);
+            }
+            return;
+        }
         // 用步前状态覆盖落水交界帧，避免阶段 tick 结束后提前恢复整帧心率。
         const freezeJumpHeartRate = this._phases.isDolphinJumpActive;
         if (this._phases.tick(dt)) {
@@ -1065,6 +1215,7 @@ export class Swimmer extends Component {
         if (!this._motor.isRacing) {
             return null;
         }
+        if (this._forcedLaunch) return null;
         if (this._phases.isDolphinJumpActive) {
             // Airborne stroke input is handled as a roll/animation impulse via the
             // per-press kick path; the arm-stroke event itself does nothing here.
@@ -1104,6 +1255,7 @@ export class Swimmer extends Component {
         if (!this._motor.isRacing) {
             return false;
         }
+        if (this._forcedLaunch) return false;
         if (this._phases.isFlipTurnActive || this._phases.isDolphinJumpActive) {
             return false;
         }
@@ -1114,6 +1266,7 @@ export class Swimmer extends Component {
     // phase state only; the wire format remains the existing held/stroke events.
     get canUseArmStroke(): boolean {
         return this._motor.isRacing
+            && this._forcedLaunch === null
             && !this._phases.isFlipTurnActive
             && !this._phases.isDolphinJumpActive
             && this._phases.canUseArmStroke;
@@ -1121,6 +1274,10 @@ export class Swimmer extends Component {
 
     handleKickStroke(type: StrokeType, confirmed = true): void {
         if (!this._motor.isRacing) {
+            return;
+        }
+        if (this._forcedLaunch) {
+            this._motor.queueVisualArmStroke(type);
             return;
         }
         if (this._phases.isDolphinJumpActive) {
@@ -1154,6 +1311,7 @@ export class Swimmer extends Component {
     }
 
     handleStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0): RhythmResult | null {
+        if (this._forcedLaunch) return null;
         if (this._phases.isFlipTurnActive) {
             return null;
         }
@@ -1698,7 +1856,7 @@ export class Swimmer extends Component {
 
     // 满气按钮发动海豚跳；转身、水下或前方空间不足时由阶段控制器拒绝。
     tryDolphinJump(): boolean {
-        if (!this._motor.isRacing || !this._motor.ability.allowsDolphin) {
+        if (this._forcedLaunch || !this._motor.isRacing || !this._motor.ability.allowsDolphin) {
             return false;
         }
         if (!this._ultimate.canAffordDolphin) {

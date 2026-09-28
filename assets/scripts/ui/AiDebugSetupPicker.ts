@@ -18,6 +18,7 @@ import { styleProjectUiLabel } from './ProjectUiFonts';
 import { ENTERTAINMENT_INTENSITY_LABELS, ENTERTAINMENT_TEST_COMBINATIONS,
     EntertainmentIntensity, normalizeEntertainmentIntensity } from '../core/EntertainmentIntensity';
 import { EntertainmentEventId } from '../core/EntertainmentModeDirector';
+import { geyserSpec } from '../core/GeyserBrawlRules';
 
 const PANEL_WIDTH = 880;
 const PANEL_HEIGHT = 620;
@@ -31,6 +32,7 @@ const MODE_TEST_MODES: readonly RaceModeId[] = [
     'obstacle-brawl',
     'giant-wave-brawl',
     'turtle-bus-brawl',
+    'geyser-brawl',
 ];
 const MODE_TEST_DIFFICULTY = AI_DEBUG_DIFFICULTY_TIERS[2].value;
 const ENTERTAINMENT_TEST_EVENTS = [
@@ -379,7 +381,7 @@ export function buildAiDebugSetupPicker(
     for (let index = 0; index < MODE_TEST_MODES.length; index++) {
         const testMode = MODE_TEST_MODES[index];
         const x = -280 + (index % 3) * 280;
-        const y = 154 - Math.floor(index / 3) * 62;
+        const y = 154 - Math.floor(index / 3) * 48;
         const card = button(modeContent, `ModeChoice${index}`, getRaceModeTitle(testMode), x, y, 250, () => {
             const previous = modeTestMode;
             modeTestMode = testMode;
@@ -390,7 +392,9 @@ export function buildAiDebugSetupPicker(
         setActive(selected, testMode === modeTestMode);
         modeViews.set(testMode, { selected, label: card.label });
     }
-    const intensityText = () => setup.entertainmentIntensity === null
+    const intensityText = () => modeTestMode === 'geyser-brawl'
+        ? `${setup.entertainmentIntensity === null ? '默认 2 档' : `强度 ${setup.entertainmentIntensity}`} · ${geyserSpec(setup.entertainmentIntensity ?? 2).ventCount} 个喷口`
+        : setup.entertainmentIntensity === null
         ? '原规格'
         : modeTestMode === 'entertainment-brawl'
             ? setup.entertainmentEventIntensities?.every(value => value === setup.entertainmentIntensity)

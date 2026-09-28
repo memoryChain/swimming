@@ -71,6 +71,10 @@ export class AISwimmerController extends Component {
     private _targetZ: number | null = null;
     private _stimulantTargetZ: number | null = null;
     private _giantWaveTargetZ: number | null = null;
+    private _geyserTargetZ: number | null = null;
+    setGeyserTargetZ(value: number | null): void {
+        this._geyserTargetZ = value !== null && Number.isFinite(value) ? value : null;
+    }
     setGiantWaveTargetZ(value: number | null): void {
         this._giantWaveTargetZ = value !== null && Number.isFinite(value) ? value : null;
     }
@@ -322,6 +326,7 @@ export class AISwimmerController extends Component {
         if (this._mineRelayTargetZ !== null) desiredPriority = 4;
         if (this._sharkTargetZ !== null) desiredPriority = 5;
         if (this._cannonTargetZ !== null) desiredPriority = 6;
+        if (this._geyserTargetZ !== null) desiredPriority = 6;
         if (this._minefieldTargetZ !== null) desiredPriority = 7;
         if (this._obstacleTargetUrgent) desiredPriority = 7;
 
@@ -339,7 +344,7 @@ export class AISwimmerController extends Component {
     private eventTargetForPriority(priority: number): number | null {
         switch (priority) {
             case 7: return this._obstacleTargetUrgent ? this._obstacleTargetZ : this._minefieldTargetZ;
-            case 6: return this._cannonTargetZ;
+            case 6: return this._cannonTargetZ ?? this._geyserTargetZ;
             case 5: return this._sharkTargetZ;
             case 4: return this._mineRelayTargetZ;
             case 3: return this._obstacleTargetZ !== null && !this._obstacleTargetUrgent

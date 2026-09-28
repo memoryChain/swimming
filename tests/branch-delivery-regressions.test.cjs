@@ -4,7 +4,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const ts = require('typescript');
+const tsPath = process.env.TYPESCRIPT_PATH || process.env.PATH.split(path.delimiter)
+    .map(p => path.resolve(p, '../typescript/lib/typescript.js')).find(p => fs.existsSync(p));
+const ts = require(tsPath || 'typescript');
 const root = path.resolve(__dirname, '..');
 const cache = new Map();
 const broadcasts = [];
@@ -77,6 +79,7 @@ function recoveryQuitFixture() {
     swimmer._motor = { distance: 20, setLateralOffset() {},
         resumeAfterEntertainmentHit(distance) { this.distance = distance; swimmer.racing = true; swimmer.respawns++; } };
     swimmer.eliminate = method(swimmerFile, 'Swimmer', 'eliminate');
+    swimmer.clearForcedLaunch = method(swimmerFile, 'Swimmer', 'clearForcedLaunch');
     swimmer.syncEntertainmentRecoveryBodyVisibility = method(swimmerFile, 'Swimmer', 'syncEntertainmentRecoveryBodyVisibility');
     swimmer.respawnAfterEntertainmentHit = method(swimmerFile, 'Swimmer', 'respawnAfterEntertainmentHit', { Tween: { stopAllByTarget() {} } });
     const race = {
@@ -243,6 +246,84 @@ function hostSnapshotSender(pos = 0) {
     return new NetRaceController({ raceId: RACE_ID, localIsHost: true, localPos: pos,
         seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
 }
+
+test('喷泉恢复包遵守比赛身份、房主、序号和晚注册监听，离房旧主不能恢复旧状态', () => {
+    const { encodeGeyserPacket } = load('assets/scripts/net/NetGeyserSnapshot.ts');
+    const state = { world: { serial: 2, intensity: 2, anchorDistance: 20, age: 2,
+        stoppedAt: -1, active: true }, raceElapsed: 20, lanes: [] };
+    const receiver = new NetRaceController({ raceId: RACE_ID, localIsHost: false, localPos: 2,
+        seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
+    receiver._activeHostPos = 0;
+    const seen = [];
+    receiver.onBroadcast(wire(encodeGeyserPacket(0, 4, state)));
+    receiver.setGeyserStateListener(s => { if (s) seen.push(s); });
+    assert.equal(seen.length, 1);
+    receiver.onBroadcast(wire(encodeGeyserPacket(0, 4, state)));
+    receiver.onBroadcast(wire(encodeGeyserPacket(0, 3, state)));
+    receiver.onBroadcast(wire(encodeGeyserPacket(0, 5, state), '0.old-race'));
+    receiver.onBroadcast(wire(encodeGeyserPacket(9, 8, state)));
+    assert.equal(seen.length, 1);
+    receiver.onRoomInfoChange({ members: [{ pos: 1 }, { pos: 2 }] });
+    receiver.onBroadcast(wire(encodeGeyserPacket(1, 1, state)));
+    assert.equal(seen.length, 2);
+    assert.equal(receiver.activeHostPos, 1);
+    receiver.onBroadcast(wire(encodeGeyserPacket(0, 100, state)));
+    assert.equal(seen.length, 2);
+    receiver.setGameplayEventEpoch(3, 3);
+    receiver.onBroadcast(wire(encodeGeyserPacket(1, 2, state)));
+    assert.equal(seen.length, 2);
+    receiver.dispose();
+});
+
+test('第四事件代次通过 S 恢复后释放提前到达的喷泉命中，G 包不挤入主快照', () => {
+    const receiver = net(), hits = [];
+    receiver.setGeyserHitListener((id, lane, strength) => hits.push([id, lane, strength]));
+    receiver.setGameplayEventEpochListener((slot, epoch) => receiver.setGameplayEventEpoch(slot, epoch));
+    receiver.processAuthoritativeEvents(0, [{ kind: 'y', eventEpoch: 3, geyserHitId: 3001,
+        targetLane: 0, geyserStrength: 1, effectTime: 2 }]);
+    assert.equal(hits.length, 0);
+    receiver.onBroadcast(wire(encodeRaceSnapshot(0, [], null, null, null, null, null, null, null,
+        [0, 0, 0, 3], 5)));
+    assert.deepEqual(hits, [[3001, 0, 1]]);
+    receiver.dispose();
+});
+
+test('喷泉 GY 先于导演时等待身份，结束快照不复活水柱，尾部人物仍可恢复', () => {
+    const apply = method('assets/scripts/core/GameManager.ts', 'GameManager', 'applyPendingGeyserNetState',
+        { EntertainmentEventId: { GEYSER: 8 } });
+    let serial = 1, event = 8, created = 0, restored = 0, disposed = 0;
+    const state = { world: { serial: 2, intensity: 5, anchorDistance: 20, age: 3,
+        stoppedAt: 1, active: true }, raceElapsed: 20, lanes: [{ lane: 0 }] };
+    const game = { _pendingGeyserNetState: state, _geyserBrawl: null, _geyserNetWorld: null,
+        _netRaceController: { isHost: false }, _raceManager: { elapsedSeconds: 20.2 },
+        _entertainmentDirector: { snapshot: () => ({ activationSerial: serial }), currentEvent: () => event },
+        swimmerForLane: () => ({ restoreGeyserLane: () => restored++ }),
+        createGeyserBrawl(anchor, id, intensity) {
+            created++;
+            assert.equal(intensity, 5);
+            this._geyserBrawl = { snapshotWorld: () => state.world, restoreWorld(w, late) {
+                assert.equal(w.stoppedAt, 1); assert.ok(Math.abs(late - .2) < 1e-8);
+            }, dispose: () => disposed++ };
+        } };
+    apply.call(game);
+    assert.equal(created, 0);
+    assert.equal(restored, 0);
+    serial = 2;
+    apply.call(game);
+    assert.equal(created, 1);
+    assert.equal(restored, 1);
+    state.world.active = false;
+    game._pendingGeyserNetState = state;
+    apply.call(game);
+    assert.equal(disposed, 1);
+    assert.equal(game._geyserBrawl, null);
+    serial = 3; event = 5; state.world.active = true;
+    game._pendingGeyserNetState = state;
+    apply.call(game);
+    assert.equal(created, 1);
+    assert.equal(game._geyserNetWorld.active, false);
+    assert.equal(restored, 3);
+});
 function sendPosition(sender, distance, conditionEnergyRatio = .5) {
     sender.sendSnapshot([{
         lane: 3, distance, lateral: 0, finished: false, heading: 0, headingVelocity: 0,
@@ -1038,7 +1119,7 @@ test('保活重赛拒绝上一局完成快照及高代次，本局低修订仍�
     receiver.onBroadcast(wire(snapshot(old.snapshot(), [90, 90, 90]), '0.previous'));
     receiver.onBroadcast(snapshot(old.snapshot(), [90, 90, 90])); // 无身份的旧协议同样拒绝。
     assert.equal(receiver._snapRecv, 0);
-    assert.deepEqual(receiver._eventEpochs, [0, 0, 0]);
+    assert.deepEqual(receiver._eventEpochs, [0, 0, 0, 0]);
     receiver.onBroadcast(wire(snapshot(fresh, [0, 0, 0])));
     assert.deepEqual(accepted, [true]);
     assert.equal(current.snapshot().phase, fresh.phase);
@@ -1156,11 +1237,13 @@ test('炸弹爆炸快照与事件交换到达顺序，携带者和外围各执�
             },
             applyMineRelayExplosion() { carrierHits++; },
             applyExplosionShockwaveHit() { peripheralHits++; },
+            debugEntertainmentProfile() { return null; },
         };
         const globals = {
             MineRelayBrawlController, LANE_LAYOUT: { laneCount: 2, centerZ: lane => lane },
             COURSE_LAYOUT: { poolWidth: 20, distanceToWorldX: d => d }, getSharedRandomSeed: () => 7,
             isTimedBombBrawlMode: () => true, isEntertainmentBrawlMode: () => false,
+            EntertainmentEventId: { TIMED_BOMB: 1 },
             MINE_RELAY_ROUNDS: [{}, {}, {}, {}, {}, {}],
             EntertainmentRecoveryPhase: { KNOCKED: 1 }, EntertainmentRecoveryReason: { TIMED_BOMB: 2 },
         };
@@ -1565,10 +1648,10 @@ test('炸弹和鲨鱼按各自代次隔离，驻留水雷及全局急救不因�
     receiver.dispose();
 });
 
-test('迁移后的新房主沿用三类代次发送事件与快照，旧房主待收事件不回放', () => {
+test('迁移后的新房主沿用四类代次发送事件与快照，旧房主待收事件不回放', () => {
     const receiver = net();
     receiver.setGameplayEventEpochListener((slot, epoch) => receiver.setGameplayEventEpoch(slot, epoch));
-    receiver.onBroadcast(wire(encodeRaceSnapshot(0, [], null, null, null, null, null, null, null, [7, 8, 9])));
+    receiver.onBroadcast(wire(encodeRaceSnapshot(0, [], null, null, null, null, null, null, null, [7, 8, 9, 10])));
     receiver.processAuthoritativeEvents(0, [{ kind: 'e', sharkSequence: 1, targetLane: 0, knockedDistance: 20, eventEpoch: 10 }]);
     receiver.promoteToHost();
     receiver.flushDeferredGameplayEvents();
@@ -1576,9 +1659,10 @@ test('迁移后的新房主沿用三类代次发送事件与快照，旧房主�
     receiver.enqueueCannonLaunch(0, 10, 0, 2, 1);
     receiver.enqueueMineRelayArm(0, 1, 8, 1);
     receiver.enqueueSharkKnockdown(1, 2, 20);
-    assert.deepEqual(decodeInputFrame(encodeInputFrame(1, receiver._authoritativeEvents)).events.map(event => event.eventEpoch), [7, 8, 9]);
+    receiver.enqueueGeyserHit(10001, 0, 1, 20, null);
+    assert.deepEqual(decodeInputFrame(encodeInputFrame(1, receiver._authoritativeEvents)).events.map(event => event.eventEpoch), [7, 8, 9, 10]);
     broadcasts.length = 0; receiver.sendSnapshot([]);
-    assert.deepEqual(decodeRaceSnapshot(body(broadcasts[0])).eventEpochs, [7, 8, 9]);
+    assert.deepEqual(decodeRaceSnapshot(body(broadcasts[0])).eventEpochs, [7, 8, 9, 10]);
     receiver.dispose();
 });
 
