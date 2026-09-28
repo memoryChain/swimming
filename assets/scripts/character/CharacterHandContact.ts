@@ -96,6 +96,18 @@ export class CharacterHandContact {
         Vec3.normalize(out, out);
     }
 
+    /** 腕部指向掌心的轴，用于抓握时校准手掌朝向；只消费加载时的包围盒。 */
+    palmForwardWorld(side: number, out: Vec3): void {
+        const hand = this._limbs[side], m = hand.bone.worldMatrix;
+        const x = (hand.min.x + hand.max.x) * .5;
+        const y = (hand.min.y + hand.max.y) * .5;
+        const z = (hand.min.z + hand.max.z) * .5;
+        out.set(m.m00 * x + m.m04 * y + m.m08 * z,
+            m.m01 * x + m.m05 * y + m.m09 * z,
+            m.m02 * x + m.m06 * y + m.m10 * z);
+        Vec3.normalize(out, out);
+    }
+
     get ready() { return !!this._limbs[0].bone?.isValid && !!this._limbs[1].bone?.isValid; }
     get forwardSign() { return this._model && this._model.worldMatrix.m08 < 0 ? -1 : 1; }
 

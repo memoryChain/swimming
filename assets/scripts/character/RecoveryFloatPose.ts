@@ -1,6 +1,8 @@
 import { Node, Quat, Vec3 } from 'cc';
 import { findNode } from './CharacterModelLoader';
 import { CHARACTER_POSE_TUNING } from './CharacterMotionTuning';
+import { TURTLE_BUS_LAYOUT } from '../core/TurtleBusLayout';
+import type { CharacterHandContact } from './CharacterHandContact';
 
 /** 双臂与圈共用的接触解算。只改骨骼和模型子节点，不改泳者赛程。 */
 export class RecoveryFloatPose {
@@ -50,6 +52,14 @@ export class RecoveryFloatPose {
     private forearmHalfLength = 0;
     private sizeScale = NaN;
     private armSpread = 0.5;
+    private towRootBack = 0;
+    private readonly towTarget = new Vec3();
+    private readonly towPole = new Vec3();
+    private readonly towShoulder = new Vec3();
+    private readonly palmMin = new Vec3();
+    private readonly palmMax = new Vec3();
+    private readonly palmTarget = new Vec3();
+    private readonly wristTarget = new Vec3();
 
     bind(root: Node | null): void {
         this.leftArm = root && findNode(root, 'L_Upperarm');
@@ -60,6 +70,7 @@ export class RecoveryFloatPose {
         this.rightHand = root && findNode(root, 'R_Hand');
         this.ready = false;
         this.sizeScale = NaN;
+        this.towRootBack = 0;
         const leftHip = root && findNode(root, 'L_Thigh');
         const rightHip = root && findNode(root, 'R_Thigh');
         this.leftKnee = root && findNode(root, 'L_Calf');
@@ -137,22 +148,85 @@ export class RecoveryFloatPose {
         this.ready = true;
     }
 
+    /** 仅供离线基准姿态测量；运行时必须读取固定的 TurtleBusPassengerFit。 */
+    towRootOffset(model: Node): number {
+        if (this.towRootBack > 0) return this.towRootBack;
+        const frame = model.parent;
+        if (!frame || !this.leftArm || !this.rightArm || !this.leftElbow || !this.leftHand
+            || !this.rightElbow || !this.rightHand) return TURTLE_BUS_LAYOUT.passengerRootBack;
+        this.localPoint(frame, this.leftArm, this.a);
+        this.localPoint(frame, this.rightArm, this.b);
+        const shoulderX = (this.a.x + this.b.x) * 0.5;
+        const arm = Math.min(this.boneLength(this.leftArm, this.leftElbow) + this.boneLength(this.leftElbow, this.leftHand),
+            this.boneLength(this.rightArm, this.rightElbow) + this.boneLength(this.rightElbow, this.rightHand));
+        this.towRootBack = shoulderX + arm * 0.48 - TURTLE_BUS_LAYOUT.gripForward + 0.03;
+        return this.towRootBack;
+    }
+
     /** 班车只约束仍握住圈的手；另一只手保留本帧正常划水姿态。 */
-    applyTowGrip(model: Node, hands: number): void {
+    applyTowGrip(model: Node, hands: number, ringWorld: Vec3, direction: number,
+        contact?: CharacterHandContact): void {
         const frame = model.parent;
         if (!frame || !this.leftArm || !this.leftElbow || !this.leftHand
             || !this.rightArm || !this.rightElbow || !this.rightHand || (hands & 3) === 0) return;
-        this.updateArmSpread();
-        this.localPoint(frame, this.leftArm, this.a);
-        this.localPoint(frame, this.rightArm, this.b);
-        this.side.set(0, this.b.y - this.a.y, this.b.z - this.a.z);
-        Vec3.normalize(this.side, this.side);
-        Vec3.cross(this.up, this.side, this.forward);
-        Vec3.normalize(this.up, this.up);
-        if (hands & 1) this.arm(frame, this.leftArm, this.leftElbow, this.leftHand,
-            -1, this.leftHinge, this.leftNeutral, 1);
-        if (hands & 2) this.arm(frame, this.rightArm, this.rightElbow, this.rightHand,
-            1, this.rightHinge, this.rightNeutral, 1);
+        if (hands & 1) this.towArm(frame, this.leftArm, this.leftElbow, this.leftHand,
+            -1, this.leftHinge, this.leftNeutral, ringWorld, direction, contact);
+        if (hands & 2) this.towArm(frame, this.rightArm, this.rightElbow, this.rightHand,
+            1, this.rightHinge, this.rightNeutral, ringWorld, direction, contact);
+    }
+
+    private towArm(frame: Node, upper: Node, elbow: Node, hand: Node, side: number,
+        hinge: Vec3, neutral: Quat, ring: Vec3, direction: number, contact?: CharacterHandContact): void {
+        this.palmTarget.set(ring.x + direction * TURTLE_BUS_LAYOUT.gripForward,
+            ring.y + TURTLE_BUS_LAYOUT.gripHeight + 0.05,
+            ring.z + direction * side * TURTLE_BUS_LAYOUT.gripLateral);
+        Vec3.copy(this.wristTarget, this.palmTarget);
+        for (let iteration = 0; iteration < (contact?.ready ? 3 : 1); iteration++) {
+            frame.inverseTransformPoint(this.towTarget, this.wristTarget);
+            this.localPoint(frame, upper, this.towShoulder);
+            this.localPoint(frame, elbow, this.a); this.localPoint(frame, hand, this.b);
+            const upperLength = Vec3.distance(this.towShoulder, this.a);
+            const lowerLength = Vec3.distance(this.a, this.b);
+            Vec3.subtract(this.target, this.towTarget, this.towShoulder);
+            const rawDistance = this.target.length();
+            const distance = Math.max(Math.abs(upperLength - lowerLength) + 0.015,
+                Math.min(upperLength + lowerLength - 0.003, rawDistance));
+            Vec3.normalize(this.target, this.target);
+            this.towPole.set(0, -1, side * 0.6);
+            Vec3.scaleAndAdd(this.towPole, this.towPole, this.target, -Vec3.dot(this.towPole, this.target));
+            Vec3.normalize(this.towPole, this.towPole);
+            const along = (upperLength * upperLength - lowerLength * lowerLength + distance * distance) / (2 * distance);
+            const bend = Math.sqrt(Math.max(0, upperLength * upperLength - along * along));
+            Vec3.multiplyScalar(this.upperDirection, this.target, along);
+            Vec3.scaleAndAdd(this.upperDirection, this.upperDirection, this.towPole, bend);
+            Vec3.multiplyScalar(this.forearmDirection, this.target, distance);
+            Vec3.subtract(this.forearmDirection, this.forearmDirection, this.upperDirection);
+            Vec3.normalize(this.upperDirection, this.upperDirection);
+            Vec3.normalize(this.forearmDirection, this.forearmDirection);
+            this.pointBone(frame, upper, elbow, this.upperDirection);
+            this.orientHinge(frame, upper, elbow, hinge, neutral);
+            if (contact?.ready) {
+                this.orientTowPalm(hand, contact, side < 0 ? 0 : 1, direction);
+                contact.handWorldBounds(side < 0 ? 0 : 1, this.palmMin, this.palmMax);
+                Vec3.add(this.current, this.palmMin, this.palmMax);
+                Vec3.multiplyScalar(this.current, this.current, 0.5);
+                Vec3.subtract(this.current, this.palmTarget, this.current);
+                Vec3.add(this.wristTarget, this.wristTarget, this.current);
+            }
+        }
+    }
+
+    private orientTowPalm(hand: Node, contact: CharacterHandContact, side: number, direction: number): void {
+        contact.palmNormalWorld(side, this.current);
+        this.world.set(0, -1, 0);
+        Quat.rotationTo(this.delta, this.current, this.world);
+        hand.getWorldRotation(this.worldRotation); Quat.multiply(this.result, this.delta, this.worldRotation);
+        hand.parent!.getWorldRotation(this.inverse); Quat.invert(this.inverse, this.inverse);
+        Quat.multiply(this.result, this.inverse, this.result); hand.setRotation(this.result);
+        contact.palmForwardWorld(side, this.current); this.current.y = 0; Vec3.normalize(this.current, this.current);
+        this.world.set(direction, 0, 0); Quat.rotationTo(this.delta, this.current, this.world);
+        hand.getWorldRotation(this.worldRotation); Quat.multiply(this.result, this.delta, this.worldRotation);
+        Quat.multiply(this.result, this.inverse, this.result); hand.setRotation(this.result);
     }
 
     private bindHinge(upper: Node, elbow: Node, hand: Node, hinge: Vec3, neutral: Quat): void {
@@ -212,6 +286,10 @@ export class RecoveryFloatPose {
         Vec3.scaleAndAdd(this.forearmDirection, this.forearmDirection, this.up, loose * (side < 0 ? 0.6 : 0.85));
         Vec3.scaleAndAdd(this.forearmDirection, this.forearmDirection, this.side, side * (loose * 0.3 - support * 0.55));
         Vec3.normalize(this.forearmDirection, this.forearmDirection);
+        this.orientHinge(frame, upper, elbow, hinge, neutral);
+    }
+
+    private orientHinge(frame: Node, upper: Node, elbow: Node, hinge: Vec3, neutral: Quat): void {
         Vec3.cross(this.desiredHinge, this.upperDirection, this.forearmDirection);
         Vec3.normalize(this.desiredHinge, this.desiredHinge);
         frame.getWorldRotation(this.worldRotation);

@@ -436,10 +436,13 @@ export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: '海龟班车',
         controls: [
-            control('entertainment.turtleBus.claimConfirmSeconds', '抓圈确认时间', '进入空圈抓取区后持续接近多久才抓稳；下一局单机比赛生效，联机使用统一默认值。', () => TURTLE_BUS_TUNING.claimConfirmSeconds, v => TURTLE_BUS_TUNING.claimConfirmSeconds = v, 0.02, 0.04, 0.4, 2, ' s'),
+            control('entertainment.turtleBus.claimConfirmSeconds', '抓圈确认时间', '默认零秒，靠近空圈立即吸附；下一局单机比赛生效，联机使用统一默认值。', () => TURTLE_BUS_TUNING.claimConfirmSeconds, v => TURTLE_BUS_TUNING.claimConfirmSeconds = v, 0.02, 0, 0.4, 2, ' s'),
+            control('entertainment.turtleBus.catchRadius', '抓圈吸附范围', '靠近空圈的自动吸附范围；抓住后对齐圈后握点，不增加巡航速度。', () => TURTLE_BUS_TUNING.catchRadius, v => TURTLE_BUS_TUNING.catchRadius = v, 0.05, 0.5, 1.2, 2, ' m'),
+            control('entertainment.turtleBus.boardingProtectionSeconds', '上车抓握保护', '上车后短时间内划水不松手，保护内的输入不会延后释放；碰撞和到站仍正常下车。', () => TURTLE_BUS_TUNING.boardingProtectionSeconds, v => TURTLE_BUS_TUNING.boardingProtectionSeconds = v, 0.1, 0, 2.5, 1, ' s'),
             control('entertainment.turtleBus.detachImpulseBoth', '双手撞落冲量', '双手抓稳时被撞落所需的实际碰撞冲量。', () => TURTLE_BUS_TUNING.detachImpulseBoth, v => TURTLE_BUS_TUNING.detachImpulseBoth = v, 0.1, 0.5, 3, 1),
             control('entertainment.turtleBus.detachImpulseSingle', '单手撞落冲量', '松开一只手后被撞落所需的实际碰撞冲量。', () => TURTLE_BUS_TUNING.detachImpulseSingle, v => TURTLE_BUS_TUNING.detachImpulseSingle = v, 0.1, 0.3, 2, 1),
             control('entertainment.turtleBus.regrabCooldownSeconds', '离圈冷却时间', '离圈后经过此时间且游出原抓取区，才能重新抓圈。', () => TURTLE_BUS_TUNING.regrabCooldownSeconds, v => TURTLE_BUS_TUNING.regrabCooldownSeconds = v, 0.1, 0.2, 2, 1, ' s'),
+            control('entertainment.turtleBus.bodySoftPushMax', '班车侧滑速度', '碰到海龟或圈前侧时绕开的速度上限，圈后抓握区保持畅通。', () => TURTLE_BUS_TUNING.bodySoftPushMax, v => TURTLE_BUS_TUNING.bodySoftPushMax = v, 0.1, 0.2, 1.2, 1),
         ],
     },
     {

@@ -1,29 +1,177 @@
 {
-  "triangles": 2832,
-  "drawCalls": 5,
-  "groups": {
-    "body": 1280,
-    "frontFins": 136,
-    "rearFins": 88,
-    "rings": 1152,
-    "ropes": 176
-  },
-  "ringCenters": [
+  "triangles": 3972,
+  "drawCalls": 13,
+  "materials": 1,
+  "turtleBounds": [
     [
-      -3.8,
-      -3.6
+      -1.559999942779541,
+      1.7300000190734863
     ],
     [
-      -4.6,
-      -1.2
+      -1.8432819843292236,
+      1.8432819843292236
     ],
     [
-      -4.6,
-      1.2
-    ],
-    [
-      -3.8,
-      3.6
+      -0.10000000149011612,
+      0.6447241902351379
     ]
-  ]
+  ],
+  "turtleDimensions": [
+    3.29,
+    3.6866,
+    0.7447
+  ],
+  "handleFootSurfaceDistances": [
+    0.005698,
+    0.013841,
+    0.013841,
+    0.005698
+  ],
+  "layout": {
+    "ringForward": [
+      -2.85,
+      -3.5,
+      -3.5,
+      -2.85
+    ],
+    "ringLateral": [
+      -2.85,
+      -0.95,
+      0.95,
+      2.85
+    ],
+    "majorRadius": 0.51,
+    "tubeRadius": 0.19,
+    "gripForward": -0.9,
+    "gripLateral": 0.21,
+    "gripHeight": 0.23,
+    "bodyHalfLength": 1.72,
+    "bodyHalfWidth": 1.03,
+    "harnessForward": -0.94,
+    "harnessLateral": 0.54,
+    "harnessHeight": 0.38,
+    "passengerRootBack": 2.2
+  },
+  "parts": {
+    "Carapace_Continuous_Rim_Plastron": {
+      "closed": true,
+      "volume": 1.529939
+    },
+    "Shell_Seam": {
+      "closed": true,
+      "volume": 0.000381
+    },
+    "Shell_Seam.001": {
+      "closed": true,
+      "volume": 0.000377
+    },
+    "Shell_Seam.002": {
+      "closed": true,
+      "volume": 0.000397
+    },
+    "Shell_Longitudinal_Seam": {
+      "closed": true,
+      "volume": 0.000476
+    },
+    "Shell_Longitudinal_Seam.001": {
+      "closed": true,
+      "volume": 0.000477
+    },
+    "Head_Continuous_Neck_Beak": {
+      "closed": true,
+      "volume": 0.163119
+    },
+    "Upper_Eyelid": {
+      "closed": true,
+      "volume": 0.000109
+    },
+    "Inset_Eye": {
+      "closed": true,
+      "volume": 4e-05
+    },
+    "Eye_Glint": {
+      "closed": true,
+      "volume": 1e-06
+    },
+    "Small_Smile": {
+      "closed": true,
+      "volume": 4.1e-05
+    },
+    "Upper_Eyelid.001": {
+      "closed": true,
+      "volume": 0.00011
+    },
+    "Inset_Eye.001": {
+      "closed": true,
+      "volume": 4e-05
+    },
+    "Eye_Glint.001": {
+      "closed": true,
+      "volume": 1e-06
+    },
+    "Small_Smile.001": {
+      "closed": true,
+      "volume": 4.1e-05
+    },
+    "Tail": {
+      "closed": true,
+      "volume": 0.00651
+    },
+    "frontLeft": {
+      "closed": true,
+      "volume": 0.054722
+    },
+    "frontRight": {
+      "closed": true,
+      "volume": 0.054722
+    },
+    "rearLeft": {
+      "closed": true,
+      "volume": 0.019447
+    },
+    "rearRight": {
+      "closed": true,
+      "volume": 0.019447
+    },
+    "Soft_Harness": {
+      "closed": true,
+      "volume": 0.002527
+    },
+    "Harness_Eye": {
+      "closed": true,
+      "volume": 0.000832
+    },
+    "Soft_Harness.001": {
+      "closed": true,
+      "volume": 0.002527
+    },
+    "Harness_Eye.001": {
+      "closed": true,
+      "volume": 0.000832
+    },
+    "Ring_Continuous_Inflatable": {
+      "closed": true,
+      "volume": 0.323467
+    },
+    "Grip_Handle": {
+      "closed": true,
+      "volume": 0.00178
+    },
+    "Grip_Handle.001": {
+      "closed": true,
+      "volume": 0.001788
+    },
+    "Ring_Tow_Eye": {
+      "closed": true,
+      "volume": 0.000693
+    },
+    "Air_Valve": {
+      "closed": true,
+      "volume": 0.000312
+    },
+    "Rope_Template": {
+      "closed": true,
+      "volume": 0.00151
+    }
+  }
 }

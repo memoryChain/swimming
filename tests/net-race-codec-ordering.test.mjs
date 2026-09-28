@@ -577,7 +577,8 @@ test('an attributed P| or frame self cannot update another registered lane', () 
 });
 
 test('lobby protocol hello rejects missing or mixed versions', () => {
-    assert.equal(NET_RACE_PROTOCOL_VERSION, 112);
+    assert.ok(NET_RACE_PROTOCOL_VERSION >= 117);
+    assert.equal(isCompatibleProtocolVersion(116), false, '缺少海龟抓握保护的客户端不能混房');
     const hello = decodeProtocolHello(encodeProtocolHello(4));
     assert.deepEqual(hello, { pos: 4, version: NET_RACE_PROTOCOL_VERSION });
     assert.equal(decodeProtocolHello('PV|4|bad'), null);

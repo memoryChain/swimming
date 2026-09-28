@@ -1438,11 +1438,21 @@ export class SwimmerMotor {
         this._lateralOffset = clamp(offset, this._lateralOffsetMin, this._lateralOffsetMax);
     }
 
+    /** 只在占圈状态边缘吸附一次；后续仍走慢速牵引和正常碰撞。 */
+    captureTurtleGrip(distance: number, lateral: number): void {
+        if (!this._isRacing || !Number.isFinite(distance) || !Number.isFinite(lateral)) return;
+        this._distance = Math.max(0, Math.min(getRaceDistance(), distance));
+        this._lateralOffset = clamp(lateral, this._lateralOffsetMin, this._lateralOffsetMax);
+    }
+
     /** 灰模班车与正式版本共用的有界牵引入口；目标为当前泳段的累计赛程。 */
     setTurtleTowTarget(speed: number, distance: number, lateral: number): void {
         if (!Number.isFinite(speed) || !Number.isFinite(distance) || !Number.isFinite(lateral)) {
             this.clearTurtleTow();
             return;
+        }
+        if (!Number.isFinite(this._turtleTowTargetDistance)) {
+            this._turtleTowActualSpeed = Math.min(TURTLE_BUS_CONFIG.cruiseSpeed + .2, Math.max(0, this._currentSpeed));
         }
         this._turtleTowSpeed = Math.max(0, speed);
         this._turtleTowTargetDistance = distance;

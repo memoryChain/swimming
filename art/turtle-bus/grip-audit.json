@@ -1,0 +1,123 @@
+[
+  {
+    "file": "MuscleMan.glb",
+    "variantId": "muscleMan",
+    "rootBack": 2.3357351941842714,
+    "palmErrors": [
+      7.952366585840866e-10,
+      2.501969180723211e-9
+    ],
+    "torsoClearance": 0.5383049491895358,
+    "headClearance": 0.22311881013920498
+  },
+  {
+    "file": "CartonSwimmer5.glb",
+    "variantId": "cartonSwimmer5",
+    "rootBack": 2.166103045498244,
+    "palmErrors": [
+      0.0017138868556009976,
+      5.962134709920539e-9
+    ],
+    "torsoClearance": 0.39562479467697137,
+    "headClearance": 0.09437214542216066
+  },
+  {
+    "file": "CartonSwimmer6.glb",
+    "variantId": "cartonSwimmer6",
+    "rootBack": 2.0921873815224314,
+    "palmErrors": [
+      2.1470254300125698e-8,
+      3.285620334067481e-8
+    ],
+    "torsoClearance": 0.4451171479852715,
+    "headClearance": 0.08044614904215508
+  },
+  {
+    "file": "CartonSwimmer8.glb",
+    "variantId": "cartonSwimmer8",
+    "rootBack": 2.1735074268356196,
+    "palmErrors": [
+      2.3824848912757816e-10,
+      7.501496608860916e-9
+    ],
+    "torsoClearance": 0.4422038332547961,
+    "headClearance": 0.09415055638751602
+  },
+  {
+    "file": "CartonSwimmer9.glb",
+    "variantId": "cartonSwimmer9",
+    "rootBack": 2.1495198380339793,
+    "palmErrors": [
+      1.8092143198550436e-8,
+      3.4586539771466484e-8
+    ],
+    "torsoClearance": 0.44349815951668886,
+    "headClearance": 0.08568122305447479
+  },
+  {
+    "file": "CartonSwimmer10.glb",
+    "variantId": "cartonSwimmer10",
+    "rootBack": 2.2330951981120486,
+    "palmErrors": [
+      4.648161174348115e-8,
+      1.2420313722332087e-8
+    ],
+    "torsoClearance": 0.4868825496191758,
+    "headClearance": 0.12072894336324147
+  },
+  {
+    "file": "CartonSwimmer11.glb",
+    "variantId": "cartonSwimmer11",
+    "rootBack": 2.2926533978486994,
+    "palmErrors": [
+      2.1273461976408938e-8,
+      1.5667299576726973e-8
+    ],
+    "torsoClearance": 0.4966189014562013,
+    "headClearance": 0.183574173907755
+  },
+  {
+    "file": "CartonSwimmer12.glb",
+    "variantId": "cartonSwimmer12",
+    "rootBack": 2.1885937325197298,
+    "palmErrors": [
+      4.639373439044645e-9,
+      1.4855437472433047e-8
+    ],
+    "torsoClearance": 0.46145252910339535,
+    "headClearance": 0.11981524469640381
+  },
+  {
+    "file": "CartonSwimmer13.glb",
+    "variantId": "cartonSwimmer13",
+    "rootBack": 2.2295388107125484,
+    "palmErrors": [
+      4.3139065455394755e-9,
+      7.0821537217604695e-9
+    ],
+    "torsoClearance": 0.3947932573751772,
+    "headClearance": 0.16922365197564848
+  },
+  {
+    "file": "CartonSwimmer14.glb",
+    "variantId": "cartonSwimmer14",
+    "rootBack": 2.1892823208577252,
+    "palmErrors": [
+      4.961959804319241e-9,
+      8.96167699820626e-9
+    ],
+    "torsoClearance": 0.44479903873429355,
+    "headClearance": 0.121537631405783
+  },
+  {
+    "file": "CartonSwimmer15.glb",
+    "variantId": "cartonSwimmer15",
+    "rootBack": 2.3891968306670885,
+    "palmErrors": [
+      1.0939734342455803e-9,
+      5.739910090495151e-9
+    ],
+    "torsoClearance": 0.5088863311077718,
+    "headClearance": 0.18362892353113947
+  }
+]

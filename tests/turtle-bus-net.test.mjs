@@ -29,6 +29,18 @@ test('四圈快照按固定泳道恢复，旧房主空包与非法双占拒绝',
     assert.equal(decodeTurtleBusSnapshot(invalidDuplicate), null);
 });
 
+test('保护截止按圈量化往返，拒绝空圈保护及超长保护字段',()=>{
+    const state={tripId:7,phase:'cruising',age:6.75,direction:-1,routeZ:0,startOffset:16,
+        occupants:[4,-1,2,-1],hands:[3,0,3,0],gripProtectedUntil:[7.95,0,7.3,0]};
+    const packed=encodeTurtleBusPacket(0,1,state);
+    assert.deepEqual(decodeTurtleBusPacket(packed).state,state);
+    assert.ok(Buffer.byteLength(packed)<100);
+    assert.equal(encodeTurtleBusSnapshot({...state,gripProtectedUntil:[7.95,1,7.3,0]}),'');
+    assert.equal(encodeTurtleBusSnapshot({...state,gripProtectedUntil:[99,0,7.3,0]}),'');
+    assert.equal(decodeTurtleBusSnapshot(encodeTurtleBusSnapshot(state).replace(/~.*/,'~zzzz.0.0.0')),null);
+    assert.equal(decodeTurtleBusSnapshot(encodeTurtleBusSnapshot(state)+'.0'),null);
+});
+
 test('独立 TB 包不挤占满载 S 包，带比赛前缀仍低于 768 字节', () => {
     const state = { tripId: 1, phase: 'boarding', age: 3.25, direction: 1, routeZ: 0, startOffset: 16,
         occupants: [2, -1, -1, -1], hands: [3, 0, 0, 0] };
@@ -102,9 +114,9 @@ test('不同随机种子下班车失约替代不重复已选事件，三类事�
     assert.ok(checked >= 10);
 });
 
-test('离线作者模型的五组网格在面数和实体范围预算内', () => {
+test('离线作者模型共享圈绳、独立四鳍，实例总面数和实体范围符合预算', () => {
     const groups = Object.values(TURTLE_BUS_GEOMETRY);
-    assert.equal(groups.length, 5);
+    assert.equal(groups.length, 7);
     let triangles = 0;
     for (const mesh of groups) {
         assert.equal(mesh.positions.length % 3, 0);
@@ -113,6 +125,16 @@ test('离线作者模型的五组网格在面数和实体范围预算内', () =>
         assert.ok(mesh.indices.every(index => index >= 0 && index < mesh.positions.length / 3));
         triangles += mesh.indices.length / 3;
     }
-    assert.ok(triangles < 6000);
-    assert.ok(TURTLE_BUS_GEOMETRY.body.positions.some(value => value > 2));
+    triangles += (TURTLE_BUS_GEOMETRY.ring.indices.length + TURTLE_BUS_GEOMETRY.rope.indices.length);
+    assert.ok(triangles <= 4000);
+    const x=TURTLE_BUS_GEOMETRY.body.positions.filter((_,i)=>i%3===0);
+    assert.ok(Math.max(...x)-Math.min(...x)<3.4);
+});
+
+test('预告原地潜走携带取消时刻，非法载客取消与未来取消被拒绝',()=>{
+    const state={tripId:3,phase:'submerging',age:1.2,direction:1,routeZ:0,startOffset:16,
+        occupants:[-1,-1,-1,-1],hands:[0,0,0,0],cancelAge:.8};
+    assert.deepEqual(decodeTurtleBusPacket(encodeTurtleBusPacket(0,8,state)).state,state);
+    assert.equal(encodeTurtleBusPacket(0,8,{...state,cancelAge:2}), '');
+    assert.equal(encodeTurtleBusPacket(0,8,{...state,occupants:[0,-1,-1,-1],hands:[3,0,0,0]}),'');
 });

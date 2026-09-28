@@ -29,7 +29,7 @@ function bodySurface(rig,file){
                 const u=a/5,v=b/5,w=1-u-v;if(torso[ids[0]]*u+torso[ids[1]]*v+torso[ids[2]]*w<.5)continue;
                 point.set(0,0,0);h.Vec3.scaleAndAdd(point,point,vertices[ids[0]],u);h.Vec3.scaleAndAdd(point,point,vertices[ids[1]],v);h.Vec3.scaleAndAdd(point,point,vertices[ids[2]],w);
                 h.Vec3.subtract(local,point,ring.position);local.x-=offset;h.Vec3.transformQuat(local,local,inverse);
-                const gap=Math.hypot(Math.hypot(local.x,local.z)-ring.radius,local.y)-ring.radius*.24;
+                const gap=Math.hypot(Math.hypot(local.x,local.z)-ring.radius,local.y)-(ring.tubeRadius??ring.radius*.24);
                 if(gap<minimum){minimum=gap;hit=h.Vec3.clone(point);}
             }
         }
@@ -44,4 +44,4 @@ function makeRecovery(file){
     controller.enterFreestyle();r.pose.applyFreestylePose(.3,2,.2,1,.4,1,1,1);controller.enterEntertainmentKnockout();
     return {...r,controller,parent,clearance:bodySurface(r,file)};
 }
-module.exports={...h,makeRecovery};
+module.exports={...h,makeRecovery,bodySurface};

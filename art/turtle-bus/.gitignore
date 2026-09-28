@@ -1,0 +1,8 @@
+__pycache__/
+*.blend1
+preview-*.png
+grip-review-data.json
+reference-study/index.html
+reference-study/current-*.png
+reference-study/litter-*.png
+reference-study/existing-proportions.json

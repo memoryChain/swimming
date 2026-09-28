@@ -8,8 +8,12 @@ export type NetTurtleBusState = Readonly<{
     direction: TurtleBusDirection;
     routeZ: number;
     startOffset: number;
+    /** 预告中取消时冻结原地潜走；仅此情况携带取消时刻。 */
+    cancelAge?: number;
     occupants: readonly number[];
     hands: readonly number[];
+    /** 按圈排列的防误松手截止时刻，单位为本航次秒。 */
+    gripProtectedUntil?: readonly number[];
 }>;
 
 const PHASES: readonly TurtleBusPhase[] = [
@@ -39,12 +43,22 @@ export function encodeTurtleBusSnapshot(state: NetTurtleBusState | null | undefi
         occupants |= (lane + 1) << (ring * 4);
         hands |= grip << (ring * 2);
     }
-    return `^${Math.floor(state.tripId).toString(36)}.${phase.toString(36)}.${Math.round(state.age * 100).toString(36)}.${state.direction > 0 ? 1 : 0}.${route}.${Math.round(state.startOffset * 10).toString(36)}.${occupants.toString(36)}.${hands.toString(36)}`;
+    if (state.cancelAge !== undefined && (!Number.isFinite(state.cancelAge) || state.cancelAge < 0
+        || state.cancelAge > 3 || state.cancelAge > state.age || used !== 0
+        || (state.phase !== 'submerging' && state.phase !== 'done'))) return '';
+    const protection = state.gripProtectedUntil;
+    if (protection && (protection.length !== 4 || protection.some((until, ring) =>
+        !Number.isFinite(until) || until < 0 || until > 60 || until > state.age + 2.51
+        || (state.occupants[ring] < 0 && until !== 0)))) return '';
+    return `^${Math.floor(state.tripId).toString(36)}.${phase.toString(36)}.${Math.round(state.age * 100).toString(36)}.${state.direction > 0 ? 1 : 0}.${route}.${Math.round(state.startOffset * 10).toString(36)}.${occupants.toString(36)}.${hands.toString(36)}`
+        + (state.cancelAge === undefined ? '' : `.${Math.round(state.cancelAge * 100).toString(36)}`)
+        + (protection ? `~${protection.map(until => Math.round(until * 100).toString(36)).join('.')}` : '');
 }
 
 export function decodeTurtleBusSnapshot(payload: string): NetTurtleBusState | null {
-    if (!/^\^[0-9a-z]+(?:\.[0-9a-z]+){7}$/.test(payload)) return null;
-    const values = payload.slice(1).split('.').map(part => parseInt(part, 36));
+    if (!/^\^[0-9a-z]+(?:\.[0-9a-z]+){7,8}(?:~[0-9a-z]+(?:\.[0-9a-z]+){3})?$/.test(payload)) return null;
+    const [body, protectedField] = payload.split('~');
+    const values = body.slice(1).split('.').map(part => parseInt(part, 36));
     const [tripId, phase, ageCentis, direction, route, offsetDecis, packedOccupants, packedHands] = values;
     if (!values.every(Number.isSafeInteger) || tripId <= 0 || phase < 0 || phase >= PHASES.length
         || ageCentis < 0 || ageCentis > 6000 || direction > 1 || route >= ROUTES.length
@@ -62,9 +76,16 @@ export function decodeTurtleBusSnapshot(payload: string): NetTurtleBusState | nu
         occupants.push(lane);
         hands.push(grip);
     }
+    const cancelAge = values[8];
+    if (cancelAge !== undefined && (cancelAge > 300 || cancelAge > ageCentis || used !== 0
+        || (PHASES[phase] !== 'submerging' && PHASES[phase] !== 'done'))) return null;
+    const protectedCentis = protectedField?.split('.').map(part => parseInt(part, 36));
+    if (protectedCentis?.some((until, ring) => !Number.isSafeInteger(until) || until > 6000
+        || until > ageCentis + 251 || (occupants[ring] < 0 && until !== 0))) return null;
     return { tripId, phase: PHASES[phase], age: ageCentis / 100,
         direction: direction ? 1 : -1, routeZ: ROUTES[route], startOffset: offsetDecis / 10,
-        occupants, hands };
+        occupants, hands, ...(cancelAge === undefined ? {} : { cancelAge: cancelAge / 100 }),
+        ...(protectedCentis ? { gripProtectedUntil: protectedCentis.map(until => until / 100) } : {}) };
 }
 
 export type NetTurtleBusPacket = Readonly<{

@@ -1,22 +1,23 @@
-import { Material, Mesh, MeshRenderer, Node, utils } from 'cc';
+import { Node, Vec3 } from 'cc';
 import { StrokeType } from './GameConstants';
 import type { Swimmer } from '../entity/Swimmer';
 import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { NetTurtleBusState } from '../net/NetTurtleBusSnapshot';
-import { TURTLE_BUS_GEOMETRY } from './TurtleBusGeometry';
+import { TurtleBusVisual } from './TurtleBusPresentation';
+import { TURTLE_BUS_LAYOUT } from './TurtleBusLayout';
 import { SeededRandom } from './SharedRNG';
 import {
     TURTLE_BUS_CONFIG, TURTLE_BUS_LEFT_HAND, TURTLE_BUS_RIGHT_HAND,
     TURTLE_BUS_RING_FORWARD_OFFSETS, turtleBusRingWorldLateral,
     TURTLE_BUS_SEAT_COUNT, TURTLE_BUS_MAX_SWIMMERS, TurtleBusSeats,
     turtleBusEstimateClaimAge, turtleBusHasBoardingWindow, turtleBusPositionAt,
-    turtleBusSpeedAt, turtleBusUnloadingAge, turtleBusDoneAge, type TurtleBusDirection,
-    type TurtleBusFeel, turtleBusFeelSnapshot,
+    turtleBusSpeedAt, turtleBusUnloadingAge, turtleBusDoneAge, turtleBusPhaseAt, type TurtleBusDirection,
+    type TurtleBusFeel, turtleBusFeelSnapshot, turtleBusCatchInterval,
 } from './TurtleBusRules';
 
 type MutableSample = {
     seat: number; direction: TurtleBusDirection; offset: number; lateral: number;
-    forwardSpeed: number; racing: boolean; boardEligible: boolean;
+    forwardSpeed: number; racing: boolean; boardEligible: boolean; rootBack: number;
 };
 const ROUTE_CENTERS = [-4, 0, 4] as const;
 const FORMAL_LAUNCH_WAIT_SECONDS = 18;
@@ -34,14 +35,22 @@ export class TurtleBusController {
         = new Array(TURTLE_BUS_MAX_SWIMMERS).fill(null);
     private readonly samples: MutableSample[] = Array.from({ length: TURTLE_BUS_MAX_SWIMMERS }, (_, seat) => ({
         seat, direction: 1, offset: 0, lateral: 0, forwardSpeed: 0, racing: false, boardEligible: false,
+        rootBack: TURTLE_BUS_LAYOUT.passengerRootBack,
     }));
     private readonly catchSeconds = new Float32Array(TURTLE_BUS_MAX_SWIMMERS * TURTLE_BUS_SEAT_COUNT);
+    private readonly previousGap = new Float32Array(TURTLE_BUS_MAX_SWIMMERS * TURTLE_BUS_SEAT_COUNT).fill(NaN);
+    private readonly previousLateral = new Float32Array(TURTLE_BUS_MAX_SWIMMERS * TURTLE_BUS_SEAT_COUNT);
+    private readonly catchInterval = { enter: 0, exit: 0 };
+    private readonly claimTimes = new Float64Array(TURTLE_BUS_MAX_SWIMMERS * TURTLE_BUS_SEAT_COUNT).fill(Infinity);
+    private readonly claimDistances = new Float32Array(TURTLE_BUS_MAX_SWIMMERS * TURTLE_BUS_SEAT_COUNT);
     private readonly outOfReachSeconds = new Float32Array(TURTLE_BUS_MAX_SWIMMERS);
     private readonly knownRiding = new Uint8Array(TURTLE_BUS_MAX_SWIMMERS);
     private readonly knownHands = new Uint8Array(TURTLE_BUS_MAX_SWIMMERS);
     private readonly tripBase = new Float32Array(TURTLE_BUS_MAX_SWIMMERS);
     private readonly localReleasedHands = new Uint8Array(TURTLE_BUS_MAX_SWIMMERS);
     private readonly visual: TurtleBusVisual;
+    private readonly ringWorld = new Vec3();
+    private readonly rootBack = new Float32Array(TURTLE_BUS_MAX_SWIMMERS);
     private started = false;
     private plannerElapsed = 0;
     private launchWait = 0;
@@ -49,6 +58,7 @@ export class TurtleBusController {
     private direction: TurtleBusDirection = 1;
     private routeZ = 0;
     private startOffset: number = TURTLE_BUS_CONFIG.startOffset;
+    private cancelAge: number | undefined;
     private readonly launchDelaySeconds: number;
     private readonly firstCandidate: number;
     private readonly firstRoute: number;
@@ -96,12 +106,14 @@ export class TurtleBusController {
         }
         this.seats.reset();
         this.startOffset = TURTLE_BUS_CONFIG.startOffset;
+        this.cancelAge = undefined;
         this.started = false;
         this.plannerElapsed = 0;
         this.launchWait = 0;
         this.aiPlannerElapsed = 0;
         if (this.onAiTarget) for (let i = 0; i < this.swimmers.length; i++) this.onAiTarget(i, null);
         this.catchSeconds.fill(0);
+        this.previousGap.fill(NaN);
         this.outOfReachSeconds.fill(0);
         this.localReleasedHands.fill(0);
         this.acceptNewPassengers = true;
@@ -121,6 +133,11 @@ export class TurtleBusController {
             this.started = true;
             this.seats.phase = 'done';
             this.visual.hide();
+        } else if (this.seats.phase === 'preview') {
+            this.seats.releaseAll('unload', this.seats.age);
+            this.cancelAge = this.seats.age;
+            this.seats.phase = 'submerging';
+            this.syncGripChanges();
         }
     }
 
@@ -145,19 +162,35 @@ export class TurtleBusController {
     get isDone(): boolean { return this.seats.phase === 'done'; }
     get visualNode(): Node { return this.visual.node; }
 
+    private worldScale(): number {
+        return Math.abs(this.course.finishX - this.course.startX) / this.course.courseLength;
+    }
+    private passengerOffset(seat: number, ring: number): number {
+        const swimmer = this.swimmers[seat];
+        this.rootBack[seat] = swimmer?.cartoonRig?.turtleBusRootOffset ?? TURTLE_BUS_LAYOUT.passengerRootBack;
+        return (TURTLE_BUS_RING_FORWARD_OFFSETS[ring] - this.rootBack[seat]) / this.worldScale();
+    }
+    private updateGripTarget(seat: number, ring: number): void {
+        this.visual.ringWorld(ring, this.ringWorld);
+        this.swimmers[seat]?.cartoonRig?.setTurtleBusRingTarget(
+            this.ringWorld.x, this.ringWorld.y, this.ringWorld.z, this.direction);
+    }
+
     snapshotState(): NetTurtleBusState | null {
         if (!this.started || !this.authoritative || this.seats.tripId <= 0) return null;
         const occupants = [-1, -1, -1, -1];
         const hands = [0, 0, 0, 0];
+        const gripProtectedUntil = [0, 0, 0, 0];
         for (let ring = 0; ring < TURTLE_BUS_SEAT_COUNT; ring++) {
             const seat = this.seats.occupants[ring];
             if (seat < 0) continue;
             occupants[ring] = this.laneBySeat?.[seat] ?? seat;
             hands[ring] = this.seats.hands[seat];
+            gripProtectedUntil[ring] = this.seats.gripProtectedUntil[seat];
         }
         return { tripId: this.seats.tripId, phase: this.seats.phase, age: this.seats.age,
             direction: this.direction, routeZ: this.routeZ, startOffset: this.startOffset,
-            occupants, hands };
+            occupants, hands, gripProtectedUntil, ...(this.cancelAge === undefined ? {} : { cancelAge: this.cancelAge }) };
     }
 
     applyNetSnapshot(state: NetTurtleBusState): void {
@@ -176,6 +209,7 @@ export class TurtleBusController {
         this.direction = state.direction;
         this.routeZ = state.routeZ;
         this.startOffset = state.startOffset;
+        this.cancelAge = state.cancelAge;
         this.seats.startOffset = state.startOffset;
         // 接受权威进度，采样间隙由 updateReplica 小步外推。
         this.seats.age = Math.max(state.age, this.seats.age - 0.2);
@@ -191,6 +225,7 @@ export class TurtleBusController {
         this.seats.occupants.fill(-1);
         this.seats.ringOfSwimmer.fill(-1);
         this.seats.hands.fill(0);
+        this.seats.gripProtectedUntil.fill(0);
         for (let ring = 0; ring < TURTLE_BUS_SEAT_COUNT; ring++) {
             const lane = state.occupants[ring];
             if (lane < 0) continue;
@@ -200,10 +235,12 @@ export class TurtleBusController {
             this.seats.ringOfSwimmer[seat] = ring;
             const hands = state.hands[ring] & ~this.localReleasedHands[seat];
             this.seats.hands[seat] = hands;
+            // 采用房主截止时刻，重复快照和房主迁移不重新计时。
+            this.seats.gripProtectedUntil[seat] = state.gripProtectedUntil?.[ring] ?? 0;
             this.seats.lastStrokeSequence[seat] = Math.max(this.seats.lastStrokeSequence[seat],
                 this.swimmers[seat]!.motor.armStrokeSequence);
             this.tripBase[seat] = Math.max(0, Math.round((this.swimmers[seat]!.distance
-                - turtleBusPositionAt(this.seats.age, this.startOffset) - TURTLE_BUS_RING_FORWARD_OFFSETS[ring])
+                - turtleBusPositionAt(this.seats.age, this.startOffset) - this.passengerOffset(seat, ring))
                 / this.course.courseLength)) * this.course.courseLength;
         }
         if (state.occupants.every(lane => lane !== (this.laneBySeat?.[0] ?? 0))) {
@@ -216,7 +253,7 @@ export class TurtleBusController {
         }
         this.syncGripChanges();
         if (state.phase === 'done') this.visual.hide();
-        else this.visual.update(this.seats.age, this.direction, this.routeZ, this.startOffset);
+        else this.visual.update(this.seats.age, this.direction, this.routeZ, this.startOffset, this.cancelAge);
         if (state.phase === 'done' && this.onAiTarget) {
             for (let seat = 0; seat < this.swimmers.length; seat++) this.onAiTarget(seat, null);
         }
@@ -247,8 +284,22 @@ export class TurtleBusController {
             }
             this.syncGripChanges();
         }
-        this.seats.age = Math.min(turtleBusDoneAge(this.startOffset), this.seats.age + Math.max(0, dt));
-        this.visual.update(this.seats.age, this.direction, this.routeZ, this.startOffset);
+        const doneAge = this.cancelAge === undefined ? turtleBusDoneAge(this.startOffset) : this.cancelAge + TURTLE_BUS_CONFIG.submergeSeconds;
+        this.seats.age = Math.min(doneAge, this.seats.age + Math.max(0, dt));
+        this.seats.phase = this.cancelAge === undefined ? turtleBusPhaseAt(this.seats.age, this.startOffset)
+            : this.seats.age >= doneAge ? 'done' : 'submerging';
+        if (this.seats.phase === 'submerging' || this.seats.phase === 'done') {
+            // 到站已由权威起点和时间确定；下一包延迟时也必须先放人再潜圈。
+            if (this.seats.ringOfSwimmer[0] >= 0) this.localReleasedHands[0] = 3;
+            for (let seat = 0; seat < this.swimmers.length; seat++) {
+                this.seats.hands[seat] = 0;
+                this.swimmers[seat]?.motor.clearTurtleTow();
+            }
+            this.syncGripChanges();
+        }
+        if (this.seats.phase === 'done') { this.visual.hide(); return; }
+        this.visual.update(this.seats.age, this.direction, this.routeZ, this.startOffset, this.cancelAge);
+        this.applySoftAvoidance(Math.max(0, dt), true);
         if (this.onAiTarget && !this.replicaTargetsExpired) {
             this.aiPlannerElapsed += dt;
             if (this.aiPlannerElapsed >= 0.15) {
@@ -265,8 +316,18 @@ export class TurtleBusController {
             const swimmer = this.swimmers[seat];
             const ring = this.seats.ringOfSwimmer[seat];
             if (!swimmer || ring < 0 || this.seats.hands[seat] === 0) continue;
+            if (seat === 0) {
+                const dx = Math.abs(this.tripBase[seat] + offset + this.passengerOffset(seat, ring) - swimmer.distance) * this.worldScale();
+                const dz = Math.abs(swimmer.node.position.z - turtleBusRingWorldLateral(this.routeZ, this.direction, ring));
+                this.outOfReachSeconds[seat] = dx > .5 || dz > .42 ? this.outOfReachSeconds[seat] + dt : 0;
+                if (this.outOfReachSeconds[seat] >= .35) {
+                    this.localReleasedHands[seat] |= this.seats.hands[seat]; this.seats.hands[seat] = 0;
+                    swimmer.motor.clearTurtleTow(); this.syncGripChanges(); continue;
+                }
+            }
+            this.updateGripTarget(seat, ring);
             swimmer.motor.setTurtleTowTarget(speed,
-                this.tripBase[seat] + offset + TURTLE_BUS_RING_FORWARD_OFFSETS[ring],
+                this.tripBase[seat] + offset + this.passengerOffset(seat, ring),
                 turtleBusRingWorldLateral(this.routeZ, this.direction, ring) - swimmer.startPosition.z);
         }
     }
@@ -306,7 +367,11 @@ export class TurtleBusController {
         }
         if (this.seats.phase === 'done') return;
         const previousPhase = this.seats.phase;
-        const phase = this.seats.advance(dt);
+        if (this.cancelAge !== undefined) {
+            this.seats.age += Math.max(0, dt);
+            this.seats.phase = this.seats.age >= this.cancelAge + TURTLE_BUS_CONFIG.submergeSeconds ? 'done' : 'submerging';
+        } else this.seats.advance(dt);
+        const phase = this.seats.phase;
         const age = this.seats.age;
         if (phase === 'boarding' && previousPhase === 'preview') this.onBoarding?.();
         if (phase === 'submerging' && previousPhase !== 'submerging') {
@@ -320,7 +385,8 @@ export class TurtleBusController {
             this.visual.hide();
             return;
         }
-        this.visual.update(age, this.direction, this.routeZ, this.startOffset);
+        this.visual.update(age, this.direction, this.routeZ, this.startOffset, this.cancelAge);
+        this.applySoftAvoidance(Math.max(0, dt), false);
         if (this.onAiTarget) {
             this.aiPlannerElapsed += dt;
             if (this.aiPlannerElapsed >= 0.15) {
@@ -331,6 +397,7 @@ export class TurtleBusController {
         }
         const busOffset = turtleBusPositionAt(age, this.startOffset);
         const busSpeed = turtleBusSpeedAt(age, this.startOffset);
+        this.claimTimes.fill(Infinity);
         for (let i = 0; i < this.swimmers.length; i++) {
             const swimmer = this.swimmers[i];
             if (!swimmer) continue;
@@ -340,11 +407,11 @@ export class TurtleBusController {
                     this.detach(i, 'ability');
                     continue;
                 }
-                const ringDistance = this.tripBase[i] + busOffset + TURTLE_BUS_RING_FORWARD_OFFSETS[ring];
+                const ringDistance = this.tripBase[i] + busOffset + this.passengerOffset(i, ring);
                 const ringZ = turtleBusRingWorldLateral(this.routeZ, this.direction, ring);
-                const longitudinalError = Math.abs(ringDistance - swimmer.distance);
+                const longitudinalError = Math.abs(ringDistance - swimmer.distance) * this.worldScale();
                 const lateralError = Math.abs(ringZ - swimmer.node.position.z);
-                this.outOfReachSeconds[i] = longitudinalError > 1.7 || lateralError > 1.15
+                this.outOfReachSeconds[i] = longitudinalError > 0.5 || lateralError > 0.42
                     ? this.outOfReachSeconds[i] + dt : 0;
                 // 真人 owner 位置会按网络节奏校正；短抖动不能把刚上车的人甩掉。
                 if (this.outOfReachSeconds[i] >= 0.35) {
@@ -353,6 +420,7 @@ export class TurtleBusController {
                 }
                 swimmer.motor.setTurtleTowTarget(busSpeed, ringDistance,
                     ringZ - swimmer.startPosition.z);
+                this.updateGripTarget(i, ring);
                 continue;
             }
             if (!this.acceptNewPassengers || (this.seats.phase !== 'boarding' && this.seats.phase !== 'accelerating'
@@ -360,29 +428,56 @@ export class TurtleBusController {
             const offset = this.courseOffset(swimmer);
             let insideAny = false;
             for (let j = 0; j < TURTLE_BUS_SEAT_COUNT; j++) {
-                const gap = busOffset + TURTLE_BUS_RING_FORWARD_OFFSETS[j] - offset;
-                const lateralGap = Math.abs(swimmer.node.position.z
-                    - turtleBusRingWorldLateral(this.routeZ, this.direction, j));
-                const inside = gap >= -0.35 && gap <= 0.9 && lateralGap <= 0.78;
+                const gap = (busOffset + this.passengerOffset(i, j) - offset) * this.worldScale();
+                const lateralGap = swimmer.node.position.z
+                    - turtleBusRingWorldLateral(this.routeZ, this.direction, j);
+                const radius = this.feel.catchRadius;
+                const inside = Math.abs(gap + .25) <= radius && Math.abs(lateralGap) <= radius;
                 insideAny ||= inside;
                 const key = i * TURTLE_BUS_SEAT_COUNT + j;
                 const eligible = this.isEligible(swimmer) && swimmer.raceDirection === this.direction
                     && Math.abs(busSpeed - swimmer.currentSpeed) <= TURTLE_BUS_CONFIG.maximumClaimRelativeSpeed;
-                this.catchSeconds[key] = inside && eligible ? this.catchSeconds[key] + dt : 0;
-                if (this.catchSeconds[key] < this.feel.claimConfirmSeconds) continue;
-                if (!this.seats.claim(i, j, age, eligible, swimmer.motor.armStrokeSequence)) continue;
-                this.tripBase[i] = Math.floor(swimmer.distance / this.course.courseLength)
-                    * this.course.courseLength;
-                swimmer.motor.beginTurtleGrip();
-                this.syncGripChanges();
-                swimmer.motor.setTurtleTowTarget(busSpeed,
-                    this.tripBase[i] + busOffset + TURTLE_BUS_RING_FORWARD_OFFSETS[j],
-                    turtleBusRingWorldLateral(this.routeZ, this.direction, j) - swimmer.startPosition.z);
-                this.clearCatch(i);
-                break;
+                const interval = this.catchInterval;
+                const overlaps = eligible && turtleBusCatchInterval(this.previousGap[key], this.previousLateral[key],
+                    gap, lateralGap, interval, radius);
+                this.previousGap[key] = gap; this.previousLateral[key] = lateralGap;
+                // 第一次采样已靠近也立即吸附，不要求先在圈外留下一帧历史。
+                if (!eligible || (!overlaps && !inside) || !this.seats.canClaim(i, j, age, eligible)) { this.catchSeconds[key] = 0; continue; }
+                if (!overlaps) { interval.enter = 0; interval.exit = 1; }
+                const before = interval.enter > 0 ? 0 : this.catchSeconds[key];
+                const touched = (interval.exit - interval.enter) * dt;
+                this.catchSeconds[key] = interval.exit >= 1 ? before + touched : 0;
+                // 宽容判定负责容易上车；占位时一次吸附到精确锚点，避免拉长手臂。
+                if (!inside || before + touched < this.feel.claimConfirmSeconds) continue;
+                this.claimTimes[key] = age - dt + interval.enter * dt + Math.max(0, this.feel.claimConfirmSeconds - before);
+                this.claimDistances[key] = (gap * gap + lateralGap * lateralGap) / (radius * radius);
             }
             if (!insideAny) this.seats.leftCatchArea(i);
         }
+        // 所有人先采样，再按真实确认时刻、归一化距离、稳定泳道身份分配。
+        for (let pass = 0; pass < TURTLE_BUS_SEAT_COUNT; pass++) {
+            let best = -1;
+            for (let key = 0; key < this.claimTimes.length; key++) {
+                if (!Number.isFinite(this.claimTimes[key])) continue;
+                const seat = Math.floor(key / 4), ring = key % 4;
+                if (!this.seats.canClaim(seat, ring, age, true)) continue;
+                const bestSeat = Math.floor(best / 4);
+                if (best < 0 || this.claimTimes[key] < this.claimTimes[best] - 1e-6
+                    || (Math.abs(this.claimTimes[key] - this.claimTimes[best]) <= 1e-6
+                        && (this.claimDistances[key] < this.claimDistances[best] - 1e-6
+                            || (Math.abs(this.claimDistances[key] - this.claimDistances[best]) <= 1e-6
+                                && (this.laneBySeat?.[seat] ?? seat) < (this.laneBySeat?.[bestSeat] ?? bestSeat))))) best = key;
+            }
+            if (best < 0) break;
+            const seat = Math.floor(best / 4), ring = best % 4, swimmer = this.swimmers[seat]!;
+            this.seats.claim(seat, ring, age, true, swimmer.motor.armStrokeSequence);
+            this.tripBase[seat] = Math.floor(swimmer.distance / this.course.courseLength) * this.course.courseLength;
+            swimmer.motor.beginTurtleGrip(); this.updateGripTarget(seat, ring); this.clearCatch(seat);
+            this.capturePassenger(seat, ring);
+            swimmer.motor.setTurtleTowTarget(busSpeed, this.tripBase[seat] + busOffset + this.passengerOffset(seat, ring),
+                turtleBusRingWorldLateral(this.routeZ, this.direction, ring) - swimmer.startPosition.z);
+        }
+        this.syncGripChanges();
     }
 
     onResolvedImpact(first: Swimmer, firstImpulse: number, second: Swimmer, secondImpulse: number): void {
@@ -404,11 +499,12 @@ export class TurtleBusController {
 
     private onStroke(i: number, side: StrokeType, sequence: number): void {
         if (!this.started || (!this.authoritative && i !== 0)) return;
+        this.clearCatch(i);
         const hand = side === StrokeType.LEFT ? TURTLE_BUS_LEFT_HAND : TURTLE_BUS_RIGHT_HAND;
         const held = this.seats.strokeStarted(i, hand, sequence, this.seats.age);
         if (held && !this.authoritative && i === 0) this.localReleasedHands[i] |= hand;
-        if (held && this.seats.ringOfSwimmer[i] < 0) {
-            this.swimmers[i]?.motor.clearTurtleTow();
+        if (held) {
+            if (this.seats.ringOfSwimmer[i] < 0) this.swimmers[i]?.motor.clearTurtleTow();
             this.syncGripChanges();
         }
     }
@@ -430,9 +526,26 @@ export class TurtleBusController {
             const riding = this.seats.ringOfSwimmer[i] >= 0 && this.seats.hands[i] !== 0 ? 1 : 0;
             if (riding === this.knownRiding[i]) continue;
             this.knownRiding[i] = riding;
+            if (riding && !this.authoritative && i === 0) {
+                this.swimmers[i]?.motor.beginTurtleGrip();
+                this.capturePassenger(i, this.seats.ringOfSwimmer[i]);
+            }
             if (riding) this.onAiTarget?.(i, null);
             this.onGripChanged?.(i, riding === 1);
         }
+    }
+
+    private capturePassenger(seat: number, ring: number): void {
+        const swimmer = this.swimmers[seat];
+        if (!swimmer) return;
+        const distance = this.tripBase[seat] + turtleBusPositionAt(this.seats.age, this.startOffset)
+            + this.passengerOffset(seat, ring);
+        const z = turtleBusRingWorldLateral(this.routeZ, this.direction, ring);
+        // 访客延迟授予仍只允许近距离吸附，远处旧包交给原不可达兜底释放。
+        if (Math.abs(distance - swimmer.distance) * this.worldScale() > this.feel.catchRadius + 1
+            || Math.abs(z - swimmer.node.position.z) > this.feel.catchRadius + .3) return;
+        swimmer.motor.captureTurtleGrip(distance, z - swimmer.startPosition.z);
+        this.outOfReachSeconds[seat] = 0;
     }
 
     /** 低频评估可追上的空圈；AI仍用自己的正常划水和转向抢位。 */
@@ -455,7 +568,8 @@ export class TurtleBusController {
         for (let ring = 0; ring < TURTLE_BUS_SEAT_COUNT; ring++) {
             if (this.seats.occupants[ring] >= 0) continue;
             const age = turtleBusEstimateClaimAge(sample, ring, this.direction,
-                this.routeZ, this.seats.age, this.startOffset);
+                this.routeZ, this.seats.age, this.startOffset, this.worldScale(),
+                swimmer.cartoonRig?.turtleBusRootOffset ?? TURTLE_BUS_LAYOUT.passengerRootBack);
             const gap = Math.abs(sample.lateral - turtleBusRingWorldLateral(this.routeZ, this.direction, ring));
             if (age < bestAge || (age === bestAge && Number.isFinite(age) && gap < bestGap)) {
                 bestAge = age; bestGap = gap; bestRing = ring;
@@ -477,6 +591,7 @@ export class TurtleBusController {
             sample.lateral = swimmer.node.position.z;
             sample.forwardSpeed = swimmer.currentSpeed * Math.max(0, Math.cos(swimmer.movementHeading));
             sample.boardEligible = this.isEligible(swimmer);
+            sample.rootBack = swimmer.cartoonRig?.turtleBusRootOffset ?? TURTLE_BUS_LAYOUT.passengerRootBack;
         }
         const direction = this.samples[0].direction;
         if (this.formalMode) {
@@ -488,7 +603,7 @@ export class TurtleBusController {
                 for (let route = 0; route < ROUTE_CENTERS.length; route++) {
                     const center = ROUTE_CENTERS[(this.firstRoute + route) % ROUTE_CENTERS.length];
                     if (!this.bodySpawnClear(sample.direction, center, candidateOffset)) continue;
-                    if (!turtleBusHasBoardingWindow(this.samples, sample.direction, center, candidateOffset)) continue;
+                    if (!turtleBusHasBoardingWindow(this.samples, sample.direction, center, candidateOffset, this.worldScale())) continue;
                     this.startTrip(sample.direction, center, candidateOffset);
                     return;
                 }
@@ -503,7 +618,7 @@ export class TurtleBusController {
         for (const center of ROUTE_CENTERS) {
             for (let ring = 0; ring < TURTLE_BUS_SEAT_COUNT; ring++) {
                 const age = turtleBusEstimateClaimAge(this.samples[0], ring, direction, center,
-                    0, candidateOffset);
+                    0, candidateOffset, this.worldScale(), this.player.cartoonRig?.turtleBusRootOffset ?? TURTLE_BUS_LAYOUT.passengerRootBack);
                 const lateralGap = Math.abs(this.samples[0].lateral
                     - turtleBusRingWorldLateral(center, direction, ring));
                 if (Number.isFinite(age) && (lateralGap < bestLateralGap
@@ -524,15 +639,18 @@ export class TurtleBusController {
                 }
             }
         }
-        if (!Number.isFinite(bestCenter)) return;
+        if (!Number.isFinite(bestCenter) || !this.bodySpawnClear(direction, bestCenter, candidateOffset)) return;
         this.startTrip(direction, bestCenter, candidateOffset);
     }
 
     private candidateStartOffset(sample: MutableSample): number {
         const speed = Math.max(2.3, Math.min(3.5, sample.forwardSpeed));
         const jitter = this.candidateJitter[sample.seat];
+        // 预告结束时，最后一排的“人物握点”仍应在选手前方，留出靠拢时间。
+        const catchLead = -Math.min(...TURTLE_BUS_RING_FORWARD_OFFSETS) + sample.rootBack + .8;
         return Math.round(Math.max(10, Math.min(30,
-            sample.offset + speed * TURTLE_BUS_CONFIG.previewSeconds + 5.4 + jitter)) * 10) / 10;
+            Math.max(6.3 / this.worldScale(), sample.offset + speed * TURTLE_BUS_CONFIG.previewSeconds
+                + catchLead / this.worldScale() + jitter))) * 10) / 10;
     }
 
     private startTrip(direction: TurtleBusDirection, center: number, startOffset: number): void {
@@ -554,13 +672,45 @@ export class TurtleBusController {
         const origin = direction === this.course.direction ? this.course.startX : this.course.finishX;
         const worldScale = Math.abs(this.course.finishX - this.course.startX) / this.course.courseLength;
         const bodyX = origin + direction * startOffset * worldScale;
+        if (startOffset * worldScale < 6.3) return false;
+        const halfPool = (this.course.poolWidth || 20) * .5;
+        if (Math.abs(center) + Math.abs(TURTLE_BUS_LAYOUT.ringLateral[3]) + .95 > halfPool) return false;
         for (let seat = 0; seat < this.swimmers.length; seat++) {
             const swimmer = this.swimmers[seat];
             if (!swimmer?.node.active || !swimmer.motor.isRacing) continue;
-            if (Math.abs(swimmer.node.position.x - bodyX) < 2.7 * worldScale
+            if (Math.abs(swimmer.node.position.x - bodyX) < TURTLE_BUS_LAYOUT.bodyHalfLength + .7
                 && Math.abs(swimmer.node.position.z - center) < 2.1) return false;
         }
         return true;
+    }
+
+    /** 水面软避让有界，仅旁滑、不产生受击；圈后握点通道保持畅通。 */
+    private applySoftAvoidance(dt: number, ownerOnly: boolean): void {
+        if (this.seats.phase === 'preview' || this.seats.phase === 'submerging' || this.seats.phase === 'done') return;
+        const root = this.visual.node.position, limit = (this.course.poolWidth || 20) * .5 - .65;
+        for (let seat = 0; seat < (ownerOnly ? 1 : this.swimmers.length); seat++) {
+            const swimmer = this.swimmers[seat];
+            if (!swimmer || !this.isEligible(swimmer) || this.seats.ringOfSwimmer[seat] >= 0) continue;
+            const x = (swimmer.node.position.x - root.x) * this.direction;
+            const z = swimmer.node.position.z;
+            let obstacleZ = this.routeZ, radius = TURTLE_BUS_LAYOUT.bodyHalfWidth + .3;
+            let dx = (x + swimmer.raceDirection * this.direction * .8) / (TURTLE_BUS_LAYOUT.bodyHalfLength + .5);
+            let dz = (z - obstacleZ) / radius;
+            let inside = dx * dx + dz * dz < 1;
+            if (!inside) for (let ring = 0; ring < 4; ring++) {
+                const ringX = TURTLE_BUS_RING_FORWARD_OFFSETS[ring];
+                // 从后方伸手可达的范围不受圈自身阻挡。
+                if (x < ringX - .9) continue;
+                obstacleZ = turtleBusRingWorldLateral(this.routeZ, this.direction, ring); radius = .9;
+                dx = (x - ringX) / .9; dz = (z - obstacleZ) / radius;
+                if (dx * dx + dz * dz < 1) { inside = true; break; }
+            }
+            if (!inside) continue;
+            const sign = Math.abs(z - obstacleZ) > .01 ? Math.sign(z - obstacleZ) : (seat % 2 ? 1 : -1);
+            const wanted = Math.max(-limit, Math.min(limit, obstacleZ + sign * radius * Math.sqrt(Math.max(0, 1 - dx * dx))));
+            const push = Math.max(-this.feel.bodySoftPushMax * dt, Math.min(this.feel.bodySoftPushMax * dt, wanted - z));
+            if (Math.abs(push) > 1e-5) swimmer.applyCollisionPush(0, push);
+        }
     }
 
     private courseOffset(swimmer: Swimmer): number {
@@ -569,8 +719,10 @@ export class TurtleBusController {
     }
 
     private clearCatch(i: number): void {
-        for (let j = 0; j < TURTLE_BUS_SEAT_COUNT; j++)
+        for (let j = 0; j < TURTLE_BUS_SEAT_COUNT; j++) {
             this.catchSeconds[i * TURTLE_BUS_SEAT_COUNT + j] = 0;
+            this.previousGap[i * TURTLE_BUS_SEAT_COUNT + j] = NaN;
+        }
     }
 
     private bindSwimmers(): void {
@@ -606,94 +758,5 @@ export class TurtleBusController {
         this.bound[i] = null;
         this.previousStroke[i] = null;
         this.strokeWrappers[i] = null;
-    }
-}
-
-/** Blender 作者源离线导出的单材质五组网格；比赛中只更新整体与鳍的变换。 */
-class TurtleBusVisual {
-    private readonly root: Node;
-    private lastX = NaN;
-    private lastY = NaN;
-    private lastZ = NaN;
-    private lastDirection: TurtleBusDirection = 1;
-    private readonly meshes: Mesh[] = [];
-    private readonly material: Material;
-    private readonly frontFins: Node;
-    private readonly rearFins: Node;
-    private lastFlapSample = -1;
-
-    get node(): Node { return this.root; }
-
-    constructor(
-        private readonly parent: Node,
-        private readonly layer: number,
-        private readonly course: RaceCourseLayout,
-    ) {
-        this.root = new Node('TurtleBus');
-        this.root.setParent(parent);
-        this.root.layer = layer;
-        this.material = new Material();
-        this.material.initialize({ effectName: 'builtin-unlit', defines: { USE_VERTEX_COLOR: true } });
-        this.add('Body', TURTLE_BUS_GEOMETRY.body);
-        this.frontFins = this.add('FrontFins', TURTLE_BUS_GEOMETRY.frontFins);
-        this.rearFins = this.add('RearFins', TURTLE_BUS_GEOMETRY.rearFins);
-        this.add('TowRings', TURTLE_BUS_GEOMETRY.rings);
-        this.add('TowRopes', TURTLE_BUS_GEOMETRY.ropes);
-        this.hide();
-    }
-
-    update(age: number, direction: TurtleBusDirection, routeZ: number,
-        startOffset: number = TURTLE_BUS_CONFIG.startOffset): void {
-        if (!this.root.active) this.root.active = true;
-        if (direction !== this.lastDirection) {
-            this.root.setRotationFromEuler(0, direction === 1 ? 0 : 180, 0);
-            this.lastDirection = direction;
-        }
-        const offset = turtleBusPositionAt(age, startOffset);
-        const origin = direction === this.course.direction ? this.course.startX : this.course.finishX;
-        const worldScale = Math.abs(this.course.finishX - this.course.startX) / this.course.courseLength;
-        const rise = Math.min(1, age / TURTLE_BUS_CONFIG.riseSeconds);
-        const submergeStart = turtleBusUnloadingAge(startOffset) + TURTLE_BUS_CONFIG.unloadSeconds;
-        const sink = age > submergeStart
-            ? Math.min(1, (age - submergeStart) / TURTLE_BUS_CONFIG.submergeSeconds) : 0;
-        const x = origin + direction * offset * worldScale;
-        const y = this.course.waterY + 0.08 - (1 - rise) * 0.9 - sink * 1.1;
-        const flapSample = Math.floor(age * 20);
-        if (flapSample !== this.lastFlapSample) {
-            const phase = age * 2 * Math.PI * 1.25;
-            this.frontFins.setRotationFromEuler(Math.sin(phase) * 11, 0, 0);
-            this.rearFins.setRotationFromEuler(Math.sin(phase + 1.3) * 6, 0, 0);
-            this.lastFlapSample = flapSample;
-        }
-        if (x !== this.lastX || y !== this.lastY || routeZ !== this.lastZ) {
-            this.root.setPosition(x, y, routeZ);
-            this.lastX = x; this.lastY = y; this.lastZ = routeZ;
-        }
-    }
-
-    hide(): void { if (this.root.active) this.root.active = false; }
-
-    reset(): void {
-        this.hide();
-        this.lastX = NaN; this.lastY = NaN; this.lastZ = NaN;
-        this.lastFlapSample = -1;
-    }
-
-    dispose(): void {
-        this.root.destroy();
-        for (const mesh of this.meshes) mesh.destroy();
-        this.material.destroy();
-    }
-
-    private add(name: string, data: typeof TURTLE_BUS_GEOMETRY.body): Node {
-        const node = new Node(name);
-        node.setParent(this.root);
-        node.layer = this.root.layer;
-        const mesh = utils.createMesh(data);
-        this.meshes.push(mesh);
-        const renderer = node.addComponent(MeshRenderer);
-        renderer.mesh = mesh;
-        renderer.setMaterial(this.material, 0);
-        return node;
     }
 }

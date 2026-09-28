@@ -8,18 +8,28 @@ const {
     TURTLE_BUS_BOTH_HANDS, TurtleBusSeats,
     turtleBusDoneAge, turtleBusEstimateClaimAge, turtleBusHasBoardingWindow,
     turtleBusPhaseAt, turtleBusPositionAt, turtleBusRingWorldLateral, turtleBusUnloadingAge,
-    TURTLE_BUS_TUNING, turtleBusFeelSnapshot,
+    TURTLE_BUS_TUNING, turtleBusFeelSnapshot, turtleBusCatchInterval,
 } = RulesModule;
+
+test('抓圈轨迹连续求交：低帧率穿过、离开和大校正各自处理',()=>{
+    const out={enter:0,exit:0};
+    assert.equal(turtleBusCatchInterval(.85,0,-1.4,0,out),true);
+    assert.ok(Math.abs(out.enter-.2/2.25)<1e-9 && Math.abs(out.exit-2/2.25)<1e-9);
+    assert.equal(turtleBusCatchInterval(.1,1.2,.1,-1.2,out),true);
+    assert.ok(Math.abs(out.enter-.125)<1e-9 && Math.abs(out.exit-.875)<1e-9);
+    assert.equal(turtleBusCatchInterval(3,0,0,0,out),false,'大位置校正不能扫整段补抓');
+    assert.equal(turtleBusCatchInterval(.1,1.1,.2,1.2,out),false);
+});
 
 function racer(seat, offset, speed, lateral = 0, direction = 1) {
     return { seat, offset, forwardSpeed: speed, lateral, direction, racing: true, boardEligible: true };
 }
 
 test('反向行驶时圈的世界横向位置随模型旋转镜像', () => {
-    assert.ok(Math.abs(turtleBusRingWorldLateral(4, 1, 0) - 0.4) < 1e-9);
-    assert.ok(Math.abs(turtleBusRingWorldLateral(4, -1, 0) - 7.6) < 1e-9);
-    assert.ok(Math.abs(turtleBusRingWorldLateral(4, -1, 3) - 0.4) < 1e-9);
-    const visibleRing = racer(0, 0, 2.5, 7.6, -1);
+    assert.ok(Math.abs(turtleBusRingWorldLateral(4, 1, 0) - 1.15) < 1e-9);
+    assert.ok(Math.abs(turtleBusRingWorldLateral(4, -1, 0) - 6.85) < 1e-9);
+    assert.ok(Math.abs(turtleBusRingWorldLateral(4, -1, 3) - 1.15) < 1e-9);
+    const visibleRing = racer(0, 0, 2.5, 6.85, -1);
     assert.ok(Number.isFinite(turtleBusEstimateClaimAge(visibleRing, 0, -1, 4)));
 });
 
@@ -73,7 +83,8 @@ test('发车窗口要给不同人不同圈，池中段及反向选手追不上',
 });
 
 test('途中抢圈按当前时刻重新预测，不把已驶过的路程重复计算', () => {
-    assert.ok(Number.isFinite(turtleBusEstimateClaimAge(racer(1, 12, 2.5, -1.2),
+    // 人物根在厚圈后 2.2 米；该时刻 12 米已越过握点，11.3 米仍可接近。
+    assert.ok(Number.isFinite(turtleBusEstimateClaimAge(racer(1, 11.3, 2.5, -.95),
         1, 1, 0, 4)));
     assert.equal(turtleBusEstimateClaimAge(racer(1, 5, 2.5, -1.2),
         1, 1, 0, turtleBusUnloadingAge()), Infinity);
@@ -85,6 +96,7 @@ test('按真实左右起划释放：短点不送入状态机，重复同侧不�
     seats.advance(TURTLE_BUS_CONFIG.previewSeconds);
     assert.equal(seats.claim(0, 1, seats.age, true, 12), true);
     assert.equal(seats.hands[0], TURTLE_BUS_BOTH_HANDS);
+    seats.advance(TURTLE_BUS_CONFIG.boardingProtectionSeconds);
     assert.equal(seats.strokeStarted(0, TURTLE_BUS_LEFT_HAND, 12, seats.age), false);
     assert.equal(seats.strokeStarted(0, TURTLE_BUS_LEFT_HAND, 13, seats.age), true);
     assert.equal(seats.hands[0], TURTLE_BUS_RIGHT_HAND);
@@ -110,8 +122,27 @@ test('撞落保留碰撞结果并释放圈；前乘客须离开抓取区且过�
     assert.equal(seats.canClaim(0, 1, seats.age + 0.79, true), false);
     assert.equal(seats.canClaim(0, 1, seats.age + 0.81, true), true);
     assert.equal(seats.claim(0, 1, seats.age + 0.81, true, 4), true);
+    seats.age = seats.gripProtectedUntil[0];
     assert.equal(seats.strokeStarted(0, TURTLE_BUS_LEFT_HAND, 5, seats.age), true);
     assert.equal(seats.hit(0, TURTLE_BUS_CONFIG.detachImpulseSingle, seats.age), true);
+});
+
+test('上车1.2秒内连划只消费动作序号，过期不补松手，重上车重新获得保护',()=>{
+    const seats=new TurtleBusSeats();seats.start(1);seats.advance(3);
+    seats.claim(0,0,3,true,0);
+    assert.equal(seats.gripProtectedUntil[0],4.2);
+    for(let seq=1;seq<=8;seq++)assert.equal(seats.strokeStarted(0,seq%2?1:2,seq,3+seq*.1),false);
+    assert.equal(seats.hands[0],3);
+    seats.advance(1.3);assert.equal(seats.hands[0],3,'保护结束不执行累计输入');
+    assert.equal(seats.strokeStarted(0,2,8,seats.age),false,'保护内旧动作不能重放松手');
+    assert.equal(seats.strokeStarted(0,1,9,seats.age),true);
+    assert.equal(seats.hands[0],2);
+    assert.equal(seats.strokeStarted(0,2,10,seats.age),true);
+    assert.equal(seats.gripProtectedUntil[0],0);
+    seats.advance(1);seats.leftCatchArea(0);assert.equal(seats.claim(0,0,seats.age,true,10),true);
+    assert.equal(seats.strokeStarted(0,1,11,seats.age),false);
+    assert.equal(seats.hit(0,2,seats.age),true,'保护不抵挡真实撞击');
+    seats.reset();assert.equal(seats.gripProtectedUntil[0],0);
 });
 
 test('一次大步跨过下客阶段也要先释放所有人', () => {

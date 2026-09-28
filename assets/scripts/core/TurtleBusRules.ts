@@ -1,4 +1,5 @@
 /** 海龟班车的赛果规则；本文件不依赖 Cocos 节点或渲染帧率。 */
+import { TURTLE_BUS_LAYOUT } from './TurtleBusLayout';
 export type TurtleBusDirection = -1 | 1;
 export type TurtleBusPhase = 'idle' | 'preview' | 'boarding' | 'accelerating'
     | 'cruising' | 'unloading' | 'submerging' | 'done';
@@ -22,13 +23,16 @@ export const TURTLE_BUS_CONFIG = {
     unloadOffset: 42,
     unloadSeconds: 0.6,
     submergeSeconds: 1.4,
-    claimConfirmSeconds: 0.12,
+    claimConfirmSeconds: 0,
+    catchRadius: 0.9,
+    boardingProtectionSeconds: 1.2,
     reachSeconds: 0.25,
     claimNetworkReserveSeconds: 0.4,
     minimumRideSeconds: 2,
     maximumClaimRelativeSpeed: 4,
     maximumLateralRate: 0.65,
     regrabCooldownSeconds: 0.8,
+    bodySoftPushMax: 0.8,
     detachImpulseBoth: 1.4,
     detachImpulseSingle: 0.9,
     maximumTripSeconds: 30,
@@ -37,29 +41,51 @@ export const TURTLE_BUS_CONFIG = {
 /** 本地调试手感参数。联网对局始终使用默认值，避免各端私有调参影响仲裁。 */
 export const TURTLE_BUS_TUNING = {
     claimConfirmSeconds: TURTLE_BUS_CONFIG.claimConfirmSeconds as number,
+    catchRadius: TURTLE_BUS_CONFIG.catchRadius as number,
+    boardingProtectionSeconds: TURTLE_BUS_CONFIG.boardingProtectionSeconds as number,
     detachImpulseBoth: TURTLE_BUS_CONFIG.detachImpulseBoth as number,
     detachImpulseSingle: TURTLE_BUS_CONFIG.detachImpulseSingle as number,
     regrabCooldownSeconds: TURTLE_BUS_CONFIG.regrabCooldownSeconds as number,
+    bodySoftPushMax: TURTLE_BUS_CONFIG.bodySoftPushMax as number,
 };
 export type TurtleBusFeel = Readonly<typeof TURTLE_BUS_TUNING>;
 export function turtleBusFeelSnapshot(networked = false): TurtleBusFeel {
     const source = networked ? TURTLE_BUS_CONFIG : TURTLE_BUS_TUNING;
     return {
         claimConfirmSeconds: source.claimConfirmSeconds,
+        catchRadius: source.catchRadius,
+        boardingProtectionSeconds: source.boardingProtectionSeconds,
         detachImpulseBoth: source.detachImpulseBoth,
         detachImpulseSingle: Math.min(source.detachImpulseSingle, source.detachImpulseBoth),
         regrabCooldownSeconds: source.regrabCooldownSeconds,
+        bodySoftPushMax: source.bodySoftPushMax,
     };
 }
 
 /** 坐标以本趟出发端为零点，方向换算只发生在场地适配层。 */
-export const TURTLE_BUS_RING_FORWARD_OFFSETS: readonly number[] = [-3.8, -4.6, -4.6, -3.8];
-export const TURTLE_BUS_RING_LATERAL_OFFSETS: readonly number[] = [-3.6, -1.2, 1.2, 3.6];
+export const TURTLE_BUS_RING_FORWARD_OFFSETS: readonly number[] = TURTLE_BUS_LAYOUT.ringForward;
+export const TURTLE_BUS_RING_LATERAL_OFFSETS: readonly number[] = TURTLE_BUS_LAYOUT.ringLateral;
 
 /** 海龟反向行驶时整个模型绕 Y 轴旋转 180 度，圈的横向坐标也必须同步镜像。 */
 export function turtleBusRingWorldLateral(routeLateral: number, direction: TurtleBusDirection,
     ring: number): number {
     return routeLateral + direction * TURTLE_BUS_RING_LATERAL_OFFSETS[ring];
+}
+
+/** 相对轨迹与圈后接触盒的交段；复用 out，返回当前模拟步内的进入/离开比例。 */
+export function turtleBusCatchInterval(x0: number, z0: number, x1: number, z1: number,
+    out: { enter: number; exit: number }, radius: number = TURTLE_BUS_CONFIG.catchRadius): boolean {
+    out.enter = 0; out.exit = 1;
+    if (!Number.isFinite(x0 + z0 + x1 + z1) || Math.hypot(x1 - x0, z1 - z0) > 2.5) return false;
+    for (let axis = 0; axis < 2; axis++) {
+        const start = axis === 0 ? x0 : z0, delta = (axis === 0 ? x1 : z1) - start;
+        const min = -radius - (axis === 0 ? .25 : 0), max = radius - (axis === 0 ? .25 : 0);
+        if (Math.abs(delta) < 1e-9) { if (start < min || start > max) return false; continue; }
+        const a = (min - start) / delta, b = (max - start) / delta;
+        out.enter = Math.max(out.enter, Math.min(a, b)); out.exit = Math.min(out.exit, Math.max(a, b));
+        if (out.enter > out.exit) return false;
+    }
+    return true;
 }
 
 export type TurtleBusRacerSample = Readonly<{
@@ -77,6 +103,7 @@ export type TurtleBusRacerSample = Readonly<{
     racing: boolean;
     /** 能在本步从水面抓圈。 */
     boardEligible: boolean;
+    rootBack?: number;
 }>;
 
 const BOARDING_START = TURTLE_BUS_CONFIG.previewSeconds;
@@ -154,6 +181,7 @@ export function turtleBusPhaseAt(age: number, startOffset: number = TURTLE_BUS_C
 export function turtleBusEstimateClaimAge(
     racer: TurtleBusRacerSample, ring: number, direction: TurtleBusDirection,
     routeLateral: number, currentAge = 0, startOffset: number = TURTLE_BUS_CONFIG.startOffset,
+    worldScale = 1, passengerRootBack = racer.rootBack ?? TURTLE_BUS_LAYOUT.passengerRootBack,
 ): number {
     if (!racer.racing || !racer.boardEligible || racer.direction !== direction
         || ring < 0 || ring >= TURTLE_BUS_SEAT_COUNT
@@ -170,7 +198,8 @@ export function turtleBusEstimateClaimAge(
     for (let t = Math.max(BOARDING_START, currentAge);
         t < unloadStart(startOffset) - TURTLE_BUS_CONFIG.minimumRideSeconds; t += 0.05) {
         if (t < lateralReady) continue;
-        const ringOffset = turtleBusPositionAt(t, startOffset) + TURTLE_BUS_RING_FORWARD_OFFSETS[ring];
+        const ringOffset = turtleBusPositionAt(t, startOffset)
+            + (TURTLE_BUS_RING_FORWARD_OFFSETS[ring] - passengerRootBack) / worldScale;
         const swimmerOffset = racer.offset + speed * (t - currentAge);
         if (ringOffset < swimmerOffset) continue;
         if (ringOffset - swimmerOffset > TURTLE_BUS_CONFIG.maximumClaimRelativeSpeed * 0.2) continue;
@@ -183,7 +212,7 @@ export function turtleBusEstimateClaimAge(
 /** 4 圈小规模二分匹配，避免用同一空位证明多个人都能搭上。 */
 export function turtleBusHasBoardingWindow(
     racers: readonly TurtleBusRacerSample[], direction: TurtleBusDirection,
-    routeLateral: number, startOffset: number = TURTLE_BUS_CONFIG.startOffset,
+    routeLateral: number, startOffset: number = TURTLE_BUS_CONFIG.startOffset, worldScale = 1,
 ): boolean {
     const viable = new Uint8Array(1 << TURTLE_BUS_SEAT_COUNT);
     viable[0] = 1;
@@ -195,7 +224,7 @@ export function turtleBusHasBoardingWindow(
         racingRacers++;
         let ringMask = 0;
         for (let ring = 0; ring < TURTLE_BUS_SEAT_COUNT; ring++) {
-            if (Number.isFinite(turtleBusEstimateClaimAge(racer, ring, direction, routeLateral, 0, startOffset))) {
+            if (Number.isFinite(turtleBusEstimateClaimAge(racer, ring, direction, routeLateral, 0, startOffset, worldScale))) {
                 ringMask |= 1 << ring;
             }
         }
@@ -227,6 +256,7 @@ export class TurtleBusSeats {
     readonly hands = new Uint8Array(TURTLE_BUS_MAX_SWIMMERS);
     readonly occupantRevision = new Uint16Array(TURTLE_BUS_SEAT_COUNT);
     readonly lastStrokeSequence = new Uint32Array(TURTLE_BUS_MAX_SWIMMERS);
+    readonly gripProtectedUntil = new Float64Array(TURTLE_BUS_MAX_SWIMMERS);
     readonly regrabUntil = new Float64Array(TURTLE_BUS_MAX_SWIMMERS);
     readonly mustExitCatchArea = new Uint8Array(TURTLE_BUS_MAX_SWIMMERS);
     phase: TurtleBusPhase = 'idle';
@@ -241,6 +271,7 @@ export class TurtleBusSeats {
         this.hands.fill(0);
         this.occupantRevision.fill(0);
         this.lastStrokeSequence.fill(0);
+        this.gripProtectedUntil.fill(0);
         this.regrabUntil.fill(0);
         this.mustExitCatchArea.fill(0);
         this.tripId = 0;
@@ -285,6 +316,7 @@ export class TurtleBusSeats {
         this.hands[swimmer] = TURTLE_BUS_BOTH_HANDS;
         this.occupantRevision[ring]++;
         this.lastStrokeSequence[swimmer] = latestStrokeSequence >>> 0;
+        this.gripProtectedUntil[swimmer] = Math.round((age + this.feel.boardingProtectionSeconds) * 100) / 100;
         return true;
     }
 
@@ -295,6 +327,8 @@ export class TurtleBusSeats {
             || (hand !== TURTLE_BUS_LEFT_HAND && hand !== TURTLE_BUS_RIGHT_HAND)
             || !Number.isSafeInteger(sequence) || sequence <= this.lastStrokeSequence[swimmer]) return false;
         this.lastStrokeSequence[swimmer] = sequence;
+        // 保护内的起划被消费，不积攒成保护结束后的松手事件。
+        if (!Number.isFinite(age) || age + 1e-6 < this.gripProtectedUntil[swimmer]) return false;
         if ((this.hands[swimmer] & hand) === 0) return false;
         this.hands[swimmer] &= ~hand;
         if (this.hands[swimmer] === 0) this.detach(swimmer, 'stroke', age);
@@ -316,6 +350,7 @@ export class TurtleBusSeats {
         this.occupants[ring] = -1;
         this.ringOfSwimmer[swimmer] = -1;
         this.hands[swimmer] = 0;
+        this.gripProtectedUntil[swimmer] = 0;
         this.occupantRevision[ring]++;
         this.regrabUntil[swimmer] = Math.max(0, age) + this.feel.regrabCooldownSeconds;
         this.mustExitCatchArea[swimmer] = 1;

@@ -1,4 +1,6 @@
 import { RecoveryFloatPresentation } from '../character/RecoveryFloatPresentation';
+import { TURTLE_BUS_LAYOUT } from '../core/TurtleBusLayout';
+import { TURTLE_BUS_PASSENGER_FIT } from '../core/TurtleBusPassengerFit';
 import { createTimedWaterBalloonMount } from '../character/TimedWaterBalloonMount';
 import { _decorator, Camera, Color, Component, EffectAsset, instantiate, JsonAsset, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3, Vec4 } from 'cc';
 import { CharacterHeadBounds } from '../character/CharacterHeadBounds';
@@ -1256,6 +1258,15 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _giantWaveLift = 0;
     setGiantWaveLift(value: number): void { this._giantWaveLift = Math.max(0, value); }
     private _turtleBusGripHands = 0;
+    private readonly _turtleBusRingWorld = new Vec3();
+    private _turtleBusDirection = 1;
+    get turtleBusRootOffset(): number {
+        return TURTLE_BUS_PASSENGER_FIT[this._modelVariantId] ?? TURTLE_BUS_LAYOUT.passengerRootBack;
+    }
+    setTurtleBusRingTarget(x: number, y: number, z: number, direction: number): void {
+        this._turtleBusRingWorld.set(x, y, z);
+        this._turtleBusDirection = direction;
+    }
     setTurtleBusGripHands(hands: number): void {
         this._turtleBusGripHands = hands & 3;
     }
@@ -1580,7 +1591,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     lateUpdate() {
         if (this._turtleBusGripHands && this._loaded && this._model?.isValid
             && this._poseState.isFreestyleActive) {
-            this._pose.recoveryFloat.applyTowGrip(this._model, this._turtleBusGripHands);
+            this._pose.recoveryFloat.applyTowGrip(this._model, this._turtleBusGripHands,
+                this._turtleBusRingWorld, this._turtleBusDirection, this._handContact);
         }
         if (this._rendererRevealFramesRemaining <= 0 || !this._loaded || !this._model?.isValid) {
             return;
