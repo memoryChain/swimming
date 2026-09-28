@@ -1,0 +1,29 @@
+{
+  "triangles": 2832,
+  "drawCalls": 5,
+  "groups": {
+    "body": 1280,
+    "frontFins": 136,
+    "rearFins": 88,
+    "rings": 1152,
+    "ropes": 176
+  },
+  "ringCenters": [
+    [
+      -3.8,
+      -3.6
+    ],
+    [
+      -4.6,
+      -1.2
+    ],
+    [
+      -4.6,
+      1.2
+    ],
+    [
+      -3.8,
+      3.6
+    ]
+  ]
+}

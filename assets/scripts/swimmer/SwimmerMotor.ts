@@ -16,6 +16,7 @@ import { CollisionPitchModel } from './CollisionPitchModel';
 import { CollisionSoftnessModel } from './CollisionSoftnessModel';
 import { COLLISION_PITCH_TUNING } from '../core/CollisionPitchTuning';
 import { advanceWaveBoost, GIANT_WAVE_TUNING } from '../core/GiantWaveRules';
+import { TURTLE_BUS_CONFIG } from '../core/TurtleBusRules';
 
 const CYCLE_AMOUNT = Math.PI * 2;
 const MAX_QUEUED_MOTION = CYCLE_AMOUNT * 2;
@@ -98,6 +99,9 @@ type ReleaseRanges = { perfect: { start: number; end: number }; good: { start: n
 export class SwimmerMotor {
     /** 仅跟游模式绑定，在真实起划时复核有效区。 */
     strokeCostScale: (() => number) | null = null;
+    /** 真实手臂动作开始时触发；短点按踢腿不会触发。序号在每次比赛重置。 */
+    onArmStrokeStarted: ((side: StrokeType, sequence: number) => void) | null = null;
+    get armStrokeSequence(): number { return this._armStrokeSequence; }
     readonly ability = new CharacterAbilityState();
 
     setCharacterAbility(id: CharacterAbilityId) {
@@ -128,6 +132,7 @@ export class SwimmerMotor {
     private _leftStrokeHeld = false;
     private _rightStrokeHeld = false;
     private _motionClock = 0;
+    private _armStrokeSequence = 0;
     private _leftPressStartedAt = -1;
     private _rightPressStartedAt = -1;
     private readonly _leftActions: StrokeAction[] = [];
@@ -184,6 +189,10 @@ export class SwimmerMotor {
     private _poolWallRecoveryDirection = 0;
     private _courseDirection = 1;
     private _lateralOffset = 0;
+    private _turtleTowSpeed = 0;
+    private _turtleTowActualSpeed = 0;
+    private _turtleTowTargetDistance = NaN;
+    private _turtleTowTargetLateral = NaN;
     private _lateralOffsetMin = -1000;
     private _lateralOffsetMax = 1000;
     // 真人和 AI 均使用角色定义的固有体重，碰撞求解器负责放大差异；默认 1。
@@ -209,6 +218,7 @@ export class SwimmerMotor {
 
     stopRace() {
         this.clearGiantWave();
+        this.clearTurtleTow();
         this._isRacing = false;
         this.ability.reset();
         this._glidePhaseActive = false;
@@ -567,6 +577,16 @@ export class SwimmerMotor {
         );
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
         this._currentSpeed = next.currentSpeed;
+        if (Number.isFinite(this._turtleTowTargetDistance)) {
+            // Riding replaces stroke propulsion with a slow, bounded tow pace.
+            // Small catch-up corrections stay below normal active swimming speed.
+            const error = this._turtleTowTargetDistance - this._distance;
+            const desired = Math.max(0, Math.min(TURTLE_BUS_CONFIG.cruiseSpeed + 0.2,
+                this._turtleTowSpeed + clamp(error * 2, -0.35, 0.2)));
+            this._turtleTowActualSpeed += clamp(desired - this._turtleTowActualSpeed,
+                -18 * dt, 18 * dt);
+            this._currentSpeed = this._turtleTowActualSpeed;
+        }
         this.decaySpeedCapBonus(dt, options);
         this.updateKickSteeringCorrection(dt, options);
         this.updateSteering(dt);
@@ -607,6 +627,13 @@ export class SwimmerMotor {
         // Lateral drift accumulates the sideways component, clamped to the pool.
         const requestedLateralOffset = this._lateralOffset + this._currentSpeed * Math.sin(this._heading) * dt;
         this._lateralOffset = clamp(requestedLateralOffset, this._lateralOffsetMin, this._lateralOffsetMax);
+        if (Number.isFinite(this._turtleTowTargetLateral)) {
+            const sideError = this._turtleTowTargetLateral - this._lateralOffset;
+            this._lateralOffset = clamp(
+                this._lateralOffset + clamp(sideError * 3, -0.8, 0.8) * dt,
+                this._lateralOffsetMin, this._lateralOffsetMax,
+            );
+        }
         const wallCorrection = this._lateralOffset - requestedLateralOffset;
         if (Math.abs(wallCorrection) > 1e-6) {
             this.returnToLaneFromPoolWall(wallCorrection);
@@ -626,6 +653,7 @@ export class SwimmerMotor {
     }
 
     private resetRaceState(initialDistance = 0) {
+        this.clearTurtleTow();
         this._heartRate.reset();
         this.ability.reset();
         this._authoritativeHeartRate = -1;
@@ -647,6 +675,7 @@ export class SwimmerMotor {
         this._leftStrokeHeld = false;
         this._rightStrokeHeld = false;
         this._motionClock = 0;
+        this._armStrokeSequence = 0;
         this._leftPressStartedAt = -1;
         this._rightPressStartedAt = -1;
         this._leftActions.length = 0;
@@ -1110,8 +1139,9 @@ export class SwimmerMotor {
         return Math.max(0.001, elapsed + remainingSeconds);
     }
 
-    private startActionBaseAcceleration(action: StrokeAction) {
+    private startActionBaseAcceleration(action: StrokeAction, side: StrokeType) {
         action.baseAccelerationStarted = true;
+        this.onArmStrokeStarted?.(side, ++this._armStrokeSequence);
         action.energyCost = Math.max(0, CONDITION_BALANCE.energy.drainPerStroke) * (this.strokeCostScale?.() ?? 1);
         this.ability.armStart();
         action.heartRate = Math.round(this.heartRate * 100) / 100;
@@ -1406,6 +1436,43 @@ export class SwimmerMotor {
 
     setLateralOffset(offset: number) {
         this._lateralOffset = clamp(offset, this._lateralOffsetMin, this._lateralOffsetMax);
+    }
+
+    /** 灰模班车与正式版本共用的有界牵引入口；目标为当前泳段的累计赛程。 */
+    setTurtleTowTarget(speed: number, distance: number, lateral: number): void {
+        if (!Number.isFinite(speed) || !Number.isFinite(distance) || !Number.isFinite(lateral)) {
+            this.clearTurtleTow();
+            return;
+        }
+        this._turtleTowSpeed = Math.max(0, speed);
+        this._turtleTowTargetDistance = distance;
+        this._turtleTowTargetLateral = lateral;
+    }
+
+    /** 抓稳时取消此前尚未完成的划水预算；已支付的体力和已结算结果不回滚。 */
+    beginTurtleGrip(): void {
+        this._leftActions.length = 0;
+        this._rightActions.length = 0;
+        this._leftStrokeHeld = false;
+        this._rightStrokeHeld = false;
+        this._leftPressStartedAt = -1;
+        this._rightPressStartedAt = -1;
+        this._strokeAcceleration = 0;
+        this._strokeAccelerationSeconds = 0;
+        this._strokeAccelerationTotalSeconds = 0;
+        this._leftArmMotionRemaining = 0;
+        this._rightArmMotionRemaining = 0;
+    }
+
+    clearTurtleTow(): void {
+        if (Number.isFinite(this._turtleTowTargetDistance) && this._isRacing) {
+            this._speedCapBonus = Math.max(this._speedCapBonus,
+                Math.max(0, this._currentSpeed - SWIMMER_BALANCE.maxSpeed));
+        }
+        this._turtleTowSpeed = 0;
+        this._turtleTowActualSpeed = 0;
+        this._turtleTowTargetDistance = NaN;
+        this._turtleTowTargetLateral = NaN;
     }
 
     // Start a critically damped recovery toward a small inward escape angle.
@@ -1762,7 +1829,7 @@ export class SwimmerMotor {
             inputLeadRatio: 0,
         });
         if (startedImmediately) {
-            this.startActionBaseAcceleration(actions[actions.length - 1]);
+            this.startActionBaseAcceleration(actions[actions.length - 1], type);
             // This press became an arm stroke, so its contralateral leg is now
             // driven by the arm. Drop the tap pulse this same press added to that
             // leg (via beginPress→recordKickTap) so it isn't replayed as an extra
@@ -1820,7 +1887,7 @@ export class SwimmerMotor {
             inputLeadRatio: 0,
         };
         actions.push(action);
-        this.startActionBaseAcceleration(action);
+        this.startActionBaseAcceleration(action, type);
         this._armAction = 1;
         this._kickAction = 1;
         return true;
@@ -1912,7 +1979,7 @@ export class SwimmerMotor {
             if (action.startedAt < 0) {
                 action.startedAt = frameStartedAt + elapsed;
                 if (!action.baseAccelerationStarted) {
-                    this.startActionBaseAcceleration(action);
+                    this.startActionBaseAcceleration(action, type);
                 }
             }
             const needed = CYCLE_AMOUNT - action.progress;

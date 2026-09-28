@@ -99,7 +99,7 @@ test('AI 测试身份在场景创建前生效，整局事件不会读取快速�
     game._aiDebugDifficulty = 0.8;
     game.scheduleOnce = callback => callback();
     game.buildScene = callback => { modeAtSceneBuild = game._aiDebugMode; callback(); };
-    for (const name of ['registerEvents', 'debug', 'applyAiDebugHud', 'startGame']) {
+    for (const name of ['registerEvents', 'debug', 'setupTurtleBusDebugRace', 'applyAiDebugHud', 'startGame']) {
         game[name] = () => {};
     }
     game.paintError = error => { throw error; };
@@ -204,7 +204,7 @@ test('对手人数、混合阵容和单角色设置提交到启动配置，切�
     assert.equal(starts, 2);
 });
 
-test('模式测试页签列出娱乐模式及七个单项模式，切换不重建并以固定满员阵容启动', () => {
+test('模式测试页签列出娱乐模式及八个单项模式，切换不重建并以固定满员阵容启动', () => {
     const { Node, Label, load } = fixture();
     const { getAiDebugSetup } = load('core/GameLaunchOptions');
     const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
@@ -232,9 +232,9 @@ test('模式测试页签列出娱乐模式及七个单项模式，切换不重�
 
     modeTab.click();
     const choices = modeContent.children.filter(node => node.name.startsWith('ModeChoice'));
-    assert.equal(choices.length, 8);
+    assert.equal(choices.length, 9);
     assert.deepEqual(choices.map(node => node.getChildByName('Label').getComponent(Label).string), [
-        '娱乐模式', '心跳苏打大乱斗', '充气玩具鲨', '漩涡冲浪赛', '水球点名', '定时水球传递', '水上障碍场', '巨浪冲浪',
+        '娱乐模式', '心跳苏打大乱斗', '充气玩具鲨', '漩涡冲浪赛', '水球点名', '定时水球传递', '水上障碍场', '巨浪冲浪', '海龟班车试玩',
     ]);
     for (const choice of choices) {
         choice.click();
@@ -245,7 +245,7 @@ test('模式测试页签列出娱乐模式及七个单项模式，切换不重�
     findNode(modeContent, 'ModeStart').click();
     assert.equal(starts, 1);
     assert.equal(difficulty, 0.75);
-    assert.equal(getAiDebugSetup().mode, 'giant-wave-brawl');
+    assert.equal(getAiDebugSetup().mode, 'turtle-bus-brawl');
     assert.equal(getAiDebugSetup().opponentCount, 7);
     assert.equal(getAiDebugSetup().mixedCharacters, true);
 });

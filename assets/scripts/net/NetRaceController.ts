@@ -20,6 +20,7 @@ import { raceMessagePrefix } from './NetRaceProtocol';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
 import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind, gameplayEpochSlot } from './NetRaceInput';
 import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetCannonState, NetEntertainmentDirectorState, NetEntertainmentRecoveryState, NetMinefieldState, NetMineRelayState, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
+import { decodeTurtleBusPacket, encodeTurtleBusPacket, type NetTurtleBusState } from './NetTurtleBusSnapshot';
 import { decodeLitterSnapshot, encodeLitterSnapshotPackets,
     LitterSnapshotFragmentAssembler } from './NetLitterSnapshot';
 import type { LitterContact, LitterSnapshotState } from '../core/LitterBrawlController';
@@ -94,6 +95,7 @@ export class NetRaceController {
     private readonly _ownerStateOrder = new MonotonicSequenceTracker();
     private readonly _hostSnapshotOrder = new MonotonicSequenceTracker();
     private readonly _hostLitterOrder = new MonotonicSequenceTracker();
+    private readonly _hostTurtleOrder = new MonotonicSequenceTracker();
     private readonly _hostAuthorityOrder = new MonotonicSequenceTracker();
     // Remote-human swimmers keyed by their seat (posNum). Decoded input for a pos is
     // replayed onto its controller. Registered by GameManager after the roster builds.
@@ -187,6 +189,8 @@ export class NetRaceController {
     private _minefieldStateListener: ((state: NetMinefieldState) => void) | null = null;
     private _entertainmentDirectorStateListener: ((state: NetEntertainmentDirectorState,
         planId: number) => boolean | void) | null = null;
+    private _turtleBusStateListener: ((state: NetTurtleBusState | null) => void) | null = null;
+    private _pendingTurtleBusState: NetTurtleBusState | null = null;
     private _litterStateListener: ((state: LitterSnapshotState, planId: number) => void) | null = null;
     private _pendingLitterState: { state: LitterSnapshotState; planId: number } | null = null;
     private readonly _litterFragmentAssembler = new LitterSnapshotFragmentAssembler();
@@ -456,6 +460,15 @@ export class NetRaceController {
         this._entertainmentDirectorStateListener = listener;
     }
 
+    setTurtleBusStateListener(listener: ((state: NetTurtleBusState | null) => void) | null): void {
+        this._turtleBusStateListener = listener;
+        if (listener && this._pendingTurtleBusState) {
+            const pending = this._pendingTurtleBusState;
+            this._pendingTurtleBusState = null;
+            listener(pending);
+        }
+    }
+
     setLitterStateListener(listener: ((state: LitterSnapshotState, planId: number) => void) | null): void {
         this._litterStateListener = listener;
         if (listener && this._pendingLitterState) {
@@ -609,6 +622,7 @@ export class NetRaceController {
     private clearAuthorityTransientState(): void {
         this._litterFragmentAssembler.reset();
         this._pendingLitterState = null;
+        this._pendingTurtleBusState = null;
         this._snapshotTargets = [];
         this._prevSnapshot = [];
         this._snapshotTime = 0;
@@ -735,6 +749,7 @@ export class NetRaceController {
         entertainmentDirector?: NetEntertainmentDirectorState | null,
         litter?: LitterSnapshotState | null,
         obstaclePlanId = 0,
+        turtleBus?: NetTurtleBusState | null,
     ): void {
         if (this._disposed || !this._net.isSupported()) {
             return;
@@ -754,6 +769,10 @@ export class NetRaceController {
             this._snapSent,
             obstaclePlanId,
         ));
+        if (turtleBus) {
+            const packet = encodeTurtleBusPacket(this._session.localPos, this._snapSent, turtleBus);
+            if (packet) this.broadcastRaceMessage(packet);
+        }
         // S| 固定 0.15 秒；超过 18 槽时 L|/LF| 隔次发送，避免分片将专属流量翻倍。
         if (litter && (litter.slots.length <= 18 || (++this._denseLitterSnapshotTick & 1) === 1)) {
             const packets = encodeLitterSnapshotPackets(this._session.localPos, litter,
@@ -992,6 +1011,16 @@ export class NetRaceController {
                 this.flushDeferredGameplayEvents();
             }
             this.refreshHud();
+            return;
+        }
+        const turtle = decodeTurtleBusPacket(msg);
+        if (turtle) {
+            if (!this.acceptHostSnapshot(turtle.hostPos, turtle.sequence, this._hostTurtleOrder)) return;
+            this.adoptHostFromSnapshot(turtle.hostPos);
+            if (!this._isHost && turtle.hostPos === this._activeHostPos) {
+                if (this._turtleBusStateListener) this._turtleBusStateListener(turtle.state);
+                else this._pendingTurtleBusState = turtle.state;
+            }
             return;
         }
         const litter = decodeLitterSnapshot(msg)

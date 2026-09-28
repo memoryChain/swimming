@@ -137,6 +137,24 @@ export class RecoveryFloatPose {
         this.ready = true;
     }
 
+    /** 班车只约束仍握住圈的手；另一只手保留本帧正常划水姿态。 */
+    applyTowGrip(model: Node, hands: number): void {
+        const frame = model.parent;
+        if (!frame || !this.leftArm || !this.leftElbow || !this.leftHand
+            || !this.rightArm || !this.rightElbow || !this.rightHand || (hands & 3) === 0) return;
+        this.updateArmSpread();
+        this.localPoint(frame, this.leftArm, this.a);
+        this.localPoint(frame, this.rightArm, this.b);
+        this.side.set(0, this.b.y - this.a.y, this.b.z - this.a.z);
+        Vec3.normalize(this.side, this.side);
+        Vec3.cross(this.up, this.side, this.forward);
+        Vec3.normalize(this.up, this.up);
+        if (hands & 1) this.arm(frame, this.leftArm, this.leftElbow, this.leftHand,
+            -1, this.leftHinge, this.leftNeutral, 1);
+        if (hands & 2) this.arm(frame, this.rightArm, this.rightElbow, this.rightHand,
+            1, this.rightHinge, this.rightNeutral, 1);
+    }
+
     private bindHinge(upper: Node, elbow: Node, hand: Node, hinge: Vec3, neutral: Quat): void {
         upper.getWorldPosition(this.a);
         elbow.getWorldPosition(this.b);

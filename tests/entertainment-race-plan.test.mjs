@@ -20,9 +20,9 @@ const { entertainmentIntensityProfile } = IntensityModule;
 
 test('整局五档在两种距离及三种布局下遵守配额、白名单与容量', () => {
     const supplyTotals = [[6, 12], [9, 16], [12, 20], [16, 24], [20, 30]];
-    const allowed = [[], [E.WHIRLPOOL], [E.WHIRLPOOL, E.TIMED_BOMB],
-        [E.WHIRLPOOL, E.TIMED_BOMB, E.CANNON],
-        [E.WHIRLPOOL, E.TIMED_BOMB, E.CANNON, E.SHARK]];
+    const allowed = [[], [E.WHIRLPOOL], [E.WHIRLPOOL, E.TURTLE_BUS, E.TIMED_BOMB],
+        [E.WHIRLPOOL, E.TURTLE_BUS, E.TIMED_BOMB, E.CANNON],
+        [E.WHIRLPOOL, E.TURTLE_BUS, E.TIMED_BOMB, E.CANNON, E.SHARK]];
     for (let grade = 1; grade <= 5; grade++) {
         assert.equal(normalizeEntertainmentRaceGrade(grade), grade);
         for (const distance of [200, 400]) for (const layout of ['debris', 'buoy', 'mixed']) {

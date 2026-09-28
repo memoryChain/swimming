@@ -89,10 +89,13 @@ test('娱乐模式每局抽取三到四个不重复事件，三类保底且场�
         assert.equal(new Set(events).size, events.length);
         assert.ok(events.filter(event => event === EntertainmentEventId.WHIRLPOOL
             || event === EntertainmentEventId.OBSTACLE).length >= 1);
-        assert.ok(events.filter(event => event === EntertainmentEventId.STIMULANT || event === EntertainmentEventId.TIMED_BOMB).length >= 1);
+        assert.ok(events.filter(event => event === EntertainmentEventId.STIMULANT
+            || event === EntertainmentEventId.TIMED_BOMB
+            || event === EntertainmentEventId.TURTLE_BUS).length >= 1);
         assert.ok(events.filter(event => event === EntertainmentEventId.SHARK || event === EntertainmentEventId.CANNON).length >= 1);
         assert.notEqual(events.at(-1), EntertainmentEventId.WHIRLPOOL);
         assert.notEqual(events.at(-1), EntertainmentEventId.MINEFIELD);
+        assert.notEqual(events.at(-1), EntertainmentEventId.TURTLE_BUS);
         assert.equal(events.includes(EntertainmentEventId.LITTER), false);
     }
     assert.deepEqual([...counts].sort(), [3, 4]);
@@ -107,6 +110,7 @@ test('400 米娱乐模式抽取五到六个不重复事件，并使用六个联�
         assert.equal(new Set(events).size, events.length);
         assert.notEqual(events.at(-1), EntertainmentEventId.WHIRLPOOL);
         assert.notEqual(events.at(-1), EntertainmentEventId.MINEFIELD);
+        assert.notEqual(events.at(-1), EntertainmentEventId.TURTLE_BUS);
         assert.equal(events.includes(EntertainmentEventId.LITTER), false);
         const director = new EntertainmentModeDirector(seed, 400);
         assert.equal(director.previewDurationSeconds(), 6);
@@ -185,7 +189,8 @@ test('融合后正式候选保持三类保底、抽取数量和场地事件非�
         EntertainmentEventId.WHIRLPOOL,
         EntertainmentEventId.OBSTACLE,
     ]);
-    const contestEvents = new Set([EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB]);
+    const contestEvents = new Set([EntertainmentEventId.STIMULANT,
+        EntertainmentEventId.TIMED_BOMB, EntertainmentEventId.TURTLE_BUS]);
     const assaultEvents = new Set([EntertainmentEventId.SHARK, EntertainmentEventId.CANNON]);
     let sawObstacle = false;
     for (let seed = 0; seed < 1000; seed++) {

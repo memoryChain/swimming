@@ -38,7 +38,7 @@ const DANGER_COLOR = new Color(255, 82, 72, 255);
 const INFO_COLOR = new Color(107, 222, 255, 255);
 const FEED_CLEAR_COLOR = new Color(13, 48, 86, 255);
 
-type FeedMode = 'none' | 'shark' | 'cannon' | 'whirlpool' | 'timed-bomb' | 'litter' | 'buoy' | 'giant-wave';
+type FeedMode = 'none' | 'shark' | 'cannon' | 'whirlpool' | 'timed-bomb' | 'litter' | 'buoy' | 'giant-wave' | 'turtle-bus';
 type TimedBombResolution = 'none' | 'exploded' | 'disarmed';
 
 export type RaceEventPictureInPictureOptions = {
@@ -85,6 +85,8 @@ export class RaceEventPictureInPictureCamera {
     private whirlpoolX = 0;
     private whirlpoolZ = 0;
     private whirlpoolSuper = false;
+    private turtleBusNode: Node | null = null;
+    private turtleBusDirection = 1;
     private timedBombCarrier: Node | null = null;
     private timedBombVisual: Node | null = null;
     private readonly timedBombVisualCenter = new Vec3(0, 0.36, 0);
@@ -511,6 +513,36 @@ export class RaceEventPictureInPictureCamera {
         this.finishRender();
     }
 
+    showTurtleBusPreview(node: Node | null, direction: number): void {
+        if (!this.camera || !node?.isValid || !node.activeInHierarchy
+            || (this.mode !== 'none' && this.mode !== 'turtle-bus')) return;
+        this.mode = 'turtle-bus';
+        this.turtleBusNode = node;
+        this.turtleBusDirection = direction;
+        this.holdSeconds = 1.8;
+        this.setCeilingVisible(false);
+        this.setCopy('海龟班车', '四个拖圈 · 靠近空圈搭乘', INFO_COLOR);
+        this.setVisible(true);
+    }
+
+    updateTurtleBus(dt: number): void {
+        if (this.mode !== 'turtle-bus') return;
+        const node = this.turtleBusNode;
+        this.holdSeconds = Math.max(0, this.holdSeconds - safeStep(dt));
+        if (this.holdSeconds <= 0 || !node?.isValid || !node.activeInHierarchy) {
+            this.hide();
+            return;
+        }
+        if (!this.shouldRender(safeStep(dt))) return;
+        node.getWorldPosition(this.subjectPosition);
+        this.focus.set(this.subjectPosition.x - this.turtleBusDirection * 2,
+            this.options.course.waterY, this.subjectPosition.z);
+        this.cameraPosition.set(this.focus.x - this.turtleBusDirection * 2.2,
+            this.options.course.waterY + 13, this.focus.z + 2.2);
+        this.applyCameraPose(47);
+        this.finishRender();
+    }
+
     updateLitter(clusters: readonly LitterClusterState[], racing: boolean, dt: number,
         obstacleEvent = false): void {
         const safeDt = safeStep(dt);
@@ -926,6 +958,7 @@ export class RaceEventPictureInPictureCamera {
     }
 
     private hide(): void {
+        if (this.mode === 'turtle-bus') this.turtleBusNode = null;
         if (this.mode === 'buoy') this.buoyHoldSeconds = 0;
         this.setVisible(false);
         this.setCeilingVisible(true);

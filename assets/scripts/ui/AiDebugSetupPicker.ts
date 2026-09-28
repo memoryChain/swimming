@@ -30,6 +30,7 @@ const MODE_TEST_MODES: readonly RaceModeId[] = [
     'timed-bomb-brawl',
     'obstacle-brawl',
     'giant-wave-brawl',
+    'turtle-bus-brawl',
 ];
 const MODE_TEST_DIFFICULTY = AI_DEBUG_DIFFICULTY_TIERS[2].value;
 const ENTERTAINMENT_TEST_EVENTS = [

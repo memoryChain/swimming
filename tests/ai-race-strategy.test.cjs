@@ -12,6 +12,7 @@ const { setRaceDifficulty } = h.load('core/GameBalance');
 const { reseedSharedRandom } = h.load('core/SharedRNG');
 const { buildRandomizedAiRoster } = h.load('competitor/CompetitorConfig');
 const { STROKE_QUALITY_TUNING } = h.load('core/InputTuning');
+const { StrokeType } = h.load('core/GameConstants');
 const { PlayerConditionModel } = h.load('condition/PlayerConditionModel');
 
 function observation(overrides = {}) {
@@ -21,6 +22,21 @@ function observation(overrides = {}) {
         nearbyThreat: false, closeRace: false, strokeCostPerMeter: .7, ...overrides };
 }
 
+test('AI 抓稳海龟拖圈后不再日常起划，离车后恢复原输入', () => {
+    const { body, ai, step } = h.create();
+    ai.setTurtleBusRiding(true);
+    const before = body.motor.armStrokeSequence;
+    for (let i = 0; i < 120; i++) step(1 / 60);
+    assert.equal(body.motor.armStrokeSequence, before);
+    ai.setTurtleBusRiding(false);
+    let resumedPress = false;
+    for (let i = 0; i < 900 && !resumedPress; i++) {
+        step(1 / 60);
+        resumedPress = ai.isInputPressed(StrokeType.LEFT) || ai.isInputPressed(StrokeType.RIGHT);
+    }
+    assert.equal(resumedPress, true);
+});
+
 test('娱乐事件横向意图按致命危险、垃圾、普通场地和争抢依次仲裁', () => {
     const { ai } = h.create();
     ai._clock = 2;
@@ -28,6 +44,8 @@ test('娱乐事件横向意图按致命危险、垃圾、普通场地和争抢�
     ai.setWhirlpoolTargetZ(-2);
     ai.setLitterTargetZ(-3);
     assert.equal(ai.resolveEventTargetZ(), -3, '垃圾应高于普通路线、苏打和漩涡');
+    ai.setTurtleBusTargetZ(1.2);
+    assert.equal(ai.resolveEventTargetZ(), -3, '抢圈应服从更紧急的障碍意图');
     assert.equal(ai._eventIntentHoldUntil, 2.35, '切换意图后保留 0.35 秒决策窗');
 
     ai.setMineRelayTargetZ(-4);
@@ -43,6 +61,10 @@ test('娱乐事件横向意图按致命危险、垃圾、普通场地和争抢�
     ai.setCannonTargetZ(null);
     ai.setSharkTargetZ(null);
     ai.setMineRelayTargetZ(null);
+    ai.setWhirlpoolTargetZ(null);
+    ai.setLitterTargetZ(null);
+    assert.equal(ai.resolveEventTargetZ(), 1.2, '危险解除后继续追可达空圈');
+    ai.setLitterTargetZ(-3);
     assert.equal(ai.resolveEventTargetZ(), -3, '致命危险解除后应回到仍有效的垃圾绕行目标');
 });
 

@@ -108,24 +108,27 @@ function mainStage(event: EntertainmentEventId, intensity: EntertainmentRaceGrad
 
 function buildMainStages(seed: number, raceDistance: 200 | 400, grade: EntertainmentRaceGrade): EntertainmentMainStage[] {
     const longRace = raceDistance === 400;
+    const turtleOpening = new SeededRandom((seed ^ 0x54555254) >>> 0).int(3) === 0;
     switch (grade) {
         case 1: return [];
         case 2: return [mainStage(EntertainmentEventId.WHIRLPOOL, 1, longRace ? 0.26 : 0.32, 1, 8, true)];
         case 3: return longRace ? [
-            mainStage(EntertainmentEventId.WHIRLPOOL,
-                2, 0.16, 1, 8, false),
+            mainStage(turtleOpening ? EntertainmentEventId.TURTLE_BUS : EntertainmentEventId.WHIRLPOOL,
+                2, 0.16, 1, turtleOpening ? 15 : 8, false),
             mainStage(EntertainmentEventId.TIMED_BOMB, 1, 0.40, 1, 11.5, true),
             mainStage(EntertainmentEventId.TIMED_BOMB, 1, 0.66, 1, 11.5, false),
         ] : [
-            mainStage(EntertainmentEventId.WHIRLPOOL,
-                2, 0.20, 1, 8, false),
+            mainStage(turtleOpening ? EntertainmentEventId.TURTLE_BUS : EntertainmentEventId.WHIRLPOOL,
+                2, 0.20, 1, turtleOpening ? 15 : 8, false),
             mainStage(EntertainmentEventId.TIMED_BOMB, 1, 0.54, 1, 11.5, true),
         ];
         case 4: {
-            const openingEvent = longRace || new SeededRandom((seed ^ 0x52414334) >>> 0).int(2) === 0
+            const openingEvent = turtleOpening ? EntertainmentEventId.TURTLE_BUS
+                : longRace || new SeededRandom((seed ^ 0x52414334) >>> 0).int(2) === 0
                     ? EntertainmentEventId.WHIRLPOOL : EntertainmentEventId.TIMED_BOMB;
             const opening = mainStage(openingEvent, 2, longRace ? 0.14 : 0.20, 1,
-                openingEvent === EntertainmentEventId.WHIRLPOOL ? 8 : 10.5, false);
+                openingEvent === EntertainmentEventId.TURTLE_BUS ? 15
+                    : openingEvent === EntertainmentEventId.WHIRLPOOL ? 8 : 10.5, false);
             return longRace ? [opening,
                 mainStage(EntertainmentEventId.TIMED_BOMB, 2, 0.38, 1, 10.5, false),
                 mainStage(EntertainmentEventId.CANNON, 2, 0.64, 3, 10.8, true),
@@ -134,8 +137,8 @@ function buildMainStages(seed: number, raceDistance: 200 | 400, grade: Entertain
             ];
         }
         case 5: return longRace ? [
-            mainStage(EntertainmentEventId.WHIRLPOOL,
-                2, 0.12, 1, 8, false),
+            mainStage(turtleOpening ? EntertainmentEventId.TURTLE_BUS : EntertainmentEventId.WHIRLPOOL,
+                2, 0.12, 1, turtleOpening ? 15 : 8, false),
             mainStage(EntertainmentEventId.CANNON, 4, 0.36, 6, 9, false),
             mainStage(EntertainmentEventId.SHARK, 3, 0.62, 1, 14, true),
         ] : [

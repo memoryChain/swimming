@@ -20,6 +20,7 @@ import { AXIAL_ROLL_TUNING } from './AxialRollTuning';
 import { COLLISION_PITCH_TUNING } from './CollisionPitchTuning';
 import { COLLISION_SOFTNESS_TUNING } from './CollisionSoftnessTuning';
 import { STIMULANT_BRAWL_TUNING } from './StimulantBrawlRules';
+import { TURTLE_BUS_TUNING } from './TurtleBusRules';
 import { WHIRLPOOL_BRAWL_TUNING, WHIRLPOOL_SUPER_TUNING } from './WhirlpoolBrawlRules';
 import { MINE_RELAY_TUNING } from './MineRelayBrawlController';
 import { MINEFIELD_TUNING } from './MinefieldBrawlController';
@@ -58,7 +59,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 61;
+const TUNING_FILE_VERSION = 62;
 
 type TuningFileData = {
     version: number;
@@ -430,6 +431,15 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('whirlpool.superOuterBoostScale', '超级顺流倍率', '超级漩涡外圈顺流路线的额外收益倍率。', () => WHIRLPOOL_SUPER_TUNING.outerBoostScale, v => WHIRLPOOL_SUPER_TUNING.outerBoostScale = v, 0.05, 1, 2.5, 2),
             control('whirlpool.superCounterflowScale', '超级逆流倍率', '超级漩涡外圈逆流路线的额外阻力倍率。', () => WHIRLPOOL_SUPER_TUNING.outerCounterflowScale, v => WHIRLPOOL_SUPER_TUNING.outerCounterflowScale = v, 0.05, 1, 2.5, 2),
             control('whirlpool.superBackwardScale', '超级回卷倍率', '超级漩涡核心反向回卷的倍率。', () => WHIRLPOOL_SUPER_TUNING.coreBackwardScale, v => WHIRLPOOL_SUPER_TUNING.coreBackwardScale = v, 0.05, 1, 2.5, 2),
+        ],
+    },
+    {
+        name: '海龟班车',
+        controls: [
+            control('entertainment.turtleBus.claimConfirmSeconds', '抓圈确认时间', '进入空圈抓取区后持续接近多久才抓稳；下一局单机比赛生效，联机使用统一默认值。', () => TURTLE_BUS_TUNING.claimConfirmSeconds, v => TURTLE_BUS_TUNING.claimConfirmSeconds = v, 0.02, 0.04, 0.4, 2, ' s'),
+            control('entertainment.turtleBus.detachImpulseBoth', '双手撞落冲量', '双手抓稳时被撞落所需的实际碰撞冲量。', () => TURTLE_BUS_TUNING.detachImpulseBoth, v => TURTLE_BUS_TUNING.detachImpulseBoth = v, 0.1, 0.5, 3, 1),
+            control('entertainment.turtleBus.detachImpulseSingle', '单手撞落冲量', '松开一只手后被撞落所需的实际碰撞冲量。', () => TURTLE_BUS_TUNING.detachImpulseSingle, v => TURTLE_BUS_TUNING.detachImpulseSingle = v, 0.1, 0.3, 2, 1),
+            control('entertainment.turtleBus.regrabCooldownSeconds', '离圈冷却时间', '离圈后经过此时间且游出原抓取区，才能重新抓圈。', () => TURTLE_BUS_TUNING.regrabCooldownSeconds, v => TURTLE_BUS_TUNING.regrabCooldownSeconds = v, 0.1, 0.2, 2, 1, ' s'),
         ],
     },
     {

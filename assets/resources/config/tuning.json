@@ -1,7 +1,11 @@
 {
-  "version": 61,
+  "version": 62,
   "updatedAt": "2026-09-20T00:00:00.000Z",
   "values": {
+    "entertainment.turtleBus.claimConfirmSeconds": 0.12,
+    "entertainment.turtleBus.detachImpulseBoth": 1.4,
+    "entertainment.turtleBus.detachImpulseSingle": 0.9,
+    "entertainment.turtleBus.regrabCooldownSeconds": 0.8,
     "camera.kickDiveBackDistance": 2.8,
     "camera.kickDiveBelowDistance": 0.35,
     "camera.kickDiveFov": 58,

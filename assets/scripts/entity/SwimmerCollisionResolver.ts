@@ -14,6 +14,10 @@ export type SwimmerCollisionImpactListener = (
     tangentialSpeed: number,
     magnitude: number,
 ) => void;
+/** 每位泳者真正承受的分配冲量，供附着类玩法判定脱离。 */
+export type SwimmerResolvedImpactListener = (
+    first: Swimmer, firstImpulse: number, second: Swimmer, secondImpulse: number,
+) => void;
 
 // Swimmer-vs-swimmer collision. The race only ever has up to 8 swimmers moving
 // kinematically (position is driven by SwimPhysicsModel, not a physics engine),
@@ -112,6 +116,7 @@ const _contactSeen: boolean[] = [];
 export function resolveSwimmerCollisions(
     swimmers: readonly Swimmer[],
     onImpact?: SwimmerCollisionImpactListener,
+    onResolvedImpact?: SwimmerResolvedImpactListener,
 ): void {
     if (!SWIMMER_COLLISION.enabled) {
         clearContacts();
@@ -264,6 +269,7 @@ export function resolveSwimmerCollisions(
                 const totalW = wi + wj;
                 const impI = totalW > 0 ? mag * (wj / totalW) : mag * 0.5;
                 const impJ = totalW > 0 ? mag * (wi / totalW) : mag * 0.5;
+                onResolvedImpact?.(_active[i], impI, _active[j], impJ);
                 // 浅接触的实际分离冲量可能接近零，直接用它驱动骨骼几乎不可见。
                 // 只提高视觉反馈的下限；保留实际击退、能量及转体用的 impI/impJ。
                 const softMag = Math.max(mag, COLLISION_SOFTNESS_TUNING.minimumImpact);

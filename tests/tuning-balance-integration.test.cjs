@@ -54,7 +54,9 @@ function heldStrokeFixture(ratio = 0.6, fixedSpeed = true) {
 test('七种娱乐强度参数登记在调参面板，并能保存、恢复默认和重新加载', () => {
     const h = setup(); h.tuning.loadSavedTuningAsync(() => {});
     const controls = [...h.controls.keys()].filter(id => id.startsWith('entertainment.'));
-    assert.equal(controls.length, 110);
+    assert.equal(controls.length, 114);
+    assert.ok(h.controls.has('entertainment.turtleBus.claimConfirmSeconds'));
+    assert.ok(h.controls.has('entertainment.turtleBus.detachImpulseBoth'));
     const item = h.controls.get('entertainment.litter.level5.litterItemsPerWave');
     const shark = h.controls.get('entertainment.shark.level2.sharkSpeedScale');
     assert.equal(item.get(), 15);

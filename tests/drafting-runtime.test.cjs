@@ -109,6 +109,45 @@ test('真实运动模型按左右起划分别锁价，离开后在途价格不�
     }
 });
 
+test('海龟抓圈只消费真实起划的左右手事件，短点按踢腿不算松手', () => {
+    const motor = new SwimmerMotor();
+    motor.startRace(0, 2);
+    const started = [];
+    motor.onArmStrokeStarted = (side, sequence) => started.push([side, sequence]);
+    motor.recordKickTap(StrokeType.LEFT);
+    assert.deepEqual(started, []);
+    motor.setStrokeHeld(StrokeType.LEFT, true, .2);
+    motor.recordStroke(StrokeType.LEFT);
+    motor.setStrokeHeld(StrokeType.RIGHT, true, .2);
+    motor.recordStroke(StrokeType.RIGHT);
+    assert.deepEqual(started, [[StrokeType.LEFT, 1], [StrokeType.RIGHT, 2]]);
+    assert.equal(motor.armStrokeSequence, 2);
+    motor.startRace(0, 2);
+    assert.equal(motor.armStrokeSequence, 0);
+});
+
+test('海龟牵引推进真实赛程，解除后继承速度并在重开时清理', () => {
+    const free = new SwimmerMotor(), riding = new SwimmerMotor();
+    free.startRace(50, 2);
+    riding.startRace(50, 2);
+    for (let frame = 0; frame < 60; frame++) {
+        free.update(1 / 60, { isAI: false });
+        riding.setTurtleTowTarget(2, 52 + frame * 2 / 60, 0);
+        riding.update(1 / 60, { isAI: false });
+    }
+    assert.ok(riding.distance > free.distance,
+        `牵引没有计入赛程：${riding.distance} vs ${free.distance}`);
+    assert.ok(riding.currentSpeed <= 2.2);
+    const beforeRelease = riding.distance;
+    riding.clearTurtleTow();
+    riding.update(1 / 30, { isAI: false });
+    assert.ok(riding.distance > beforeRelease);
+    assert.ok(riding.currentSpeed > free.currentSpeed);
+    riding.startRace(0, 2);
+    riding.update(1 / 30, { isAI: false });
+    assert.ok(riding.currentSpeed < 3, '重开后不应继承上一趟的牵引');
+});
+
 function entry(source, eligible) {
     return { lane: 7, distance: 20, lateral: 0, finished: false, heading: 0, headingVelocity: 0,
         speed: 2.5, energy: 50, axialRoll: 0, axialRollVelocity: 0, collisionPitch: 0, collisionPitchVelocity: 0,

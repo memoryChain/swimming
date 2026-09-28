@@ -11,6 +11,7 @@ export const enum EntertainmentEventId {
     SHARK = 4,
     CANNON = 5,
     LITTER = 6,
+    TURTLE_BUS = 7,
 }
 
 /** 正式娱乐导演从六种候选中按赛程抽取三至六种。 */
@@ -87,6 +88,7 @@ const EVENT_DURATION_SECONDS: Readonly<Record<EntertainmentEventId, number>> = {
     [EntertainmentEventId.SHARK]: 13,
     [EntertainmentEventId.CANNON]: 7,
     [EntertainmentEventId.LITTER]: 8,
+    [EntertainmentEventId.TURTLE_BUS]: 15,
 };
 const PERSISTENT_EVENTS_MASK = eventBit(EntertainmentEventId.STIMULANT)
     | eventBit(EntertainmentEventId.WHIRLPOOL)
@@ -97,6 +99,7 @@ export const ENTERTAINMENT_SELECTABLE_EVENTS: readonly EntertainmentEventId[] = 
     EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB,
     EntertainmentEventId.WHIRLPOOL, EntertainmentEventId.OBSTACLE,
     EntertainmentEventId.SHARK, EntertainmentEventId.CANNON,
+    EntertainmentEventId.TURTLE_BUS,
 ];
 
 let runtimeResidentMask = 0;
@@ -125,6 +128,7 @@ export function entertainmentEventName(event: EntertainmentEventId): string {
         case EntertainmentEventId.SHARK: return '玩具冲撞';
         case EntertainmentEventId.CANNON: return '水球点名';
         case EntertainmentEventId.LITTER: return '杂物漂流';
+        case EntertainmentEventId.TURTLE_BUS: return '海龟班车';
     }
 }
 
@@ -290,6 +294,28 @@ const ENTERTAINMENT_BROADCAST_COPIES: Readonly<Record<
         ['泳池广播：杂物飞向了比赛路线，绕行课临时加一题', '绕行练习 · 硬瓶要躲，餐盒会慢'],
         ['泳池广播：硬瓶和餐盒一起飞来，碰撞与阻力各有分工', '看清类型 · 硬瓶碰撞，餐盒减速'],
         ['泳池广播：几件杂物在水面碰头，清理队正在为它们散会', '漂流散会 · 看准空隙继续前进'],
+    ],
+    [EntertainmentEventId.TURTLE_BUS]: [
+        ['泳池广播：海龟班车准备浮出水面，四个拖圈可搭乘', '海龟班车 · 靠近空圈双手抓稳'],
+        ['泳池广播：水面出现一位慢性子司机，顺路可以搭车', '顺路搭乘 · 靠近空圈抓稳'],
+        ['泳池广播：海龟牵着四个圈来了，先到先搭', '四圈开门 · 游近空位抓稳'],
+        ['泳池广播：今日水上交通开线，车票是一双手', '双手抓圈 · 划水逐手松开'],
+        ['泳池广播：大海龟浮起来了，拖圈马上经过赛道', '班车进站 · 看准空圈靠近'],
+        ['泳池广播：海龟司机只走一程，到站会先放人', '单程顺风 · 到站自行续游'],
+        ['泳池广播：水面顺风车靠近，座位先到先得', '顺风车来 · 双手抓圈搭乘'],
+        ['泳池广播：四个游泳圈正跟着海龟排队入场', '拖圈入场 · 抢到空圈搭一段'],
+        ['泳池广播：海龟班车准备发车，空圈不会等太久', '即将发车 · 靠近空圈'],
+        ['泳池广播：海龟载客不收票，抓得稳才坐得久', '抓稳乘坐 · 碰撞可能掉车'],
+        ['泳池广播：海龟司机游得稳，后面四圈有空位', '四圈可搭 · 游近自动抓稳'],
+        ['泳池广播：顺路班车出水，想下车就正常划水', '顺风一程 · 左右起划下车'],
+        ['泳池广播：海龟拖圈从后方赶来，别错过搭乘窗口', '搭乘窗口 · 靠近空圈'],
+        ['泳池广播：游泳圈已经系好，海龟司机准备上岗', '海龟上岗 · 抓稳圈沿出发'],
+        ['泳池广播：水上公交本次只跑一趟，想搭车请靠近', '仅此一程 · 先到先坐'],
+        ['泳池广播：海龟班车给赛道加了一条顺风路线', '顺风路线 · 靠近拖圈搭乘'],
+        ['泳池广播：四个圈正在水面等乘客，先到的先坐', '空圈争夺 · 双手抓稳'],
+        ['泳池广播：海龟司机已经探头，车尾的圈也跟着来了', '探头入场 · 抢到空圈'],
+        ['泳池广播：海龟班车要带大家兜一段，到站会潜走', '搭车一段 · 放手继续游'],
+        ['泳池广播：今天的顺风车由海龟驾驶，四圈同时开放', '海龟发车 · 空圈先到先得'],
     ],
 };
 
@@ -484,6 +510,45 @@ export class EntertainmentModeDirector {
 
     isSpecialEvent(event: EntertainmentEventId): boolean {
         return (this.specialMask & eventBit(event)) !== 0;
+    }
+
+    /** 班车 14 秒仍无两人可搭窗口时，沿用锚点换成未被选中的合法事件。 */
+    replaceUnavailableTurtle(): EntertainmentDirectorTransition {
+        const transition = this.clearTransition();
+        if (this.phase !== EntertainmentDirectorPhase.ACTIVE
+            || this.currentEvent() !== EntertainmentEventId.TURTLE_BUS
+            || this.eventIndex >= this.events.length) return transition;
+        let replacement = EntertainmentEventId.WHIRLPOOL;
+        if (!this.gradedPlan) {
+            const candidates = ENTERTAINMENT_SELECTABLE_EVENTS.filter(event =>
+                event !== EntertainmentEventId.TURTLE_BUS && this.events.indexOf(event) < 0);
+            const offset = (this.seed >>> 0) % candidates.length;
+            const index = this.eventIndex;
+            let found = false;
+            for (let step = 0; step < candidates.length; step++) {
+                const candidate = candidates[(offset + step) % candidates.length];
+                this.events[index] = candidate;
+                if (!validEventOrder(this.events)) continue;
+                replacement = candidate;
+                found = true;
+                break;
+            }
+            if (!found) {
+                this.events[index] = EntertainmentEventId.TURTLE_BUS;
+                return transition;
+            }
+        } else this.events[this.eventIndex] = replacement;
+        this.remainingSeconds = EVENT_DURATION_SECONDS[replacement];
+        this.activatedMask |= eventBit(replacement);
+        this.residentMask &= ~eventBit(EntertainmentEventId.TURTLE_BUS);
+        this.residentMask |= eventBit(replacement);
+        this.activationSerial++;
+        this.lastActivatedEvent = replacement;
+        this.revision++;
+        transition.finishedEvent = EntertainmentEventId.TURTLE_BUS;
+        transition.activatedEvent = replacement;
+        this.publishRuntimeState();
+        return transition;
     }
 
     previewDurationSeconds(): number { return this.previewSeconds(); }
@@ -683,10 +748,19 @@ export class EntertainmentModeDirector {
     }
 
     private acceptsEventOrder(events: readonly EntertainmentEventId[]): boolean {
-        if (!this.gradedPlan) return validEventOrder(events);
-        const planned = this.gradedPlan.stages;
-        return events.length === planned.length
-            && events.every((event, index) => event === planned[index].event);
+        if (!this.gradedPlan && validEventOrder(events)) return true;
+        const planned = this.gradedPlan
+            ? this.gradedPlan.stages.map(stage => stage.event)
+            : this.testEventOrder?.length ? this.testEventOrder
+                : buildEntertainmentEventOrder(this.seed, this.raceDistance, this.includeLitter);
+        if (events.length !== planned.length) return false;
+        let replaced = 0;
+        for (let index = 0; index < events.length; index++) {
+            if (events[index] === planned[index]) continue;
+            if (planned[index] !== EntertainmentEventId.TURTLE_BUS
+                || events[index] !== EntertainmentEventId.WHIRLPOOL || ++replaced > 1) return false;
+        }
+        return this.gradedPlan ? true : replaced > 0;
     }
 
     private complete(): void {
@@ -769,7 +843,8 @@ export function buildEntertainmentEventOrder(
             EntertainmentEventId.WHIRLPOOL,
             EntertainmentEventId.OBSTACLE,
         ];
-        const contest = [EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB];
+        const contest = [EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB,
+            EntertainmentEventId.TURTLE_BUS];
         const assault = [EntertainmentEventId.SHARK, EntertainmentEventId.CANNON];
         const events = [
             field[random.int(field.length)],
@@ -780,7 +855,7 @@ export function buildEntertainmentEventOrder(
         random.shuffle(remaining);
         while (events.length < count && remaining.length > 0) events.push(remaining.pop()!);
         random.shuffle(events);
-        moveFieldEventAwayFromEnd(events, random);
+        moveNonClosingEventAwayFromEnd(events, random);
         return events;
     }
     if (raceDistance >= 400) {
@@ -791,26 +866,29 @@ export function buildEntertainmentEventOrder(
             EntertainmentEventId.MINEFIELD,
             EntertainmentEventId.SHARK,
             EntertainmentEventId.CANNON,
+            EntertainmentEventId.TURTLE_BUS,
         ];
         random.shuffle(events);
         events.length = random.int(2) === 0 ? 5 : 6;
-        moveFieldEventAwayFromEnd(events, random);
+        moveNonClosingEventAwayFromEnd(events, random);
         return events;
     }
     const field = random.int(2) === 0 ? EntertainmentEventId.WHIRLPOOL : EntertainmentEventId.MINEFIELD;
-    const contest = random.int(2) === 0 ? EntertainmentEventId.STIMULANT : EntertainmentEventId.TIMED_BOMB;
+    const contest = [EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB,
+        EntertainmentEventId.TURTLE_BUS][random.int(3)];
     const assault = random.int(2) === 0 ? EntertainmentEventId.SHARK : EntertainmentEventId.CANNON;
     const events = [field, contest, assault];
     if (random.int(2) === 0) {
         const remaining = [
             field === EntertainmentEventId.WHIRLPOOL ? EntertainmentEventId.MINEFIELD : EntertainmentEventId.WHIRLPOOL,
-            contest === EntertainmentEventId.STIMULANT ? EntertainmentEventId.TIMED_BOMB : EntertainmentEventId.STIMULANT,
+            ...[EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB,
+                EntertainmentEventId.TURTLE_BUS].filter(event => event !== contest),
             assault === EntertainmentEventId.SHARK ? EntertainmentEventId.CANNON : EntertainmentEventId.SHARK,
         ];
         events.push(remaining[random.int(remaining.length)]);
     }
     random.shuffle(events);
-    moveFieldEventAwayFromEnd(events, random);
+    moveNonClosingEventAwayFromEnd(events, random);
     return events;
 }
 
@@ -882,11 +960,12 @@ function validEventOrder(events: readonly EntertainmentEventId[]): boolean {
         || ENTERTAINMENT_SELECTABLE_EVENTS.indexOf(event) < 0)) return false;
     const fieldCount = events.filter(event => isFieldEvent(event)).length;
     const contestCount = events.filter(event => event === EntertainmentEventId.STIMULANT
-        || event === EntertainmentEventId.TIMED_BOMB).length;
+        || event === EntertainmentEventId.TIMED_BOMB
+        || event === EntertainmentEventId.TURTLE_BUS).length;
     const assaultCount = events.filter(event => event === EntertainmentEventId.SHARK
         || event === EntertainmentEventId.CANNON).length;
     return fieldCount >= 1 && contestCount >= 1 && assaultCount >= 1
-        && !isFieldEvent(events[events.length - 1]);
+        && !isNonClosingEvent(events[events.length - 1]);
 }
 
 function isFieldEvent(event: EntertainmentEventId): boolean {
@@ -894,11 +973,15 @@ function isFieldEvent(event: EntertainmentEventId): boolean {
         || event === EntertainmentEventId.OBSTACLE;
 }
 
-function moveFieldEventAwayFromEnd(events: EntertainmentEventId[], random: SeededRandom): void {
+function isNonClosingEvent(event: EntertainmentEventId): boolean {
+    return isFieldEvent(event) || event === EntertainmentEventId.TURTLE_BUS;
+}
+
+function moveNonClosingEventAwayFromEnd(events: EntertainmentEventId[], random: SeededRandom): void {
     const lastIndex = events.length - 1;
-    if (!isFieldEvent(events[lastIndex])) return;
+    if (!isNonClosingEvent(events[lastIndex])) return;
     const nonFieldIndices = events
-        .map((event, index) => isFieldEvent(event) ? -1 : index)
+        .map((event, index) => isNonClosingEvent(event) ? -1 : index)
         .filter(index => index >= 0 && index < lastIndex);
     const swapIndex = nonFieldIndices[random.int(nonFieldIndices.length)];
     const last = events[lastIndex];

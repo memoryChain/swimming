@@ -80,6 +80,8 @@ export class AISwimmerController extends Component {
     private _mineRelayTargetZ: number | null = null;
     private _minefieldTargetZ: number | null = null;
     private _litterTargetZ: number | null = null;
+    private _turtleBusTargetZ: number | null = null;
+    private _turtleBusRiding = false;
     private _obstacleTargetZ: number | null = null;
     private _obstacleTargetUrgent = false;
     private _eventIntentPriority = 0;
@@ -157,6 +159,22 @@ export class AISwimmerController extends Component {
         this._litterTargetZ = targetZ !== null && Number.isFinite(targetZ) ? targetZ : null;
     }
 
+    setTurtleBusTargetZ(targetZ: number | null): void {
+        this._turtleBusTargetZ = targetZ !== null && Number.isFinite(targetZ) ? targetZ : null;
+    }
+
+    /** 抓稳后暂停日常起划；离车后从空档重新决策，不重放旧按住。 */
+    setTurtleBusRiding(riding: boolean): void {
+        if (riding === this._turtleBusRiding) return;
+        this._turtleBusRiding = riding;
+        this.clearObservedPress();
+        this._phase = 'gap';
+        this._primed = false;
+        this._primedSeconds = 0;
+        this._timer = 0;
+        this._decisionClock = this.intelligence.decisionSeconds;
+    }
+
     setObstacleTargetZ(targetZ: number | null, urgent = false) {
         this._obstacleTargetZ = targetZ !== null && Number.isFinite(targetZ) ? targetZ : null;
         this._obstacleTargetUrgent = this._obstacleTargetZ !== null && urgent;
@@ -190,6 +208,7 @@ export class AISwimmerController extends Component {
         this._active = false;
         this._primed = false;
         this._phase = 'gap';
+        this._turtleBusRiding = false;
     }
 
     update(dt: number) {
@@ -201,6 +220,7 @@ export class AISwimmerController extends Component {
         if (this.remoteDriven || !this._active || !this.swimmer?.node.active
             || !this.swimmer.isRacing || !(dt > 0) || !Number.isFinite(dt)) return;
         this._clock += dt;
+        if (this._turtleBusRiding) return;
         const body = this.swimmer;
         // 折返与跳跃会清除动作。恢复后丢弃旧按住状态，不能残留一只手或沿用旧预算采样。
         if (body.isFlipTurning || body.isDolphinJumpActive || !body.canUseArmStroke) {
@@ -294,7 +314,8 @@ export class AISwimmerController extends Component {
      */
     private resolveEventTargetZ(): number | null {
         let desiredPriority = 0;
-        if (this._stimulantTargetZ !== null || this._giantWaveTargetZ !== null) desiredPriority = 1;
+        if (this._stimulantTargetZ !== null || this._giantWaveTargetZ !== null
+            || this._turtleBusTargetZ !== null) desiredPriority = 1;
         if (this._whirlpoolTargetZ !== null) desiredPriority = 2;
         if (this._litterTargetZ !== null) desiredPriority = 3;
         if (this._obstacleTargetZ !== null && !this._obstacleTargetUrgent) desiredPriority = 3;
@@ -324,7 +345,7 @@ export class AISwimmerController extends Component {
             case 3: return this._obstacleTargetZ !== null && !this._obstacleTargetUrgent
                 ? this._obstacleTargetZ : this._litterTargetZ;
             case 2: return this._whirlpoolTargetZ;
-            case 1: return this._stimulantTargetZ ?? this._giantWaveTargetZ;
+            case 1: return this._turtleBusTargetZ ?? this._stimulantTargetZ ?? this._giantWaveTargetZ;
             default: return null;
         }
     }

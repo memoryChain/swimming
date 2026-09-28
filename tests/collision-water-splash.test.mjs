@@ -85,7 +85,7 @@ test('游戏管理器预热、推进、重置和销毁专用碰撞水花池', ()
     assert.match(gameManager, /this\._collisionWaterSplashes\?\.update\(dt\)/);
     assert.match(gameManager, /this\._collisionWaterSplashes\?\.reset\(\)/);
     assert.match(gameManager, /this\._collisionWaterSplashes\?\.dispose\(\)/);
-    assert.match(gameManager, /resolveSwimmerCollisions\(this\._collisionSwimmers, this\._onSwimmerCollisionImpact\)/);
+    assert.match(gameManager, /resolveSwimmerCollisions\(this\._collisionSwimmers, this\._onSwimmerCollisionImpact,[\s\S]*?this\._turtleBus \? this\._onTurtleBusResolvedImpact : undefined\)/);
     assert.doesNotMatch(gameManager, /setCollisionSplashListener|broadcastCollisionSplash|collisionSplashRevision/);
 });
 
@@ -187,4 +187,28 @@ test('碰撞回调在共同强度拆分体重冲量之前执行且不创建事�
     assert.match(resolver, /onImpact\?\.\([\s\S]*?\(_origX\[i\] \+ _origX\[j\]\) \* 0\.5[\s\S]*?Math\.abs\(\(_velX\[i\] - _velX\[j\]\)/);
     assert.match(resolver, /onImpact\?\.\([\s\S]*?mag,[\s\S]*?\);[\s\S]*?const wi = _weight\[i\]/);
     assert.doesNotMatch(resolver, /onImpact\?\.\(\{/);
+});
+
+test('附着玩法收到每位泳者的真实分配冲量，体重和遍历顺序不改变结果', () => {
+    const sample = reverse => {
+        clearContacts();
+        const light = swimmer(-0.85, 0, 1);
+        const heavy = swimmer(0.85, 0, -1);
+        light.weight = 1;
+        heavy.weight = 3;
+        let measured = null;
+        resolveSwimmerCollisions(reverse ? [heavy, light] : [light, heavy], undefined,
+            (first, firstImpulse, second, secondImpulse) => {
+                measured = first === light
+                    ? [firstImpulse, secondImpulse]
+                    : [secondImpulse, firstImpulse];
+            });
+        return measured;
+    };
+    const forward = sample(false);
+    const backward = sample(true);
+    assert.ok(forward);
+    assert.ok(forward[0] > forward[1]);
+    assert.deepEqual(forward, backward);
+    clearContacts();
 });

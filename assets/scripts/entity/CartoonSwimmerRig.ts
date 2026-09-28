@@ -1255,6 +1255,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     private _giantWaveLift = 0;
     setGiantWaveLift(value: number): void { this._giantWaveLift = Math.max(0, value); }
+    private _turtleBusGripHands = 0;
+    setTurtleBusGripHands(hands: number): void {
+        this._turtleBusGripHands = hands & 3;
+    }
 
     // Camera reconstruction works in swimmer-node local space. Remove the model
     // translation above before rebuilding the no-collision-pitch camera anchor,
@@ -1574,6 +1578,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     lateUpdate() {
+        if (this._turtleBusGripHands && this._loaded && this._model?.isValid
+            && this._poseState.isFreestyleActive) {
+            this._pose.recoveryFloat.applyTowGrip(this._model, this._turtleBusGripHands);
+        }
         if (this._rendererRevealFramesRemaining <= 0 || !this._loaded || !this._model?.isValid) {
             return;
         }
@@ -1584,6 +1592,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     onDestroy() {
+        this._turtleBusGripHands = 0;
         this._recoveryFloat?.dispose();
         this._recoveryFloat = null;
         this._poseState.resetRuntime();

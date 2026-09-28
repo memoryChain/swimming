@@ -36,6 +36,9 @@ import { DEV } from 'cc/env';
 import { GameFlowController } from '../app/GameFlowController';
 import { MusicManager } from '../app/MusicManager';
 import { DraftingController } from '../swimmer/DraftingController';
+import { TurtleBusController } from './TurtleBusController';
+import { turtleBusFeelSnapshot } from './TurtleBusRules';
+import { TurtleBusHud } from '../ui/TurtleBusHud';
 import { PlayerConditionModel } from '../condition/PlayerConditionModel';
 import { AiConditionModel } from '../condition/AiConditionModel';
 import { RaceContext } from '../condition/RaceContext';
@@ -92,6 +95,7 @@ import { buildNetLanePlan, NetLanePlan } from '../net/NetLanePlan';
 import { RemoteSwimmerController } from '../entity/RemoteSwimmerController';
 import { applyNetSwimmerLook } from '../net/NetSwimmerLook';
 import { NetSnapshotEntry } from '../net/NetRaceSnapshot';
+import type { NetTurtleBusState } from '../net/NetTurtleBusSnapshot';
 import { NET_SIM_STEP } from '../net/NetSimClock';
 import { getSharedRandomSeed, reseedSharedRandom } from './SharedRNG';
 import { getSoloRaceTicket, setSoloRaceTicket, markSoloReturn } from '../progression/SoloRaceSession';
@@ -303,6 +307,11 @@ export class GameManager extends Component {
             magnitude,
         );
     };
+    private readonly _onTurtleBusResolvedImpact = (
+        first: Swimmer, firstImpulse: number, second: Swimmer, secondImpulse: number,
+    ): void => {
+        this._turtleBus?.onResolvedImpact(first, firstImpulse, second, secondImpulse);
+    };
     // AI 测试赛可选 1 或 7 个对手，等级、智力和阵容来自开始页面板。
     private _aiDebugMode = false;
     private _aiDebugDifficulty = 0.8;
@@ -374,6 +383,9 @@ export class GameManager extends Component {
     private _whirlpoolBrawl: WhirlpoolBrawlController | null = null;
     private _giantWave: GiantWaveController | null = null;
     private _drafting: DraftingController | null = null;
+    private _turtleBus: TurtleBusController | null = null;
+    private _pendingTurtleBusState: NetTurtleBusState | null = null;
+    private _turtleBusHud: TurtleBusHud | null = null;
     private _whirlpoolVisualResources: WhirlpoolVisualResources | null = null;
     private _whirlpoolActivationPreviewPending = false;
     private _whirlpoolActivationPreviewPlayed = false;
@@ -563,6 +575,7 @@ export class GameManager extends Component {
                                 if (!this._aiDebugMode && getRaceDifficultyConfig().id === 'giant-wave-brawl') {
                                     setRaceMode('competitive');
                                 }
+                                this.setupTurtleBusDebugRace();
                                 this.applyAiDebugHud();
                                 this.startGame();
                             }
@@ -607,6 +620,7 @@ export class GameManager extends Component {
         this._netRaceController?.setSharkKnockdownListener(null);
         this._netRaceController?.setSharkStateListener(null);
         this._netRaceController?.setEntertainmentDirectorStateListener(null);
+        this._netRaceController?.setTurtleBusStateListener(null);
         this._netRaceController?.dispose();
         this._netRaceController = null;
         this._gameFlow?.stopAllAi();
@@ -623,6 +637,11 @@ export class GameManager extends Component {
         this._whirlpoolBrawl = null;
         this._drafting?.dispose();
         this._drafting = null;
+        this._turtleBus?.dispose();
+        this._turtleBus = null;
+        this._pendingTurtleBusState = null;
+        this._turtleBusHud?.dispose();
+        this._turtleBusHud = null;
         this._giantWave?.dispose();
         this._giantWave = null;
         this._whirlpoolActivationPreviewPending = false;
@@ -692,6 +711,12 @@ export class GameManager extends Component {
         }
         const netDt = dt;
         this.updateDrafting(dt);
+        if (this._netSession && this._turtleBus) {
+            this._turtleBus.setAuthority(this._netRaceController?.isHost ?? false);
+        }
+        if (this._turtleBus && this._entertainmentDirector && this._raceManager?.hasAnyFinisher()) {
+            this._turtleBus.stopNewBoarding();
+        }
         // Deterministic AI: in a net race step the AI on a fixed 33ms clock (raw dt),
         // so the shared-seed AI advance identically on every client (no drift).
         this.driveNetAiFixedStep(dt);
@@ -781,7 +806,11 @@ export class GameManager extends Component {
         // resolve collisions inside driveNetAiFixedStep on the shared 33ms clock, never
         // once per render frame (which made impulse count depend on device FPS).
         if (!this._netSession) {
+            this._turtleBus?.update(dt,
+                this._state === GameState.GLIDING || this._state === GameState.RACING);
             this.updateSwimmerCollisions();
+        } else if (!this._netRaceController?.isHost) {
+            this._turtleBus?.updateReplica(dt);
         }
         this.updateNetRaceSync(dt);
         this.updateLaneLockdown(dt);
@@ -800,6 +829,7 @@ export class GameManager extends Component {
             this.updateSharkBrawl(dt);
             this._eventPictureInPicture?.updateShark(this._shark, dt);
         }
+        if (this._turtleBus) this._eventPictureInPicture?.updateTurtleBus(dt);
         this.updateEntertainmentIntensityDebugHud(netDt);
         this._entertainmentWaterSplashes?.update(dt);
         this._collisionWaterSplashes?.update(dt);
@@ -983,7 +1013,8 @@ export class GameManager extends Component {
         // the 养成 profile synced in the net roster and applied in wireRemoteSwimmers), so
         // the weighted knockback split resolves the same everywhere. Residual float
         // divergence is absorbed by the owner/host position authority.
-        resolveSwimmerCollisions(this._collisionSwimmers, this._onSwimmerCollisionImpact);
+        resolveSwimmerCollisions(this._collisionSwimmers, this._onSwimmerCollisionImpact,
+            this._turtleBus ? this._onTurtleBusResolvedImpact : undefined);
     }
 
     private toggleSplashCulling() {
@@ -1222,6 +1253,9 @@ export class GameManager extends Component {
                     this._netRaceController?.setStimulantStateListener(null);
                 }
                 if (previousState === GameState.RACING && state !== GameState.RACING) {
+                    this._turtleBus?.reset();
+                    this._turtleBusHud?.reset();
+                    this._pendingTurtleBusState = null;
                     this._collisionWaterSplashes?.reset();
                     this._entertainmentEventBanner.hide();
                     this._entertainmentRecovery?.reset();
@@ -1257,6 +1291,13 @@ export class GameManager extends Component {
                     this._sharkLockOnOverlay.hide();
                     this._whirlpoolBrawl?.reset();
                     this._drafting?.reset();
+                    if (getRaceDifficultyConfig().id === 'turtle-bus-brawl') {
+                        this._turtleBus?.reset();
+                    } else {
+                        this._turtleBus?.dispose();
+                        this._turtleBus = null;
+                    }
+                    this._turtleBusHud?.reset();
                     this._giantWave?.reset();
                     this._cannonBrawl?.reset();
                     this._cannonBrawlPresentation?.reset();
@@ -1578,8 +1619,73 @@ export class GameManager extends Component {
         this._laneLockdownRace.update(dt, this._state, this._laneLockdownRacers);
     }
 
+    private setupTurtleBusDebugRace(): void {
+        if (!this._aiDebugMode || this._netSession
+            || getRaceDifficultyConfig().id !== 'turtle-bus-brawl'
+            || !this._worldRoot?.isValid || !this._playerSwimmer?.node?.isValid) return;
+        this.createTurtleBus(false);
+    }
+
+    private createTurtleBus(formal: boolean): void {
+        if (!this._worldRoot?.isValid || !this._playerSwimmer?.node?.isValid) return;
+        this._turtleBus?.dispose();
+        const lanes = [this._playerLaneIndex];
+        for (const swimmer of this._aiSwimmers) {
+            let lane = -1;
+            for (let candidate = 0; candidate < LANE_LAYOUT.laneCount; candidate++) {
+                if (this.swimmerForLane(candidate) === swimmer) { lane = candidate; break; }
+            }
+            lanes.push(lane);
+        }
+        this._turtleBus = new TurtleBusController(this._worldRoot, COURSE_LAYOUT,
+            this._playerSwimmer, this._aiSwimmers, getSharedRandomSeed(),
+            direction => {
+                this._entertainmentEventBanner.showDirectorEvent(
+                    '海龟班车即将浮出水面',
+                    'warning', 3000, 'broadcast', '广播通知',
+                );
+                this._eventPictureInPicture?.showTurtleBusPreview(
+                    this._turtleBus?.visualNode ?? null, direction);
+            },
+            () => this._entertainmentEventBanner.showDirectorEvent(
+                '班车发车 · 靠近空圈搭乘', 'danger', 3000, 'broadcast', '广播通知',
+            ),
+            (seat, riding) => {
+                if (seat > 0) this._aiControllers[seat - 1]?.setTurtleBusRiding(riding);
+                else {
+                    this.activePlayerAutopilot()?.setTurtleBusRiding(riding);
+                    if (this._state === GameState.RACING) this._entertainmentEventBanner.showPersonal(
+                        riding ? '双手抓圈 · 左右划水可下车' : '已离开海龟班车',
+                        riding ? 'success' : 'info', riding ? 2000 : 1000,
+                    );
+                }
+            },
+            (seat, targetZ) => {
+                if (seat > 0) this._aiControllers[seat - 1]?.setTurtleBusTargetZ(targetZ);
+                else this.activePlayerAutopilot()?.setTurtleBusTargetZ(targetZ);
+            },
+            (seat, hands) => {
+                const swimmer = seat === 0 ? this._playerSwimmer : this._aiSwimmers[seat - 1];
+                swimmer?.cartoonRig?.setTurtleBusGripHands(hands);
+                if (seat === 0) this._turtleBusHud?.setHands(hands);
+            }, formal,
+            formal ? () => {
+                const director = this._entertainmentDirector;
+                if (director?.currentEvent() === EntertainmentEventId.TURTLE_BUS) {
+                    this.handleEntertainmentDirectorTransition(director.replaceUnavailableTurtle());
+                }
+            } : undefined,
+            lanes,
+            formal ? this._entertainmentDirector?.snapshot().activationSerial ?? 1 : 1,
+            turtleBusFeelSnapshot(!!this._netSession));
+        if (formal && this._netRaceController) {
+            this._turtleBus.setAuthority(this._netRaceController.isHost);
+        }
+    }
+
     private setupEntertainmentMode() {
         this._debugEntertainmentProfiles = null;
+        this._pendingTurtleBusState = null;
         this._entertainmentRacePlan = null;
         this._gradedEntertainmentProfiles = null;
         this._gradedObstaclePreviewShown = false;
@@ -1674,8 +1780,18 @@ export class GameManager extends Component {
             const transition = director.applySnapshot(state as import('./EntertainmentModeDirector').EntertainmentDirectorState);
             if (!transition.snapshotAccepted) return false;
             this.handleEntertainmentDirectorTransition(transition);
+            if (director.phaseId() === EntertainmentDirectorPhase.CLOSING) {
+                this._turtleBus?.stopNewBoarding();
+            }
             this.reconcileEntertainmentResidents();
+            if (director.currentEvent() === EntertainmentEventId.TURTLE_BUS) {
+                this.applyPendingTurtleBusNetState();
+            } else this._pendingTurtleBusState = null;
             return true;
+        });
+        this._netRaceController?.setTurtleBusStateListener(state => {
+            this._pendingTurtleBusState = state;
+            this.applyPendingTurtleBusNetState();
         });
         this._netRaceController?.setGameplayEventEpochListener((slot, epoch) => {
             // 访客可能漏掉某个完整返场；按同包代次重置遗漏的子控制器，再灌入状态。
@@ -1700,6 +1816,7 @@ export class GameManager extends Component {
         }
         if (this._netRaceController && !this._netRaceController.isHost) return;
         if (this._raceManager?.hasAnyFinisher()) {
+            this._turtleBus?.stopNewBoarding();
             if (this._entertainmentRacePlan && !this._gradedSuppliesLocked && this._stimulantBrawl) {
                 this._stimulantBrawl.cancelPendingWaves();
                 this._gradedSuppliesLocked = true;
@@ -1757,6 +1874,9 @@ export class GameManager extends Component {
             return !!this._shark && this._shark.hasCompletedHunts()
                 && (this._shark.state === SharkState.WANDER || this._shark.state === SharkState.SATIATED);
         }
+        if (event === EntertainmentEventId.TURTLE_BUS) {
+            return this._turtleBus?.isDone ?? false;
+        }
         return true;
     }
 
@@ -1778,45 +1898,50 @@ export class GameManager extends Component {
             this.activateEntertainmentEvent(transition.recoveredEvent);
         }
         if (transition.previewEvent !== null) {
-            const previewDurationMs = (director?.previewDurationSeconds() ?? 6) * 1000;
-            const previewActivationSerial = (director?.snapshot().activationSerial ?? 0) + 1;
-            if (transition.previewEvent === EntertainmentEventId.CANNON) {
-                this._cannonPreviewPending = true;
-                this.ensureCannonBrawlPresentation()?.beginEntrance();
+            // 班车只有在房主确认两名选手各有可达空圈后才向玩家公开预告。
+            if (transition.previewEvent !== EntertainmentEventId.TURTLE_BUS) {
+                const previewDurationMs = (director?.previewDurationSeconds() ?? 6) * 1000;
+                const previewActivationSerial = (director?.snapshot().activationSerial ?? 0) + 1;
+                if (transition.previewEvent === EntertainmentEventId.CANNON) {
+                    this._cannonPreviewPending = true;
+                    this.ensureCannonBrawlPresentation()?.beginEntrance();
+                }
+                this._entertainmentEventBanner.showDirectorEvent(
+                    entertainmentPreviewCopy(
+                        transition.previewEvent,
+                        director?.isSpecialEvent(transition.previewEvent) ?? false,
+                        getSharedRandomSeed(),
+                        previewActivationSerial,
+                    ),
+                    'warning',
+                    previewDurationMs,
+                    entertainmentBannerIcon(transition.previewEvent),
+                    '广播通知',
+                );
             }
-            this._entertainmentEventBanner.showDirectorEvent(
-                entertainmentPreviewCopy(
-                    transition.previewEvent,
-                    director?.isSpecialEvent(transition.previewEvent) ?? false,
-                    getSharedRandomSeed(),
-                    previewActivationSerial,
-                ),
-                'warning',
-                previewDurationMs,
-                entertainmentBannerIcon(transition.previewEvent),
-                '广播通知',
-            );
         }
         if (transition.activatedEvent !== null) {
             this.activateEntertainmentEvent(transition.activatedEvent, true);
-            const special = transition.activatedEvent === EntertainmentEventId.WHIRLPOOL
-                ? isSuperWhirlpool(this.entertainmentWhirlpoolSpawns(
-                    this.entertainmentAnchorDistance(transition.activatedEvent),
-                )[0])
-                : (director?.isSpecialEvent(transition.activatedEvent) ?? false);
-            const activationSerial = Math.max(1, director?.snapshot().activationSerial ?? 1);
-            this._entertainmentEventBanner.showDirectorEvent(
-                entertainmentActionCopy(
-                    transition.activatedEvent,
-                    special,
-                    getSharedRandomSeed(),
-                    activationSerial,
-                ),
-                'danger',
-                3000,
-                entertainmentBannerIcon(transition.activatedEvent),
-                entertainmentActiveBannerCategory(transition.activatedEvent),
-            );
+            if (transition.activatedEvent !== EntertainmentEventId.TURTLE_BUS) {
+                const special = transition.activatedEvent === EntertainmentEventId.WHIRLPOOL
+                    ? isSuperWhirlpool(this.entertainmentWhirlpoolSpawns(
+                        this.entertainmentAnchorDistance(transition.activatedEvent),
+                    )[0])
+                    : (director?.isSpecialEvent(transition.activatedEvent) ?? false);
+                const activationSerial = Math.max(1, director?.snapshot().activationSerial ?? 1);
+                this._entertainmentEventBanner.showDirectorEvent(
+                    entertainmentActionCopy(
+                        transition.activatedEvent,
+                        special,
+                        getSharedRandomSeed(),
+                        activationSerial,
+                    ),
+                    'danger',
+                    3000,
+                    entertainmentBannerIcon(transition.activatedEvent),
+                    entertainmentActiveBannerCategory(transition.activatedEvent),
+                );
+            }
         }
         // 跨轮快照可能同时结束旧炮火并恢复新炮火／预告，不能让旧通知覆盖当前阶段。
         if (transition.finishedEvent === EntertainmentEventId.CANNON
@@ -1831,6 +1956,9 @@ export class GameManager extends Component {
             this._mineRelayHud?.hide();
         } else if (transition.finishedEvent === EntertainmentEventId.OBSTACLE) {
             this._obstacleBrawl?.stopSpawning(!this._netRaceController || this._netRaceController.isHost);
+        } else if (transition.finishedEvent === EntertainmentEventId.TURTLE_BUS) {
+            this._turtleBus?.dispose();
+            this._turtleBus = null;
         }
     }
 
@@ -1892,6 +2020,9 @@ export class GameManager extends Component {
             case EntertainmentEventId.LITTER:
                 this.setupLitterBrawl();
                 break;
+            case EntertainmentEventId.TURTLE_BUS:
+                this.createTurtleBus(true);
+                break;
         }
     }
 
@@ -1930,12 +2061,30 @@ export class GameManager extends Component {
                 case EntertainmentEventId.LITTER:
                     if (!this._litterBrawl) this.setupLitterBrawl();
                     break;
+                case EntertainmentEventId.TURTLE_BUS:
+                    if (!this._turtleBus) this.createTurtleBus(true);
+                    break;
             }
         }
     }
 
     private entertainmentAnchorDistance(event: EntertainmentEventId): number {
         return this._entertainmentDirector?.anchorDistanceForEvent(event) ?? 0;
+    }
+
+    private applyPendingTurtleBusNetState(): void {
+        const state = this._pendingTurtleBusState;
+        const director = this._entertainmentDirector;
+        if (!state || !director || director.currentEvent() !== EntertainmentEventId.TURTLE_BUS
+            || !this._turtleBus) return;
+        const serial = director.snapshot().activationSerial;
+        if (state.tripId < serial) {
+            this._pendingTurtleBusState = null;
+            return;
+        }
+        if (state.tripId !== serial) return;
+        this._turtleBus.applyNetSnapshot(state);
+        this._pendingTurtleBusState = null;
     }
 
     private canSpawnGradedObstacleWave(): boolean {
@@ -4275,6 +4424,10 @@ export class GameManager extends Component {
                     }
                 }
             }
+            if (this._netRaceController?.isHost) {
+                this._turtleBus?.update(NET_SIM_STEP,
+                    this._state === GameState.GLIDING || this._state === GameState.RACING);
+            }
             // One collision solve per deterministic simulation step, after every
             // net-driven body has advanced in stable lane order. The local player's
             // latest predicted body participates but remains owner-authoritative.
@@ -4449,6 +4602,7 @@ export class GameManager extends Component {
                     this._litterBrawl?.snapshotState(),
                     this._entertainmentDirector && isEntertainmentEventResident(EntertainmentEventId.OBSTACLE)
                         ? this._obstaclePlan?.identity ?? 0 : 0,
+                    this._turtleBus?.snapshotState(),
                 );
             }
             // Broadcast-only fallback (e.g. iOS high-performance+ disables the lock-step
@@ -4843,6 +4997,7 @@ export class GameManager extends Component {
             if (PERFORMANCE_CONFIG.eventPictureInPicture.enabled
                 && (isEntertainmentBrawlMode() || isSharkBrawlMode() || isCannonBrawlMode()
                 || isWhirlpoolBrawlMode() || isTimedBombBrawlMode() || isLitterBrawlMode()
+                || getRaceDifficultyConfig().id === 'turtle-bus-brawl'
                 || getRaceDifficultyConfig().id === 'giant-wave-brawl')
                 && this._worldRoot?.isValid) {
                 this._eventPictureInPicture = new RaceEventPictureInPictureCamera({
@@ -4861,6 +5016,9 @@ export class GameManager extends Component {
             }
             if (isEntertainmentBrawlMode() || isTimedBombBrawlMode()) {
                 this._mineRelayHud = new MineRelayBrawlHud(this._raceHud, w, h);
+            }
+            if (isEntertainmentBrawlMode() || getRaceDifficultyConfig().id === 'turtle-bus-brawl') {
+                this._turtleBusHud = new TurtleBusHud(this._raceHud);
             }
             this._cameraSpeedLines.bind(this._raceHud);
             this._uiController = refs.uiController;
@@ -5093,7 +5251,8 @@ export class GameManager extends Component {
     }
 
     private updateDrafting(dt: number): void {
-        if (getRaceModeConfig().ruleset === 'standard') {
+        if (getRaceModeConfig().ruleset === 'standard'
+            || getRaceDifficultyConfig().id === 'turtle-bus-brawl') {
             if (this._drafting) {
                 this._drafting.dispose(); this._drafting = null;
                 this._uiController?.raceHudStatus?.setDrafting(false);

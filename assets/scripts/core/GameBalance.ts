@@ -12,7 +12,8 @@ export const FINISH_STRAGGLER_COUNTDOWN_SECONDS = 10;
 export type RaceDifficulty = 'beginner' | 'competitive' | 'championship';
 export type RaceModeId = RaceDifficulty | 'stimulant-brawl' | 'shark-brawl'
     | 'whirlpool-brawl' | 'last-place-brawl' | 'timed-bomb-brawl' | 'minefield-brawl'
-    | 'mine-relay-brawl' | 'litter-brawl' | 'obstacle-brawl' | 'entertainment-brawl' | 'giant-wave-brawl';
+    | 'mine-relay-brawl' | 'litter-brawl' | 'obstacle-brawl' | 'entertainment-brawl' | 'giant-wave-brawl'
+    | 'turtle-bus-brawl';
 export type RaceCategoryId = 'competitive' | 'entertainment';
 export type RaceRulesetId = 'standard' | 'wild' | 'stimulant' | 'shark' | 'whirlpool' | 'cannon'
     | 'timed-bomb' | 'minefield' | 'litter' | 'obstacle' | 'entertainment' | 'giant-wave';
@@ -46,6 +47,7 @@ export const RACE_MODE_OPTIONS: readonly RaceModeConfig[] = [
     { id: 'litter-brawl', label: '杂物漂流大乱斗', category: 'entertainment', distance: 200, ruleset: 'litter', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
     { id: 'obstacle-brawl', label: '水上障碍场', category: 'entertainment', distance: 200, ruleset: 'obstacle', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
     { id: 'giant-wave-brawl', label: '巨浪冲浪', category: 'entertainment', distance: 200, ruleset: 'giant-wave', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
+    { id: 'turtle-bus-brawl', label: '海龟班车试玩', category: 'entertainment', distance: 200, ruleset: 'wild', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
 ];
 export const PUBLIC_RACE_MODE_OPTIONS: readonly RaceModeConfig[] = RACE_MODE_OPTIONS.filter(
     option => option.publicEntry !== false,

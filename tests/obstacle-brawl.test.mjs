@@ -343,7 +343,8 @@ test('正式娱乐只抽取一个障碍事件，200与400米抽取数量和三�
         assert.equal(order.includes(EntertainmentEventId.LITTER), false);
         assert.equal(new Set(order).size, order.length);
         assert.ok(order.some(id => id === EntertainmentEventId.OBSTACLE || id === EntertainmentEventId.WHIRLPOOL));
-        assert.ok(order.some(id => id === EntertainmentEventId.STIMULANT || id === EntertainmentEventId.TIMED_BOMB));
+        assert.ok(order.some(id => id === EntertainmentEventId.STIMULANT || id === EntertainmentEventId.TIMED_BOMB
+            || id === EntertainmentEventId.TURTLE_BUS));
         assert.ok(order.some(id => id === EntertainmentEventId.SHARK || id === EntertainmentEventId.CANNON));
         assert.notEqual(order.at(-1), EntertainmentEventId.OBSTACLE);
         const host = new EntertainmentModeDirector(seed, distance);
