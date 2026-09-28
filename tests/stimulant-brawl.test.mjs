@@ -159,6 +159,7 @@ test('同场景重赛进入准备态时清除上一局补给，重复准备态�
     };
     const setState = new Function('GameState', `return function(state) ${callbackSource}`)(GameState);
     let destroyed = 0;
+    let refreshed = 0;
     const listeners = [];
     const manager = {
         _state: GameState.FINISHED,
@@ -168,16 +169,19 @@ test('同场景重赛进入准备态时清除上一局补给，重复准备态�
             setStimulantStateListener(value) { listeners.push(value); },
         },
         syncConditionPhase() {},
+        refreshRandomRaceForReplay() { refreshed++; },
         _awardsPresentation: { hide() {} },
     };
     setState.call(manager, GameState.READY);
     assert.equal(destroyed, 1);
+    assert.equal(refreshed, 1);
     assert.equal(manager._stimulantBrawl, null);
     assert.deepEqual(listeners, [null, null]);
 
     manager._stimulantBrawl = { dispose() { destroyed++; } };
     setState.call(manager, GameState.READY);
     assert.equal(destroyed, 1);
+    assert.equal(refreshed, 1);
 });
 
 test('心跳苏打显式预制体包含模型渲染器，加载器保留多路径、单方块兜底和远距光柱', () => {

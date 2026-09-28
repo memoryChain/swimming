@@ -203,11 +203,19 @@ export class MinefieldBrawlController {
         authoritative: boolean,
         leaderDistance = 0,
         allowNewWaves = true,
+        maxWaveDelayDistance = Number.POSITIVE_INFINITY,
     ): void {
         if (state !== GameState.RACING) return;
         const step = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0;
         this.elapsed += step;
         this.updateMinePositions();
+        if (authoritative && this.stagedBatchCounts) {
+            while (this.waveIndex < this.waveTriggerDistances.length
+                && leaderDistance > this.waveTriggerDistances[this.waveIndex] + maxWaveDelayDistance) {
+                this.waveIndex++;
+                this.revision++;
+            }
+        }
         if (authoritative && allowNewWaves) this.updateWaves(leaderDistance);
         if (this.activeMineCount <= 0) return;
         if (authoritative) this.updateSpawnSafety(step);
@@ -229,6 +237,11 @@ export class MinefieldBrawlController {
     /** 事件截止时撤销仍因出生安全而隐藏的浮标；已经上浮的浮标自然驻留。 */
     cancelUnarmedMines(): void {
         let changed = false;
+        // 分批障碍取消必须记住尚未激活的批次，防止快照恢复／接管后补投。
+        if (this.stagedBatchCounts && this.waveIndex < this.waveTriggerDistances.length) {
+            this.waveIndex = this.waveTriggerDistances.length;
+            changed = true;
+        }
         for (const mine of this.mineStates) {
             if (!mine.active || mine.armed) continue;
             mine.active = false;
@@ -402,6 +415,7 @@ export class MinefieldBrawlController {
         while (this.waveIndex < this.waveTriggerDistances.length
             && safeLeaderDistance >= this.waveTriggerDistances[this.waveIndex]) {
             this.refillWave(this.waveIndex + 1);
+            if (this.stagedBatchCounts) break;
         }
     }
 

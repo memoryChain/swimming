@@ -258,6 +258,7 @@ export class LitterBrawlController {
         private readonly minimumWaveIntervalSeconds = 0,
         private readonly soloLandingSearchMeters = 0,
         private readonly canSpawnWave?: () => boolean,
+        private readonly maxWaveDelayDistance = Number.POSITIVE_INFINITY,
     ) {
         this.randomSeed = ((seed ^ 0x6c697474) >>> 0) || 0x9e3779b9;
         this.randomState = this.randomSeed;
@@ -626,6 +627,15 @@ export class LitterBrawlController {
     }
 
     private updatePendingWaves(step: number, leaderDistance: number): void {
+        // 先结算过期波次，再检查临时门控；主事件不能让过期计划无限积压。
+        while (this.nextWave < this.waveDistances.length
+            && leaderDistance > this.waveDistances[this.nextWave]
+                + this.maxWaveDelayDistance * (this.nextWave === 0 ? 2 : 1)) {
+            this.nextWave++;
+            this.cancelledWaveCount++;
+            this.revision++;
+            this.blockedWaveSeconds = 0;
+        }
         if (this.nextWave >= this.waveDistances.length) return;
         // 上一波入场间隔从实际投放时开始计时，不能等到下一进度锚点才开始倒计时。
         if (this.minimumWaveIntervalSeconds > 0 && this.nextWave > 0

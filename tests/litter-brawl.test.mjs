@@ -23,6 +23,27 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const allGroupsLandedSeconds = LITTER_BRAWL_TUNING.fallingSeconds
     + LITTER_BRAWL_TUNING.burstGroupIntervalSeconds * 2 + 0.01;
 
+test('投放门关闭仍取消过期波次，恢复快照后不补投旧垃圾', () => {
+    const racer = { active: true, finished: false, distance: 0, lateral: -8 };
+    let allow = false;
+    const waves = [];
+    const create = () => new LitterBrawlController(1, 6, 21, () => racer, wave => waves.push(wave),
+        undefined, { waveDistances: [20, 60, 100], waveCounts: [2, 2, 2], landingLeadDistance: 6 },
+        undefined, undefined, { itemsPerWave: 2, poolSize: 6 }, undefined, undefined, 2.2, 0,
+        () => allow, 10);
+    const host = create();
+    racer.distance = 80;
+    host.update(.1, GameState.RACING);
+    assert.equal(host.cancelledCount(), 2);
+    assert.equal(host.pendingWaveCount(), 1);
+    const guest = create();
+    guest.applySnapshotState(host.snapshotState());
+    allow = true;
+    racer.distance = 100;
+    guest.update(.1, GameState.RACING);
+    assert.deepEqual(waves, [2]);
+});
+
 function fixture(seed = 20260919, schedule = LITTER_BRAWL_INDEPENDENT_SCHEDULE, isWaveSafe) {
     const racers = Array.from({ length: 8 }, (_, lane) => ({
         active: true,

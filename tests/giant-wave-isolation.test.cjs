@@ -108,7 +108,7 @@ test('本地测试创建一次；进入联机会话即释放，后续帧不重�
     assert.deepEqual(f.calls, { built: 1, disposed: 1, updated: 600, cleared: 1 });
 });
 
-test('巨浪与喷泉五档、海龟固定规格都不创建无数据的旧事件统计条', () => {
+test('巨浪与海龟不创建旧统计条，喷泉保留大小口统计入口', () => {
     const source = fs.readFileSync(path.join(__dirname, '../assets/scripts/core/GameManager.ts'), 'utf8');
     const body = source.match(/private buildEntertainmentIntensityDebugHud\([^)]*\): void \{([\s\S]*?)\n    \}/)?.[1];
     let mode = 'giant-wave-brawl', builds = 0;
@@ -117,8 +117,11 @@ test('巨浪与喷泉五档、海龟固定规格都不创建无数据的旧事�
         getRaceDifficultyConfig: () => ({ id: mode }),
     });
     const manager = { _aiDebugMode: true, _netSession: null, _intensityDebugHud: { build() { builds++; } } };
-    for (mode of ['giant-wave-brawl', 'geyser-brawl', 'turtle-bus-brawl']) build.call(manager, {}, 1280, 720);
+    for (mode of ['giant-wave-brawl', 'turtle-bus-brawl']) build.call(manager, {}, 1280, 720);
     assert.equal(builds, 0);
-    mode = 'shark-brawl'; build.call(manager, {}, 1280, 720);
+    // 喷泉已接入大小口和候选避让统计，不再属于无数据入口。
+    mode = 'geyser-brawl'; build.call(manager, {}, 1280, 720);
     assert.equal(builds, 1);
+    mode = 'shark-brawl'; build.call(manager, {}, 1280, 720);
+    assert.equal(builds, 2);
 });

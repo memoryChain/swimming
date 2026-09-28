@@ -1910,6 +1910,9 @@ export class GameManager extends Component {
             );
         }
         if (this._netRaceController && !this._netRaceController.isHost) return;
+        if (this._entertainmentRacePlan && !this.canContinueGradedObstacleSpawns()) {
+            this._obstacleBrawl?.stopSpawning();
+        }
         if (this._raceManager?.hasAnyFinisher()) {
             this._turtleBus?.stopNewBoarding();
             this._geyserBrawl?.stopNewPulses();
@@ -1946,7 +1949,8 @@ export class GameManager extends Component {
             }
         }
         const canFinish = this.canFinishEntertainmentEvent(current);
-        const transition = director.update(dt, this.entertainmentLeaderDistance(), canFinish);
+        const transition = director.update(dt, this.entertainmentLeaderDistance(), canFinish,
+            this._entertainmentRacePlan ? this.entertainmentReferenceSpeed() : 0);
         this.handleEntertainmentDirectorTransition(transition);
     }
 
@@ -2207,9 +2211,25 @@ export class GameManager extends Component {
     private canSpawnGradedObstacleWave(): boolean {
         if (!this._entertainmentRacePlan) return true;
         if ((this._raceManager?.elapsedSeconds ?? 0) < 10 || (this._raceManager?.hasAnyFinisher() ?? false)) return false;
-        const phase = this._entertainmentDirector?.phaseId();
-        return phase === EntertainmentDirectorPhase.OPENING || phase === EntertainmentDirectorPhase.COMPLETE
-            || (phase === EntertainmentDirectorPhase.GAP && (this._entertainmentDirector?.secondsRemaining() ?? 0) <= 0);
+        if (!this.canContinueGradedObstacleSpawns()) return false;
+        return this._entertainmentDirector?.canSpawnResidentObstacles() ?? false;
+    }
+
+    private entertainmentReferenceSpeed(): number {
+        const distance = this.entertainmentLeaderDistance();
+        let speed = distance / Math.max(1, this._raceManager?.elapsedSeconds ?? 0);
+        if (this._playerSwimmer?.distance === distance) speed = Math.max(speed, this._playerSwimmer.currentSpeed);
+        for (const swimmer of this._aiSwimmers) {
+            if (swimmer?.node?.active && swimmer.distance === distance) speed = Math.max(speed, swimmer.currentSpeed);
+        }
+        // 从现有权威距离、比赛时钟和领游速度派生，迁移无需重置历史采样器。
+        return Math.max(0.5, Math.ceil((Number.isFinite(speed) ? speed : 0.5) * 10) / 10);
+    }
+
+    private canContinueGradedObstacleSpawns(): boolean {
+        const distance = this.entertainmentLeaderDistance();
+        return distance < getRaceDistance() * 0.88
+            && getRaceDistance() - distance >= Math.max(18, this.entertainmentReferenceSpeed() * 8);
     }
 
     private gradedEntertainmentStage(event: EntertainmentEventId): EntertainmentMainStage | null {
@@ -3534,6 +3554,7 @@ export class GameManager extends Component {
             !this._netRaceController || this._netRaceController.isHost,
             this.entertainmentLeaderDistance(),
             !(this._raceManager?.hasAnyFinisher() ?? false) && this.canSpawnGradedObstacleWave(),
+            this._entertainmentRacePlan ? getRaceDistance() * 0.05 : Number.POSITIVE_INFINITY,
         );
         const visible = this._state === GameState.PRECOUNTDOWN || this._state === GameState.COUNTDOWN
             || this._state === GameState.DIVING || this._state === GameState.GLIDING
@@ -3688,6 +3709,7 @@ export class GameManager extends Component {
             obstaclePlan ? OBSTACLE_MIN_WAVE_INTERVAL_SECONDS : 0,
             obstaclePlan && isObstacleBrawlMode() ? OBSTACLE_SOLO_LANDING_SEARCH_METERS : 0,
             this._entertainmentRacePlan ? () => this.canSpawnGradedObstacleWave() : undefined,
+            this._entertainmentRacePlan ? getRaceDistance() * 0.05 : Number.POSITIVE_INFINITY,
         );
         this._netRaceController?.setLitterStateListener((state, planId) => {
             if (planId > 0 && this._obstaclePlan?.identity !== planId) return;

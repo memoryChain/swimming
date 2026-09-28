@@ -18,6 +18,55 @@ const { LitterBrawlController, LITTER_BRAWL_TUNING } = LitterModule;
 const { buildObstaclePlan } = ObstacleModule;
 const { entertainmentIntensityProfile } = IntensityModule;
 
+test('预算跳过机会段以索引和锚点恢复，接管不复活已取消主段且不截断当前事件', () => {
+    const plan = buildEntertainmentRacePlan(6, 200, 5);
+    const host = new EntertainmentModeDirector(6, 200, true, undefined, undefined, undefined, plan);
+    let guest;
+    for (let frame = 1; frame < 80 * 30; frame++) {
+        const distance = frame / 30 * 2.5;
+        const result = host.update(1 / 30, distance, true, 2.5);
+        if (!guest && host.skippedStageMask() !== 0) {
+            guest = new EntertainmentModeDirector(6, 200, true, undefined, undefined, undefined, plan);
+            assert.equal(guest.applySnapshot(host.snapshot()).snapshotAccepted, true);
+            assert.equal(guest.skippedStageMask(), host.skippedStageMask());
+        } else if (guest) {
+            const remote = guest.update(1 / 30, distance, true, 2.5);
+            assert.equal(remote.activatedEvent, result.activatedEvent);
+            assert.equal(guest.snapshot().eventIndex, host.snapshot().eventIndex);
+        }
+    }
+    assert.ok(guest);
+    assert.equal(host.snapshot().activatedMask & (1 << E.GIANT_WAVE), 0);
+    assert.ok(host.snapshot().activatedMask & (1 << E.CANNON));
+    assert.ok(host.snapshot().activatedMask & (1 << E.SHARK));
+    const director = new EntertainmentModeDirector(6, 200, true, undefined, undefined, undefined, plan);
+    director.update(4, 60, true, 2.5);
+    director.update(6, 75, true, 2.5);
+    assert.equal(director.currentEvent(), E.CANNON);
+    assert.equal(director.update(30, 150, false, 8).finishedEvent, null);
+    assert.equal(director.currentEvent(), E.CANNON);
+});
+
+test('浮标过期批次、尾段取消经快照恢复后不会再补投且保留已启用浮标', () => {
+    const create = () => new MinefieldBrawlController(1, 71, 18,
+        () => ({ active: false, finished: false, distance: 0, lateral: 0 }), () => {},
+        3, null, [20, 80, 140], [
+            { courseX: 10, lateral: -5 }, { courseX: 20, lateral: -5 }, { courseX: 30, lateral: -5 },
+        ], [1, 1, 1]);
+    const host = create();
+    host.update(.1, GameState.RACING, true, 60, false, 10);
+    assert.equal(host.snapshotState().waveIndex, 1);
+    host.update(.1, GameState.RACING, true, 80, true, 10);
+    assert.deepEqual(host.mines().map(mine => mine.active), [false, true, false]);
+    for (let frame = 0; frame < 20; frame++) host.update(.1, GameState.RACING, true, 80, true, 10);
+    assert.equal(host.mines()[1].armed, true);
+    host.cancelUnarmedMines();
+    const guest = create();
+    assert.equal(guest.applySnapshotState(host.snapshotState()), true);
+    guest.update(.1, GameState.RACING, true, 150, true, 10);
+    assert.deepEqual(guest.mines().map(mine => mine.active), [false, true, false]);
+});
+
 test('场地事件可穿插前中后段，强挑战有进度门槛且不增加整局预算', () => {
     for (const distance of [200, 400]) for (let grade = 2; grade <= 5; grade++) {
         const positions = new Map([E.TURTLE_BUS, E.WHIRLPOOL, E.GEYSER, E.GIANT_WAVE].map(event => [event, new Set()]));

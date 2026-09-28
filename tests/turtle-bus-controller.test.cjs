@@ -473,6 +473,34 @@ test('客机断流先停止追圈，再松开牵引；旧快照不能把本地�
     guest.dispose();
 });
 
+test('访客受击立即松圈，恢复后迟到占圈包不复挂，房主确认离圈后才可重新搭乘', () => {
+    for (const beforeSnapshot of [false, true]) {
+        const player = racer();
+        const course = { courseLength: 50, direction: 1, startX: 0, finishX: 50, waterY: 0 };
+        const guest = new TurtleBusController(new FakeNode('World'), course, player, [], 1);
+        guest.setAuthority(false);
+        const state = { tripId: 1, phase: 'cruising', age: 6, direction: -1, routeZ: 0, startOffset: 16,
+            occupants: [0, -1, -1, -1], hands: [3, 0, 0, 0] };
+        if (!beforeSnapshot) guest.applyNetSnapshot(state);
+        player.isCollisionActive = false;
+        player.motor.tow = { speed: 1 };
+        if (beforeSnapshot) guest.applyNetSnapshot(state);
+        guest.updateReplica(1 / 60);
+        assert.equal(guest.seats.hands[0], 0);
+        assert.equal(player.motor.tow, null);
+        player.isCollisionActive = true;
+        guest.applyNetSnapshot({ ...state, age: 6.1 });
+        assert.equal(guest.seats.hands[0], 0);
+        guest.setAuthority(true);
+        assert.equal(guest.seats.ringOfSwimmer[0], -1);
+        guest.setAuthority(false);
+        guest.applyNetSnapshot({ ...state, age: 6.2, occupants: [-1, -1, -1, -1], hands: [0, 0, 0, 0] });
+        guest.applyNetSnapshot({ ...state, age: 8 });
+        assert.equal(guest.seats.hands[0], 3);
+        guest.dispose();
+    }
+});
+
 test('客机在到站包延迟时也先松手再下潜，旧载客快照不会挂回本地主人',()=>{
     const player=racer(),course={courseLength:50,direction:1,startX:0,finishX:50,waterY:0};
     const guest=new TurtleBusController(new FakeNode('World'),course,player,[],1);

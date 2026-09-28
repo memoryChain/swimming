@@ -560,6 +560,17 @@ export class EntertainmentModeDirector {
     phaseId(): EntertainmentDirectorPhase { return this.phase; }
     secondsRemaining(): number { return this.remainingSeconds; }
 
+    canSpawnResidentObstacles(): boolean {
+        if (this.phase === EntertainmentDirectorPhase.OPENING || this.phase === EntertainmentDirectorPhase.COMPLETE) return true;
+        if (this.phase === EntertainmentDirectorPhase.GAP) return this.remainingSeconds <= 0;
+        // 仅放行已有组合安全路径的漩涡／班车稳定段，喷泉、巨浪与强袭继续避让。
+        const event = this.currentEvent();
+        const stage = this.gradedPlan?.stages[this.eventIndex];
+        return this.phase === EntertainmentDirectorPhase.ACTIVE && !!stage
+            && (event === EntertainmentEventId.TURTLE_BUS || event === EntertainmentEventId.WHIRLPOOL)
+            && stage.durationSeconds - this.remainingSeconds >= 3;
+    }
+
     isSpecialEvent(event: EntertainmentEventId): boolean {
         return (this.specialMask & eventBit(event)) !== 0;
     }
@@ -638,6 +649,7 @@ export class EntertainmentModeDirector {
         dt: number,
         leaderDistance: number,
         canFinishCurrent = true,
+        referenceSpeed = 0,
     ): EntertainmentDirectorTransition {
         const transition = this.clearTransition();
         if (this.phase === EntertainmentDirectorPhase.COMPLETE) return transition;
@@ -647,12 +659,18 @@ export class EntertainmentModeDirector {
         if (this.remainingSeconds > 0) return transition;
 
         if (this.phase === EntertainmentDirectorPhase.OPENING || this.phase === EntertainmentDirectorPhase.GAP) {
+            if (this.gradedPlan && referenceSpeed > 0) {
+                if (!this.prepareBudgetedPreview(distance, referenceSpeed)) {
+                    this.publishRuntimeState();
+                    return transition;
+                }
+            }
             if (this.gradedPlan && this.eventIndex >= this.events.length
                 && distance > this.raceDistance * 0.78) {
                 this.complete();
                 return transition;
             }
-            if (!this.readyForPreview(distance)) return transition;
+            if (!(this.gradedPlan && referenceSpeed > 0) && !this.readyForPreview(distance)) return transition;
             this.phase = EntertainmentDirectorPhase.PREVIEW;
             this.remainingSeconds = this.previewSeconds();
             this.revision++;
@@ -888,6 +906,74 @@ export class EntertainmentModeDirector {
         const progress = this.gradedPlan?.stages[this.eventIndex]?.previewProgress
             ?? EVENT_PROGRESS_BY_COUNT[this.events.length]?.[this.eventIndex] ?? 0;
         return distance >= this.raceDistance * progress;
+    }
+
+    /** 跳过的条目以单调 eventIndex 和未写入的锚点恢复，不新增广播或本地重排。 */
+    skippedStageMask(): number {
+        if (!this.gradedPlan) return 0;
+        let mask = 0;
+        for (let index = 0; index < Math.min(this.eventIndex, this.events.length); index++) {
+            if (this.eventAnchorDistances[index] === 0) mask |= 1 << index;
+        }
+        return mask;
+    }
+
+    private earliestPreviewProgress(index: number): number {
+        const stage = this.gradedPlan!.stages[index];
+        let progress = Math.max(0.10, stage.previewProgress - 0.08);
+        // 前置机会段因预算取消后，首个实际水炮使用首段窗口，不继承中段等待。
+        if (stage.event === EntertainmentEventId.CANNON && this.activationSerial === 0
+            && index === this.eventIndex) progress = Math.min(progress, 0.20);
+        return progress;
+    }
+
+    private stageBudgetSeconds(index: number): number {
+        const stage = this.gradedPlan!.stages[index];
+        // 班车可能等候 18 秒并完成最长 30 秒航次，不能按名义 15 秒占用估算后段。
+        return stage.event === EntertainmentEventId.TURTLE_BUS ? 48 : stage.durationSeconds;
+    }
+
+    private remainingBudget(distance: number, speed: number, includeOptional: boolean): number {
+        const stages = this.gradedPlan!.stages;
+        let elapsed = 0;
+        let count = 0;
+        for (let index = this.eventIndex; index < stages.length; index++) {
+            if (index !== this.eventIndex && !includeOptional && !stages[index].required) continue;
+            if (count++ > 0) elapsed += this.gapSeconds();
+            elapsed = Math.max(elapsed,
+                (this.earliestPreviewProgress(index) * this.raceDistance - distance) / speed);
+            elapsed += 6 + this.stageBudgetSeconds(index);
+        }
+        return elapsed + 5;
+    }
+
+    private prepareBudgetedPreview(distance: number, referenceSpeed: number): boolean {
+        const speed = Number.isFinite(referenceSpeed) ? Math.max(0.5, referenceSpeed) : 0.5;
+        const available = Math.max(0, this.raceDistance - distance) / speed;
+        if (distance > this.raceDistance * 0.78) { this.complete(); return false; }
+        if (this.eventIndex >= this.events.length) {
+            const duration = this.encoreEvent === EntertainmentEventId.SHARK ? 14
+                : this.encoreEvent === EntertainmentEventId.CANNON ? 9.9
+                    : this.gradedPlan!.grade === 3 ? 11.5 : 10.5;
+            if (this.encoreEvent === null || 6 + duration + 5 > available * 0.8) {
+                this.complete(); return false;
+            }
+            return true;
+        }
+        while (this.eventIndex < this.events.length) {
+            const stage = this.gradedPlan!.stages[this.eventIndex];
+            // 所有主段保留完整时长和五秒冲线余量，不能因双重折扣长期取消机会段。
+            if (this.remainingBudget(distance, speed, false) > available) {
+                this.eventIndex++;
+                this.revision++;
+                continue;
+            }
+            const early = this.remainingBudget(distance, speed, true) > available * 0.8;
+            const progress = early ? this.earliestPreviewProgress(this.eventIndex) : stage.previewProgress;
+            return distance >= progress * this.raceDistance;
+        }
+        this.complete();
+        return false;
     }
 }
 

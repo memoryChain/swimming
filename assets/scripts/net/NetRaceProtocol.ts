@@ -107,7 +107,8 @@
 // v121：联机喷泉固定调参、海龟切主清理待应用状态、巨浪远端推进遵从权威。
 // v122：喷泉大小掩码、混排时序和大口轨迹；整局计划 balanceVersion 4。
 // v123：整局场地事件按种子穿插前中后段，保留分档挑战预算及强事件门槛。
-export const NET_RACE_PROTOCOL_VERSION = 123;
+// v124：代表段预算预留、障碍过期截止与海龟访客受击释放；计划 balanceVersion 6。
+export const NET_RACE_PROTOCOL_VERSION = 124;
 
 let lastRaceStamp = 0;
 

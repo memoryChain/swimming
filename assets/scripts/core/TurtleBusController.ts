@@ -231,9 +231,12 @@ export class TurtleBusController {
             if (lane < 0) continue;
             const seat = this.localSeatForLane(lane);
             if (seat < 0 || !this.swimmers[seat]) continue;
+            // 本地主人已受击／跳跃时，迟到的占圈包不能重新抓住；等房主确认离圈再解锁。
+            if (seat === 0 && !this.isEligible(this.swimmers[seat]!)) this.localReleasedHands[seat] = 3;
             this.seats.occupants[ring] = seat;
             this.seats.ringOfSwimmer[seat] = ring;
-            const hands = state.hands[ring] & ~this.localReleasedHands[seat];
+            const hands = this.isEligible(this.swimmers[seat]!)
+                ? state.hands[ring] & ~this.localReleasedHands[seat] : 0;
             this.seats.hands[seat] = hands;
             // 采用房主截止时刻，重复快照和房主迁移不重新计时。
             this.seats.gripProtectedUntil[seat] = state.gripProtectedUntil?.[ring] ?? 0;
@@ -316,6 +319,13 @@ export class TurtleBusController {
             const swimmer = this.swimmers[seat];
             const ring = this.seats.ringOfSwimmer[seat];
             if (!swimmer || ring < 0 || this.seats.hands[seat] === 0) continue;
+            if (!this.isEligible(swimmer)) {
+                if (seat === 0) this.localReleasedHands[seat] = 3;
+                this.seats.hands[seat] = 0;
+                swimmer.motor.clearTurtleTow();
+                this.syncGripChanges();
+                continue;
+            }
             if (seat === 0) {
                 const dx = Math.abs(this.tripBase[seat] + offset + this.passengerOffset(seat, ring) - swimmer.distance) * this.worldScale();
                 const dz = Math.abs(swimmer.node.position.z - turtleBusRingWorldLateral(this.routeZ, this.direction, ring));

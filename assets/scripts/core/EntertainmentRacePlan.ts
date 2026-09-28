@@ -33,7 +33,7 @@ export type EntertainmentSupplyBudget = Readonly<{
 
 export type EntertainmentRacePlan = Readonly<{
     version: 1;
-    balanceVersion: 5;
+    balanceVersion: 6;
     identity: number;
     seed: number;
     raceDistance: 200 | 400;
@@ -143,7 +143,7 @@ function buildMainStages(seed: number, raceDistance: 200 | 400, grade: Entertain
             progress, 1, grade === 3 ? 11.5 : 10.5, grade === 3 && challenges.indexOf(event) === index);
         if (event === EntertainmentEventId.CANNON) return mainStage(event, grade === 4 ? 2 : longRace ? 4 : 3,
             progress, grade === 4 ? longRace ? 3 : 2 : longRace ? 6 : 3,
-            grade === 4 ? longRace ? 10.8 : 8.2 : longRace ? 9 : 9.9, grade === 4);
+            grade === 4 ? longRace ? 10.8 : 8.2 : longRace ? 9 : 9.9, true);
         return mainStage(event, 3, progress, 1, 14, true);
     });
 }
@@ -173,7 +173,7 @@ export function buildEntertainmentRacePlan(seed: number, distance: number,
     const supplyWaves = longRace ? numbers.supplyWaves400 : numbers.supplyWaves200;
     const plan = {
         version: 1,
-        balanceVersion: 5,
+        balanceVersion: 6,
         seed: safeSeed,
         raceDistance,
         grade,
