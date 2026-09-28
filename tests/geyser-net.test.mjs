@@ -6,7 +6,7 @@ import Protocol from '../assets/scripts/net/NetRaceProtocol.ts';
 const { encodeGeyserPacket, decodeGeyserPacket } = Codec;
 
 function state(serial = 1) {
-    return { world: { serial, intensity: 5, anchorDistance: 320, age: 12.3, stoppedAt: 11.2, active: true },
+    return { world: { serial, intensity: 5, anchorDistance: 320, age: 12.3, stoppedAt: 11.2, active: true, largeVentMask: 273 },
         raceElapsed: 180.25, lanes: Array.from({ length: 8 }, (_, lane) => ({
             lane, edges: 0x3fffffff, cores: 0x3fffffff, grace: 0, edge: 0,
             hitId: serial * 1000 + 2 * 128 + 9 * 8 + lane + 1, launchAge: 0.4,
@@ -36,6 +36,11 @@ test('恢复包拒绝重复泳道、非法账本、跨代次起飞、异常时�
         s => s.lanes[0].launchAge = 8,
         s => s.world.stoppedAt = 14,
         s => s.world.age = NaN,
+        s => s.world.largeVentMask = 1024,
+        s => s.world.largeVentMask = 3,
+        s => s.world.largeVentMask = 24,
+        s => s.world.largeVentMask = -1,
+        s => { s.world.intensity = 1; s.world.largeVentMask = 1; },
         s => s.raceElapsed = -1,
     ]) {
         const copy = structuredClone(source);

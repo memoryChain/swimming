@@ -1,4 +1,5 @@
 import { SeededRandom } from './SharedRNG';
+import { geyserSpec } from './GeyserBrawlRules';
 import { WHIRLPOOL_SUPER_CHANCE } from './WhirlpoolBrawlRules';
 import type { EntertainmentRacePlan } from './EntertainmentRacePlan';
 
@@ -91,7 +92,7 @@ const EVENT_DURATION_SECONDS: Readonly<Record<EntertainmentEventId, number>> = {
     [EntertainmentEventId.CANNON]: 7,
     [EntertainmentEventId.LITTER]: 8,
     [EntertainmentEventId.TURTLE_BUS]: 15,
-    [EntertainmentEventId.GEYSER]: 10,
+    [EntertainmentEventId.GEYSER]: geyserSpec(2).actionSeconds,
     [EntertainmentEventId.GIANT_WAVE]: 20,
 };
 const PERSISTENT_EVENTS_MASK = eventBit(EntertainmentEventId.STIMULANT)

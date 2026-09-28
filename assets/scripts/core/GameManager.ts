@@ -178,6 +178,7 @@ import { setTimeScale, scaledDelta, TIME_SCALE } from './TimeScale';
 import { GiantWaveController } from './GiantWaveController';
 import { ENTERTAINMENT_GIANT_WAVE_SECONDS } from './GiantWaveRules';
 import { GeyserBrawlController } from './GeyserBrawlController';
+import { collectGeyserDangers } from './GeyserBrawlSafety';
 import { geyserSpec, geyserTuningForRace, type GeyserIntensity } from './GeyserBrawlRules';
 import { setRaceMode } from './GameBalance';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
@@ -1768,7 +1769,7 @@ export class GameManager extends Component {
                     }
                     if (event === EntertainmentEventId.GEYSER) {
                         return geyserSpec(getAiDebugSetup().entertainmentEventIntensities?.[event]
-                            ?? getAiDebugSetup().entertainmentIntensity ?? 2).actionSeconds;
+                            ?? getAiDebugSetup().entertainmentIntensity ?? 2, geyserTuningForRace(!!this._netSession)).actionSeconds;
                     }
                     if (event === EntertainmentEventId.GIANT_WAVE) return ENTERTAINMENT_GIANT_WAVE_SECONDS;
                     return 10;
@@ -2560,9 +2561,19 @@ export class GameManager extends Component {
                 this.showGeyserHitFeedback(lane, strength);
                 this._netRaceController?.enqueueGeyserHit(
                     hitId, lane, strength, this._raceManager?.elapsedSeconds ?? 0, start);
-            }, geyserTuningForRace(!!this._netSession));
+            }, geyserTuningForRace(!!this._netSession), {
+                waitForAuthority: !!this._netSession && !this._netRaceController?.isHost,
+                dangers: collectGeyserDangers(distance => COURSE_LAYOUT.distanceToWorldX(distance),
+                    this._minefieldBrawl?.mines() ?? [], this._litterBrawl?.clusters() ?? [],
+                    isWhirlpoolBrawlMode() ? currentWhirlpoolSpawns() : [], COURSE_LAYOUT.poolWidth * 0.5,
+                    MINEFIELD_TUNING.mineItemAlongRadius + MINEFIELD_TUNING.swimmerContactAlongRadius
+                        + MINEFIELD_TUNING.driftAlongRadius,
+                    LITTER_BRAWL_TUNING.contactAlongRadius + LITTER_BRAWL_TUNING.driftAlongRadius,
+                    Math.max(WHIRLPOOL_BRAWL_TUNING.alongRadius, WHIRLPOOL_BRAWL_TUNING.lateralRadius),
+                    Math.max(WHIRLPOOL_SUPER_TUNING.alongRadiusScale, WHIRLPOOL_SUPER_TUNING.lateralRadiusScale)),
+            });
         this._geyserBrawl.setAuthority(!this._netRaceController || this._netRaceController.isHost);
-        if (this._netSession) this._geyserNetWorld = this._geyserBrawl.snapshotWorld();
+        if (this._netSession && this._geyserBrawl.hasAuthoritativeSizes) this._geyserNetWorld = this._geyserBrawl.snapshotWorld();
         if (this._entertainmentDirector) {
             const duration = this.gradedEntertainmentStage(EntertainmentEventId.GEYSER)?.durationSeconds
                 ?? this._geyserBrawl.spec.actionSeconds;
@@ -2580,7 +2591,7 @@ export class GameManager extends Component {
 
     private snapshotGeyserRecovery(): NetGeyserState | null {
         if (!this._netSession) return null;
-        if (this._geyserBrawl) this._geyserNetWorld = this._geyserBrawl.snapshotWorld();
+        if (this._geyserBrawl?.hasAuthoritativeSizes) this._geyserNetWorld = this._geyserBrawl.snapshotWorld();
         const world = this._geyserNetWorld;
         if (!world) return null;
         const lanes = [];
@@ -5841,14 +5852,15 @@ export class GameManager extends Component {
     private buildEntertainmentIntensityDebugHud(raceHud: Node, width: number, height: number): void {
         if (!this._aiDebugMode || this._netSession || getAiDebugSetup().entertainmentIntensity == null) return;
         const mode = getRaceDifficultyConfig().id;
-        // 三种新单项尚未使用旧事件统计表，不能显示永远停在“准备中”的统计条。
-        if (mode === 'giant-wave-brawl' || mode === 'geyser-brawl' || mode === 'turtle-bus-brawl') return;
+        // 海龟和巨浪尚未使用旧事件统计表，喷泉使用独立的大小口统计。
+        if (mode === 'giant-wave-brawl' || mode === 'turtle-bus-brawl') return;
         this._intensityDebugHud.build(raceHud, width, height);
     }
 
     private updateEntertainmentIntensityDebugHud(dt: number): void {
         if (!this._intensityDebugHud.consumeSample(dt, this._state === GameState.RACING)) return;
         let event = this._entertainmentDirector?.currentEvent() ?? null;
+        if (getRaceDifficultyConfig().id === 'geyser-brawl') event = EntertainmentEventId.GEYSER;
         if (event === null && !isEntertainmentBrawlMode()) {
             for (let id = EntertainmentEventId.STIMULANT; id <= EntertainmentEventId.LITTER; id++) {
                 if (this.debugEntertainmentProfile(id)) { event = id; break; }
@@ -5861,10 +5873,15 @@ export class GameManager extends Component {
             return;
         }
         if (event === EntertainmentEventId.GEYSER || event === EntertainmentEventId.GIANT_WAVE) {
-            const level = getAiDebugSetup().entertainmentEventIntensities?.[event] ?? 3;
-            const spec = geyserSpec(level);
+            const level = (event === EntertainmentEventId.GEYSER ? this._geyserBrawl?.intensity : undefined)
+                ?? getAiDebugSetup().entertainmentEventIntensities?.[event]
+                ?? getAiDebugSetup().entertainmentIntensity ?? 3;
+            const spec = this._geyserBrawl?.spec ?? geyserSpec(level);
+            const large = this._geyserBrawl?.largeCount ?? 0;
+            const rejected = this._geyserBrawl?.safety;
             this._intensityDebugHud.presentSummary(event, event === EntertainmentEventId.GEYSER
-                ? `喷泉 ${level}档 · ${spec.ventCount}个喷口 · 每口${spec.pulseCount}轮`
+                ? `喷泉 ${level}档 · 小${spec.ventCount - large}／大${large}（目标${spec.largeCount}）`
+                    + ` · 候选避让：空间${rejected?.rejectedSpace ?? 0}／路线${rejected?.rejectedRoute ?? 0}`
                 : `巨浪 ${level}档 · 本次一波 · 顺浪借力，迎浪绕行`);
             return;
         }

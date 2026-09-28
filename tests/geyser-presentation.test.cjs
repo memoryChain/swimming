@@ -3,6 +3,31 @@ const assert = require('node:assert/strict');
 const { createGeyserPresentationHarness } = require('./helpers/geyser-presentation-harness.cjs');
 const vent = [{ id: 0, x: 0, z: 0, offsetSeconds: 0 }];
 
+test('大口扩大水面轮廓与水上高度，不移动水线、不增加网格和渲染组件', () => {
+    for (const waterY of [0,.055,.18]) {
+        const small = createGeyserPresentationHarness(1,waterY), large = createGeyserPresentationHarness(1,waterY);
+        const big = [{ ...vent[0], size: 'large', mixed: true }];
+        small.visual.update(vent,1,1); large.visual.update(big,1.2,1);
+        const foamS = small.snapshot().find(n => n.name === 'SurfaceFoam');
+        const foamL = large.snapshot().find(n => n.name === 'SurfaceFoam');
+        assert.ok(Math.abs(foamL.matrix[0]/foamS.matrix[0] - 1.6) < 1e-6);
+        assert.equal(foamL.matrix[13],foamS.matrix[13]);
+        small.visual.update(vent,1.8,1); large.visual.update(big,2.1,1);
+        const jetS = small.snapshot().find(n => n.name === 'WaterJetAndCrown');
+        const jetL = large.snapshot().find(n => n.name === 'WaterJetAndCrown');
+        assert.ok(Math.abs(jetL.matrix[5]/jetS.matrix[5]-1.5)<1e-6);
+        assert.ok(Math.abs(jetL.matrix[13]-waterY)<1e-6);
+        for (let step=54; step<99; step++) {
+            large.visual.update(big,step/30,1);
+            const jet = large.snapshot().find(n => n.name === 'WaterJetAndCrown');
+            if (!jet) continue;
+            const points=large.meshes[jet.mesh].geometry.positions;
+            for(let i=1;i<points.length;i+=3) assert.ok(points[i]*jet.matrix[5]+jet.matrix[13]>=waterY-1e-6);
+        }
+        assert.deepEqual(large.budget(),small.budget());
+    }
+});
+
 test('联机水柱表现使用固定喷发时长，不受本机调参影响', () => {
     const h = createGeyserPresentationHarness(1);
     const fixed = h.rules.geyserTuningForRace(true);

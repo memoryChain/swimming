@@ -266,6 +266,9 @@ test('喷泉强度逐档显示实际喷口数，启动保留五档且切换不�
         intensity.click();
         assert.equal(intensity.getChildByName('Label').getComponent(Label).string,
             `强度 ${level} · ${geyserSpec(level).ventCount} 个喷口`);
+        const spec = geyserSpec(level);
+        assert.ok(descendants(root).some(n => n.getComponent(Label)?.string
+            === `小 ${spec.ventCount-spec.largeCount}／大 ${spec.largeCount} · 每口 ${spec.pulseCount} 轮`));
     }
     assert.deepEqual(descendants(root), nodes);
     assert.deepEqual(nodes.map(n => n.events.size), listeners);

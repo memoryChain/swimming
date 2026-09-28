@@ -1,5 +1,5 @@
 import { Color, gfx, Material, Mesh, MeshRenderer, Node, utils } from 'cc';
-import { GEYSER_TUNING, geyserBurstHeight, geyserPulseIndex,
+import { GEYSER_TUNING, geyserBurstHeight, geyserPulseIndex, geyserRadiusScale, geyserWarningSeconds,
     geyserPulseStart, type GeyserTuning, type GeyserVent } from './GeyserBrawlRules';
 
 type Geometry = { positions: number[]; colors: number[]; indices: number[] };
@@ -69,7 +69,10 @@ export class GeyserBrawlPresentation {
             const pulse = Math.min(pulseCount - 1, geyserPulseIndex(vent, age, tuning));
             const start = geyserPulseStart(vent, pulse, tuning);
             const local = age - start;
-            const burstAge = local - tuning.warningSeconds;
+            const radius = geyserRadiusScale(vent, tuning);
+            const heightScale = vent.size === 'large' ? tuning.largeJetHeightScale : 1;
+            const warning = geyserWarningSeconds(vent, tuning);
+            const burstAge = local - warning;
             const releaseAge = burstAge - tuning.burstSeconds;
             const visible = start <= stoppedAt && local >= 0
                 && releaseAge < tuning.fallingSeconds + FOAM_TAIL_SECONDS;
@@ -77,11 +80,11 @@ export class GeyserBrawlPresentation {
             if (!visible) continue;
             position(view.root, vent.x, this.surfaceY, vent.z);
             if (burstAge < 0) {
-                const pressure = clamp01(local / tuning.warningSeconds);
+                const pressure = clamp01(local / warning);
                 active(view.jet, false);
                 active(view.foam, true);
                 const swell = 0.7 + pressure * 0.3;
-                scale(view.foam, swell, 0.2 + pressure * 0.45, swell);
+                scale(view.foam, swell * radius, 0.2 + pressure * 0.45, swell * radius);
                 position(view.foam, 0, this.foamY, 0);
                 for (let group = 0; group < 2; group++) {
                     const bubbleAge = local - group * 0.35;
@@ -89,7 +92,7 @@ export class GeyserBrawlPresentation {
                     active(node, bubbleAge >= 0);
                     if (bubbleAge < 0) continue;
                     const rise = (bubbleAge % 0.82) / 0.82;
-                    const spread = 0.35 + rise * 0.35;
+                    const spread = (0.35 + rise * 0.35) * radius;
                     scale(node, spread, 0.38 + pressure * 0.2, spread);
                     position(node, 0.04 * Math.sin(local * 7 + group), -1.25 + rise * 1.16, 0);
                 }
@@ -102,17 +105,17 @@ export class GeyserBrawlPresentation {
             // 水下是同一种介质中的上升流，不画有清晰边界的柱体。
             // 只取现有高度包络露出真实水面的部分，水冠也不再从水下拉上来。
             const exposedHeight = Math.max(0,
-                -1.4 - release * 0.16 + 2.7 * lift * (1 - release * 0.4) - this.waterlineY);
+                -1.4 - release * 0.16 + 2.7 * lift * (1 - release * 0.4) - this.waterlineY) * heightScale;
             active(view.jet, exposedHeight > 0.015 && release < 0.7);
             if (view.jet.active) {
-                const width = (1 + 0.035 * Math.sin(burstAge * 21 + view.yaw)) * (1 - release * 0.7);
+                const width = (1 + 0.035 * Math.sin(burstAge * 21 + view.yaw)) * (1 - release * 0.7) * radius;
                 scale(view.jet, width, exposedHeight, width);
                 position(view.jet, 0, this.waterlineY, 0);
             }
             active(view.foam, true);
             const tail = clamp01((releaseAge - tuning.fallingSeconds) / FOAM_TAIL_SECONDS);
             const ripple = 1 + 0.18 * release + 0.18 * tail;
-            scale(view.foam, ripple, (0.8 + 0.08 * Math.sin(burstAge * 16)) * (1 - tail), ripple);
+            scale(view.foam, ripple * radius, (0.8 + 0.08 * Math.sin(burstAge * 16)) * (1 - tail), ripple * radius);
             position(view.foam, 0, this.foamY - tail * 0.09, 0);
             for (let group = 0; group < 2; group++) {
                 const node = view.drops[group];
@@ -122,10 +125,11 @@ export class GeyserBrawlPresentation {
                 const flightAge = burstAge - emission;
                 active(node, emissionAge >= first && flightAge >= 0 && flightAge < DROP_LIFE);
                 if (!node.active) continue;
-                const spread = 0.52 + 1.38 * flightAge;
+                const spread = (0.52 + 1.38 * flightAge) * radius;
                 const shrink = 1 - 0.55 * clamp01((flightAge - 0.4) / 0.2);
                 scale(node, spread, shrink * (0.75 + flightAge * 0.7), spread);
-                position(node, 0, Math.max(this.foamY, 1.12 + 0.8 * flightAge - 4.4 * flightAge * flightAge), 0);
+                position(node, 0, Math.max(this.foamY, this.waterlineY
+                    + (1.12 + 0.8 * flightAge - 4.4 * flightAge * flightAge - this.waterlineY) * heightScale), 0);
             }
         }
     }

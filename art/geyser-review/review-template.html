@@ -3,7 +3,7 @@
 *{box-sizing:border-box}body{margin:0;background:#10212d;color:#e8f5fa;font:16px/1.6 system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:24px}h1{margin:0;font-size:26px}p{color:#b6d1de}section{padding:18px;margin:16px 0;background:#183544;border-radius:12px}button,select{font:inherit;color:inherit;background:#27546a;border:1px solid #59899f;border-radius:6px;padding:7px 14px;margin-right:12px}input{width:100%;accent-color:#79e4ed}canvas{width:100%;display:block;border-radius:8px}.views{display:grid;grid-template-columns:1fr 1fr;gap:16px}.caption{font-size:13px;margin:8px 0}#phase{color:#96ecf0;font-weight:600}@media(max-width:700px){.views{grid-template-columns:1fr}}
 </style><main><h1>海底喷泉 · 气泡、水冠与碎水回落</h1>
 <p>直接采样当前运行时代码。可播放、暂停和拖动时间，对照近景轮廓与远景读性。</p>
-<section><select id="mode" aria-label="喷口数量"><option value="single">单口完整过程</option><option value="dense">五档十口阵列</option></select><button id="toggle">暂停</button><span id="phase"></span><input id="time" aria-label="播放时间" type="range" min="0" max="3.5" step="0.033333" value="0"></section>
+<section><select id="mode" aria-label="喷口数量"><option value="single">小口完整过程</option><option value="comparison">大小同场对照</option><option value="dense">五档大小混排</option></select><button id="toggle">暂停</button><span id="phase"></span><input id="time" aria-label="播放时间" type="range" min="0" max="3.5" step="0.033333" value="0"></section>
 <div class="views"><section><canvas id="detail" width="900" height="620"></canvas><p class="caption">单口近景／十口阵列俯视。水面与池底为简化参照。</p></section><section><canvas id="race" width="900" height="620"></canvas><p class="caption">单口使用侧向 10.5 米、高度 1.7 米、FOV 27°；十口展示较远斜视。</p></section></div>
 <section><strong>验证范围</strong><p>独立 WebGL 几何与时序预览，不是 Cocos 游戏截图。未模拟正式水面折射、透明排序、角色遮挡和微信设备帧耗。</p><p id="budget"></p></section></main>
 <script>const DATA=/*__DATA__*/;
@@ -13,15 +13,18 @@ let renderers={},mode='single',time=0,playing=true,last=performance.now();
 function views(){renderers=mode==='single'?{
  detail:renderer(canvases.detail,[3.7,2.8,5.2],[0,.15,0],40),
  race:renderer(canvases.race,[0,1.7,10.5],[0,.2,0],27)
-}:{detail:renderer(canvases.detail,[12,17,20],[3,0,0],55),race:renderer(canvases.race,[0,7,24],[3,0,0],55)};}
+}:mode==='comparison'?{detail:renderer(canvases.detail,[0,5,11],[0,.4,0],45),race:renderer(canvases.race,[0,1.7,15],[0,.6,0],35)}
+:{detail:renderer(canvases.detail,[12,17,20],[3,0,0],55),race:renderer(canvases.race,[0,7,24],[3,0,0],55)};}
 views();
 function render(){const frames=DATA.sequences[mode],index=Math.min(frames.length-1,Math.round(time*30));for(const draw of Object.values(renderers))draw('',frames,index,false);
- $('time').value=time;$('phase').textContent=time.toFixed(2)+' 秒 · '+(mode==='dense'?'错排喷发':time<1.5?'气泡上浮与水面蓄压':time<2.45?'水束与水冠喷出':time<2.9?'碎滴回落':time<3.2?'余沫消散':'本轮结束');
+ const lead=mode==='single'?0:.3;
+ $('time').value=time;$('phase').textContent=time.toFixed(2)+' 秒 · '+(mode==='dense'?'大小错排喷发':time<1.5+lead?'气泡上浮与水面蓄压':time<2.45+lead?'水束与水冠喷出':time<2.9+lead?'碎滴回落':time<3.2+lead?'余沫消散':'本轮结束');
  window.reviewState={mode,time,visible:frames[index].length};}
-window.setReviewState=s=>{if(s.mode&&s.mode!==mode){mode=s.mode;$('mode').value=mode;$('time').max=mode==='single'?3.5:15;views();}time=s.time??time;playing=false;$('toggle').textContent='播放';render();return window.reviewState;};
-$('mode').onchange=()=>{mode=$('mode').value;time=0;$('time').max=mode==='single'?3.5:15;views();render();};
+const length=()=>mode==='single'?3.5:mode==='comparison'?3.8:15.3;
+window.setReviewState=s=>{if(s.mode&&s.mode!==mode){mode=s.mode;$('mode').value=mode;$('time').max=length();views();}time=s.time??time;playing=false;$('toggle').textContent='播放';render();return window.reviewState;};
+$('mode').onchange=()=>{mode=$('mode').value;time=0;$('time').max=length();views();render();};
 $('toggle').onclick=()=>{playing=!playing;$('toggle').textContent=playing?'暂停':'播放';};
 $('time').oninput=()=>window.setReviewState({time:Number($('time').value)});
 $('budget').textContent='十口共用 '+DATA.budget.meshes+' 份网格、'+DATA.budget.materials+' 份材质；预建 '+DATA.budget.nodes+' 个节点；采样峰值 '+DATA.peakRenderers+' 个可见渲染节点。每帧不重建网格。';
-function frame(now){if(playing)time=(time+(now-last)/1000)%(mode==='single'?3.5:15);last=now;render();requestAnimationFrame(frame);}requestAnimationFrame(frame);
+function frame(now){if(playing)time=(time+(now-last)/1000)%length();last=now;render();requestAnimationFrame(frame);}requestAnimationFrame(frame);
 </script></html>

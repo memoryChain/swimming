@@ -8,7 +8,7 @@
 npx.cmd --yes --package typescript@5.4.5 -c "node art/geyser-review/build-review.cjs"
 ```
 
-打开 `.cache/geyser-review/review.html`，可暂停、拖动时间，并切换单口过程／十口阵列。输出和审查图片放在缓存中，不进入游戏包。
+打开 `.cache/geyser-review/review.html`，可暂停、拖动时间，并切换小口过程／大小同场对照／十口混排。大小对照使用同一水位和错峰规则，十口阵列消费正式大小分配函数。输出和审查图片放在缓存中，不进入游戏包。
 
 `capture-review.cjs` 仅连接已打开的 `http://127.0.0.1:8769/review.html` 独立审查页，从画布导出八段时序图 `.cache/geyser-review/sequence.png`。CDP 使用项目现有独立浏览器端口 18800；脚本不会启动浏览器，也不会访问其他页面。
 

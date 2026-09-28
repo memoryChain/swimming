@@ -270,7 +270,7 @@ test('海龟提前到达场景的旧状态在切主时清除，新主仍可恢�
 test('喷泉恢复包遵守比赛身份、房主、序号和晚注册监听，离房旧主不能恢复旧状态', () => {
     const { encodeGeyserPacket } = load('assets/scripts/net/NetGeyserSnapshot.ts');
     const state = { world: { serial: 2, intensity: 2, anchorDistance: 20, age: 2,
-        stoppedAt: -1, active: true }, raceElapsed: 20, lanes: [] };
+        stoppedAt: -1, active: true, largeVentMask: 1 }, raceElapsed: 20, lanes: [] };
     const receiver = new NetRaceController({ raceId: RACE_ID, localIsHost: false, localPos: 2,
         seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
     receiver._activeHostPos = 0;
@@ -313,7 +313,7 @@ test('喷泉 GY 先于导演时等待身份，结束快照不复活水柱，尾�
         { EntertainmentEventId: { GEYSER: 8 } });
     let serial = 1, event = 8, created = 0, restored = 0, disposed = 0;
     const state = { world: { serial: 2, intensity: 5, anchorDistance: 20, age: 3,
-        stoppedAt: 1, active: true }, raceElapsed: 20, lanes: [{ lane: 0 }] };
+        stoppedAt: 1, active: true, largeVentMask: 273 }, raceElapsed: 20, lanes: [{ lane: 0 }] };
     const game = { _pendingGeyserNetState: state, _geyserBrawl: null, _geyserNetWorld: null,
         _netRaceController: { isHost: false }, _raceManager: { elapsedSeconds: 20.2 },
         _entertainmentDirector: { snapshot: () => ({ activationSerial: serial }), currentEvent: () => event },

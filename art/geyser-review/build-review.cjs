@@ -4,13 +4,19 @@ const { createGeyserPresentationHarness } = require('../../tests/helpers/geyser-
 const root = path.resolve(__dirname, '../..');
 const h = createGeyserPresentationHarness(10);
 const single = [{ id: 0, x: 0, z: 0, offsetSeconds: 0 }];
-const dense = h.rules.planGeyserVents(42, 1, 5, 0, 0, 25, 10.5);
+const { selectGeyserLargeMask } = h.load(path.join(root, 'assets/scripts/core/GeyserBrawlSafety.ts'));
+const base = h.rules.planGeyserVents(42, 1, 5, 0, 0, 25, 10.5);
+const mask = selectGeyserLargeMask(42, 1, 5, base, 10.5, [], [], h.rules.GEYSER_TUNING).mask;
+const dense = h.rules.applyGeyserSizes(base, mask, true);
+const comparison = h.rules.applyGeyserSizes([
+    { id: 0, x: -2.6, z: 0, offsetSeconds: 0 },
+    { id: 1, x: 2.6, z: 0, offsetSeconds: 0 }], 2, true);
 const data = { meshes: h.meshes.map(m => m.geometry), sequences: {}, budget: h.budget() };
-for (const [key, vents, length] of [['single', single, 3.5], ['dense', dense, 15]]) {
+for (const [key, vents, length] of [['single', single, 3.5], ['comparison', comparison, 3.8], ['dense', dense, 15.3]]) {
     h.visual.hide();
     const frames = [];
     for (let step = 0; step <= length * 30; step++) {
-        h.visual.update(vents, step / 30, key === 'single' ? 1 : 3);
+        h.visual.update(vents, step / 30, key === 'dense' ? 3 : 1);
         frames.push(h.snapshot());
     }
     data.sequences[key] = frames;

@@ -765,11 +765,12 @@ export class Swimmer extends Component {
 
     /** 命中由单机或房主裁定；ID 对重复包和同轮多喷口幂等。 */
     applyGeyserHit(hitId: number, strength: 1 | 2, lateSeconds = 0,
-        authorityStart?: ForcedLaunchStart | null, authoritative = false): boolean {
+        authorityStart?: ForcedLaunchStart | null, authoritative = false, large = false): boolean {
         if (!this._geyserHits.accepts(hitId, strength)) return false;
         const hitY = authorityStart?.y ?? this.node.position.y;
-        const duration = authorityStart?.duration ?? (hitY < this._courseLayout.swimY - 0.08
-            ? this.geyserTuning.submergedFlightSeconds : this.geyserTuning.flightSeconds);
+        const duration = authorityStart?.duration ?? ((hitY < this._courseLayout.swimY - 0.08
+            ? this.geyserTuning.submergedFlightSeconds : this.geyserTuning.flightSeconds)
+            + (large ? this.geyserTuning.largeFlightExtraSeconds : 0));
         if (lateSeconds >= (strength === 1 ? this.geyserTuning.edgeSeconds : duration)) {
             this._geyserHits.record(hitId, strength);
             return false;
@@ -801,7 +802,8 @@ export class Swimmer extends Component {
             speed: authorityStart?.speed ?? this._motor.currentSpeed,
             heading: authorityStart?.heading ?? this._motor.heading,
             duration,
-            peakHeight: authorityStart?.peakHeight ?? this.geyserTuning.peakHeight,
+            peakHeight: authorityStart?.peakHeight ?? this.geyserTuning.peakHeight
+                * (large ? this.geyserTuning.largePeakHeightScale : 1),
             entryScale: authorityStart?.entryScale ?? this.geyserTuning.entrySpeedScale,
             exitScale: authorityStart?.exitScale ?? this.geyserTuning.exitSpeedScale,
         };

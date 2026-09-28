@@ -18,7 +18,7 @@ import { styleProjectUiLabel } from './ProjectUiFonts';
 import { ENTERTAINMENT_INTENSITY_LABELS, ENTERTAINMENT_TEST_COMBINATIONS,
     EntertainmentIntensity, normalizeEntertainmentIntensity } from '../core/EntertainmentIntensity';
 import { EntertainmentEventId } from '../core/EntertainmentModeDirector';
-import { GEYSER_TUNING, geyserSpec } from '../core/GeyserBrawlRules';
+import { geyserSpec } from '../core/GeyserBrawlRules';
 import { giantWaveCount, giantWaveSpec } from '../core/GiantWaveRules';
 
 const PANEL_WIDTH = 880;
@@ -559,7 +559,7 @@ export function buildAiDebugSetupPicker(
         const spec = wave ? giantWaveSpec(setup.entertainmentIntensity ?? 3) : null;
         write(soloSpecSummary.getComponent(Label), spec
             ? `${giantWaveCount(setup.giantWavePreset ?? 'three', setup.raceDistance)} 波 · 迎浪减速 ${Math.round(spec.oppositionSlowdown * 100)}% · 间隔 ${spec.gapSeconds} 秒`
-            : geyser ? `每口 ${geyserSpec(setup.entertainmentIntensity ?? 2).pulseCount} 轮 · 局部预警 ${GEYSER_TUNING.warningSeconds} 秒`
+            : geyser ? `小 ${geyserSpec(setup.entertainmentIntensity ?? 2).ventCount - geyserSpec(setup.entertainmentIntensity ?? 2).largeCount}／大 ${geyserSpec(setup.entertainmentIntensity ?? 2).largeCount} · 每口 ${geyserSpec(setup.entertainmentIntensity ?? 2).pulseCount} 轮`
                 : '靠近空圈可搭乘，班车也会挤开沿途选手');
     };
     updateSoloSpecSummary();

@@ -544,6 +544,11 @@ export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: '海底喷泉',
         controls: [
+            control('geyser.largeRadiusScale', '大喷泉范围倍率', '大口核心、擦边和水花的横向倍率。', () => GEYSER_TUNING.largeRadiusScale, v => GEYSER_TUNING.largeRadiusScale = v, 0.05, 1.1, 2, 2),
+            control('geyser.largePeakHeightScale', '大喷泉腾空倍率', '仅提高人物腾空峰值，减速比例保持一致。', () => GEYSER_TUNING.largePeakHeightScale, v => GEYSER_TUNING.largePeakHeightScale = v, 0.05, 1, 2, 2),
+            control('geyser.largeFlightExtraSeconds', '大喷泉额外腾空', '在水面或水下起飞时长上增加少量时间。', () => GEYSER_TUNING.largeFlightExtraSeconds, v => GEYSER_TUNING.largeFlightExtraSeconds = v, 0.05, 0, 0.3, 2, ' s'),
+            control('geyser.largeWarningLeadSeconds', '大喷泉额外预警', '大口提前蓄压，每轮增加同样提前量，不累加延迟。', () => GEYSER_TUNING.largeWarningLeadSeconds, v => GEYSER_TUNING.largeWarningLeadSeconds = v, 0.05, 0, 0.6, 2, ' s'),
+            control('geyser.largeJetHeightScale', '大喷泉水柱高度', '只拉高水面以上的柱体，水下仍为气泡。', () => GEYSER_TUNING.largeJetHeightScale, v => GEYSER_TUNING.largeJetHeightScale = v, 0.05, 1, 2, 2),
             control('geyser.burstSeconds', '喷发持续时间', '完整预警后水柱可命中的时间，擦边仍可继续进入核心。', () => GEYSER_TUNING.burstSeconds, v => GEYSER_TUNING.burstSeconds = v, 0.05, 0.35, 1, 2, ' s'),
             control('geyser.coreRadius', '核心命中半径', '水柱中心把泳者顶离水面的范围。', () => GEYSER_TUNING.coreRadius, v => GEYSER_TUNING.coreRadius = v, 0.05, 0.3, 1.2, 2, ' m'),
             control('geyser.edgeRadius', '边缘擦中半径', '外围只减速不腾空的范围，须大于核心半径。', () => GEYSER_TUNING.edgeRadius, v => GEYSER_TUNING.edgeRadius = v, 0.05, 0.8, 1.8, 2, ' m'),

@@ -24,7 +24,7 @@ const Subject = vm.runInNewContext(ts.transpileModule(`class Subject { ${methods
 }).outputText, { GEYSER_TUNING: rules.GEYSER_TUNING, getRaceDistance: () => 200,
     StrokeType: { LEFT: 0, RIGHT: 1 } });
 
-function fixture(direction = 1, intensity = 1, networked = false) {
+function fixture(direction = 1, intensity = 1, networked = false, options = {}) {
     const course = { startX: direction > 0 ? 0 : 50, finishX: direction > 0 ? 50 : 0,
         swimY: 0, poolWidth: 21, direction,
         distanceToWorldX(d) { return this.startX + direction * d; },
@@ -42,9 +42,78 @@ function fixture(direction = 1, intensity = 1, networked = false) {
     s.node.setPosition = (x, y, z) => Object.assign(s.node.position, { x, y, z });
     const hits = [];
     const controller = new GeyserBrawlController({}, course, [s], 1927, 1, intensity, 0,
-        (_lane, id, strength) => hits.push({ id, strength }), rules.geyserTuningForRace(networked));
+        (_lane, id, strength) => hits.push({ id, strength }), rules.geyserTuningForRace(networked), options);
     return { s, hits, controller, course };
 }
+
+test('同一步大小口核心重叠时选择大口，后续同轮不重复腾空', () => {
+    const { controller, s, hits } = fixture(1,2);
+    controller._vents = [
+        { id: 0, x: 6, z: 0, offsetSeconds: 0, size: 'small', mixed: true },
+        { id: 1, x: 6, z: 0, offsetSeconds: 0, size: 'large', mixed: true },
+    ];
+    s.distance=6;
+    controller.update(1.95);
+    assert.equal(hits[0]?.id,1009);
+    assert.ok(Math.abs(s._forcedLaunch.peakHeight-1.8)<1e-8);
+    controller.update(.1);
+    assert.equal(s.motor.starts,1);
+});
+
+test('大小命中保速一致，大口腾空更高且只延长十分之一秒，权威恢复不重复起飞', () => {
+    for (const y of [0, -.2]) {
+        const small = fixture().s, large = fixture().s;
+        small.node.position.y = large.node.position.y = y;
+        assert.ok(small.applyGeyserHit(1001, 2));
+        assert.ok(large.applyGeyserHit(1001, 2, 0, undefined, false, true));
+        assert.ok(Math.abs(large._forcedLaunch.peakHeight - 1.8) < 1e-8);
+        assert.ok(Math.abs(large._forcedLaunch.duration - small._forcedLaunch.duration - .1) < 1e-8);
+        assert.equal(large._forcedLaunch.entryScale, small._forcedLaunch.entryScale);
+        assert.equal(large._forcedLaunch.exitScale, small._forcedLaunch.exitScale);
+        const remote = fixture().s;
+        assert.ok(remote.applyGeyserHit(1001, 2, .2, large._forcedLaunch, true));
+        assert.equal(remote._forcedLaunch.peakHeight, large._forcedLaunch.peakHeight);
+        assert.equal(remote.applyGeyserHit(1001, 2, .3, large._forcedLaunch, true), false);
+        assert.equal(remote.motor.starts, 1);
+    }
+});
+
+test('大口范围连续扫掠能腾空，正反向及不同帧率一致', () => {
+    for (const direction of [-1, 1]) for (const fps of [15,30,60,120]) {
+        const { controller, s, hits, course } = fixture(direction, 2);
+        const vent = controller.vents.find(v => v.size === 'large');
+        assert.ok(vent);
+        const start = rules.geyserPulseStart(vent, 0) + rules.geyserWarningSeconds(vent);
+        s.motor.lateralOffset = vent.z + .85;
+        // .85 超出小口核心；沿真实位置连续接近大口，不能靠瞬移命中。
+        for (let step = 0; step < fps * 3; step++) {
+            const age = (step + 1) / fps;
+            s.distance = (vent.x - course.startX) * direction + (age - start - .3) * 3;
+            s._forcedLaunchEdge = Math.max(0, s._forcedLaunchEdge - 1/fps);
+            controller.update(1/fps);
+        }
+        assert.ok(hits.some(h => h.strength === 2));
+        assert.ok(Math.abs(s._forcedLaunch.peakHeight - 1.8) < 1e-8);
+        assert.equal(s.motor.starts, 1);
+    }
+});
+
+test('访客等房主大小掩码，恢复后切主保持分配；缺整片快照时接管不补造喷口', () => {
+    const host = fixture(1,5,true), guest = fixture(1,5,true,{ waitForAuthority: true });
+    guest.controller.setAuthority(false);
+    guest.controller.update(1);
+    assert.equal(guest.controller.hasAuthoritativeSizes, false);
+    guest.controller.restoreWorld(host.controller.snapshotWorld(), 1);
+    assert.equal(guest.controller.hasAuthoritativeSizes, true);
+    assert.equal(guest.controller.snapshotWorld().largeVentMask, host.controller.snapshotWorld().largeVentMask);
+    guest.controller.setAuthority(true);
+    assert.equal(guest.controller.largeCount, host.controller.largeCount);
+    const missing = fixture(1,5,true,{ waitForAuthority: true });
+    missing.controller.setAuthority(false); missing.controller.setAuthority(true);
+    assert.equal(missing.controller.isDone, true);
+    missing.controller.update(.1);
+    assert.equal(missing.hits.length, 0);
+});
 
 test('联机喷泉隔离私人调参，判定、表现时序及擦边惩罚使用同一固定规格', () => {
     const defaults = { ...rules.GEYSER_TUNING };

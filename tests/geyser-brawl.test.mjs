@@ -4,11 +4,65 @@ import test from 'node:test';
 import Rules from '../assets/scripts/core/GeyserBrawlRules.ts';
 import Launch from '../assets/scripts/swimmer/ForcedLaunchModel.ts';
 import Input from '../assets/scripts/net/NetRaceInput.ts';
+import Safety from '../assets/scripts/core/GeyserBrawlSafety.ts';
 
 const { GEYSER_TUNING, geyserSpec, geyserPhaseAt, geyserBurstOverlap,
     geyserSweptHit, planGeyserVents } = Rules;
 const { sampleForcedLaunch } = Launch;
 const { NetInputKind, encodeInputFrame, decodeInputFrame } = Input;
+
+test('大小喷泉范围与预警分开，第三轮仍只延后一次且完整收尾', () => {
+    assert.deepEqual([1,2,3,4,5].map(n => geyserSpec(n).largeCount), [0,1,1,2,3]);
+    assert.deepEqual([1,2,3,4,5].map(n => geyserSpec(n).actionSeconds), [9,10.3,10.3,15.3,15.3]);
+    const [large, small] = Rules.applyGeyserSizes([
+        { id: 0, x: 0, z: 0, offsetSeconds: 0 }, { id: 1, x: 0, z: 0, offsetSeconds: 0 }], 1, true);
+    assert.equal(geyserSweptHit(small, -3, 1.5, 3, 1.5), 0);
+    assert.equal(geyserSweptHit(large, -3, 1.5, 3, 1.5), 1);
+    assert.equal(geyserSweptHit(small, -3, .85, 3, .85), 1);
+    assert.equal(geyserSweptHit(large, -3, .85, 3, .85), 2);
+    for (let pulse = 0; pulse < 3; pulse++) {
+        const burst = pulse * 4.7 + 1.8;
+        for (const v of [large, small]) {
+            assert.ok(Math.abs(Rules.geyserPulseStart(v, pulse) + Rules.geyserWarningSeconds(v) - burst) < 1e-8);
+            assert.equal(geyserBurstOverlap(v, pulse, burst - 1, burst), 0);
+        }
+    }
+});
+
+test('五档跨种子八泳道保持大口出现、每排一个、同时最多一个，并有连续绕行路径', t => {
+    const totals = [];
+    for (let level = 2; level <= 5; level++) {
+        let total = 0, empty = 0;
+        for (const direction of [-1, 1]) for (let seed = 0; seed < 100; seed++) {
+            const racers = Array.from({ length: 8 }, (_, lane) => ({ x: 0,
+                z: 10.5 - (lane + .5) * 21 / 8, speed: 3, direction, heading: 0, turnRate: 0, roll: 0 }));
+            const vents = planGeyserVents(seed, 1, level, direction * 6, 0, 25, 10.5, direction);
+            const result = Safety.selectGeyserLargeMask(seed, 1, level, vents, 10.5, racers, [], GEYSER_TUNING);
+            assert.deepEqual(result, Safety.selectGeyserLargeMask(seed, 1, level, vents, 10.5, racers, [], GEYSER_TUNING));
+            const mixed = Rules.applyGeyserSizes(vents, result.mask, true);
+            const large = mixed.filter(v => v.size === 'large');
+            total += large.length; if (!large.length) empty++;
+            assert.ok(large.length <= geyserSpec(level).largeCount);
+            assert.equal(new Set(large.map(v => Math.floor(v.id/4))).size, large.length);
+            if (large.length) for (const racer of racers) assert.ok(Safety.geyserRouteAvailable(racer, mixed,
+                10.5, geyserSpec(level).pulseCount, geyserSpec(level).actionSeconds, GEYSER_TUNING));
+            for (let age = 0; age < 15.3; age += .05) assert.ok(large.filter(v =>
+                geyserPhaseAt(v, age, geyserSpec(level).pulseCount) === 'burst').length <= 1);
+        }
+        totals.push({ level, average: total / 200, empty });
+        assert.ok(total / 200 >= geyserSpec(level).largeCount * .7, JSON.stringify(totals));
+        assert.ok(empty <= 10, JSON.stringify(totals));
+    }
+    t.diagnostic(JSON.stringify(totals));
+});
+
+test('危险残留占据全部大口候选时只降级规格，喷口数不变', () => {
+    const vents = planGeyserVents(42, 1, 5, 6, 0, 25, 10.5);
+    const result = Safety.selectGeyserLargeMask(42, 1, 5, vents, 10.5, [],
+        vents.map(v => ({ x: v.x, z: v.z, radius: 2 })), GEYSER_TUNING);
+    assert.equal(result.mask, 0); assert.equal(result.rejectedSpace, 10);
+    assert.equal(Rules.applyGeyserSizes(vents, result.mask, true).length, 10);
+});
 
 test('五档喷口时间轴保留完整预警与间歇，布局对种子和轮次确定', () => {
     const counts = [2, 4, 6, 8, 10];
