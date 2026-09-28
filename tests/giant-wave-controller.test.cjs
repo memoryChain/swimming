@@ -150,4 +150,36 @@ test('控制器只创建一套表现，AI追浪、HUD、重开和销毁正确清
     assert.equal(autopilot.target, null, '销毁无需依赖外部补清理托管目标');
     assert.equal(disposed, 1); assert.equal(listeners.size, 0);
     assert.ok(swimmers.every(s => s.giantWaveState === null));
+
+    // 综合中途激活不再等独立赛首泳段；恢复时不补播主广播或旧入场。
+    const oldEvents = events.length;
+    const oldSounds = sounds;
+    for (const swimmer of swimmers) {
+        swimmer.distance = 130;
+        swimmer.isGiantWaveRiding = false; swimmer.isGiantWaveOpposed = false;
+        swimmer.setGiantWaveAuthority = value => { swimmer.authority = value; };
+    }
+    let host = false;
+    const formal = new GiantWaveController({}, {}, course, swimmers, ai, 88, 'single', banner, camera,
+        4, 400, true, index => index === 0 || host);
+    formal.syncEventAge(5);
+    formal.update(.1, true, null);
+    assert.equal(events.length, oldEvents);
+    assert.equal(sounds, oldSounds);
+    assert.equal(formal.simulation.state.phase, 'active');
+    assert.equal(swimmers[0].authority, true);
+    assert.equal(swimmers[1].authority, false);
+    const age = formal.simulation.state.age;
+    formal.syncEventAge(2);
+    assert.equal(formal.simulation.state.age, age);
+    host = true;
+    formal.update(.1, true, null);
+    assert.ok(swimmers.every(s => s.authority));
+    formal.syncEventAge(20);
+    formal.update(.1, true, null);
+    assert.equal(formal.isDone, true);
+    assert.ok(ai.every(a => a.target === null));
+    formal.dispose();
+    assert.equal(listeners.size, 0);
+    assert.ok(swimmers.every(s => s.giantWaveState === null && s.giantWaveTuning === null));
 });

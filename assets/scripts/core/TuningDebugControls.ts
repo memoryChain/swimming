@@ -1,5 +1,5 @@
 import { CHARACTER_ABILITY_TUNING } from './CharacterAbilityConfig';
-import { GIANT_WAVE_TUNING } from './GiantWaveRules';
+import { GIANT_WAVE_TUNING, GIANT_WAVE_INTENSITY_TUNING } from './GiantWaveRules';
 import { GEYSER_TUNING } from './GeyserBrawlRules';
 import { DRAFTING_TUNING } from '../swimmer/DraftingRules';
 import { JsonAsset, native, resources, sys } from 'cc';
@@ -92,22 +92,22 @@ export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: '巨浪冲浪',
         controls: [
-            control('giantWave.widthFraction', '浪面宽度比例', '仅用于独立巨浪调试；生成与表现参数在下一波生效，推进过渡参数实时生效。', () => GIANT_WAVE_TUNING.widthFraction, v => GIANT_WAVE_TUNING.widthFraction = v, 0.05, 0.3, 0.8, 2),
-            control('giantWave.lengthFraction', '浪面前后长度比例', '仅用于独立巨浪调试；生成与表现参数在下一波生效，推进过渡参数实时生效。', () => GIANT_WAVE_TUNING.lengthFraction, v => GIANT_WAVE_TUNING.lengthFraction = v, 0.01, 0.08, 0.2, 2),
-            control('giantWave.height', '浪峰高度', '仅用于独立巨浪调试；生成与表现参数在下一波生效，推进过渡参数实时生效。', () => GIANT_WAVE_TUNING.height, v => GIANT_WAVE_TUNING.height = v, 0.05, 0.15, 0.8, 2),
-            control('giantWave.previewSeconds', '起浪预告时间', '仅用于独立巨浪调试；生成与表现参数在下一波生效，推进过渡参数实时生效。', () => GIANT_WAVE_TUNING.previewSeconds, v => GIANT_WAVE_TUNING.previewSeconds = v, 0.5, 2, 6, 1),
-            control('giantWave.entranceSeconds', '起浪保护时间', '小浪开始移动后，先展示再允许借浪加速；下一波生效。', () => GIANT_WAVE_TUNING.entranceSeconds, v => GIANT_WAVE_TUNING.entranceSeconds = v, 0.1, 0.4, 1.5, 1),
-            control('giantWave.travelSpeed', '统一浪速', '按赛程米每秒配置，不按选手游速或人数调整；预告时锁定。', () => GIANT_WAVE_TUNING.travelSpeed, v => GIANT_WAVE_TUNING.travelSpeed = v, 0.1, 2, 6, 1),
-            control('giantWave.growthSeconds', '小浪长成大浪时间', '浪从泳池端头出发，前进过程中逐渐长大；下一波生效。', () => GIANT_WAVE_TUNING.growthSeconds, v => GIANT_WAVE_TUNING.growthSeconds = v, 0.5, 2, 6, 1),
-            control('giantWave.impactSeconds', '拍岸扬起回落时间', '浪头抵岸后停止前移，先扬起水花再散去余沫；下一波生效。', () => GIANT_WAVE_TUNING.impactSeconds, v => GIANT_WAVE_TUNING.impactSeconds = v, 0.1, 0.6, 2, 1),
-            control('giantWave.oppositionSlowdown', '迎浪中央减速比例', '只降低自身前进速度，不停住或倒退；预告时锁定。', () => GIANT_WAVE_TUNING.oppositionSlowdown, v => GIANT_WAVE_TUNING.oppositionSlowdown = v, 0.05, 0.1, 0.5, 2),
-            control('giantWave.fadeSeconds', '拍岸余沫消散时间', '仅用于独立巨浪调试；生成与表现参数在下一波生效，推进过渡参数实时生效。', () => GIANT_WAVE_TUNING.fadeSeconds, v => GIANT_WAVE_TUNING.fadeSeconds = v, 0.1, 0.4, 1.5, 1),
-            control('giantWave.gapSeconds', '两波间隔时间', '仅用于独立巨浪调试；生成与表现参数在下一波生效，推进过渡参数实时生效。', () => GIANT_WAVE_TUNING.gapSeconds, v => GIANT_WAVE_TUNING.gapSeconds = v, 0.5, 3, 10, 1),
+            control('giantWave.widthFraction', '浪面宽度比例', '巨浪各档的基础值；生成与排期参数重新进入比赛生效，推进过渡时间仍实时生效。', () => GIANT_WAVE_TUNING.widthFraction, v => GIANT_WAVE_TUNING.widthFraction = v, 0.05, 0.3, 0.8, 2),
+            control('giantWave.lengthFraction', '浪面前后长度比例', '巨浪各档的基础值；生成与排期参数重新进入比赛生效，推进过渡时间仍实时生效。', () => GIANT_WAVE_TUNING.lengthFraction, v => GIANT_WAVE_TUNING.lengthFraction = v, 0.01, 0.08, 0.2, 2),
+            control('giantWave.height', '浪峰高度', '巨浪各档的基础值；生成与排期参数重新进入比赛生效，推进过渡时间仍实时生效。', () => GIANT_WAVE_TUNING.height, v => GIANT_WAVE_TUNING.height = v, 0.05, 0.15, 0.8, 2),
+            control('giantWave.previewSeconds', '起浪预告时间', '巨浪各档的基础值；生成与排期参数重新进入比赛生效，推进过渡时间仍实时生效。', () => GIANT_WAVE_TUNING.previewSeconds, v => GIANT_WAVE_TUNING.previewSeconds = v, 0.5, 2, 6, 1),
+            control('giantWave.entranceSeconds', '起浪保护时间', '小浪开始移动后，先展示再允许借浪加速；重新进入比赛生效。', () => GIANT_WAVE_TUNING.entranceSeconds, v => GIANT_WAVE_TUNING.entranceSeconds = v, 0.1, 0.4, 1.5, 1),
+            control('giantWave.travelSpeed', '统一浪速', '按赛程米每秒配置，不按选手游速或人数调整；重新进入比赛生效。', () => GIANT_WAVE_TUNING.travelSpeed, v => GIANT_WAVE_TUNING.travelSpeed = v, 0.1, 2, 6, 1),
+            control('giantWave.growthSeconds', '小浪长成大浪时间', '浪从泳池端头出发，前进过程中逐渐长大；重新进入比赛生效。', () => GIANT_WAVE_TUNING.growthSeconds, v => GIANT_WAVE_TUNING.growthSeconds = v, 0.5, 2, 6, 1),
+            control('giantWave.impactSeconds', '拍岸扬起回落时间', '浪头抵岸后停止前移，先扬起水花再散去余沫；重新进入比赛生效。', () => GIANT_WAVE_TUNING.impactSeconds, v => GIANT_WAVE_TUNING.impactSeconds = v, 0.1, 0.6, 2, 1),
+            control('giantWave.oppositionSlowdown', '迎浪中央减速比例', '三档的迎浪减速基准，只降低前进速度，不停住或倒退；重新进入比赛生效。', () => GIANT_WAVE_TUNING.oppositionSlowdown, v => GIANT_WAVE_TUNING.oppositionSlowdown = v, 0.05, 0.1, 0.5, 2),
+            control('giantWave.fadeSeconds', '拍岸余沫消散时间', '巨浪各档的基础值；生成与排期参数重新进入比赛生效，推进过渡时间仍实时生效。', () => GIANT_WAVE_TUNING.fadeSeconds, v => GIANT_WAVE_TUNING.fadeSeconds = v, 0.1, 0.4, 1.5, 1),
+            control('giantWave.gapSeconds', '两波间隔时间', '巨浪各档的基础值；生成与排期参数重新进入比赛生效，推进过渡时间仍实时生效。', () => GIANT_WAVE_TUNING.gapSeconds, v => GIANT_WAVE_TUNING.gapSeconds = v, 0.5, 3, 10, 1),
             control('giantWave.oppositionRiseSeconds', '迎浪阻力建立时间', '影响迎面穿浪的减速读感；实时生效。', () => GIANT_WAVE_TUNING.oppositionRiseSeconds, v => GIANT_WAVE_TUNING.oppositionRiseSeconds = v, 0.02, 0.06, 0.4, 2),
             control('giantWave.oppositionReleaseSeconds', '离浪阻力恢复时间', '穿过或侧移离浪后快速恢复；实时生效。', () => GIANT_WAVE_TUNING.oppositionReleaseSeconds, v => GIANT_WAVE_TUNING.oppositionReleaseSeconds = v, 0.05, 0.1, 0.5, 2),
-            control('giantWave.boostSpeed', '顺浪额外推进速度', '按赛程米每秒配置，同一道浪对所有选手相同；预告时锁定。', () => GIANT_WAVE_TUNING.boostSpeed, v => GIANT_WAVE_TUNING.boostSpeed = v, 0.1, 0.3, 2, 1),
-            control('giantWave.riseSeconds', '推进建立时间', '仅用于独立巨浪调试；生成与表现参数在下一波生效，推进过渡参数实时生效。', () => GIANT_WAVE_TUNING.riseSeconds, v => GIANT_WAVE_TUNING.riseSeconds = v, 0.05, 0.1, 0.8, 2),
-            control('giantWave.releaseSeconds', '离浪余速时间', '仅用于独立巨浪调试；生成与表现参数在下一波生效，推进过渡参数实时生效。', () => GIANT_WAVE_TUNING.releaseSeconds, v => GIANT_WAVE_TUNING.releaseSeconds = v, 0.05, 0.1, 1, 2),
+            control('giantWave.boostSpeed', '顺浪额外推进速度', '按赛程米每秒配置，五档共享相同顺浪收益；重新进入比赛生效。', () => GIANT_WAVE_TUNING.boostSpeed, v => GIANT_WAVE_TUNING.boostSpeed = v, 0.1, 0.3, 2, 1),
+            control('giantWave.riseSeconds', '推进建立时间', '巨浪各档的基础值；生成与排期参数重新进入比赛生效，推进过渡时间仍实时生效。', () => GIANT_WAVE_TUNING.riseSeconds, v => GIANT_WAVE_TUNING.riseSeconds = v, 0.05, 0.1, 0.8, 2),
+            control('giantWave.releaseSeconds', '离浪余速时间', '巨浪各档的基础值；生成与排期参数重新进入比赛生效，推进过渡时间仍实时生效。', () => GIANT_WAVE_TUNING.releaseSeconds, v => GIANT_WAVE_TUNING.releaseSeconds = v, 0.05, 0.1, 1, 2),
             control('giantWave.anchorFraction', '泳段预告位置', '只决定排期，不影响随机方向和覆盖位置。', () => GIANT_WAVE_TUNING.anchorFraction, v => GIANT_WAVE_TUNING.anchorFraction = v, 0.02, 0.02, 0.3, 2),
         ],
     },
@@ -680,6 +680,25 @@ export const TUNING_GROUPS: TuningGroup[] = [
         ],
     },
 ];
+
+{
+    const controls: TuningControl[] = [];
+    const fields = [
+        { key: 'widthOffset', label: '宽度比例增减', step: 0.05, min: -0.3, max: 0.3, precision: 2 },
+        { key: 'lengthOffset', label: '纵深比例增减', step: 0.01, min: -0.06, max: 0.08, precision: 2 },
+        { key: 'slowdownOffset', label: '迎浪减速增减', step: 0.01, min: -0.2, max: 0.2, precision: 2 },
+        { key: 'gapOffset', label: '间隔秒数增减', step: 0.5, min: -5, max: 5, precision: 1 },
+    ] as const;
+    GIANT_WAVE_INTENSITY_TUNING.forEach((profile, index) => {
+        for (const field of fields) controls.push(control(
+            `entertainment.giantWave.level${index + 1}.${field.key}`, `${index + 1}档 ${field.label}`,
+            '与巨浪基础参数相加；重新进入比赛生效。宽度最多八成，迎浪最多减速一半，间隔至少三秒。',
+            () => profile[field.key], value => {
+                if (Number.isFinite(value)) profile[field.key] = Math.max(field.min, Math.min(field.max, value));
+            }, field.step, field.min, field.max, field.precision));
+    });
+    TUNING_GROUPS.push({ name: '娱乐强度 · 巨浪', controls });
+}
 
 for (const [groupName, groupId] of [
     ['杂物', 'litter'], ['浮标', 'minefield'], ['漩涡', 'whirlpool'],

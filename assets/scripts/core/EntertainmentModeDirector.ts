@@ -13,6 +13,7 @@ export const enum EntertainmentEventId {
     LITTER = 6,
     TURTLE_BUS = 7,
     GEYSER = 8,
+    GIANT_WAVE = 9,
 }
 
 /** 正式娱乐导演从六种候选中按赛程抽取三至六种。 */
@@ -91,6 +92,7 @@ const EVENT_DURATION_SECONDS: Readonly<Record<EntertainmentEventId, number>> = {
     [EntertainmentEventId.LITTER]: 8,
     [EntertainmentEventId.TURTLE_BUS]: 15,
     [EntertainmentEventId.GEYSER]: 10,
+    [EntertainmentEventId.GIANT_WAVE]: 20,
 };
 const PERSISTENT_EVENTS_MASK = eventBit(EntertainmentEventId.STIMULANT)
     | eventBit(EntertainmentEventId.WHIRLPOOL)
@@ -102,6 +104,7 @@ export const ENTERTAINMENT_SELECTABLE_EVENTS: readonly EntertainmentEventId[] = 
     EntertainmentEventId.WHIRLPOOL, EntertainmentEventId.OBSTACLE,
     EntertainmentEventId.SHARK, EntertainmentEventId.CANNON,
     EntertainmentEventId.TURTLE_BUS, EntertainmentEventId.GEYSER,
+    EntertainmentEventId.GIANT_WAVE,
 ];
 
 let runtimeResidentMask = 0;
@@ -132,6 +135,7 @@ export function entertainmentEventName(event: EntertainmentEventId): string {
         case EntertainmentEventId.LITTER: return '杂物漂流';
         case EntertainmentEventId.TURTLE_BUS: return '海龟班车';
         case EntertainmentEventId.GEYSER: return '海底喷泉';
+        case EntertainmentEventId.GIANT_WAVE: return '巨浪冲浪';
     }
 }
 
@@ -319,6 +323,28 @@ const ENTERTAINMENT_BROADCAST_COPIES: Readonly<Record<
         ['泳池广播：海龟司机已经探头，车尾的圈也跟着来了', '探头入场 · 抢到空圈'],
         ['泳池广播：海龟班车要带大家兜一段，到站会潜走', '搭车一段 · 放手继续游'],
         ['泳池广播：今天的顺风车由海龟驾驶，四圈同时开放', '海龟发车 · 空圈先到先得'],
+    ],
+    [EntertainmentEventId.GIANT_WAVE]: [
+        ['泳池广播：浪头正在排队，顺着借力，迎着绕开', '巨浪冲浪 · 顺浪借力，迎浪绕行'],
+        ['泳池广播：水面准备起伏，两侧留有绕行空间', '浪头出发 · 看清方向再并入'],
+        ['泳池广播：这趟水上快车随机选边，不包接送', '双向起浪 · 顺向助推，逆向受阻'],
+        ['泳池广播：浪头不看排名，只看从哪边出发', '浪头到场 · 留意来浪方向'],
+        ['泳池广播：水面准备抬头，泳姿请继续营业', '借浪前进 · 迎浪记得侧移'],
+        ['泳池广播：浪头准备横穿泳池，两侧仍可通行', '巨浪过池 · 绕开迎面的浪心'],
+        ['泳池广播：水上便车即将发出，请自行判断顺逆', '浪头启程 · 同向选手可以借力'],
+        ['泳池广播：水面开始热身，稍后从池端起浪', '浪面推进 · 留出侧移空间'],
+        ['泳池广播：迎面是阻力，同向是助力，别认错车头', '看准浪向 · 顺势借力或绕行'],
+        ['泳池广播：浪头没有方向盘，但会一直开到对岸', '巨浪横穿 · 池边仍有空隙'],
+        ['泳池广播：泳池准备起一波热闹，请看清路线', '浪头登场 · 避开迎浪中心'],
+        ['泳池广播：借浪机会靠近，折返后记得重看方向', '双向水流 · 折返后留意顺逆'],
+        ['泳池广播：浪头准备出门，终点是泳池另一头', '浪头前进 · 不追人，只过池'],
+        ['泳池广播：水面即将抖一抖，想借力先看方向', '巨浪行进 · 顺着走更省力'],
+        ['泳池广播：这波不负责转弯，侧边可以自行绕路', '迎浪绕开 · 顺浪并入'],
+        ['泳池广播：池端正在攒浪，请给路线留点余地', '浪头开游 · 看准空隙侧移'],
+        ['泳池广播：随机一端准备起浪，全场都能看见', '巨浪入场 · 顺逆效果各不同'],
+        ['泳池广播：浪头准备送来助力，也会挡住迎面路线', '借力有方 · 迎浪中心会减速'],
+        ['泳池广播：这波开到对岸就散，沿途请自行选线', '巨浪过境 · 两侧可以绕行'],
+        ['泳池广播：水面即将换个节奏，请留意池端动静', '浪头出发 · 保持划水，选好方向'],
     ],
     [EntertainmentEventId.GEYSER]: [
         ['泳池广播：池底正在冒泡，水柱即将冲出', '喷泉来袭 · 看泡泡绕开喷口'],
@@ -543,6 +569,11 @@ export class EntertainmentModeDirector {
         if (this.phase !== EntertainmentDirectorPhase.ACTIVE
             || this.currentEvent() !== EntertainmentEventId.TURTLE_BUS
             || this.eventIndex >= this.events.length) return transition;
+        // 分级模式里机会事件失败就跳过，不能把一档海龟升级成漩涡。
+        if (this.gradedPlan) {
+            this.remainingSeconds = 0;
+            return this.update(0, this.anchorDistance, true);
+        }
         let replacement = EntertainmentEventId.WHIRLPOOL;
         if (!this.gradedPlan) {
             const candidates = ENTERTAINMENT_SELECTABLE_EVENTS.filter(event =>
@@ -640,7 +671,7 @@ export class EntertainmentModeDirector {
                             : this.gradedPlan.grade === 3 ? 11.5 : this.gradedPlan.grade === 4 ? 10.5 : 10
                     : undefined)
                 ?? this.durationForEvent?.(event)
-                ?? (event === EntertainmentEventId.GEYSER
+                ?? (event === EntertainmentEventId.GEYSER || event === EntertainmentEventId.GIANT_WAVE
                     ? EVENT_DURATION_SECONDS[event] : EVENT_DURATION_SECONDS[event] * this.eventDurationScale());
             this.anchorDistance = distance;
             if (this.eventIndex < this.events.length) {
@@ -780,6 +811,7 @@ export class EntertainmentModeDirector {
             : this.testEventOrder?.length ? this.testEventOrder
                 : buildEntertainmentEventOrder(this.seed, this.raceDistance, this.includeLitter);
         if (events.length !== planned.length) return false;
+        if (this.gradedPlan) return events.every((event, index) => event === planned[index]);
         let replaced = 0;
         for (let index = 0; index < events.length; index++) {
             if (events[index] === planned[index]) continue;
@@ -833,6 +865,7 @@ export class EntertainmentModeDirector {
     }
 
     private previewSeconds(): number {
+        if (this.currentEvent() === EntertainmentEventId.GIANT_WAVE) return 6;
         if (this.gradedPlan) return 6;
         if (this.events.length >= 5) return LONG_RACE_PREVIEW_SECONDS;
         return this.events.length === 4 ? FOUR_EVENT_PREVIEW_SECONDS : THREE_EVENT_PREVIEW_SECONDS;
@@ -869,6 +902,7 @@ export function buildEntertainmentEventOrder(
             EntertainmentEventId.WHIRLPOOL,
             EntertainmentEventId.OBSTACLE,
             EntertainmentEventId.GEYSER,
+            EntertainmentEventId.GIANT_WAVE,
         ];
         const contest = [EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB,
             EntertainmentEventId.TURTLE_BUS];
@@ -895,6 +929,7 @@ export function buildEntertainmentEventOrder(
             EntertainmentEventId.CANNON,
             EntertainmentEventId.TURTLE_BUS,
             EntertainmentEventId.GEYSER,
+            EntertainmentEventId.GIANT_WAVE,
         ];
         random.shuffle(events);
         events.length = random.int(2) === 0 ? 5 : 6;
@@ -902,7 +937,7 @@ export function buildEntertainmentEventOrder(
         return events;
     }
     const fieldCandidates = [EntertainmentEventId.WHIRLPOOL, EntertainmentEventId.MINEFIELD,
-        EntertainmentEventId.GEYSER];
+        EntertainmentEventId.GEYSER, EntertainmentEventId.GIANT_WAVE];
     const field = fieldCandidates[random.int(fieldCandidates.length)];
     const contest = [EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB,
         EntertainmentEventId.TURTLE_BUS][random.int(3)];
@@ -1001,7 +1036,7 @@ function validEventOrder(events: readonly EntertainmentEventId[]): boolean {
 function isFieldEvent(event: EntertainmentEventId): boolean {
     return event === EntertainmentEventId.WHIRLPOOL
         || event === EntertainmentEventId.OBSTACLE
-        || event === EntertainmentEventId.GEYSER;
+        || event === EntertainmentEventId.GEYSER || event === EntertainmentEventId.GIANT_WAVE;
 }
 
 function isNonClosingEvent(event: EntertainmentEventId): boolean {

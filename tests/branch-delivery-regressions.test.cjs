@@ -247,6 +247,26 @@ function hostSnapshotSender(pos = 0) {
         seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
 }
 
+test('海龟提前到达场景的旧状态在切主时清除，新主仍可恢复同一航次', () => {
+    const { encodeTurtleBusPacket } = load('assets/scripts/net/NetTurtleBusSnapshot.ts');
+    const receiver = new NetRaceController({ raceId: RACE_ID, localIsHost: false, localPos: 2,
+        seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
+    receiver._activeHostPos = 0;
+    let pending = null;
+    receiver.setTurtleBusStateListener(state => { pending = state; });
+    const state = { tripId: 2, phase: 'boarding', age: 4, direction: 1, routeZ: 0,
+        startOffset: 2, occupants: [-1, -1, -1, -1], hands: [0, 0, 0, 0] };
+    receiver.onBroadcast(wire(encodeTurtleBusPacket(0, 4, state)));
+    assert.equal(pending?.tripId, 2);
+    receiver.onRoomInfoChange({ members: [{ pos: 1 }, { pos: 2 }] });
+    assert.equal(pending, null, '同时清除场景中等待导演身份的包');
+    receiver.onBroadcast(wire(encodeTurtleBusPacket(0, 100, state)));
+    assert.equal(pending, null);
+    receiver.onBroadcast(wire(encodeTurtleBusPacket(1, 1, state)));
+    assert.equal(pending?.tripId, 2);
+    receiver.dispose();
+});
+
 test('喷泉恢复包遵守比赛身份、房主、序号和晚注册监听，离房旧主不能恢复旧状态', () => {
     const { encodeGeyserPacket } = load('assets/scripts/net/NetGeyserSnapshot.ts');
     const state = { world: { serial: 2, intensity: 2, anchorDistance: 20, age: 2,

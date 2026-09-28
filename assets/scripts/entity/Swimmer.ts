@@ -1,8 +1,9 @@
+import { giantWaveCode, giantWaveSpeedFromCode, giantWaveFlagsFromCode } from '../net/NetGiantWaveCodec';
 import { abilityValue } from '../core/CharacterAbilityConfig';
 import type { CharacterAbilitySnapshot } from '../swimmer/CharacterAbilityState';
 import { CONDITION_BALANCE } from '../core/ConditionBalance';
 import { DOLPHIN_JUMP } from '../core/DolphinJumpConfig';
-import { GEYSER_TUNING, GeyserHitLedger } from '../core/GeyserBrawlRules';
+import { GEYSER_TUNING, GeyserHitLedger, type GeyserTuning } from '../core/GeyserBrawlRules';
 import type { GeyserLaneState } from '../net/NetGeyserSnapshot';
 import { sampleForcedLaunch, type ForcedLaunchStart, type ForcedLaunchSample } from '../swimmer/ForcedLaunchModel';
 import { _decorator, Camera, Component, Node, Quat, Tween, Vec3, tween } from 'cc';
@@ -125,6 +126,7 @@ export class Swimmer extends Component {
     private _forcedLaunchHitId = 0;
     private _forcedLaunchGrace = 0;
     private _forcedLaunchEdge = 0;
+    geyserTuning: GeyserTuning = GEYSER_TUNING;
     private readonly _geyserHits = new GeyserHitLedger();
     private readonly _forcedLaunchSample: ForcedLaunchSample = { distance: 0, lateral: 0, y: 0, speed: 0, done: false };
     private _entertainmentInvulnerable = false;
@@ -147,8 +149,23 @@ export class Swimmer extends Component {
         return this._motor;
     }
 
-    /** 仅独立巨浪调试赛绑定；普通比赛不采样水流。 */
+    /** 仅巨浪活动期间绑定；普通比赛不采样水流。 */
     giantWaveState: GiantWaveState | null = null;
+    giantWaveTuning: Readonly<typeof GIANT_WAVE_TUNING> | null = null;
+    private _netGiantWaveCode = -1;
+    get netGiantWaveCode(): number {
+        return this.giantWaveState ? this._netGiantWaveCode >= 0 ? this._netGiantWaveCode
+            : giantWaveCode(this._motor.giantWaveSpeed, this._waveRiding, this._waveOpposed) : 0;
+    }
+    setGiantWaveAuthority(authority: boolean): void {
+        if (authority) this._netGiantWaveCode = -1;
+        else if (this._netGiantWaveCode < 0) this._netGiantWaveCode = 0;
+    }
+    applyNetGiantWave(code: number): void {
+        if (!this.giantWaveState) return;
+        this._netGiantWaveCode = code;
+        this._motor.applyGiantWaveSpeed(giantWaveSpeedFromCode(code));
+    }
     private _waveX = NaN;
     private _waveZ = 0;
     private _waveRiding = false;
@@ -176,9 +193,19 @@ export class Swimmer extends Component {
             this._courseLayout.directionAtDistance(this._motor.distance), dt);
         this._waveRiding = weight > (this._waveRiding ? 0.02 : 0.08);
         this._waveOpposed = weight < (this._waveOpposed ? -0.02 : -0.08);
-        this._motor.setGiantWaveTarget(weight * wave.boost, wave.boost, wave.slowdown);
-        this.cartoonRig?.setGiantWaveLift(Math.min(1, Math.abs(this._motor.giantWaveSpeed) / Math.max(0.01, wave.boost))
-            * GIANT_WAVE_TUNING.height * 0.45);
+        if (this._netGiantWaveCode >= 0) {
+            const flags = giantWaveFlagsFromCode(this._netGiantWaveCode);
+            this._waveRiding = flags === 1; this._waveOpposed = flags === 2;
+        }
+        const poseSpeed = this._netGiantWaveCode >= 0 ? giantWaveSpeedFromCode(this._netGiantWaveCode) : this._motor.giantWaveSpeed;
+        // 远端推进和姿态采用同一权威贡献，避免包间本地采样把已同步的推进改掉。
+        const remote = this._netGiantWaveCode >= 0;
+        if (remote) this._motor.applyGiantWaveSpeed(poseSpeed);
+        this._motor.setGiantWaveTarget(remote ? poseSpeed : weight * wave.boost,
+            remote ? Math.max(wave.boost, Math.abs(poseSpeed)) : wave.boost,
+            wave.slowdown, this.giantWaveTuning ?? GIANT_WAVE_TUNING);
+        this.cartoonRig?.setGiantWaveLift(Math.min(1, Math.abs(poseSpeed) / Math.max(0.01, wave.boost))
+            * (this.giantWaveTuning ?? GIANT_WAVE_TUNING).height * 0.45);
         this._waveX = x; this._waveZ = z;
     }
 
@@ -742,8 +769,8 @@ export class Swimmer extends Component {
         if (!this._geyserHits.accepts(hitId, strength)) return false;
         const hitY = authorityStart?.y ?? this.node.position.y;
         const duration = authorityStart?.duration ?? (hitY < this._courseLayout.swimY - 0.08
-            ? GEYSER_TUNING.submergedFlightSeconds : GEYSER_TUNING.flightSeconds);
-        if (lateSeconds >= (strength === 1 ? GEYSER_TUNING.edgeSeconds : duration)) {
+            ? this.geyserTuning.submergedFlightSeconds : this.geyserTuning.flightSeconds);
+        if (lateSeconds >= (strength === 1 ? this.geyserTuning.edgeSeconds : duration)) {
             this._geyserHits.record(hitId, strength);
             return false;
         }
@@ -754,10 +781,10 @@ export class Swimmer extends Component {
         if (strength === 1 && this._forcedLaunchEdge > 0) return false;
         this._geyserHits.record(hitId, strength);
         if (strength === 1) {
-            this._forcedLaunchEdge = GEYSER_TUNING.edgeSeconds;
+            this._forcedLaunchEdge = this.geyserTuning.edgeSeconds;
             // 擦边只抑制短时间内重复减速，不能提供核心命中免疫。
             this._motor.setForcedLaunchPosition(this.distance, this._motor.lateralOffset,
-                this._motor.currentSpeed * GEYSER_TUNING.edgeSlowdownScale);
+                this._motor.currentSpeed * this.geyserTuning.edgeSlowdownScale);
             this._motor.applyCollisionPitchImpulse(0.35);
             return true;
         }
@@ -774,9 +801,9 @@ export class Swimmer extends Component {
             speed: authorityStart?.speed ?? this._motor.currentSpeed,
             heading: authorityStart?.heading ?? this._motor.heading,
             duration,
-            peakHeight: authorityStart?.peakHeight ?? GEYSER_TUNING.peakHeight,
-            entryScale: authorityStart?.entryScale ?? GEYSER_TUNING.entrySpeedScale,
-            exitScale: authorityStart?.exitScale ?? GEYSER_TUNING.exitSpeedScale,
+            peakHeight: authorityStart?.peakHeight ?? this.geyserTuning.peakHeight,
+            entryScale: authorityStart?.entryScale ?? this.geyserTuning.entrySpeedScale,
+            exitScale: authorityStart?.exitScale ?? this.geyserTuning.exitSpeedScale,
         };
         this._forcedLaunchAge = Math.max(0, Math.min(this._forcedLaunch.duration - 0.01, lateSeconds));
         this._forcedLaunchHitId = hitId;
@@ -833,7 +860,7 @@ export class Swimmer extends Component {
         }
         this._geyserHits.merge(serial, state.lane, state.edges, state.cores);
         const completedGrace = state.start && age >= state.start.duration
-            ? Math.max(0, GEYSER_TUNING.rehitGraceSeconds - (age - state.start.duration)) : 0;
+            ? Math.max(0, this.geyserTuning.rehitGraceSeconds - (age - state.start.duration)) : 0;
         this._forcedLaunchGrace = Math.max(this._forcedLaunchGrace, state.grace - late, completedGrace, 0);
         this._forcedLaunchEdge = Math.max(this._forcedLaunchEdge, state.edge - late, 0);
     }
@@ -1145,7 +1172,7 @@ export class Swimmer extends Component {
             this.updateMovementSpeed(phaseXBeforeStep, phaseZBeforeStep, dt);
             if (sample.done || distance >= courseEnd - 0.05) {
                 this._forcedLaunch = null;
-                this._forcedLaunchGrace = GEYSER_TUNING.rehitGraceSeconds;
+                this._forcedLaunchGrace = this.geyserTuning.rehitGraceSeconds;
                 this.node.setPosition(this.node.position.x, this._courseLayout.swimY, this.node.position.z);
                 this.cartoonRig?.triggerSplashBurst(0.85);
             }

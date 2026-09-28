@@ -6,21 +6,21 @@
     "sha256": "d68bafcb48a2707749396aa12bbbd833cb70401f3a9a689fd2902c7e0d295964",
     "license": "SIL Open Font License 1.1"
   },
-  "glyphHash": "5c19224d9ccf0ae74fae3106f0f3833c58925947c2debed3be33497302cd4c8e",
-  "glyphCount": 1598,
-  "scannedFileCount": 298,
+  "glyphHash": "cb9e06d4f95630f7c051582fa6e2219e33867bc5d91155ad37cb7271f384271c",
+  "glyphCount": 1602,
+  "scannedFileCount": 299,
   "outputs": [
     {
       "path": "assets/race/fonts/ShuiMasterUI-Regular.ttf",
       "weight": 400,
-      "bytes": 501152,
-      "sha256": "2358c4125e734067746be522ebbe1b627348e8f2096d4111208e21e55de2e7ac"
+      "bytes": 502104,
+      "sha256": "de37e16440aabaebabd0dd632e19fe483b352980a5fd120fdb3075b0e10b761f"
     },
     {
       "path": "assets/race/fonts/ShuiMasterUI-SemiBold.ttf",
       "weight": 600,
-      "bytes": 500760,
-      "sha256": "2a8a226a239ab9416ff0beb14b387d8776c6f6aeb6705364ed30bdde98e5ad13"
+      "bytes": 501708,
+      "sha256": "af5d2d6e690fa40786eb94bcef18a1028b80e7de88d20f48649a044b6ca4d27b"
     }
   ]
 }

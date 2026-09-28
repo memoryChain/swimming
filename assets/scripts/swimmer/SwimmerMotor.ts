@@ -156,11 +156,15 @@ export class SwimmerMotor {
     private _giantWaveTarget = 0;
     private _giantWaveMaximum = 0;
     private _giantWaveSlowdown = 0;
+    private _giantWaveTuning: Readonly<typeof GIANT_WAVE_TUNING> = GIANT_WAVE_TUNING;
     private readonly _giantWave = { speed: 0, average: 0, positiveAverage: 0, negativeAverage: 0 };
 
     /** 正值为助推速度；负值是阻力强度槽，按 maximum 归一化后作用于自身前进。 */
     get giantWaveSpeed(): number { return this._giantWave.speed; }
-    setGiantWaveTarget(target: number, maximum: number, slowdown = GIANT_WAVE_TUNING.oppositionSlowdown): void {
+    applyGiantWaveSpeed(speed: number): void { this._giantWave.speed = speed; }
+    setGiantWaveTarget(target: number, maximum: number, slowdown = GIANT_WAVE_TUNING.oppositionSlowdown,
+        tuning: Readonly<typeof GIANT_WAVE_TUNING> = GIANT_WAVE_TUNING): void {
+        this._giantWaveTuning = tuning;
         this._giantWaveMaximum = Math.max(0, maximum);
         this._giantWaveTarget = Math.max(-this._giantWaveMaximum, Math.min(this._giantWaveMaximum, target));
         this._giantWaveSlowdown = Math.max(0, Math.min(0.6, slowdown));
@@ -617,7 +621,7 @@ export class SwimmerMotor {
             * this._collisionPitch.forwardScale;
         let waveSpeed = 0, waveSlowdown = 0;
         if (this._giantWaveTarget !== 0 || this._giantWave.speed !== 0) {
-            advanceWaveBoost(this._giantWave.speed, this._giantWaveTarget, this._giantWaveMaximum, dt, this._giantWave);
+            advanceWaveBoost(this._giantWave.speed, this._giantWaveTarget, this._giantWaveMaximum, dt, this._giantWave, this._giantWaveTuning);
             waveSpeed = this._giantWave.positiveAverage;
             waveSlowdown = this._giantWaveSlowdown * Math.min(1,
                 this._giantWave.negativeAverage / Math.max(0.01, this._giantWaveMaximum));

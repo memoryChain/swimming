@@ -51,24 +51,30 @@ function heldStrokeFixture(ratio = 0.6, fixedSpeed = true) {
     return { ...h, motor, StrokeType, inputs, start };
 }
 
-test('七种娱乐强度参数登记在调参面板，并能保存、恢复默认和重新加载', () => {
+test('娱乐强度参数含巨浪五档，保存与重载会影响下一局实际规格', () => {
     const h = setup(); h.tuning.loadSavedTuningAsync(() => {});
     const controls = [...h.controls.keys()].filter(id => id.startsWith('entertainment.'));
-    assert.equal(controls.length, 114);
+    assert.equal(controls.filter(id => id.startsWith('entertainment.giantWave.level')).length, 20);
+    assert.equal(new Set(controls).size, controls.length);
     assert.ok(h.controls.has('entertainment.turtleBus.claimConfirmSeconds'));
     assert.ok(h.controls.has('entertainment.turtleBus.detachImpulseBoth'));
     const item = h.controls.get('entertainment.litter.level5.litterItemsPerWave');
     const shark = h.controls.get('entertainment.shark.level2.sharkSpeedScale');
+    const wave = h.controls.get('entertainment.giantWave.level1.widthOffset');
+    const waveRules = h.loadModule('core/GiantWaveRules');
+    assert.ok(Math.abs(waveRules.giantWaveSpec(1).widthFraction - .35) < 1e-8);
     assert.equal(item.get(), 15);
     assert.equal(shark.get(), .9);
-    item.set(12); shark.set(.82);
+    item.set(12); shark.set(.82); wave.set(-.15);
     assert.equal(h.tuning.saveCurrentTuning().ok, true);
     h.tuning.resetTuningToDefaults();
     assert.equal(item.get(), 15);
     assert.equal(shark.get(), .9);
+    assert.equal(wave.get(), -.2);
     h.tuning.loadSavedTuningAsync(() => {});
     assert.equal(item.get(), 12);
     assert.equal(shark.get(), .82);
+    assert.ok(Math.abs(waveRules.giantWaveSpec(1).widthFraction - .4) < 1e-8);
 });
 
 test('角色能力参数全量注册，保存重载保持值，现有实例读取新配置且不清比赛状态', () => {

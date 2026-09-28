@@ -5,7 +5,7 @@ import type { GeyserWorldState } from '../net/NetGeyserSnapshot';
 import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { GEYSER_TUNING, geyserBurstHeight, geyserBurstOverlap, geyserPhaseAt, geyserSpec, geyserPulseStart, geyserHitId,
     geyserSweptHit, planGeyserVents, type GeyserHitStrength,
-    type GeyserIntensity, type GeyserVent } from './GeyserBrawlRules';
+    type GeyserTuning, type GeyserIntensity, type GeyserVent } from './GeyserBrawlRules';
 import { GeyserBrawlPresentation } from './GeyserBrawlPresentation';
 
 /** 喷口时钟和权威命中；画面从相同时钟重建，不参与判定。 */
@@ -25,8 +25,10 @@ export class GeyserBrawlController {
         private readonly anchorDistance: number,
         private readonly onHit?: (lane: number, hitId: number, strength: 1 | 2,
             age: number, start: ForcedLaunchStart | null) => void,
+        private readonly tuning: GeyserTuning = GEYSER_TUNING,
     ) {
         this.spec = geyserSpec(intensity);
+        for (const swimmer of swimmers) if (swimmer) swimmer.geyserTuning = tuning;
         // 首排完整预警后可达，后排沿前进方向展开，不能固定往世界坐标正向排。
         const futureDistance = anchorDistance + 6;
         const anchorX = course.distanceToWorldX(futureDistance);
@@ -59,7 +61,7 @@ export class GeyserBrawlController {
         if (state.stoppedAt >= 0) this.stoppedAt = Math.min(this.stoppedAt, state.stoppedAt);
         // 恢复只推进表现和采样基线，不能补算断流期间经过的历史喷口。
         this.age = Math.min(this.spec.actionSeconds, Math.max(this.age, state.age + Math.max(0, lateSeconds)));
-        this.visual.update(this.vents, this.age, this.spec.pulseCount, this.stoppedAt);
+        this.visual.update(this.vents, this.age, this.spec.pulseCount, this.stoppedAt, this.tuning);
         this.capturePositions();
     }
 
@@ -68,7 +70,7 @@ export class GeyserBrawlController {
         this.age = Math.min(this.spec.actionSeconds,
             Number.isFinite(authoritativeAge) ? Math.max(this.age, authoritativeAge!)
                 : this.age + Math.max(0, Number.isFinite(dt) ? dt : 0));
-        this.visual.update(this.vents, this.age, this.spec.pulseCount, this.stoppedAt);
+        this.visual.update(this.vents, this.age, this.spec.pulseCount, this.stoppedAt, this.tuning);
         if (this.authoritative) this.resolveHits(previousAge, this.age);
         this.capturePositions();
     }
@@ -83,7 +85,7 @@ export class GeyserBrawlController {
         let nearest = 8;
         let target: number | null = null;
         for (const vent of this.vents) {
-            const phase = geyserPhaseAt(vent, this.age, this.spec.pulseCount);
+            const phase = geyserPhaseAt(vent, this.age, this.spec.pulseCount, this.tuning);
             if (phase !== 'warning' && phase !== 'burst') continue;
             if ((vent.x - x) * direction < -0.5) continue;
             const distance = Math.abs(x - vent.x);
@@ -116,14 +118,14 @@ export class GeyserBrawlController {
             let bestId = -1;
             for (const vent of this.vents) {
                 for (let pulse = 0; pulse < this.spec.pulseCount; pulse++) {
-                    if (geyserPulseStart(vent, pulse) > this.stoppedAt) continue;
-                    if (geyserBurstOverlap(vent, pulse, fromAge, toAge) <= 0) continue;
-                    const burstStart = geyserPulseStart(vent, pulse) + GEYSER_TUNING.warningSeconds;
+                    if (geyserPulseStart(vent, pulse, this.tuning) > this.stoppedAt) continue;
+                    if (geyserBurstOverlap(vent, pulse, fromAge, toAge, this.tuning) <= 0) continue;
+                    const burstStart = geyserPulseStart(vent, pulse, this.tuning) + this.tuning.warningSeconds;
                     const overlapStart = Math.max(fromAge, burstStart);
-                    const overlapEnd = Math.min(toAge, burstStart + GEYSER_TUNING.burstSeconds);
+                    const overlapEnd = Math.min(toAge, burstStart + this.tuning.burstSeconds);
                     const mid = Math.max(overlapStart,
-                        Math.min(overlapEnd, burstStart + GEYSER_TUNING.burstRiseSeconds));
-                    const height = geyserBurstHeight(vent, pulse, mid);
+                        Math.min(overlapEnd, burstStart + this.tuning.burstRiseSeconds));
+                    const height = geyserBurstHeight(vent, pulse, mid, this.tuning);
                     const topY = this.course.swimY - 1.4 + height * 2.7;
                     if (swimmer.node.position.y > topY + 0.35) continue;
                     const span = Math.max(0.00001, toAge - fromAge);
@@ -136,7 +138,7 @@ export class GeyserBrawlController {
                         fromX + (toX - fromX) * startRatio,
                         fromZ + (toZ - fromZ) * startRatio,
                         fromX + (toX - fromX) * endRatio,
-                        fromZ + (toZ - fromZ) * endRatio);
+                        fromZ + (toZ - fromZ) * endRatio, this.tuning);
                     if (strength > best) {
                         best = strength;
                         bestId = geyserHitId(this.serial, pulse, vent.id, lane);

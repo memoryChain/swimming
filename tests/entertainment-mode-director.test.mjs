@@ -89,7 +89,7 @@ test('娱乐模式每局抽取三到四个不重复事件，三类保底且场�
         assert.equal(new Set(events).size, events.length);
         assert.ok(events.filter(event => event === EntertainmentEventId.WHIRLPOOL
             || event === EntertainmentEventId.OBSTACLE
-            || event === EntertainmentEventId.GEYSER).length >= 1);
+            || event === EntertainmentEventId.GEYSER || event === EntertainmentEventId.GIANT_WAVE).length >= 1);
         assert.ok(events.filter(event => event === EntertainmentEventId.STIMULANT
             || event === EntertainmentEventId.TIMED_BOMB
             || event === EntertainmentEventId.TURTLE_BUS).length >= 1);
@@ -98,6 +98,7 @@ test('娱乐模式每局抽取三到四个不重复事件，三类保底且场�
         assert.notEqual(events.at(-1), EntertainmentEventId.MINEFIELD);
         assert.notEqual(events.at(-1), EntertainmentEventId.TURTLE_BUS);
         assert.notEqual(events.at(-1), EntertainmentEventId.GEYSER);
+        assert.notEqual(events.at(-1), EntertainmentEventId.GIANT_WAVE);
         assert.equal(events.includes(EntertainmentEventId.LITTER), false);
     }
     assert.deepEqual([...counts].sort(), [3, 4]);
@@ -191,6 +192,7 @@ test('融合后正式候选保持三类保底、抽取数量和场地事件非�
         EntertainmentEventId.WHIRLPOOL,
         EntertainmentEventId.OBSTACLE,
         EntertainmentEventId.GEYSER,
+        EntertainmentEventId.GIANT_WAVE,
     ]);
     const contestEvents = new Set([EntertainmentEventId.STIMULANT,
         EntertainmentEventId.TIMED_BOMB, EntertainmentEventId.TURTLE_BUS]);

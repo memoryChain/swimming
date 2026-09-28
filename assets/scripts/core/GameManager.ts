@@ -176,8 +176,9 @@ import { PERFORMANCE_CONFIG } from './PerformanceConfig';
 import { randomInt } from './SharedRNG';
 import { setTimeScale, scaledDelta, TIME_SCALE } from './TimeScale';
 import { GiantWaveController } from './GiantWaveController';
+import { ENTERTAINMENT_GIANT_WAVE_SECONDS } from './GiantWaveRules';
 import { GeyserBrawlController } from './GeyserBrawlController';
-import type { GeyserIntensity } from './GeyserBrawlRules';
+import { geyserSpec, geyserTuningForRace, type GeyserIntensity } from './GeyserBrawlRules';
 import { setRaceMode } from './GameBalance';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { RaceEventPictureInPictureCamera } from '../camera/RaceEventPictureInPictureCamera';
@@ -244,6 +245,7 @@ function entertainmentActiveBannerCategory(event: EntertainmentEventId): Enterta
         case EntertainmentEventId.SHARK: return '玩具冲撞';
         case EntertainmentEventId.LITTER: return '赛道异物';
         case EntertainmentEventId.GEYSER: return '喷泉来袭';
+        case EntertainmentEventId.GIANT_WAVE: return '巨浪冲浪';
         default: return '广播通知';
     }
 }
@@ -831,7 +833,7 @@ export class GameManager extends Component {
         this.updateEntertainmentMode(this._netSession ? netDt : dt);
         this.updateStimulantBrawl(dt);
         this.updateWhirlpoolBrawl(dt);
-        this.updateGiantWave(dt);
+        this.updateGiantWave(this._netSession ? netDt : dt);
         this.updateGeyserBrawl(this._netSession ? netDt : dt);
         this.updateEntertainmentRecovery(this._netSession ? netDt : dt);
         this.updateCannonBrawl(dt);
@@ -1703,6 +1705,9 @@ export class GameManager extends Component {
     }
 
     private setupEntertainmentMode() {
+        const geyserTuning = geyserTuningForRace(!!this._netSession);
+        if (this._playerSwimmer) this._playerSwimmer.geyserTuning = geyserTuning;
+        for (const swimmer of this._aiSwimmers) swimmer.geyserTuning = geyserTuning;
         this._geyserNetWorld = null;
         this._pendingGeyserNetState = null;
         this._debugEntertainmentProfiles = null;
@@ -1762,8 +1767,10 @@ export class GameManager extends Component {
                         return Math.max(8, count * 3 + 3);
                     }
                     if (event === EntertainmentEventId.GEYSER) {
-                        return getAiDebugSetup().entertainmentIntensity >= 4 ? 15 : 10;
+                        return geyserSpec(getAiDebugSetup().entertainmentEventIntensities?.[event]
+                            ?? getAiDebugSetup().entertainmentIntensity ?? 2).actionSeconds;
                     }
+                    if (event === EntertainmentEventId.GIANT_WAVE) return ENTERTAINMENT_GIANT_WAVE_SECONDS;
                     return 10;
                 } : undefined,
                 debugIntensity ? entertainmentTestCombinationEvents(
@@ -1806,9 +1813,13 @@ export class GameManager extends Component {
             const transition = director.applySnapshot(state as import('./EntertainmentModeDirector').EntertainmentDirectorState);
             if (!transition.snapshotAccepted) return false;
             this.handleEntertainmentDirectorTransition(transition);
+            if (director.currentEvent() === EntertainmentEventId.GIANT_WAVE && this._giantWave
+                && isEntertainmentEventBurstActive(EntertainmentEventId.GIANT_WAVE)) {
+                this._giantWave.syncEventAge(Math.max(0, ENTERTAINMENT_GIANT_WAVE_SECONDS - director.secondsRemaining()));
+            }
             if (director.currentEvent() === EntertainmentEventId.GEYSER && this._geyserBrawl) {
                 const duration = this.gradedEntertainmentStage(EntertainmentEventId.GEYSER)?.durationSeconds
-                    ?? (this._aiDebugMode && getAiDebugSetup().entertainmentIntensity >= 4 ? 15 : 10);
+                    ?? this._geyserBrawl.spec.actionSeconds;
                 this._geyserBrawl.update(0, Math.max(0, duration - director.secondsRemaining()));
             }
             if (director.phaseId() === EntertainmentDirectorPhase.CLOSING) {
@@ -1933,6 +1944,7 @@ export class GameManager extends Component {
             return this._turtleBus?.isDone ?? false;
         }
         if (event === EntertainmentEventId.GEYSER) return this._geyserBrawl?.isDone ?? true;
+        if (event === EntertainmentEventId.GIANT_WAVE) return this._giantWave?.isDone ?? true;
         return true;
     }
 
@@ -2019,6 +2031,10 @@ export class GameManager extends Component {
             if (this._netSession && this._geyserBrawl) this._geyserNetWorld = this._geyserBrawl.snapshotWorld(false);
             this._geyserBrawl?.dispose();
             this._geyserBrawl = null;
+        } else if (transition.finishedEvent === EntertainmentEventId.GIANT_WAVE
+            && !isEntertainmentEventBurstActive(EntertainmentEventId.GIANT_WAVE)) {
+            this._giantWave?.dispose();
+            this._giantWave = null;
         }
     }
 
@@ -2088,6 +2104,9 @@ export class GameManager extends Component {
             case EntertainmentEventId.GEYSER:
                 this.createGeyserBrawl(anchorDistance);
                 break;
+            case EntertainmentEventId.GIANT_WAVE:
+                this.createEntertainmentGiantWave(playActivationEntrance);
+                break;
         }
     }
 
@@ -2128,6 +2147,9 @@ export class GameManager extends Component {
                     break;
                 case EntertainmentEventId.TURTLE_BUS:
                     if (!this._turtleBus) this.createTurtleBus(true);
+                    break;
+                case EntertainmentEventId.GIANT_WAVE:
+                    if (!this._giantWave) this.createEntertainmentGiantWave(false);
                     break;
             }
         }
@@ -2477,6 +2499,11 @@ export class GameManager extends Component {
     }
 
     private updateGiantWave(dt: number): void {
+        if (this._entertainmentDirector && isEntertainmentEventBurstActive(EntertainmentEventId.GIANT_WAVE)
+            && !this._modelDebugFlow?.active) {
+            this._giantWave?.update(dt, this._state === GameState.RACING, this.activePlayerAutopilot());
+            return;
+        }
         if (!this._aiDebugMode || this._netSession || getRaceDifficultyConfig().id !== 'giant-wave-brawl'
             || this._modelDebugFlow?.active) {
             if (this._giantWave) {
@@ -2490,9 +2517,30 @@ export class GameManager extends Component {
             this._giantWave = new GiantWaveController(this._worldRoot, this._raceHud, COURSE_LAYOUT,
                 [this._playerSwimmer, ...this._aiSwimmers], this._aiControllers,
                 getAiDebugSetup().seed, getAiDebugSetup().giantWavePreset ?? 'three',
-                this._entertainmentEventBanner, this._eventPictureInPicture);
+                this._entertainmentEventBanner, this._eventPictureInPicture,
+                getAiDebugSetup().entertainmentIntensity ?? 3, getRaceDistance());
         }
         this._giantWave?.update(dt, this._state === GameState.RACING, this.activePlayerAutopilot());
+    }
+
+    private createEntertainmentGiantWave(playEntrance: boolean): void {
+        this._giantWave?.dispose();
+        this._giantWave = null;
+        if (!this._worldRoot?.isValid || !this._raceHud?.isValid || !this._playerSwimmer) return;
+        const director = this._entertainmentDirector;
+        if (!director || !isEntertainmentEventBurstActive(EntertainmentEventId.GIANT_WAVE)) return;
+        const serial = director.snapshot().activationSerial;
+        const intensity = this.gradedEntertainmentStage(EntertainmentEventId.GIANT_WAVE)?.intensity
+            ?? (this._aiDebugMode ? getAiDebugSetup().entertainmentEventIntensities?.[EntertainmentEventId.GIANT_WAVE]
+                ?? getAiDebugSetup().entertainmentIntensity : undefined) ?? 3;
+        this._giantWave = new GiantWaveController(this._worldRoot, this._raceHud, COURSE_LAYOUT,
+            [this._playerSwimmer, ...this._aiSwimmers], this._aiControllers,
+            (getSharedRandomSeed() ^ Math.imul(serial, 0x57415645)) >>> 0, 'single',
+            this._entertainmentEventBanner, this._eventPictureInPicture, intensity, getRaceDistance(), true,
+            index => !this._netSession || index === 0
+                || (!!this._netRaceController?.isHost && !this._aiControllers[index - 1]?.remoteDriven));
+        this._giantWave.syncEventAge(playEntrance ? 0
+            : Math.max(0, ENTERTAINMENT_GIANT_WAVE_SECONDS - director.secondsRemaining()), playEntrance);
     }
 
     private createGeyserBrawl(anchorDistance: number, serialOverride?: number, intensityOverride?: GeyserIntensity): void {
@@ -2500,6 +2548,8 @@ export class GameManager extends Component {
         this._geyserBrawl = null;
         if (!this._worldRoot?.isValid) return;
         const intensity = (intensityOverride ?? this.gradedEntertainmentStage(EntertainmentEventId.GEYSER)?.intensity
+            ?? (this._aiDebugMode && isEntertainmentBrawlMode()
+                ? getAiDebugSetup().entertainmentEventIntensities?.[EntertainmentEventId.GEYSER] : undefined)
             ?? (this._aiDebugMode ? getAiDebugSetup().entertainmentIntensity : null) ?? 2) as GeyserIntensity;
         const swimmers: (Swimmer | null)[] = [];
         for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) swimmers.push(this.swimmerForLane(lane));
@@ -2510,12 +2560,12 @@ export class GameManager extends Component {
                 this.showGeyserHitFeedback(lane, strength);
                 this._netRaceController?.enqueueGeyserHit(
                     hitId, lane, strength, this._raceManager?.elapsedSeconds ?? 0, start);
-            });
+            }, geyserTuningForRace(!!this._netSession));
         this._geyserBrawl.setAuthority(!this._netRaceController || this._netRaceController.isHost);
         if (this._netSession) this._geyserNetWorld = this._geyserBrawl.snapshotWorld();
         if (this._entertainmentDirector) {
             const duration = this.gradedEntertainmentStage(EntertainmentEventId.GEYSER)?.durationSeconds
-                ?? (this._aiDebugMode ? intensity >= 4 ? 15 : 10 : 10);
+                ?? this._geyserBrawl.spec.actionSeconds;
             const elapsed = Math.max(0, duration - this._entertainmentDirector.secondsRemaining());
             if (elapsed > 0) this._geyserBrawl.update(0, elapsed);
         }
@@ -4757,6 +4807,7 @@ export class GameManager extends Component {
                         conditionHeartRate: swimmer.heartRate,
                         conditionDepletionCooldown: aiCondition?.depletionCooldownRemaining ?? -1,
                         calmSlushRemaining: swimmer.motor.calmSlushRemaining,
+                        giantWaveCode: swimmer.netGiantWaveCode,
                         draftingSource: swimmer.draftingSource,
                         draftingEligible: !!this._drafting?.active && swimmer.draftingEligible,
                     });
@@ -4827,6 +4878,7 @@ export class GameManager extends Component {
             let targetPitchVelocity: number;
             let targetSoftness: NetSnapshotEntry['collisionSoftness'];
             let targetAbility: NetSnapshotEntry['abilityState'];
+            let targetGiantWave: number;
             let targetFinished: boolean;
             let distBlend: number;
             let latBlend: number;
@@ -4843,6 +4895,7 @@ export class GameManager extends Component {
                 targetPitchVelocity = self.collisionPitchVelocity;
                 targetSoftness = self.collisionSoftness;
                 targetAbility = self.abilityState;
+                targetGiantWave = self.giantWaveCode ?? 0;
                 targetFinished = self.finished;
                 distBlend = 0.4;
                 latBlend = 0.4;
@@ -4863,6 +4916,7 @@ export class GameManager extends Component {
                 targetPitchVelocity = target.collisionPitchVelocity;
                 targetSoftness = target.collisionSoftness;
                 targetAbility = target.abilityState;
+                targetGiantWave = target.giantWaveCode ?? 0;
                 targetFinished = target.finished;
                 distBlend = 0.2;
                 latBlend = 0.25;
@@ -4892,6 +4946,7 @@ export class GameManager extends Component {
             if (isHuman || !this._netRaceController.isHost) {
                 swimmer.applyNetCollisionSoftness(targetSoftness);
                 swimmer.applyNetAbilityState(targetAbility, isHuman);
+                swimmer.applyNetGiantWave(targetGiantWave);
             }
             // Drive the tread-water<->freestyle pose from the owner's authoritative speed
             // so a corrected-forward copy can't be stuck in the vertical tread pose.
@@ -4999,6 +5054,7 @@ export class GameManager extends Component {
             conditionEnergyRatio: this._playerCondition.energyRatio,
             conditionHeartRate: player.heartRate,
             calmSlushRemaining: player.motor.calmSlushRemaining,
+            giantWaveCode: player.netGiantWaveCode,
             draftingSource: player.draftingSource,
             draftingEligible: !!this._drafting?.active && player.draftingEligible,
         };
@@ -5784,6 +5840,9 @@ export class GameManager extends Component {
 
     private buildEntertainmentIntensityDebugHud(raceHud: Node, width: number, height: number): void {
         if (!this._aiDebugMode || this._netSession || getAiDebugSetup().entertainmentIntensity == null) return;
+        const mode = getRaceDifficultyConfig().id;
+        // 三种新单项尚未使用旧事件统计表，不能显示永远停在“准备中”的统计条。
+        if (mode === 'giant-wave-brawl' || mode === 'geyser-brawl' || mode === 'turtle-bus-brawl') return;
         this._intensityDebugHud.build(raceHud, width, height);
     }
 
@@ -5797,6 +5856,18 @@ export class GameManager extends Component {
         }
         if (event === null) event = this._intensityDebugHud.previousEvent();
         if (event === null) return;
+        if (event === EntertainmentEventId.TURTLE_BUS) {
+            this._intensityDebugHud.presentSummary(event, '海龟班车 · 固定四圈 · 可搭乘省体，也会挤开选手');
+            return;
+        }
+        if (event === EntertainmentEventId.GEYSER || event === EntertainmentEventId.GIANT_WAVE) {
+            const level = getAiDebugSetup().entertainmentEventIntensities?.[event] ?? 3;
+            const spec = geyserSpec(level);
+            this._intensityDebugHud.presentSummary(event, event === EntertainmentEventId.GEYSER
+                ? `喷泉 ${level}档 · ${spec.ventCount}个喷口 · 每口${spec.pulseCount}轮`
+                : `巨浪 ${level}档 · 本次一波 · 顺浪借力，迎浪绕行`);
+            return;
+        }
         const profile = this.debugEntertainmentProfile(event);
         if (!profile) return;
         const longRace = getRaceDistance() >= 400;

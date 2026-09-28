@@ -11,6 +11,9 @@ export type MainGameLaunchMode = 'race' | 'model-debug' | 'ai-debug' | 'underwat
 
 export interface AiDebugSetup {
     giantWavePreset?: 'three' | 'single';
+    /** 两个新单项各自记住选择；开赛仍由 entertainmentIntensity 传递本局有效档位。 */
+    giantWaveIntensity?: EntertainmentIntensity;
+    geyserIntensity?: EntertainmentIntensity;
     characterId: PlayerCharacterId;
     level: number;
     mode: RaceModeId;
@@ -30,7 +33,7 @@ export interface AiDebugSetup {
 const pendingAiDebugSetup: AiDebugSetup = { characterId: 'cartonSwimmer6', level: 1, mode: 'beginner', seed: 20260913,
     opponentCount: 7, mixedCharacters: true, whirlpoolSelection: 'random', entertainmentIntensity: null,
     entertainmentRaceGrade: 3,
-    entertainmentEventIntensities: [3, 3, 3, 3, 3, 3, 3], entertainmentTestCombination: null,
+    entertainmentEventIntensities: [3, 3, 3, 3, 3, 3, 3, 1, 3, 3], entertainmentTestCombination: null,
     obstacleLayout: 'mixed', raceDistance: 200 };
 export function getAiDebugSetup(): Readonly<AiDebugSetup> { return pendingAiDebugSetup; }
 
@@ -48,6 +51,12 @@ export function setEntertainmentRaceGrade(value: number): void {
 }
 export function setAiDebugSetup(setup: AiDebugSetup) {
     pendingAiDebugSetup.giantWavePreset = setup.giantWavePreset === 'single' ? 'single' : 'three';
+    pendingAiDebugSetup.giantWaveIntensity = (setup.mode === 'giant-wave-brawl'
+        ? normalizeEntertainmentIntensity(setup.entertainmentIntensity) : null)
+        ?? normalizeEntertainmentIntensity(setup.giantWaveIntensity) ?? pendingAiDebugSetup.giantWaveIntensity ?? 3;
+    pendingAiDebugSetup.geyserIntensity = (setup.mode === 'geyser-brawl'
+        ? normalizeEntertainmentIntensity(setup.entertainmentIntensity) : null)
+        ?? normalizeEntertainmentIntensity(setup.geyserIntensity) ?? pendingAiDebugSetup.geyserIntensity ?? 2;
     pendingAiDebugSetup.characterId = setup.characterId;
     pendingAiDebugSetup.level = Number.isFinite(setup.level) ? Math.max(1, Math.min(30, Math.floor(setup.level))) : 1;
     const oldBuoyMode = setup.mode === 'minefield-brawl';
@@ -59,9 +68,12 @@ export function setAiDebugSetup(setup: AiDebugSetup) {
     pendingAiDebugSetup.whirlpoolSelection = setup.whirlpoolSelection === 'normal' || setup.whirlpoolSelection === 'super'
         ? setup.whirlpoolSelection
         : 'random';
-    pendingAiDebugSetup.entertainmentIntensity = normalizeEntertainmentIntensity(setup.entertainmentIntensity);
+    pendingAiDebugSetup.entertainmentIntensity = setup.mode === 'turtle-bus-brawl' ? null
+        : setup.mode === 'giant-wave-brawl' ? pendingAiDebugSetup.giantWaveIntensity
+        : setup.mode === 'geyser-brawl' ? pendingAiDebugSetup.geyserIntensity
+        : normalizeEntertainmentIntensity(setup.entertainmentIntensity);
     pendingAiDebugSetup.entertainmentRaceGrade = normalizeEntertainmentRaceGrade(setup.entertainmentRaceGrade) ?? 3;
-    pendingAiDebugSetup.entertainmentEventIntensities = Array.from({ length: 7 }, (_, index) =>
+    pendingAiDebugSetup.entertainmentEventIntensities = Array.from({ length: 10 }, (_, index) => index === 7 ? 1 :
         normalizeEntertainmentIntensity(setup.entertainmentEventIntensities?.[index]) ?? 3);
     pendingAiDebugSetup.entertainmentTestCombination = ENTERTAINMENT_TEST_COMBINATIONS.find(
         preset => preset.id === setup.entertainmentTestCombination)?.id ?? null;

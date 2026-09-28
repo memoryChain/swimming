@@ -24,7 +24,7 @@ const Subject = vm.runInNewContext(ts.transpileModule(`class Subject { ${methods
 }).outputText, { GEYSER_TUNING: rules.GEYSER_TUNING, getRaceDistance: () => 200,
     StrokeType: { LEFT: 0, RIGHT: 1 } });
 
-function fixture(direction = 1, intensity = 1) {
+function fixture(direction = 1, intensity = 1, networked = false) {
     const course = { startX: direction > 0 ? 0 : 50, finishX: direction > 0 ? 50 : 0,
         swimY: 0, poolWidth: 21, direction,
         distanceToWorldX(d) { return this.startX + direction * d; },
@@ -42,9 +42,38 @@ function fixture(direction = 1, intensity = 1) {
     s.node.setPosition = (x, y, z) => Object.assign(s.node.position, { x, y, z });
     const hits = [];
     const controller = new GeyserBrawlController({}, course, [s], 1927, 1, intensity, 0,
-        (_lane, id, strength) => hits.push({ id, strength }));
+        (_lane, id, strength) => hits.push({ id, strength }), rules.geyserTuningForRace(networked));
     return { s, hits, controller, course };
 }
+
+test('联机喷泉隔离私人调参，判定、表现时序及擦边惩罚使用同一固定规格', () => {
+    const defaults = { ...rules.GEYSER_TUNING };
+    const fixed = rules.geyserTuningForRace(true);
+    try {
+        rules.GEYSER_TUNING.burstSeconds = .35;
+        rules.GEYSER_TUNING.coreRadius = .3;
+        rules.GEYSER_TUNING.edgeSlowdownScale = .5;
+        rules.GEYSER_TUNING.flightSeconds = 1.6;
+        const host = fixture(1, 1, true), solo = fixture();
+        for (const f of [host, solo]) {
+            f.s.distance = f.controller.vents[0].x;
+            f.s.motor.lateralOffset = f.controller.vents[0].z;
+            f.controller.setAuthority(false);
+            f.controller.update(2.1);
+            f.controller.setAuthority(true);
+            f.controller.update(.01);
+        }
+        assert.equal(host.hits[0]?.strength, 2, '联机此刻仍在喷发');
+        assert.equal(solo.hits.length, 0, '单机沿用调短后的喷发时间');
+        assert.equal(host.s._forcedLaunch.duration, fixed.flightSeconds);
+        assert.equal(rules.geyserPhaseAt(host.controller.vents[0], 2.1, 2, fixed), 'burst');
+        assert.equal(rules.geyserPhaseAt(host.controller.vents[0], 2.1, 2), 'falling');
+        const remote = fixture(1, 1, true).s;
+        assert.equal(remote.applyGeyserHit(1001, 1, 0, null, true), true);
+        assert.equal(remote.motor.currentSpeed, 3 * fixed.edgeSlowdownScale);
+        assert.equal(fixture().s.geyserTuning, rules.GEYSER_TUNING);
+    } finally { Object.assign(rules.GEYSER_TUNING, defaults); }
+});
 
 test('正常游速从外圈连续游入中心，正反向和不同帧率都能打断腾空', () => {
     for (const direction of [1, -1]) for (const fps of [15, 30, 60, 120]) for (const speed of [2.5, 3, 3.4]) {

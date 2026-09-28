@@ -23,13 +23,108 @@ function face(dir, scale = 1) {
     throw new Error('缺少随机方向覆盖');
 }
 
-test('独立模式隐藏于公开入口，正式事件池仍为七项', () => {
+test('巨浪保留独立调试入口，同时进入综合事件池', () => {
     assert.equal(B.getRaceModeConfig('giant-wave-brawl').publicEntry, false);
     assert.equal(B.getRaceDistance('giant-wave-brawl'), 200);
     assert.equal(B.PUBLIC_RACE_MODE_OPTIONS.some(x => x.id === 'giant-wave-brawl'), false);
     const D = load('core/EntertainmentModeDirector');
+    assert.equal(D.EntertainmentEventId.GIANT_WAVE, 9);
     for (let seed = 0; seed < 100; seed++) for (const distance of [200, 400])
-        assert.ok(D.buildEntertainmentEventOrder(seed, distance).every(id => id <= 6));
+        assert.ok(D.buildEntertainmentEventOrder(seed, distance).every(id => D.ENTERTAINMENT_SELECTABLE_EVENTS.includes(id)));
+});
+
+test('五档真实穿浪轨迹的迎浪损失递增，各档保留绕行空间且顺浪收益不被抬高', () => {
+    const base = R.giantWaveSpec(3);
+    for (const dir of [-1, 1]) for (const fps of [30, 60, 120]) {
+        let previousLoss = 0;
+        for (let level = 1; level <= 5; level++) {
+            let sim;
+            for (let seed = 1; seed < 100; seed++) {
+                sim = new R.GiantWaveSimulation(50, 0, 50, 20, seed, 'single', 50, level);
+                sim.update(.01, [sample()], false);
+                if (sim.state.direction === dir) break;
+            }
+            const s = spawn(sim);
+            assert.equal(s.boost, base.boostSpeed);
+            assert.equal(s.speed, base.travelSpeed);
+            assert.equal(sim.spec.previewSeconds, base.previewSeconds);
+            assert.ok(s.width / sim.poolWidth <= .8);
+            const left = s.z - s.width / 2, right = s.z + s.width / 2;
+            const escapeZ = left + 10 > 10 - right ? left - .7 : right + .7;
+            assert.ok(Math.abs(escapeZ) <= 9.45, '至少一侧可容纳完整泳者');
+            let x = dir > 0 ? 36 : 14, oldX = x, loss = 0;
+            const out = { speed: 0, average: 0 };
+            for (let i = 0; i < fps * 15; i++) {
+                sim.update(1 / fps, [], false);
+                assert.equal(R.waveWeight(s, s.x, escapeZ, -dir), 0);
+                const weight = R.sweptWaveWeight(s, x, s.z, oldX, s.z, -dir, 1 / fps);
+                R.advanceWaveBoost(out.speed, s.boost * weight, s.boost, 1 / fps, out);
+                const reduction = 3 * s.slowdown * out.negativeAverage / s.boost;
+                loss += reduction / fps;
+                oldX = x; x -= dir * (3 - reduction) / fps;
+            }
+            assert.ok(loss > previousLoss + .015, `${dir}/${fps}/${level}: ${loss} <= ${previousLoss}`);
+            previousLoss = loss;
+        }
+    }
+});
+
+test('综合单波绕过独立首泳段排期，按导演年龄静默恢复且拒绝倒退，正式配置隔离私有调参', () => {
+    const original = R.GIANT_WAVE_TUNING.travelSpeed;
+    try {
+        R.GIANT_WAVE_TUNING.travelSpeed = 1;
+        for (let level = 1; level <= 5; level++) {
+            const host = new R.GiantWaveSimulation(50, -2, 52, 21, 76, 'single', 50, level, 400, true);
+            host.seekEvent(0);
+            assert.equal(host.state.phase, 'active');
+            assert.equal(host.state.speed, 4.2);
+            assert.equal(host.previews, 0);
+            host.seekEvent(7.3);
+            const guest = new R.GiantWaveSimulation(50, -2, 52, 21, 76, 'single', 50, level, 400, true);
+            guest.seekEvent(7.3);
+            assert.deepEqual(guest.state, host.state);
+            guest.seekEvent(3);
+            assert.deepEqual(guest.state, host.state);
+            guest.seekEvent(20);
+            assert.equal(guest.state.phase, 'complete');
+            guest.seekEvent(1);
+            assert.equal(guest.state.phase, 'complete');
+            assert.ok(R.waveDuration(host.state) < R.ENTERTAINMENT_GIANT_WAVE_SECONDS);
+        }
+    } finally { R.GIANT_WAVE_TUNING.travelSpeed = original; }
+});
+
+test('巨浪档位与生成参数开局冻结，异档或异规格快照不能恢复', () => {
+    const original = R.GIANT_WAVE_TUNING.widthFraction;
+    const a = new R.GiantWaveSimulation(50, 0, 50, 20, 17, 'single', 50, 2);
+    try {
+        R.GIANT_WAVE_TUNING.widthFraction = .65;
+        const b = new R.GiantWaveSimulation(50, 0, 50, 20, 17, 'single', 50, 2);
+        const c = new R.GiantWaveSimulation(50, 0, 50, 20, 17, 'single', 50, 4);
+        spawn(a); spawn(b); spawn(c);
+        assert.ok(a.state.width < b.state.width);
+        assert.equal(b.restore(a.snapshot()), false);
+        assert.equal(c.restore(b.snapshot()), false);
+        assert.equal(a.restore(a.snapshot()), true);
+    } finally { R.GIANT_WAVE_TUNING.widthFraction = original; }
+});
+
+test('全程预设覆盖200米三波与400米七波，单波定位不改变所选单波强度', () => {
+    for (const distance of [200, 400]) for (const level of [1, 3, 5]) {
+        const sim = new R.GiantWaveSimulation(50, 0, 50, 20, 17, 'three', 50, level, distance);
+        const seen = new Set();
+        for (let i = 0; i < distance * 60; i++) {
+            const d = i / 60;
+            sim.update(1 / 60, [sample(d)], d >= distance);
+            if (sim.state.phase === 'active') seen.add(sim.state.wave);
+        }
+        assert.equal(seen.size, distance === 200 ? 3 : 7);
+        const solo = new R.GiantWaveSimulation(50, 0, 50, 20, 17, 'single', 50, level, distance);
+        assert.equal(solo.maxWaves, 1);
+        assert.deepEqual(solo.spec, sim.spec);
+        const restored = new R.GiantWaveSimulation(50, 0, 50, 20, 17, 'three', 50, level, distance);
+        assert.equal(restored.restore(sim.snapshot()), true);
+    }
 });
 
 test('同种子换人群位置、人数、朝向、游速与资格，预告和实际浪的方向范围速度完全相同', () => {

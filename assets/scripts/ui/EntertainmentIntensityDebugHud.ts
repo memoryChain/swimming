@@ -36,6 +36,11 @@ export class EntertainmentIntensityDebugHud {
     }
 
     previousEvent(): EntertainmentEventId | null { return this.event; }
+    presentSummary(event: EntertainmentEventId, text: string): void {
+        if (!this.label?.node?.activeInHierarchy) return;
+        if (this.event !== event) { this.event = event; this.peak = 0; }
+        if (this.label.string !== text) this.label.string = text;
+    }
 
     present(event: EntertainmentEventId, level: EntertainmentIntensity,
         name: string, planned: number, actual: number, active: number, cancelled: number): void {

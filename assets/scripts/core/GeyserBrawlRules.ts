@@ -25,6 +25,13 @@ export const GEYSER_TUNING = {
     rehitGraceSeconds: 0.8,
 };
 
+export type GeyserTuning = Readonly<typeof GEYSER_TUNING>;
+// 同协议联机采用固定规则；单机调参仍使用原对象。
+const GEYSER_NET_TUNING: GeyserTuning = Object.freeze({ ...GEYSER_TUNING });
+export function geyserTuningForRace(networked: boolean): GeyserTuning {
+    return networked ? GEYSER_NET_TUNING : GEYSER_TUNING;
+}
+
 export type GeyserSpec = Readonly<{
     ventCount: number;
     pulseCount: number;
@@ -87,49 +94,49 @@ export function geyserSpec(level: GeyserIntensity): GeyserSpec {
     return SPECS[level - 1] ?? SPECS[0];
 }
 
-export function geyserCycleSeconds(): number {
-    return GEYSER_TUNING.warningSeconds + GEYSER_TUNING.burstSeconds
-        + GEYSER_TUNING.fallingSeconds + GEYSER_TUNING.restSeconds;
+export function geyserCycleSeconds(tuning: GeyserTuning = GEYSER_TUNING): number {
+    return tuning.warningSeconds + tuning.burstSeconds
+        + tuning.fallingSeconds + tuning.restSeconds;
 }
 
-export function geyserPulseStart(vent: GeyserVent, pulseIndex: number): number {
-    return vent.offsetSeconds + pulseIndex * geyserCycleSeconds();
+export function geyserPulseStart(vent: GeyserVent, pulseIndex: number, tuning: GeyserTuning = GEYSER_TUNING): number {
+    return vent.offsetSeconds + pulseIndex * geyserCycleSeconds(tuning);
 }
 
-export function geyserPhaseAt(vent: GeyserVent, age: number, pulseCount: number): GeyserPulsePhase {
+export function geyserPhaseAt(vent: GeyserVent, age: number, pulseCount: number, tuning: GeyserTuning = GEYSER_TUNING): GeyserPulsePhase {
     if (!Number.isFinite(age) || age < vent.offsetSeconds) return 'waiting';
-    const cycle = geyserCycleSeconds();
+    const cycle = geyserCycleSeconds(tuning);
     const pulse = Math.floor((age - vent.offsetSeconds) / cycle);
     if (pulse >= pulseCount) return 'done';
-    const local = age - geyserPulseStart(vent, pulse) + 1e-8;
-    if (local < GEYSER_TUNING.warningSeconds) return 'warning';
-    if (local < GEYSER_TUNING.warningSeconds + GEYSER_TUNING.burstSeconds) return 'burst';
-    if (local < GEYSER_TUNING.warningSeconds + GEYSER_TUNING.burstSeconds
-        + GEYSER_TUNING.fallingSeconds) return 'falling';
+    const local = age - geyserPulseStart(vent, pulse, tuning) + 1e-8;
+    if (local < tuning.warningSeconds) return 'warning';
+    if (local < tuning.warningSeconds + tuning.burstSeconds) return 'burst';
+    if (local < tuning.warningSeconds + tuning.burstSeconds
+        + tuning.fallingSeconds) return 'falling';
     return pulse + 1 >= pulseCount ? 'done' : 'rest';
 }
 
-export function geyserPulseIndex(vent: GeyserVent, age: number): number {
-    return Math.max(0, Math.floor((age - vent.offsetSeconds) / geyserCycleSeconds()));
+export function geyserPulseIndex(vent: GeyserVent, age: number, tuning: GeyserTuning = GEYSER_TUNING): number {
+    return Math.max(0, Math.floor((age - vent.offsetSeconds) / geyserCycleSeconds(tuning)));
 }
 
 export function geyserBurstOverlap(vent: GeyserVent, pulse: number,
-    fromAge: number, toAge: number): number {
-    const burstStart = geyserPulseStart(vent, pulse) + GEYSER_TUNING.warningSeconds;
-    const burstEnd = burstStart + GEYSER_TUNING.burstSeconds;
+    fromAge: number, toAge: number, tuning: GeyserTuning = GEYSER_TUNING): number {
+    const burstStart = geyserPulseStart(vent, pulse, tuning) + tuning.warningSeconds;
+    const burstEnd = burstStart + tuning.burstSeconds;
     return Math.max(0, Math.min(toAge, burstEnd) - Math.max(fromAge, burstStart));
 }
 
 /** 水柱从池底上升；归一化高度可供玩法和表现同时消费。 */
-export function geyserBurstHeight(vent: GeyserVent, pulse: number, age: number): number {
-    const burstAge = age - geyserPulseStart(vent, pulse) - GEYSER_TUNING.warningSeconds;
-    if (burstAge < 0 || burstAge >= GEYSER_TUNING.burstSeconds) return 0;
-    return Math.min(1, burstAge / GEYSER_TUNING.burstRiseSeconds);
+export function geyserBurstHeight(vent: GeyserVent, pulse: number, age: number, tuning: GeyserTuning = GEYSER_TUNING): number {
+    const burstAge = age - geyserPulseStart(vent, pulse, tuning) - tuning.warningSeconds;
+    if (burstAge < 0 || burstAge >= tuning.burstSeconds) return 0;
+    return Math.min(1, burstAge / tuning.burstRiseSeconds);
 }
 
 /** 只检查 XZ 中心距离；半径已经包含人物躯干近似体积。 */
 export function geyserSweptHit(vent: GeyserVent,
-    fromX: number, fromZ: number, toX: number, toZ: number): GeyserHitStrength {
+    fromX: number, fromZ: number, toX: number, toZ: number, tuning: GeyserTuning = GEYSER_TUNING): GeyserHitStrength {
     const dx = toX - fromX;
     const dz = toZ - fromZ;
     const lengthSq = dx * dx + dz * dz;
@@ -138,8 +145,8 @@ export function geyserSweptHit(vent: GeyserVent,
     const offsetX = fromX + dx * ratio - vent.x;
     const offsetZ = fromZ + dz * ratio - vent.z;
     const distanceSq = offsetX * offsetX + offsetZ * offsetZ;
-    return distanceSq <= GEYSER_TUNING.coreRadius ** 2 ? 2
-        : distanceSq <= GEYSER_TUNING.edgeRadius ** 2 ? 1 : 0;
+    return distanceSq <= tuning.coreRadius ** 2 ? 2
+        : distanceSq <= tuning.edgeRadius ** 2 ? 1 : 0;
 }
 
 /** 喷口坐标是实体泳池坐标；保留一条连续横向安全通路。 */

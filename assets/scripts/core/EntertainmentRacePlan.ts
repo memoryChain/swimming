@@ -1,5 +1,7 @@
 import { EntertainmentEventId } from './EntertainmentModeDirector';
 import { SeededRandom } from './SharedRNG';
+import { geyserSpec } from './GeyserBrawlRules';
+import { ENTERTAINMENT_GIANT_WAVE_SECONDS } from './GiantWaveRules';
 import type { ObstacleLayout } from './ObstacleBrawlRules';
 
 /** The whole-race grade is independent of AI skill and an individual event's intensity. */
@@ -31,7 +33,7 @@ export type EntertainmentSupplyBudget = Readonly<{
 
 export type EntertainmentRacePlan = Readonly<{
     version: 1;
-    balanceVersion: 2;
+    balanceVersion: 3;
     identity: number;
     seed: number;
     raceDistance: 200 | 400;
@@ -108,48 +110,36 @@ function mainStage(event: EntertainmentEventId, intensity: EntertainmentRaceGrad
 
 function buildMainStages(seed: number, raceDistance: 200 | 400, grade: EntertainmentRaceGrade): EntertainmentMainStage[] {
     const longRace = raceDistance === 400;
-    const turtleOpening = new SeededRandom((seed ^ 0x54555254) >>> 0).int(3) === 0;
-    const geyserOpening = new SeededRandom((seed ^ 0x47455953) >>> 0).int(3) === 0;
+    // 独立子流：环境选择不改变障碍、补给和强事件的随机序列。
+    const choice = new SeededRandom((seed ^ 0x454e5633) >>> 0).int(100);
+    const event = choice < 20 ? EntertainmentEventId.TURTLE_BUS
+        : choice < 50 ? EntertainmentEventId.WHIRLPOOL
+            : choice < 75 ? EntertainmentEventId.GEYSER : EntertainmentEventId.GIANT_WAVE;
+    const environmentLevel = Math.max(1, grade - 1) as EntertainmentRaceGrade;
+    const opening = (progress: number, required = false) => mainStage(event,
+        event === EntertainmentEventId.TURTLE_BUS ? 1
+            : event === EntertainmentEventId.WHIRLPOOL ? grade === 2 ? 1 : 2 : environmentLevel,
+        progress, 1, event === EntertainmentEventId.TURTLE_BUS ? 15
+            : event === EntertainmentEventId.GEYSER ? geyserSpec(environmentLevel).actionSeconds
+                : event === EntertainmentEventId.GIANT_WAVE ? ENTERTAINMENT_GIANT_WAVE_SECONDS : 8, required);
     switch (grade) {
-        case 1: return [];
-        case 2: return [mainStage(EntertainmentEventId.WHIRLPOOL, 1, longRace ? 0.26 : 0.32, 1, 8, true)];
+        case 1: return choice < 20 ? [mainStage(EntertainmentEventId.TURTLE_BUS, 1, 0.24, 1, 15, false)] : [];
+        case 2: return [opening(longRace ? 0.26 : 0.32, true)];
         case 3: return longRace ? [
-            mainStage(geyserOpening ? EntertainmentEventId.GEYSER
-                : turtleOpening ? EntertainmentEventId.TURTLE_BUS : EntertainmentEventId.WHIRLPOOL,
-                geyserOpening ? 1 : 2, 0.16, 1, geyserOpening ? 9 : turtleOpening ? 15 : 8, false),
+            opening(0.16),
             mainStage(EntertainmentEventId.TIMED_BOMB, 1, 0.40, 1, 11.5, true),
             mainStage(EntertainmentEventId.TIMED_BOMB, 1, 0.66, 1, 11.5, false),
-        ] : [
-            mainStage(geyserOpening ? EntertainmentEventId.GEYSER
-                : turtleOpening ? EntertainmentEventId.TURTLE_BUS : EntertainmentEventId.WHIRLPOOL,
-                geyserOpening ? 1 : 2, 0.20, 1, geyserOpening ? 9 : turtleOpening ? 15 : 8, false),
-            mainStage(EntertainmentEventId.TIMED_BOMB, 1, 0.54, 1, 11.5, true),
-        ];
-        case 4: {
-            const openingEvent = geyserOpening ? EntertainmentEventId.GEYSER
-                : turtleOpening ? EntertainmentEventId.TURTLE_BUS
-                : longRace || new SeededRandom((seed ^ 0x52414334) >>> 0).int(2) === 0
-                    ? EntertainmentEventId.WHIRLPOOL : EntertainmentEventId.TIMED_BOMB;
-            const opening = mainStage(openingEvent, 2, longRace ? 0.14 : 0.20, 1,
-                openingEvent === EntertainmentEventId.GEYSER ? 10
-                    : openingEvent === EntertainmentEventId.TURTLE_BUS ? 15
-                    : openingEvent === EntertainmentEventId.WHIRLPOOL ? 8 : 10.5, false);
-            return longRace ? [opening,
-                mainStage(EntertainmentEventId.TIMED_BOMB, 2, 0.38, 1, 10.5, false),
-                mainStage(EntertainmentEventId.CANNON, 2, 0.64, 3, 10.8, true),
-            ] : [opening,
-                mainStage(EntertainmentEventId.CANNON, 2, 0.52, 2, 8.2, true),
-            ];
-        }
-        case 5: return longRace ? [
-            mainStage(geyserOpening ? EntertainmentEventId.GEYSER
-                : turtleOpening ? EntertainmentEventId.TURTLE_BUS : EntertainmentEventId.WHIRLPOOL,
-                geyserOpening ? 3 : 2, 0.12, 1, geyserOpening ? 10 : turtleOpening ? 15 : 8, false),
+        ] : [opening(0.20), mainStage(EntertainmentEventId.TIMED_BOMB, 1, 0.54, 1, 11.5, true)];
+        case 4: return longRace ? [opening(0.14),
+            mainStage(EntertainmentEventId.TIMED_BOMB, 2, 0.38, 1, 10.5, false),
+            mainStage(EntertainmentEventId.CANNON, 2, 0.64, 3, 10.8, true),
+        ] : [opening(0.20), mainStage(EntertainmentEventId.CANNON, 2, 0.52, 2, 8.2, true)];
+        case 5: return longRace ? [opening(0.12),
             mainStage(EntertainmentEventId.CANNON, 4, 0.36, 6, 9, false),
             mainStage(EntertainmentEventId.SHARK, 3, 0.62, 1, 14, true),
-        ] : [
-            mainStage(EntertainmentEventId.CANNON, 3, 0.22, 3, 9.9, false),
-            mainStage(EntertainmentEventId.SHARK, 3, 0.52, 1, 14, true),
+        ] : [opening(0.12),
+            mainStage(EntertainmentEventId.CANNON, 3, 0.36, 3, 9.9, false),
+            mainStage(EntertainmentEventId.SHARK, 3, 0.62, 1, 14, true),
         ];
     }
 }
@@ -179,7 +169,7 @@ export function buildEntertainmentRacePlan(seed: number, distance: number,
     const supplyWaves = longRace ? numbers.supplyWaves400 : numbers.supplyWaves200;
     const plan = {
         version: 1,
-        balanceVersion: 2,
+        balanceVersion: 3,
         seed: safeSeed,
         raceDistance,
         grade,

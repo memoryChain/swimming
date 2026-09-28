@@ -18,11 +18,57 @@ const { LitterBrawlController, LITTER_BRAWL_TUNING } = LitterModule;
 const { buildObstaclePlan } = ObstacleModule;
 const { entertainmentIntensityProfile } = IntensityModule;
 
+test('环境池按两成海龟、三成漩涡、各四分之一喷泉和巨浪抽取，低档不越级', () => {
+    for (const distance of [200, 400]) {
+        const counts = new Map();
+        for (let seed = 1; seed <= 2000; seed++) {
+            for (let grade = 1; grade <= 5; grade++) {
+                const plan = buildEntertainmentRacePlan(seed, distance, grade);
+                const opening = plan.stages[0];
+                if (grade === 1) {
+                    assert.ok(plan.stages.length <= 1);
+                    assert.ok(!opening || opening.event === E.TURTLE_BUS);
+                } else {
+                    if (grade === 2) counts.set(opening.event, (counts.get(opening.event) ?? 0) + 1);
+                    if (opening.event === E.GEYSER || opening.event === E.GIANT_WAVE) {
+                        assert.equal(opening.intensity, grade - 1);
+                    }
+                    assert.equal(plan.stages.filter(stage => stage.event === E.GIANT_WAVE).length <= 1, true);
+                }
+                if (opening?.event === E.TURTLE_BUS) assert.equal(opening.intensity, 1);
+            }
+        }
+        for (const [event, expected] of [[E.TURTLE_BUS, .2], [E.WHIRLPOOL, .3], [E.GEYSER, .25], [E.GIANT_WAVE, .25]]) {
+            assert.ok(Math.abs(counts.get(event) / 2000 - expected) < .035, `${distance}:${event}`);
+        }
+    }
+});
+
+test('各档海龟失约静默跳过，首位完赛取消后续排期，快照不能偷换成漩涡', () => {
+    let seed = 1;
+    while (buildEntertainmentRacePlan(seed, 200, 1).stages.length === 0) seed++;
+    for (const distance of [200, 400]) for (let grade = 1; grade <= 5; grade++) {
+        const plan = buildEntertainmentRacePlan(seed, distance, grade);
+        const host = new EntertainmentModeDirector(seed, distance, true, undefined, undefined, undefined, plan);
+        host.update(4, distance * .35);
+        host.update(6, distance * .35);
+        assert.equal(host.currentEvent(), E.TURTLE_BUS);
+        const skip = host.replaceUnavailableTurtle();
+        assert.equal(skip.finishedEvent, E.TURTLE_BUS);
+        assert.equal(skip.activatedEvent, null);
+        assert.equal(host.snapshot().activatedMask & (1 << E.WHIRLPOOL), 0);
+        const guest = new EntertainmentModeDirector(seed, distance, true, undefined, undefined, undefined, plan);
+        assert.equal(guest.applySnapshot(host.snapshot()).snapshotAccepted, true);
+        host.lockAfterFirstFinish();
+        assert.equal(host.update(200, distance).activatedEvent, null);
+    }
+});
+
 test('整局五档在两种距离及三种布局下遵守配额、白名单与容量', () => {
     const supplyTotals = [[6, 12], [9, 16], [12, 20], [16, 24], [20, 30]];
-    const allowed = [[], [E.WHIRLPOOL], [E.WHIRLPOOL, E.TURTLE_BUS, E.TIMED_BOMB, E.GEYSER],
-        [E.WHIRLPOOL, E.TURTLE_BUS, E.TIMED_BOMB, E.CANNON, E.GEYSER],
-        [E.WHIRLPOOL, E.TURTLE_BUS, E.TIMED_BOMB, E.CANNON, E.SHARK, E.GEYSER]];
+    const environment = [E.WHIRLPOOL, E.TURTLE_BUS, E.GEYSER, E.GIANT_WAVE];
+    const allowed = [[E.TURTLE_BUS], environment, [...environment, E.TIMED_BOMB],
+        [...environment, E.TIMED_BOMB, E.CANNON], [...environment, E.TIMED_BOMB, E.CANNON, E.SHARK]];
     for (let grade = 1; grade <= 5; grade++) {
         assert.equal(normalizeEntertainmentRaceGrade(grade), grade);
         for (const distance of [200, 400]) for (const layout of ['debris', 'buoy', 'mixed']) {
@@ -61,7 +107,7 @@ test('最高档完整障碍配额、首波减量及双炮只作用于长局', ()
     assert.deepEqual(short.obstacle.litterWaveCounts, [4, 7, 7, 7, 7]);
     assert.equal(short.obstacle.litterWaveCounts.reduce((a, b) => a + b, 0), 32);
     assert.equal(long.obstacle.litterWaveCounts.reduce((a, b) => a + b, 0), 75);
-    assert.equal(short.stages[0].actionCount, 3);
+    assert.equal(short.stages.find(stage => stage.event === E.CANNON).actionCount, 3);
     assert.equal(long.stages[1].actionCount, 6);
     assert.equal(long.stages[1].intensity, 4);
     assert.equal(short.stages.at(-1).event, E.SHARK);

@@ -113,7 +113,7 @@ test('不同随机种子下班车失约替代不重复已选事件，三类事�
             const selected = host.selectedEvents();
             assert.equal(new Set(selected).size, selected.length);
             assert.ok(selected.some(event => event === EntertainmentEventId.WHIRLPOOL
-                || event === EntertainmentEventId.OBSTACLE || event === EntertainmentEventId.GEYSER));
+                || event === EntertainmentEventId.OBSTACLE || event === EntertainmentEventId.GEYSER || event === EntertainmentEventId.GIANT_WAVE));
             assert.ok(selected.some(event => event === EntertainmentEventId.STIMULANT
                 || event === EntertainmentEventId.TIMED_BOMB));
             assert.ok(selected.some(event => event === EntertainmentEventId.SHARK

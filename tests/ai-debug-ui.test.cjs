@@ -261,8 +261,8 @@ test('喷泉强度逐档显示实际喷口数，启动保留五档且切换不�
     findNode(root, 'ModeChoice9').click();
     const nodes = descendants(root), listeners = nodes.map(n => n.events.size);
     const intensity = findNode(root, 'IntensityChoice');
-    assert.equal(intensity.getChildByName('Label').getComponent(Label).string, '默认 2 档 · 4 个喷口');
-    for (let level = 1; level <= 5; level++) {
+    assert.equal(intensity.getChildByName('Label').getComponent(Label).string, '强度 2 · 4 个喷口');
+    for (const level of [3, 4, 5, 1, 2, 3, 4, 5]) {
         intensity.click();
         assert.equal(intensity.getChildByName('Label').getComponent(Label).string,
             `强度 ${level} · ${geyserSpec(level).ventCount} 个喷口`);
@@ -272,6 +272,63 @@ test('喷泉强度逐档显示实际喷口数，启动保留五档且切换不�
     findNode(root, 'ModeStart').click();
     assert.equal(getAiDebugSetup().mode, 'geyser-brawl');
     assert.equal(getAiDebugSetup().entertainmentIntensity, 5);
+});
+
+test('海龟只有固定规格，喷泉与巨浪各记住五档，预设和赛程不覆盖档位', () => {
+    const { Node, Label, UITransform, load } = fixture();
+    const { getAiDebugSetup } = load('core/GameLaunchOptions');
+    const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
+    const root = new Node('Panel'); let starts = 0;
+    buildAiDebugSetupPicker(root, () => starts++, emptyCurrencyDebug());
+    findNode(root, 'ModeTestTab').click();
+    const intensity = findNode(root, 'IntensityChoice');
+    const text = () => intensity.getChildByName('Label').getComponent(Label).string;
+    const summary = () => findNode(root, 'SoloSpecSummary').getComponent(Label).string;
+    const nodes = descendants(root), listeners = nodes.map(n => n.events.size);
+    findNode(root, 'ModeChoice9').click();
+    intensity.click(); intensity.click(); intensity.click();
+    assert.equal(text(), '强度 5 · 10 个喷口');
+    findNode(root, 'ModeChoice7').click();
+    assert.equal(text(), '强度 3 · 浪宽 55%');
+    assert.match(summary(), /3 波.*30%/);
+    findNode(root, 'DistanceChoice').click();
+    assert.match(summary(), /7 波/);
+    findNode(root, 'WavePreset1').click();
+    assert.match(summary(), /1 波/);
+    assert.equal(text(), '强度 3 · 浪宽 55%');
+    const widths = [65, 75, 35, 45, 55];
+    for (let i = 0; i < 20; i++) {
+        intensity.click();
+        assert.ok(text().endsWith(`浪宽 ${widths[i % 5]}%`));
+        findNode(root, 'ModeChoice8').click();
+        assert.equal(intensity.activeInHierarchy, false);
+        assert.equal(findNode(root, 'TurtleFixedSpec').activeInHierarchy, true);
+        assert.match(summary(), /挤开/);
+        findNode(root, 'ModeChoice9').click();
+        assert.equal(text(), '强度 5 · 10 个喷口');
+        findNode(root, 'ModeChoice7').click();
+        assert.ok(text().endsWith(`浪宽 ${widths[i % 5]}%`));
+    }
+    assert.deepEqual(descendants(root), nodes);
+    assert.deepEqual(nodes.map(n => n.events.size), listeners);
+    const seed = findNode(root, 'ModeSeed'), info = findNode(root, 'SoloSpecSummary');
+    assert.ok(seed.x + seed.getComponent(UITransform).contentSize.width / 2
+        < info.x - info.getComponent(UITransform).contentSize.width / 2, '种子与规格说明不重叠');
+    findNode(root, 'ModeStart').click(); findNode(root, 'ModeStart').click();
+    assert.equal(starts, 1);
+    assert.equal(getAiDebugSetup().entertainmentIntensity, 3);
+    assert.equal(getAiDebugSetup().geyserIntensity, 5);
+    assert.equal(getAiDebugSetup().giantWavePreset, 'single');
+    const reopened = new Node('Reopened');
+    buildAiDebugSetupPicker(reopened, () => {}, emptyCurrencyDebug());
+    findNode(reopened, 'ModeTestTab').click();
+    findNode(reopened, 'ModeChoice9').click();
+    assert.equal(findNode(reopened, 'IntensityChoice').getChildByName('Label').getComponent(Label).string,
+        '强度 5 · 10 个喷口');
+    findNode(reopened, 'ModeChoice8').click();
+    findNode(reopened, 'ModeStart').click();
+    assert.equal(getAiDebugSetup().entertainmentIntensity, null);
+    assert.equal(getAiDebugSetup().geyserIntensity, 5);
 });
 
 test('综合娱乐整局与单项测试互斥，切换保留档位且不重建控件', () => {
@@ -325,6 +382,9 @@ test('综合娱乐整局与单项测试互斥，切换保留档位且不重建�
     assert.equal(setup.entertainmentIntensity, 5);
     assert.equal(setup.entertainmentRaceGrade, 4);
     assert.equal(setup.entertainmentEventIntensities[2], 4);
+    assert.equal(setup.entertainmentEventIntensities[8], 5);
+    assert.equal(setup.entertainmentEventIntensities[9], 5);
+    assert.equal(setup.entertainmentEventIntensities[7], 1);
     assert.equal(setup.entertainmentTestCombination, 'litter-whirlpool');
     assert.equal(setup.raceDistance, 400);
 });

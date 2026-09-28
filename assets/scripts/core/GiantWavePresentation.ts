@@ -14,7 +14,7 @@ export class GiantWavePresentation {
         this.wake = new WavePart(parent, 'GiantWaveWake', buildWakeGeometry());
         this.shore = new WavePart(parent, 'GiantWaveShore', buildShoreGeometry());
     }
-    begin(): void { this.height = GIANT_WAVE_TUNING.height; }
+    begin(height = GIANT_WAVE_TUNING.height): void { this.height = height; }
     update(s: GiantWaveState): void {
         if (s.phase !== 'active') { this.hide(); return; }
         const grow = smoothStep(s.age / s.growthTime);

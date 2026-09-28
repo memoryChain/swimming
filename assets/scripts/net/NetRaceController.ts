@@ -663,6 +663,7 @@ export class NetRaceController {
         this._litterFragmentAssembler.reset();
         this._pendingLitterState = null;
         this._pendingTurtleBusState = null;
+        this._turtleBusStateListener?.(null);
         this._snapshotTargets = [];
         this._prevSnapshot = [];
         this._snapshotTime = 0;

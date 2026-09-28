@@ -8,6 +8,7 @@ import Protocol from '../assets/scripts/net/NetRaceProtocol.ts';
 import ResultCodec from '../assets/scripts/net/NetRaceResult.ts';
 import ConditionBalance from '../assets/scripts/core/ConditionBalance.ts';
 import LitterCodec from '../assets/scripts/net/NetLitterSnapshot.ts';
+import WaveCodec from '../assets/scripts/net/NetGiantWaveCodec.ts';
 
 const {
     decodeConditionHeartRate,
@@ -54,6 +55,23 @@ function entry(overrides = {}) {
         ...overrides,
     };
 }
+
+test('巨浪推进与顺逆姿态通过 S、P 及可靠帧往返，空状态不增加包长', () => {
+    const { giantWaveCode, giantWaveSpeedFromCode, giantWaveFlagsFromCode, decodeGiantWaveCode } = WaveCodec;
+    for (const speed of [-1.1, -.127, 0, .127, 1.1]) for (const flags of [0, 1, 2]) {
+        const code = giantWaveCode(speed, flags === 1, flags === 2);
+        const value = entry({ giantWaveCode: code });
+        const states = [decodeRaceSnapshot(encodeRaceSnapshot(0, [value])).entries[0],
+            decodeSelfSnapshot(encodeSelfSnapshot(value)), decodeInputFrame(encodeInputFrame(0, [], value)).self];
+        for (const state of states) {
+            assert.equal(state.giantWaveCode, code);
+            assert.equal(giantWaveSpeedFromCode(code), speed);
+            assert.equal(giantWaveFlagsFromCode(code), flags);
+        }
+    }
+    assert.equal(encodeSelfSnapshot(entry({ giantWaveCode: 0 })), encodeSelfSnapshot(entry()));
+    for (const invalid of ['zzz', '-1', '1$', 'zzzz', 'NaN']) assert.equal(decodeGiantWaveCode(invalid), 0);
+});
 
 function litterState(slotCount = 18) {
     return {
@@ -386,6 +404,7 @@ test('八泳道满状态快照保持在项目的一点五千字节回归预算�
         conditionDepletionCooldown: 10,
         collisionSoftness: { side: 2, forward: -2, sideVelocity: 20, forwardVelocity: -20 },
         abilityState: { depth: 2, kickRemaining: 2, stacks: 10, idleRemaining: 10 },
+        giantWaveCode: WaveCodec.giantWaveCode(-1.1, false, true),
     }));
     const recovery = {
         revision: 999999,

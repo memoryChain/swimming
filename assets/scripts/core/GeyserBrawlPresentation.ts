@@ -1,6 +1,6 @@
 import { Color, gfx, Material, Mesh, MeshRenderer, Node, utils } from 'cc';
 import { GEYSER_TUNING, geyserBurstHeight, geyserPulseIndex,
-    geyserPulseStart, type GeyserVent } from './GeyserBrawlRules';
+    geyserPulseStart, type GeyserTuning, type GeyserVent } from './GeyserBrawlRules';
 
 type Geometry = { positions: number[]; colors: number[]; indices: number[] };
 type Tint = readonly [number, number, number, number];
@@ -57,7 +57,7 @@ export class GeyserBrawlPresentation {
     }
 
     update(vents: readonly GeyserVent[], age: number, pulseCount: number,
-        stoppedAt = Number.POSITIVE_INFINITY): void {
+        stoppedAt = Number.POSITIVE_INFINITY, tuning: GeyserTuning = GEYSER_TUNING): void {
         if (this.disposed || !Number.isFinite(age)) return;
         const tick = Math.floor(age * 30 + 1e-6);
         if (tick === this.sampleTick) return;
@@ -66,18 +66,18 @@ export class GeyserBrawlPresentation {
             const view = this.views[index];
             const vent = vents[index];
             if (!vent || pulseCount <= 0) { active(view.root, false); continue; }
-            const pulse = Math.min(pulseCount - 1, geyserPulseIndex(vent, age));
-            const start = geyserPulseStart(vent, pulse);
+            const pulse = Math.min(pulseCount - 1, geyserPulseIndex(vent, age, tuning));
+            const start = geyserPulseStart(vent, pulse, tuning);
             const local = age - start;
-            const burstAge = local - GEYSER_TUNING.warningSeconds;
-            const releaseAge = burstAge - GEYSER_TUNING.burstSeconds;
+            const burstAge = local - tuning.warningSeconds;
+            const releaseAge = burstAge - tuning.burstSeconds;
             const visible = start <= stoppedAt && local >= 0
-                && releaseAge < GEYSER_TUNING.fallingSeconds + FOAM_TAIL_SECONDS;
+                && releaseAge < tuning.fallingSeconds + FOAM_TAIL_SECONDS;
             active(view.root, visible);
             if (!visible) continue;
             position(view.root, vent.x, this.surfaceY, vent.z);
             if (burstAge < 0) {
-                const pressure = clamp01(local / GEYSER_TUNING.warningSeconds);
+                const pressure = clamp01(local / tuning.warningSeconds);
                 active(view.jet, false);
                 active(view.foam, true);
                 const swell = 0.7 + pressure * 0.3;
@@ -97,8 +97,8 @@ export class GeyserBrawlPresentation {
             }
 
             // 水束先失去压力，碎水继续按抛物线运动，水面余沫最后散开。
-            const release = clamp01(releaseAge / GEYSER_TUNING.fallingSeconds);
-            const lift = releaseAge >= 0 ? 1 : geyserBurstHeight(vent, pulse, age);
+            const release = clamp01(releaseAge / tuning.fallingSeconds);
+            const lift = releaseAge >= 0 ? 1 : geyserBurstHeight(vent, pulse, age, tuning);
             // 水下是同一种介质中的上升流，不画有清晰边界的柱体。
             // 只取现有高度包络露出真实水面的部分，水冠也不再从水下拉上来。
             const exposedHeight = Math.max(0,
@@ -110,14 +110,14 @@ export class GeyserBrawlPresentation {
                 position(view.jet, 0, this.waterlineY, 0);
             }
             active(view.foam, true);
-            const tail = clamp01((releaseAge - GEYSER_TUNING.fallingSeconds) / FOAM_TAIL_SECONDS);
+            const tail = clamp01((releaseAge - tuning.fallingSeconds) / FOAM_TAIL_SECONDS);
             const ripple = 1 + 0.18 * release + 0.18 * tail;
             scale(view.foam, ripple, (0.8 + 0.08 * Math.sin(burstAge * 16)) * (1 - tail), ripple);
             position(view.foam, 0, this.foamY - tail * 0.09, 0);
             for (let group = 0; group < 2; group++) {
                 const node = view.drops[group];
                 const first = 0.09 + group * 0.32;
-                const emissionAge = Math.min(burstAge, GEYSER_TUNING.burstSeconds - 0.001);
+                const emissionAge = Math.min(burstAge, tuning.burstSeconds - 0.001);
                 const emission = first + Math.floor((emissionAge - first) / DROP_INTERVAL) * DROP_INTERVAL;
                 const flightAge = burstAge - emission;
                 active(node, emissionAge >= first && flightAge >= 0 && flightAge < DROP_LIFE);

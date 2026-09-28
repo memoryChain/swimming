@@ -3,6 +3,20 @@ const assert = require('node:assert/strict');
 const { createGeyserPresentationHarness } = require('./helpers/geyser-presentation-harness.cjs');
 const vent = [{ id: 0, x: 0, z: 0, offsetSeconds: 0 }];
 
+test('联机水柱表现使用固定喷发时长，不受本机调参影响', () => {
+    const h = createGeyserPresentationHarness(1);
+    const fixed = h.rules.geyserTuningForRace(true);
+    const previous = h.rules.GEYSER_TUNING.burstSeconds;
+    try {
+        h.rules.GEYSER_TUNING.burstSeconds = .35;
+        h.visual.update(vent, 2.3, 2, Infinity, fixed);
+        assert.ok(h.snapshot().some(n => n.name === 'WaterJetAndCrown'));
+        h.visual.hide();
+        h.visual.update(vent, 2.3, 2);
+        assert.ok(!h.snapshot().some(n => n.name === 'WaterJetAndCrown'));
+    } finally { h.rules.GEYSER_TUNING.burstSeconds = previous; }
+});
+
 test('预警气泡持续上浮，水面泡沫在真实水面上，喷发前无水柱', () => {
     const h = createGeyserPresentationHarness(1, 0.18);
     h.visual.update(vent, 0.1, 2);

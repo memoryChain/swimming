@@ -71,12 +71,14 @@ export class AISwimmerController extends Component {
     private _targetZ: number | null = null;
     private _stimulantTargetZ: number | null = null;
     private _giantWaveTargetZ: number | null = null;
+    private _giantWaveAvoiding = false;
     private _geyserTargetZ: number | null = null;
     setGeyserTargetZ(value: number | null): void {
         this._geyserTargetZ = value !== null && Number.isFinite(value) ? value : null;
     }
-    setGiantWaveTargetZ(value: number | null): void {
+    setGiantWaveTargetZ(value: number | null, avoiding = false): void {
         this._giantWaveTargetZ = value !== null && Number.isFinite(value) ? value : null;
+        this._giantWaveAvoiding = this._giantWaveTargetZ !== null && avoiding;
     }
     private _sharkTargetZ: number | null = null;
     private _whirlpoolTargetZ: number | null = null;
@@ -321,6 +323,7 @@ export class AISwimmerController extends Component {
         if (this._stimulantTargetZ !== null || this._giantWaveTargetZ !== null
             || this._turtleBusTargetZ !== null) desiredPriority = 1;
         if (this._whirlpoolTargetZ !== null) desiredPriority = 2;
+        if (this._giantWaveAvoiding) desiredPriority = 2;
         if (this._litterTargetZ !== null) desiredPriority = 3;
         if (this._obstacleTargetZ !== null && !this._obstacleTargetUrgent) desiredPriority = 3;
         if (this._mineRelayTargetZ !== null) desiredPriority = 4;
@@ -349,7 +352,7 @@ export class AISwimmerController extends Component {
             case 4: return this._mineRelayTargetZ;
             case 3: return this._obstacleTargetZ !== null && !this._obstacleTargetUrgent
                 ? this._obstacleTargetZ : this._litterTargetZ;
-            case 2: return this._whirlpoolTargetZ;
+            case 2: return this._whirlpoolTargetZ ?? (this._giantWaveAvoiding ? this._giantWaveTargetZ : null);
             case 1: return this._turtleBusTargetZ ?? this._stimulantTargetZ ?? this._giantWaveTargetZ;
             default: return null;
         }

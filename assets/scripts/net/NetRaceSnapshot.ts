@@ -1,3 +1,4 @@
+import { encodeGiantWaveSuffix, decodeGiantWaveCode } from './NetGiantWaveCodec';
 import { encodeDraftingState, draftingCode } from './NetDraftingCodec';
 import { encodeCharacterAbility, decodeCharacterAbility } from './NetCharacterAbilityCodec';
 import type { CollisionSoftnessState } from '../swimmer/CollisionSoftnessModel';
@@ -69,6 +70,7 @@ export interface NetSnapshotEntry {
     // Heartbeat-brawl cooling status. Appended after ability state on every owner
     // snapshot so a missed pickup event or host migration recovers the 3s penalty.
     calmSlushRemaining?: number;
+    giantWaveCode?: number;
     // Human owner-state ordering token. Appended after condition fields on P| and
     // input-frame self payloads; -1/undefined means an older sender without ordering.
     ownerStateSeq?: number;
@@ -256,7 +258,7 @@ export function encodeRaceSnapshot(
     obstaclePlanId = 0,
 ): string {
     const body = entries
-        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${encodeDraftingState(e)},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)},${encodeConditionCooldown(e.calmSlushRemaining ?? -1)}`)
+        .map((e) => `${e.lane},${compactSnapshotInteger(Math.round(e.distance * 100))},${compactSnapshotInteger(Math.round(e.lateral * 1000))},${encodeDraftingState(e)},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${compactSnapshotInteger(Math.round(e.axialRollVelocity * 1000))},${compactSnapshotInteger(Math.round(e.headingVelocity * 1000))},${Math.round(e.collisionPitch * 1000)},${compactSnapshotInteger(Math.round(e.collisionPitchVelocity * 1000))},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)},${encodeConditionCooldown(e.calmSlushRemaining ?? -1)}${encodeGiantWaveSuffix(e.giantWaveCode)}`)
         .join(';');
     const revision = encodeSnapshotRevision(Math.max(0, Math.floor(stimulant?.revision ?? 0)));
     const mask = Math.max(0, Math.floor(stimulant?.collectedMask ?? 0)).toString(16);
@@ -395,8 +397,8 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
                 continue;
             }
             const lane = parseInt(parts[0], 10);
-            const distCm = parseInt(parts[1], 10);
-            const latMm = parseInt(parts[2], 10);
+            const distCm = decodeSnapshotInteger(parts[1]);
+            const latMm = decodeSnapshotInteger(parts[2]);
             const fin = (draftingCode(parts[3]) & 1) !== 0;
             const headMrad = parts.length > 4 ? parseInt(parts[4], 10) : 0;
             if (!Number.isFinite(lane) || !Number.isFinite(distCm) || !Number.isFinite(latMm)) {
@@ -405,10 +407,10 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             const speedCms = parts.length > 5 ? parseInt(parts[5], 10) : -1;
             const energy = parts.length > 6 ? parseInt(parts[6], 10) : -1;
             const rollMrad = parts.length > 7 ? parseInt(parts[7], 10) : 0;
-            const rollVelMrad = parts.length > 8 ? parseInt(parts[8], 10) : 0;
-            const headVelMrad = parts.length > 9 ? parseInt(parts[9], 10) : 0;
+            const rollVelMrad = parts.length > 8 ? decodeSnapshotInteger(parts[8]) : 0;
+            const headVelMrad = parts.length > 9 ? decodeSnapshotInteger(parts[9]) : 0;
             const pitchMrad = parts.length > 10 ? parseInt(parts[10], 10) : 0;
-            const pitchVelMrad = parts.length > 11 ? parseInt(parts[11], 10) : 0;
+            const pitchVelMrad = parts.length > 11 ? decodeSnapshotInteger(parts[11]) : 0;
             const conditionEnergyPermille = parts.length > 12 ? parseInt(parts[12], 10) : -1;
             const conditionHeartRate = parts.length > 13 ? parseInt(parts[13], 10) : -1;
             const conditionCooldownMs = parts.length > 14 ? parseInt(parts[14], 10) : -1;
@@ -431,6 +433,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
                 collisionSoftness: decodeCollisionSoftness(parts[15]),
                 abilityState: decodeCharacterAbility(parts[16]),
                 calmSlushRemaining: decodeConditionCooldown(parts.length > 17 ? parseInt(parts[17], 10) : -1),
+                giantWaveCode: decodeGiantWaveCode(parts[18]),
                 draftingEligible: !fin && draftingCode(parts[3]) >= 2,
                 draftingSource: fin ? -1 : Math.max(-1, Math.floor(draftingCode(parts[3]) / 2) - 2),
             });
@@ -608,7 +611,7 @@ export function encodeSelfSnapshot(
     ownerStateSeq = entry.ownerStateSeq ?? -1,
     ownerPos = entry.ownerPos ?? -1,
 ): string {
-    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${encodeDraftingState(entry)},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeOwnerStateSeq(ownerPos)},${encodeCollisionSoftness(entry.collisionSoftness)},${encodeCharacterAbility(entry.abilityState)},${encodeConditionCooldown(entry.calmSlushRemaining ?? -1)}`;
+    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${encodeDraftingState(entry)},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeOwnerStateSeq(ownerPos)},${encodeCollisionSoftness(entry.collisionSoftness)},${encodeCharacterAbility(entry.abilityState)},${encodeConditionCooldown(entry.calmSlushRemaining ?? -1)}${encodeGiantWaveSuffix(entry.giantWaveCode)}`;
 }
 
 // Returns null if the payload is not a self-position report.
@@ -659,6 +662,7 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
         collisionSoftness: decodeCollisionSoftness(parts[16]),
         abilityState: decodeCharacterAbility(parts[17]),
         calmSlushRemaining: decodeConditionCooldown(parts.length > 18 ? parseInt(parts[18], 10) : -1),
+        giantWaveCode: decodeGiantWaveCode(parts[19]),
         draftingEligible: !fin && draftingCode(parts[3]) >= 2,
         draftingSource: fin ? -1 : Math.max(-1, Math.floor(draftingCode(parts[3]) / 2) - 2),
     };
@@ -707,4 +711,12 @@ export function encodeOwnerStateSeq(value: number): number {
 
 export function decodeOwnerStateSeq(value: number): number {
     return Number.isFinite(value) && value >= 0 ? Math.floor(value) : -1;
+}
+
+function compactSnapshotInteger(value: number): string {
+    const decimal = String(value), compact = '!' + value.toString(36);
+    return compact.length < decimal.length ? compact : decimal;
+}
+function decodeSnapshotInteger(value: string): number {
+    return value?.startsWith('!') ? /^!-?[0-9a-z]+$/.test(value) ? parseInt(value.slice(1), 36) : NaN : parseInt(value, 10);
 }

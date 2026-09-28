@@ -2,6 +2,7 @@
 
 /** 位置为世界坐标；顺浪为正作用，迎浪为负作用。仅用于独立调试模式。 */
 export type GiantWavePreset = 'three' | 'single';
+export type GiantWaveIntensity = 1 | 2 | 3 | 4 | 5;
 export const GIANT_WAVE_TUNING = {
     widthFraction: 0.55, lengthFraction: 0.12, height: 0.48,
     previewSeconds: 3, entranceSeconds: 1.2,
@@ -10,6 +11,38 @@ export const GIANT_WAVE_TUNING = {
     riseSeconds: 0.35, releaseSeconds: 0.6,
     oppositionRiseSeconds: 0.12, oppositionReleaseSeconds: 0.2, anchorFraction: 0.04,
 };
+const GIANT_WAVE_DEFAULTS = { ...GIANT_WAVE_TUNING };
+/** 综合导演每次只发一波，窗口包含拍岸、余沫及推进恢复。 */
+export const ENTERTAINMENT_GIANT_WAVE_SECONDS = 20;
+
+/** 以原有调参为三档基准；档位只改变覆盖、迎浪压力与间隔，不提高顺浪收益。 */
+export const GIANT_WAVE_INTENSITY_TUNING = [
+    { widthOffset: -0.20, lengthOffset: -0.04, slowdownOffset: -0.15, gapOffset: 2 },
+    { widthOffset: -0.10, lengthOffset: -0.02, slowdownOffset: -0.08, gapOffset: 1 },
+    { widthOffset: 0, lengthOffset: 0, slowdownOffset: 0, gapOffset: 0 },
+    { widthOffset: 0.10, lengthOffset: 0.02, slowdownOffset: 0.08, gapOffset: -1 },
+    { widthOffset: 0.20, lengthOffset: 0.04, slowdownOffset: 0.15, gapOffset: -2 },
+];
+const GIANT_WAVE_DEFAULT_OFFSETS = GIANT_WAVE_INTENSITY_TUNING.map(value => ({ ...value }));
+
+/** 开局快照；保存的基础调参与各档增减量共同决定实际规格。 */
+export function giantWaveSpec(level: GiantWaveIntensity = 3, formal = false): Readonly<typeof GIANT_WAVE_TUNING> {
+    const offsets = formal ? GIANT_WAVE_DEFAULT_OFFSETS : GIANT_WAVE_INTENSITY_TUNING;
+    const offset = offsets[level - 1] ?? offsets[2];
+    const base = formal ? GIANT_WAVE_DEFAULTS : GIANT_WAVE_TUNING;
+    return {
+        ...base,
+        widthFraction: Math.max(0.25, Math.min(0.8, base.widthFraction + offset.widthOffset)),
+        lengthFraction: Math.max(0.06, Math.min(0.2, base.lengthFraction + offset.lengthOffset)),
+        oppositionSlowdown: Math.max(0.1, Math.min(0.5, base.oppositionSlowdown + offset.slowdownOffset)),
+        gapSeconds: Math.max(3, Math.min(10, base.gapSeconds + offset.gapOffset)),
+    };
+}
+
+/** three 保留旧预设身份；200 米三波、400 米七波，每个非末泳段最多一波。 */
+export function giantWaveCount(preset: GiantWavePreset, raceDistance = 200, courseLength = 50): number {
+    return preset === 'single' ? 1 : Math.max(1, Math.ceil(raceDistance / Math.max(1, courseLength)) - 1);
+}
 export interface GiantWaveSample {
     distance: number; x: number; z: number; direction: number; speed: number; eligible: boolean;
 }
@@ -92,12 +125,13 @@ export function giantWaveTargetZ(s: GiantWaveState, p: GiantWaveSample, index: n
 }
 /** 单一有符号槽，过零时分别积分助力和阻力，避免两套状态叠加或帧率误差。 */
 export function advanceWaveBoost(current: number, target: number, maximum: number, dt: number,
-    out: { speed: number; average: number; positiveAverage?: number; negativeAverage?: number }): void {
+    out: { speed: number; average: number; positiveAverage?: number; negativeAverage?: number },
+    tuning: Readonly<typeof GIANT_WAVE_TUNING> = GIANT_WAVE_TUNING): void {
     const opposing = target < 0 || target === 0 && current < 0;
     const building = Math.abs(target) > Math.abs(current) || current * target < 0;
     const seconds = opposing
-        ? building ? GIANT_WAVE_TUNING.oppositionRiseSeconds : GIANT_WAVE_TUNING.oppositionReleaseSeconds
-        : building ? GIANT_WAVE_TUNING.riseSeconds : GIANT_WAVE_TUNING.releaseSeconds;
+        ? building ? tuning.oppositionRiseSeconds : tuning.oppositionReleaseSeconds
+        : building ? tuning.riseSeconds : tuning.releaseSeconds;
     const rate = Math.max(0.01, maximum) / Math.max(0.05, seconds);
     const time = Math.min(Math.max(0, dt), Math.abs(target - current) / rate);
     out.speed = current + Math.sign(target - current) * rate * time;
@@ -116,28 +150,46 @@ export function advanceWaveBoost(current: number, target: number, maximum: numbe
 
 export class GiantWaveSimulation {
     readonly state = newGiantWaveState();
+    readonly spec: Readonly<typeof GIANT_WAVE_TUNING>;
+    readonly maxWaves: number;
     private readonly random = new SeededRandom(1);
     previews = 0;
     cancelled = 0;
     constructor(readonly courseLength: number, readonly minX: number, readonly maxX: number,
         readonly poolWidth: number, readonly seed: number, readonly preset: GiantWavePreset,
-        readonly swimSpan = maxX - minX) {}
+        readonly swimSpan = maxX - minX, readonly intensity: GiantWaveIntensity = 3,
+        readonly raceDistance = 200, readonly formal = false) {
+        this.spec = giantWaveSpec(intensity, formal);
+        this.maxWaves = giantWaveCount(preset, raceDistance, courseLength);
+    }
     reset(): void { Object.assign(this.state, newGiantWaveState()); this.previews = 0; this.cancelled = 0; }
-    /** 仅离线复测；版本 2 保存预告已锁定的随机方向和范围。 */
+    /** 综合事件由导演激活，不能再次等待首泳段或再播一次独立预告。 */
+    seekEvent(age: number): void {
+        if (!Number.isFinite(age) || age < 0) return;
+        if (this.state.phase === 'waiting') this.prepare();
+        const s = this.state;
+        s.age = Math.max(s.age, Math.min(waveDuration(s), age));
+        s.phase = s.age >= waveDuration(s) ? 'complete' : 'active';
+        s.x = s.age >= waveArrivalTime(s) ? s.endX : s.startX + s.direction * waveTravel(s, s.age);
+    }
+    /** 仅离线复测；版本 3 校验档位、赛程与冻结规格，不作为联机协议。 */
     snapshot() {
-        return { version: 2, seed: this.seed, preset: this.preset, courseLength: this.courseLength,
+        return { version: 3, seed: this.seed, preset: this.preset, courseLength: this.courseLength,
+            intensity: this.intensity, raceDistance: this.raceDistance, spec: { ...this.spec },
             minX: this.minX, maxX: this.maxX, poolWidth: this.poolWidth, swimSpan: this.swimSpan,
             state: { ...this.state }, previews: this.previews, cancelled: this.cancelled };
     }
     restore(value: ReturnType<GiantWaveSimulation['snapshot']>): boolean {
-        if (!value || value.version !== 2 || value.seed !== this.seed || value.preset !== this.preset
+        if (!value || value.version !== 3 || value.seed !== this.seed || value.preset !== this.preset
+            || value.intensity !== this.intensity || value.raceDistance !== this.raceDistance || !value.spec
             || value.courseLength !== this.courseLength || value.minX !== this.minX
             || value.maxX !== this.maxX || value.poolWidth !== this.poolWidth || value.swimSpan !== this.swimSpan || !value.state) return false;
+        for (const key of Object.keys(this.spec)) if (value.spec[key] !== this.spec[key]) return false;
         const s = value.state;
         if (['waiting', 'preview', 'active', 'gap', 'complete'].indexOf(s.phase) < 0
-            || typeof s.closing !== 'boolean' || !Number.isInteger(s.wave) || s.wave < 0 || s.wave > 3
-            || !Number.isInteger(value.previews) || value.previews < 0 || value.previews > 3
-            || !Number.isInteger(value.cancelled) || value.cancelled < 0 || value.cancelled > 3) return false;
+            || typeof s.closing !== 'boolean' || !Number.isInteger(s.wave) || s.wave < 0 || s.wave > this.maxWaves
+            || !Number.isInteger(value.previews) || value.previews < 0 || value.previews > this.maxWaves
+            || !Number.isInteger(value.cancelled) || value.cancelled < 0 || value.cancelled > this.maxWaves) return false;
         for (const key of Object.keys(this.state)) {
             if (key === 'phase' || key === 'closing') continue;
             if (!Number.isFinite(s[key])) return false;
@@ -165,7 +217,7 @@ export class GiantWaveSimulation {
             s.x = s.age >= waveArrivalTime(s) ? s.endX : s.startX + s.direction * waveTravel(s, s.age);
             if (s.age >= waveDuration(s)) {
                 s.phase = s.closing ? 'complete' : 'gap';
-                s.timer = GIANT_WAVE_TUNING.gapSeconds + GIANT_WAVE_TUNING.releaseSeconds;
+                s.timer = this.spec.gapSeconds + this.spec.releaseSeconds;
             }
             return;
         }
@@ -174,22 +226,22 @@ export class GiantWaveSimulation {
             if (s.timer === 0) { s.wave++; s.phase = 'waiting'; }
             return;
         }
-        if (s.wave >= (this.preset === 'single' ? 1 : 3)) { s.phase = 'complete'; return; }
+        if (s.wave >= this.maxWaves) { s.phase = 'complete'; return; }
         if (s.phase === 'waiting') {
             // 赛程只负责排期；方向、位置与浪速不消费任何选手数据。
             let lead = 0;
             for (let i = 0; i < samples.length; i++) lead = Math.max(lead, samples[i].distance);
             if (lead >= (s.wave + 1) * this.courseLength) { s.wave++; this.cancelled++; return; }
-            if (lead < (s.wave + GIANT_WAVE_TUNING.anchorFraction) * this.courseLength) return;
+            if (lead < (s.wave + this.spec.anchorFraction) * this.courseLength) return;
             this.prepare();
-            s.phase = 'preview'; s.timer = GIANT_WAVE_TUNING.previewSeconds; this.previews++;
+            s.phase = 'preview'; s.timer = this.spec.previewSeconds; this.previews++;
             return;
         }
         s.timer = Math.max(0, s.timer - dt);
         if (s.timer === 0) { s.phase = 'active'; s.age = 0; }
     }
     private prepare(): void {
-        const s = this.state, t = GIANT_WAVE_TUNING;
+        const s = this.state, t = this.spec;
         // 使用 SharedRNG 的独立子流。每波两次独立抽样，取消或其他系统用随机数均不串流。
         this.random.seed((this.seed ^ 0x73ab19d5 ^ Math.imul(s.wave + 1, 0x45d9f3b)) >>> 0);
         s.direction = this.random.next() < 0.5 ? -1 : 1;

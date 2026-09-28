@@ -68,6 +68,51 @@ test('娱乐事件横向意图按致命危险、垃圾、普通场地和争抢�
     assert.equal(ai.resolveEventTargetZ(), -3, '致命危险解除后应回到仍有效的垃圾绕行目标');
 });
 
+test('迎浪绕行优先于争抢补给，紧急障碍仍能抢占，清理后不残留', () => {
+    const { ai } = h.create();
+    ai._clock = 2;
+    ai.setStimulantTargetZ(-1);
+    ai.setGiantWaveTargetZ(2, false);
+    assert.equal(ai.resolveEventTargetZ(), -1);
+    ai.setGiantWaveTargetZ(2, true);
+    assert.equal(ai.resolveEventTargetZ(), 2);
+    ai.setMinefieldTargetZ(-3);
+    assert.equal(ai.resolveEventTargetZ(), -3);
+    ai.setMinefieldTargetZ(null);
+    ai.setGiantWaveTargetZ(null);
+    assert.equal(ai.resolveEventTargetZ(), -1);
+});
+
+test('远端巨浪姿态跟随权威贡献，换主继续推进，事件销毁后旧状态不能复活', () => {
+    const { body } = h.create();
+    const { newGiantWaveState } = h.load('core/GiantWaveRules');
+    const { giantWaveCode } = h.load('net/NetGiantWaveCodec');
+    body.giantWaveState = newGiantWaveState();
+    body.setGiantWaveAuthority(false);
+    const code = giantWaveCode(-.6, false, true);
+    body.applyNetGiantWave(code);
+    assert.equal(body.motor.giantWaveSpeed, -.6);
+    body.sampleGiantWave(.03);
+    assert.equal(body.isGiantWaveOpposed, true, '即使本地空浪预测无命中，姿态仍读取权威状态');
+    assert.equal(body.netGiantWaveCode, code);
+    for (let frame = 0; frame < 30; frame++) {
+        body.stepSimulation(1 / 60);
+        assert.equal(body.motor.giantWaveSpeed, -.6, '本地空浪不能把远端权威推进逐帧衰减');
+    }
+    body.motor.applyGiantWaveSpeed(0);
+    body.applyNetGiantWave(code);
+    assert.equal(body.motor.giantWaveSpeed, -.6, '数值相同的下一包仍可校正被重置的推进');
+    body.setGiantWaveAuthority(true);
+    assert.equal(body.motor.giantWaveSpeed, -.6, '接管不把已有推进槽清零');
+    body.sampleGiantWave(.03);
+    assert.equal(body.isGiantWaveOpposed, false);
+    body.giantWaveState = null;
+    body.clearGiantWave();
+    body.applyNetGiantWave(code);
+    assert.equal(body.netGiantWaveCode, 0);
+    assert.equal(body.motor.giantWaveSpeed, 0);
+});
+
 test('11个角色各等级与玩家共用属性和体力；智力不改身体', () => {
     for (const c of PLAYER_CHARACTER_DEFINITIONS) for (const level of [1, 15, 30]) {
         const s = h.create(c.id, level, .3), elite = h.create(c.id, level, 1);
