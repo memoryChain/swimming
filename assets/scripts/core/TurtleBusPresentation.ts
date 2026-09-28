@@ -62,7 +62,8 @@ export class TurtleBusVisual {
         for (let i = 0; i < 4; i++) this.fins[i].setRotationFromEuler(
             (i % 2 ? -1 : 1) * (i < 2 ? 9 : 5) * flap, 0, 0);
         for (let i = 0; i < 4; i++) {
-            const ringRise = this.smooth((riseTime - .15 - i * .1) / .75);
+            // 海龟先完整浮起，再放出拖圈，避免整组同时从水中冒出。
+            const ringRise = this.smooth((riseTime - TURTLE_BUS_CONFIG.riseSeconds - i * .12) / .6);
             const ringSink = this.smooth((sinkAge - i * .12) / .95);
             const bob = Math.sin(t * 1.7 + i * .7) * .018;
             this.rings[i].setPosition(L.ringForward[i] + ringSink * .35,

@@ -27,7 +27,7 @@ export function encodeTurtleBusSnapshot(state: NetTurtleBusState | null | undefi
     const phase = PHASES.indexOf(state.phase);
     const route = ROUTES.indexOf(state.routeZ as typeof ROUTES[number]);
     if (phase < 0 || route < 0 || !Number.isFinite(state.startOffset)
-        || state.startOffset < 10 || state.startOffset > 30
+        || state.startOffset < 1 || state.startOffset > 30
         || state.occupants.length !== 4 || state.hands.length !== 4) return '';
     let occupants = 0;
     let hands = 0;
@@ -62,7 +62,7 @@ export function decodeTurtleBusSnapshot(payload: string): NetTurtleBusState | nu
     const [tripId, phase, ageCentis, direction, route, offsetDecis, packedOccupants, packedHands] = values;
     if (!values.every(Number.isSafeInteger) || tripId <= 0 || phase < 0 || phase >= PHASES.length
         || ageCentis < 0 || ageCentis > 6000 || direction > 1 || route >= ROUTES.length
-        || offsetDecis < 100 || offsetDecis > 300
+        || offsetDecis < 10 || offsetDecis > 300
         || packedOccupants > 0xffff || packedHands > 0xff) return null;
     const occupants: number[] = [];
     const hands: number[] = [];

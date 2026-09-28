@@ -15,6 +15,16 @@ const { EntertainmentModeDirector, EntertainmentEventId, EntertainmentDirectorPh
 const { buildEntertainmentRacePlan } = RacePlan;
 const { TURTLE_BUS_GEOMETRY } = Geometry;
 
+test('池端小偏移可编码往返，保留十分之一米量化并拒绝越界',()=>{
+    const state={tripId:1,phase:'preview',age:.5,direction:-1,routeZ:0,
+        occupants:[-1,-1,-1,-1],hands:[0,0,0,0]};
+    for(const startOffset of [4.7,7,10]){
+        const source={...state,startOffset};
+        assert.deepEqual(decodeTurtleBusSnapshot(encodeTurtleBusSnapshot(source)),source);
+    }
+    for(const startOffset of [0,.9,30.1,NaN]) assert.equal(encodeTurtleBusSnapshot({...state,startOffset}),'');
+});
+
 test('四圈快照按固定泳道恢复，旧房主空包与非法双占拒绝', () => {
     const state = { tripId: 17, phase: 'cruising', age: 6.75, direction: -1, routeZ: 4, startOffset: 18.6,
         occupants: [3, -1, 0, 7], hands: [3, 0, 1, 2] };

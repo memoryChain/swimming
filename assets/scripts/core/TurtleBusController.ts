@@ -1,5 +1,7 @@
 import { Node, Vec3 } from 'cc';
 import { StrokeType } from './GameConstants';
+import { getRaceDistance, SWIMMER_BALANCE } from './GameBalance';
+import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
 import type { Swimmer } from '../entity/Swimmer';
 import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { NetTurtleBusState } from '../net/NetTurtleBusSnapshot';
@@ -18,6 +20,7 @@ import {
 type MutableSample = {
     seat: number; direction: TurtleBusDirection; offset: number; lateral: number;
     forwardSpeed: number; racing: boolean; boardEligible: boolean; rootBack: number;
+    boardReadyAfterSeconds: number;
 };
 const ROUTE_CENTERS = [-4, 0, 4] as const;
 const FORMAL_LAUNCH_WAIT_SECONDS = 18;
@@ -36,6 +39,7 @@ export class TurtleBusController {
     private readonly samples: MutableSample[] = Array.from({ length: TURTLE_BUS_MAX_SWIMMERS }, (_, seat) => ({
         seat, direction: 1, offset: 0, lateral: 0, forwardSpeed: 0, racing: false, boardEligible: false,
         rootBack: TURTLE_BUS_LAYOUT.passengerRootBack,
+        boardReadyAfterSeconds: 0,
     }));
     private readonly catchSeconds = new Float32Array(TURTLE_BUS_MAX_SWIMMERS * TURTLE_BUS_SEAT_COUNT);
     private readonly previousGap = new Float32Array(TURTLE_BUS_MAX_SWIMMERS * TURTLE_BUS_SEAT_COUNT).fill(NaN);
@@ -62,7 +66,6 @@ export class TurtleBusController {
     private readonly launchDelaySeconds: number;
     private readonly firstCandidate: number;
     private readonly firstRoute: number;
-    private readonly candidateJitter = new Float32Array(TURTLE_BUS_MAX_SWIMMERS);
     private authoritative = true;
     private acceptNewPassengers = true;
     private snapshotSilenceSeconds = 0;
@@ -90,9 +93,6 @@ export class TurtleBusController {
         this.launchDelaySeconds = 0.5 + random.int(200) / 100;
         this.firstCandidate = random.int(TURTLE_BUS_MAX_SWIMMERS);
         this.firstRoute = random.int(ROUTE_CENTERS.length);
-        for (let seat = 0; seat < this.candidateJitter.length; seat++) {
-            this.candidateJitter[seat] = random.int(70) / 100;
-        }
         this.seats = new TurtleBusSeats(feel);
         this.visual = new TurtleBusVisual(root, player.node.layer, course);
         this.bindSwimmers();
@@ -554,14 +554,8 @@ export class TurtleBusController {
             || this.seats.phase === 'submerging' || this.seats.phase === 'done'
             || seat < 0 || seat >= this.swimmers.length || this.seats.ringOfSwimmer[seat] >= 0) return null;
         const swimmer = this.swimmers[seat];
-        if (!swimmer || !this.isEligible(swimmer) || swimmer.raceDirection !== this.direction) return null;
-        const sample = this.samples[seat];
-        sample.racing = true;
-        sample.direction = this.direction;
-        sample.offset = this.courseOffset(swimmer);
-        sample.lateral = swimmer.node.position.z;
-        sample.forwardSpeed = swimmer.currentSpeed * Math.max(0, Math.cos(swimmer.movementHeading));
-        sample.boardEligible = true;
+        if (!swimmer || !this.isEligible(swimmer)) return null;
+        const sample = this.sampleApproach(seat, this.direction);
         let bestAge = Infinity;
         let bestGap = Infinity;
         let bestRing = -1;
@@ -578,79 +572,83 @@ export class TurtleBusController {
         return bestRing >= 0 ? turtleBusRingWorldLateral(this.routeZ, this.direction, bestRing) : null;
     }
 
-    private tryStart(): void {
-        // 起跳已结算、进入水下滑行即可预告上浮；真正抓圈仍检查水面资格。
-        if (!this.player.motor.isRacing || !this.player.node.active) return;
-        for (let i = 0; i < this.samples.length; i++) {
-            const swimmer = this.swimmers[i];
-            const sample = this.samples[i];
-            sample.racing = !!swimmer?.motor.isRacing && !!swimmer?.node.active;
-            if (!swimmer) continue;
-            sample.direction = swimmer.raceDirection >= 0 ? 1 : -1;
-            sample.offset = this.courseOffset(swimmer);
-            sample.lateral = swimmer.node.position.z;
-            sample.forwardSpeed = swimmer.currentSpeed * Math.max(0, Math.cos(swimmer.movementHeading));
-            sample.boardEligible = this.isEligible(swimmer);
-            sample.rootBack = swimmer.cartoonRig?.turtleBusRootOffset ?? TURTLE_BUS_LAYOUT.passengerRootBack;
-        }
-        const direction = this.samples[0].direction;
-        if (this.formalMode) {
-            // Randomized candidate order, then actual reachability. A late majority cannot force a late launch.
-            for (let attempt = 0; attempt < this.samples.length; attempt++) {
-                const sample = this.samples[(this.firstCandidate + attempt) % this.samples.length];
-                if (!sample.racing || !sample.boardEligible || sample.offset > 24) continue;
-                const candidateOffset = this.candidateStartOffset(sample);
-                for (let route = 0; route < ROUTE_CENTERS.length; route++) {
-                    const center = ROUTE_CENTERS[(this.firstRoute + route) % ROUTE_CENTERS.length];
-                    if (!this.bodySpawnClear(sample.direction, center, candidateOffset)) continue;
-                    if (!turtleBusHasBoardingWindow(this.samples, sample.direction, center, candidateOffset, this.worldScale())) continue;
-                    this.startTrip(sample.direction, center, candidateOffset);
-                    return;
-                }
+    /** 面向指定池端规划：相向选手先到墙折返，再从圈后追上。 */
+    private sampleApproach(seat: number, direction: TurtleBusDirection): MutableSample {
+        const sample = this.samples[seat], swimmer = this.swimmers[seat];
+        sample.racing = !!swimmer?.motor.isRacing && !!swimmer?.node.active;
+        sample.boardEligible = false;
+        if (!swimmer) return sample;
+        sample.direction = direction;
+        sample.offset = this.courseOffset(swimmer);
+        sample.lateral = swimmer.node.position.z;
+        sample.forwardSpeed = swimmer.currentSpeed * Math.max(0, Math.cos(swimmer.movementHeading));
+        sample.rootBack = swimmer.cartoonRig?.turtleBusRootOffset ?? TURTLE_BUS_LAYOUT.passengerRootBack;
+        sample.boardEligible = this.isEligible(swimmer);
+        sample.boardReadyAfterSeconds = 0;
+        if (swimmer.raceDirection !== direction) {
+            const remaining = this.course.courseLength - sample.offset;
+            // 最后一趟触壁是完赛，不能虚构一次折返来证明有人可搭。
+            sample.boardEligible &&= swimmer.distance + remaining < getRaceDistance() - .01;
+            const pose = CHARACTER_POSE_TUNING, balance = SWIMMER_BALANCE;
+            const approach = pose.flipTurnToKeyframe1Seconds + pose.flipTurnToKeyframe2Seconds;
+            const returning = pose.flipTurnReturnToSwimSeconds;
+            const underwater = pose.flipTurnUnderwaterDiveSeconds + pose.flipTurnUnderwaterHoldSeconds
+                + pose.flipTurnUnderwaterRiseSeconds;
+            const approachTravel = sample.forwardSpeed * approach
+                / (Math.min(2, Math.max(1, balance.flipTurnDecelerationExponent)) + 1);
+            sample.boardReadyAfterSeconds = Math.max(0, remaining - approachTravel)
+                / Math.max(.1, sample.forwardSpeed) + approach + returning + underwater;
+            const launch = balance.flipTurnPushLaunchSpeed * (swimmer.motor.burstWallLaunchSpeedScale ?? 1);
+            let travel = launch * returning / (Math.min(2, Math.max(1, balance.flipTurnAccelerationExponent)) + 1);
+            let speed = launch;
+            // 低频规划近似积分无划水滑行，不改变真实马达；强爆发角色不能被当作原地等候。
+            for (let elapsed = 0; elapsed < underwater; elapsed += 1 / 30) {
+                const step = Math.min(1 / 30, underwater - elapsed);
+                const drag = balance.poolDeceleration + (balance.baseDrag + balance.flipTurnUnderwaterGlideDrag) * speed
+                    + balance.highSpeedDrag * speed * speed;
+                speed = Math.max(0, speed - drag * step);
+                travel += speed * step;
             }
-            return;
+            sample.offset = travel - sample.forwardSpeed * sample.boardReadyAfterSeconds;
         }
-        const candidateOffset = this.candidateStartOffset(this.samples[0]);
-        let bestCenter = NaN;
-        let bestAge = Infinity;
-        let bestLateralGap = Infinity;
-        // P1独立调试入口先确保玩家有一圈可搭；正式导演另做多人机会和出生安全规划。
-        for (const center of ROUTE_CENTERS) {
-            for (let ring = 0; ring < TURTLE_BUS_SEAT_COUNT; ring++) {
-                const age = turtleBusEstimateClaimAge(this.samples[0], ring, direction, center,
-                    0, candidateOffset, this.worldScale(), this.player.cartoonRig?.turtleBusRootOffset ?? TURTLE_BUS_LAYOUT.passengerRootBack);
-                const lateralGap = Math.abs(this.samples[0].lateral
-                    - turtleBusRingWorldLateral(center, direction, ring));
-                if (Number.isFinite(age) && (lateralGap < bestLateralGap
-                    || (lateralGap === bestLateralGap && age < bestAge))) {
-                    bestAge = age; bestCenter = center; bestLateralGap = lateralGap;
-                }
-            }
-        }
-        // 预告时玩家还在水下，严格抓圈资格暂时为假。灰模先按最近路线
-        // 浮起，真正抓取仍走水面判定；正式导演需预测出水后的可达窗口。
-        if (!Number.isFinite(bestCenter) && this.player.distance < this.course.courseLength) {
-            let bestLateralGap = Infinity;
-            for (const center of ROUTE_CENTERS) {
-                for (let ring = 0; ring < TURTLE_BUS_SEAT_COUNT; ring++) {
-                    const gap = Math.abs(this.samples[0].lateral
-                        - turtleBusRingWorldLateral(center, direction, ring));
-                    if (gap < bestLateralGap) { bestLateralGap = gap; bestCenter = center; }
-                }
-            }
-        }
-        if (!Number.isFinite(bestCenter) || !this.bodySpawnClear(direction, bestCenter, candidateOffset)) return;
-        this.startTrip(direction, bestCenter, candidateOffset);
+        return sample;
     }
 
-    private candidateStartOffset(sample: MutableSample): number {
-        const speed = Math.max(2.3, Math.min(3.5, sample.forwardSpeed));
-        const jitter = this.candidateJitter[sample.seat];
-        // 预告结束时，最后一排的“人物握点”仍应在选手前方，留出靠拢时间。
-        const catchLead = -Math.min(...TURTLE_BUS_RING_FORWARD_OFFSETS) + sample.rootBack + .8;
-        return Math.round(Math.max(10, Math.min(30,
-            Math.max(6.3 / this.worldScale(), sample.offset + speed * TURTLE_BUS_CONFIG.previewSeconds
-                + catchLead / this.worldScale() + jitter))) * 10) / 10;
+    private tryStart(): void {
+        if (!this.player.motor.isRacing || !this.player.node.active) return;
+        // 留出末排圈、最长角色身体和池壁余量；不随选手往中段平移。
+        const candidateOffset = Math.ceil(TURTLE_BUS_CONFIG.entryWorldInset / this.worldScale() * 10) / 10;
+        const preferred = this.swimmers[this.firstCandidate % (this.ais.length + 1)] ?? this.player;
+        const firstDirection: TurtleBusDirection = preferred.raceDirection >= 0 ? 1 : -1;
+        for (let side = 0; side < 2; side++) {
+            const direction = (side === 0 ? firstDirection : -firstDirection) as TurtleBusDirection;
+            for (let seat = 0; seat < this.samples.length; seat++) this.sampleApproach(seat, direction);
+            let bestCenter = NaN, bestAge = Infinity, bestLateralGap = Infinity;
+            for (let route = 0; route < ROUTE_CENTERS.length; route++) {
+                const center = ROUTE_CENTERS[(this.firstRoute + route) % ROUTE_CENTERS.length];
+                if (!this.entryFitsPool(center, candidateOffset)) continue;
+                if (this.formalMode) {
+                    if (!turtleBusHasBoardingWindow(this.samples, direction, center, candidateOffset,
+                        this.worldScale(), TURTLE_BUS_CONFIG.launchClaimHorizonSeconds)) continue;
+                    this.startTrip(direction, center, candidateOffset);
+                    return;
+                }
+                // 独立试玩优先给玩家留空圈；已游远时等待下一池端窗口。
+                for (let ring = 0; ring < TURTLE_BUS_SEAT_COUNT; ring++) {
+                    const age = turtleBusEstimateClaimAge(this.samples[0], ring, direction, center,
+                        0, candidateOffset, this.worldScale());
+                    const gap = Math.abs(this.samples[0].lateral - turtleBusRingWorldLateral(center, direction, ring));
+                    if (age <= TURTLE_BUS_CONFIG.launchClaimHorizonSeconds
+                        && (gap < bestLateralGap || (gap === bestLateralGap && age < bestAge))) {
+                        bestAge = age; bestCenter = center; bestLateralGap = gap;
+                    }
+                }
+            }
+            if (Number.isFinite(bestCenter)) {
+                this.startTrip(direction, bestCenter, candidateOffset);
+                return;
+            }
+        }
     }
 
     private startTrip(direction: TurtleBusDirection, center: number, startOffset: number): void {
@@ -668,47 +666,36 @@ export class TurtleBusController {
             && swimmer.motor.ability.depth <= 0.2;
     }
 
-    private bodySpawnClear(direction: TurtleBusDirection, center: number, startOffset: number): boolean {
-        const origin = direction === this.course.direction ? this.course.startX : this.course.finishX;
-        const worldScale = Math.abs(this.course.finishX - this.course.startX) / this.course.courseLength;
-        const bodyX = origin + direction * startOffset * worldScale;
-        if (startOffset * worldScale < 6.3) return false;
+    private entryFitsPool(center: number, startOffset: number): boolean {
+        const worldScale = this.worldScale();
+        if (!Number.isFinite(startOffset) || startOffset < 1 || startOffset > 30) return false;
+        if (startOffset * worldScale < 6.3 || startOffset >= TURTLE_BUS_CONFIG.unloadOffset - 5) return false;
         const halfPool = (this.course.poolWidth || 20) * .5;
         if (Math.abs(center) + Math.abs(TURTLE_BUS_LAYOUT.ringLateral[3]) + .95 > halfPool) return false;
-        for (let seat = 0; seat < this.swimmers.length; seat++) {
-            const swimmer = this.swimmers[seat];
-            if (!swimmer?.node.active || !swimmer.motor.isRacing) continue;
-            if (Math.abs(swimmer.node.position.x - bodyX) < TURTLE_BUS_LAYOUT.bodyHalfLength + .7
-                && Math.abs(swimmer.node.position.z - center) < 2.1) return false;
-        }
+        // 允许附近有人：本体从水下逐渐顶开，圈和绳索没有推挤体积。
         return true;
     }
 
-    /** 水面软避让有界，仅旁滑、不产生受击；圈后握点通道保持畅通。 */
+    /** 只有海龟本体引导选手旁滑；泳圈和绳索不推人，保留自然靠近上车。 */
     private applySoftAvoidance(dt: number, ownerOnly: boolean): void {
-        if (this.seats.phase === 'preview' || this.seats.phase === 'submerging' || this.seats.phase === 'done') return;
+        if (this.seats.phase === 'idle' || this.seats.phase === 'submerging' || this.seats.phase === 'done') return;
+        const riseContact = Math.max(0, Math.min(1, (this.seats.age - .35) / .85));
+        if (riseContact <= 0) return;
         const root = this.visual.node.position, limit = (this.course.poolWidth || 20) * .5 - .65;
         for (let seat = 0; seat < (ownerOnly ? 1 : this.swimmers.length); seat++) {
             const swimmer = this.swimmers[seat];
             if (!swimmer || !this.isEligible(swimmer) || this.seats.ringOfSwimmer[seat] >= 0) continue;
             const x = (swimmer.node.position.x - root.x) * this.direction;
             const z = swimmer.node.position.z;
-            let obstacleZ = this.routeZ, radius = TURTLE_BUS_LAYOUT.bodyHalfWidth + .3;
-            let dx = (x + swimmer.raceDirection * this.direction * .8) / (TURTLE_BUS_LAYOUT.bodyHalfLength + .5);
-            let dz = (z - obstacleZ) / radius;
-            let inside = dx * dx + dz * dz < 1;
-            if (!inside) for (let ring = 0; ring < 4; ring++) {
-                const ringX = TURTLE_BUS_RING_FORWARD_OFFSETS[ring];
-                // 从后方伸手可达的范围不受圈自身阻挡。
-                if (x < ringX - .9) continue;
-                obstacleZ = turtleBusRingWorldLateral(this.routeZ, this.direction, ring); radius = .9;
-                dx = (x - ringX) / .9; dz = (z - obstacleZ) / radius;
-                if (dx * dx + dz * dz < 1) { inside = true; break; }
-            }
+            const obstacleZ = this.routeZ, radius = TURTLE_BUS_LAYOUT.bodyHalfWidth + .3;
+            const dx = (x + swimmer.raceDirection * this.direction * .8) / (TURTLE_BUS_LAYOUT.bodyHalfLength + .5);
+            const dz = (z - obstacleZ) / radius;
+            const inside = dx * dx + dz * dz < 1;
             if (!inside) continue;
-            const sign = Math.abs(z - obstacleZ) > .01 ? Math.sign(z - obstacleZ) : (seat % 2 ? 1 : -1);
+            const sign = Math.abs(z - obstacleZ) > .01 ? Math.sign(z - obstacleZ) : ((this.laneBySeat?.[seat] ?? seat) % 2 ? 1 : -1);
             const wanted = Math.max(-limit, Math.min(limit, obstacleZ + sign * radius * Math.sqrt(Math.max(0, 1 - dx * dx))));
-            const push = Math.max(-this.feel.bodySoftPushMax * dt, Math.min(this.feel.bodySoftPushMax * dt, wanted - z));
+            const maxPush = this.feel.bodySoftPushMax * dt * riseContact;
+            const push = Math.max(-maxPush, Math.min(maxPush, wanted - z));
             if (Math.abs(push) > 1e-5) swimmer.applyCollisionPush(0, push);
         }
     }

@@ -100,7 +100,8 @@
 // 版本114：海龟圈位与乘客握点统一世界单位，连续抢圈仲裁与预告原地取消。
 // 版本115：海龟空圈宽范围即时吸附，占位时由人物马达一次对齐握点。
 // 版本117：海龟上车抓握保护，快照按圈同步绝对截止时刻。
-export const NET_RACE_PROTOCOL_VERSION = 117;
+// 版本118：海龟固定池端入场、本体上浮软挤开，泳圈只接客。
+export const NET_RACE_PROTOCOL_VERSION = 118;
 
 let lastRaceStamp = 0;
 

@@ -61,8 +61,10 @@ function runUntilBoarded(onGripChanged) {
     const bus = new TurtleBusController(root, course, player, [ai], 1,
         undefined, undefined, onGripChanged);
     for (let step = 0; step < 900 && bus.seats.ringOfSwimmer[0] < 0; step++) {
-        player.motor.distance = 50 + step * 2.5 / 60;
-        ai.motor.distance = 50 + step * 2.5 / 60;
+        const t = step / 60, offset = t < 4.8 ? 38 + t * 2.5 : 50 + Math.max(0, t - 6) * 2.5;
+        player.motor.distance = offset; ai.motor.distance = offset;
+        player.raceDirection = ai.raceDirection = offset < 50 ? 1 : -1;
+        player.node.position.x = ai.node.position.x = offset < 50 ? offset : 100 - offset;
         const target = bus.targetZForAi(0);
         if (target !== null) player.node.position.z += Math.max(-.65/60, Math.min(.65/60, target-player.node.position.z));
         bus.update(1 / 60, true);
@@ -76,7 +78,7 @@ test('折返时经过画面里的空圈，即使仍按着划水也会自动双�
     player.motor.armStrokeSequence = 4;
     const course = { courseLength: 50, direction: 1, startX: 0, finishX: 50, waterY: 0 };
     const bus = new TurtleBusController(new FakeNode('World'), course, player, [], 1);
-    bus.update(3, true);
+    bus.startTrip(-1, 0, 7);
     const departure = bus.snapshotState();
     assert.equal(departure.direction, -1);
     assert.equal(bus.visualNode.euler.y, 180);
@@ -131,7 +133,7 @@ test('灰模入口在 AI 调试标志确定后才装配班车，并保持联机�
     assert.match(source, /this\._turtleBus\?\.update\(dt,\s*this\._state === GameState\.GLIDING\s*\|\| this\._state === GameState\.RACING\)/);
 });
 
-test('首次折返后的可达窗口确实浮起班车并播报发车', () => {
+test('接近折返池端时提前浮起班车并播报发车', () => {
     const root = new FakeNode('World');
     const player = racer();
     const calls = [];
@@ -139,7 +141,8 @@ test('首次折返后的可达窗口确实浮起班车并播报发车', () => {
     const bus = new TurtleBusController(root, course, player, [], 1,
         direction => calls.push(`preview:${direction}`), () => calls.push('boarding'));
     for (let step = 0; step < 360 && calls.length < 2; step++) {
-        player.motor.distance = 50 + step * 2.5 / 60;
+        player.motor.distance = 40 + step * 2.5 / 60;
+        player.raceDirection = player.distance < 50 ? 1 : -1;
         bus.update(1 / 60, true);
     }
     assert.deepEqual(calls, ['preview:-1', 'boarding']);
@@ -148,7 +151,7 @@ test('首次折返后的可达窗口确实浮起班车并播报发车', () => {
     bus.dispose();
 });
 
-test('起跳后滑行阶段先浮起海龟，水下选手仍不能抓圈', () => {
+test('水下滑行不凭空生成不可搭班次，已预告的车仍拒绝水下抓圈', () => {
     const root = new FakeNode('World');
     const player = racer();
     player.raceDirection = 1;
@@ -159,7 +162,8 @@ test('起跳后滑行阶段先浮起海龟，水下选手仍不能抓圈', () =>
         direction => calls.push(direction));
     player.isCollisionActive = false;
     bus.update(3, true);
-    assert.equal(bus.seats.phase, 'preview');
+    assert.equal(bus.seats.phase, 'idle');
+    bus.startTrip(1, 0, 7);
     assert.equal(bus.seats.ringOfSwimmer[0], -1);
     player.isCollisionActive = true;
     bus.update(3, true);
@@ -169,21 +173,26 @@ test('起跳后滑行阶段先浮起海龟，水下选手仍不能抓圈', () =>
     bus.dispose();
 });
 
-test('从起跳滑行进入水面后，正常前进的玩家能被池端班车追上并自动抓圈', () => {
-    const root = new FakeNode('World');
+test('从起跳开始游完首段后，池端预告能让正常前进的玩家在折返后抓圈', () => {
     const player = racer();
-    player.raceDirection = 1;
     const course = { courseLength: 50, direction: 1, startX: 0, finishX: 50, waterY: 0 };
-    const bus = new TurtleBusController(root, course, player, [], 0);
-    for (let step = 0; step < 720 && bus.seats.ringOfSwimmer[0] < 0; step++) {
-        player.motor.distance = 3 + 2.5 * step / 60;
-        player.isCollisionActive = step >= 44;
+    const bus = new TurtleBusController(new FakeNode('World'), course, player, [], 0);
+    let entry = null;
+    for (let step = 0; step < 2100 && bus.seats.ringOfSwimmer[0] < 0; step++) {
+        const t = step / 60;
+        player.motor.distance = t < 18.8 ? 3 + 2.5 * t : 50 + Math.max(0, t - 20) * 2.5;
+        player.raceDirection = player.distance < 50 ? 1 : -1;
+        player.node.position.x = player.distance < 50 ? player.distance : 100 - player.distance;
+        player.isCollisionActive = step >= 44 && !(t >= 18.8 && t < 20);
         const target = bus.targetZForAi(0);
         if (target !== null) player.node.position.z += Math.max(-.65/60, Math.min(.65/60, target-player.node.position.z));
         bus.update(1 / 60, true);
+        if (!entry) entry = bus.snapshotState();
     }
+    assert.equal(entry.direction, -1);
+    assert.equal(entry.startOffset, 7);
     assert.ok(bus.seats.ringOfSwimmer[0] >= 0);
-    assert.ok(bus.seats.age < 9, '抓圈不应拖到即将到站');
+    assert.ok(bus.seats.age < 12, '折返后的上车机会不能拖到到站');
     assert.ok(player.motor.tow?.speed > 0 && player.motor.tow.speed < player.currentSpeed);
     bus.dispose();
 });
@@ -191,6 +200,8 @@ test('从起跳滑行进入水面后，正常前进的玩家能被池端班车�
 test('AI 只追有剩余收益的空圈，抢到后立刻停止追圈', () => {
     const root = new FakeNode('World');
     const player = racer(), ai = racer();
+    player.motor.distance = ai.motor.distance = 42;
+    player.raceDirection = ai.raceDirection = 1;
     const course = { courseLength: 50, direction: 1, startX: 0, finishX: 50, waterY: 0 };
     const bus = new TurtleBusController(root, course, player, [ai], 1);
     bus.update(3, true);
@@ -206,6 +217,8 @@ test('AI 只追有剩余收益的空圈，抢到后立刻停止追圈', () => {
 test('抢圈目标按低频回调发送，重开时清掉旧目标', () => {
     const root = new FakeNode('World');
     const player = racer(), ai = racer();
+    player.motor.distance = ai.motor.distance = 42;
+    player.raceDirection = ai.raceDirection = 1;
     const updates = [];
     const course = { courseLength: 50, direction: 1, startX: 0, finishX: 50, waterY: 0 };
     const bus = new TurtleBusController(root, course, player, [ai], 1,
@@ -236,6 +249,8 @@ test('开发灰模从反向池端出场，玩家实际接近后自动抓稳且�
 test('正式班车至少两名选手有不同空圈可搭才出场，无可达窗口十八秒后请求替换', () => {
     const course = { courseLength: 50, direction: 1, startX: 0, finishX: 50, waterY: 0 };
     const player = racer(), ai = racer();
+    player.motor.distance = ai.motor.distance = 42;
+    player.raceDirection = ai.raceDirection = 1;
     const ready = new TurtleBusController(new FakeNode('World'), course, player, [ai], 1,
         undefined, undefined, undefined, undefined, undefined, true,
         undefined, [3, 4], 42);
@@ -244,8 +259,9 @@ test('正式班车至少两名选手有不同空圈可搭才出场，无可达�
     assert.equal(ready.snapshotState().tripId, 42);
     ready.dispose();
 
-    player.motor.distance = 99;
-    ai.motor.distance = 99;
+    player.motor.distance = 199;
+    player.raceDirection = ai.raceDirection = -1;
+    ai.motor.distance = 199;
     let unavailable = 0;
     const blocked = new TurtleBusController(new FakeNode('World'), course, player, [ai], 1,
         undefined, undefined, undefined, undefined, undefined, true,
@@ -281,7 +297,7 @@ test('正式事件从赛程中段等待到折返后，仍能在替换期限内�
     bus.dispose();
 });
 
-test('正式发车跳过临近折返的多数人，选择少数方向的可搭窗口', () => {
+test('正式发车可迎接将到池端的选手，人数多数不能把出生点推向池中段', () => {
     const racers = Array.from({ length: 5 }, racer);
     racers[0].raceDirection = 1;
     racers[1].raceDirection = 1;
@@ -289,7 +305,7 @@ test('正式发车跳过临近折返的多数人，选择少数方向的可搭�
     racers[1].motor.distance = 5;
     racers[0].node.position.z = -1.2;
     racers[1].node.position.z = 1.2;
-    for (let index = 2; index < racers.length; index++) racers[index].motor.distance = 95;
+    for (let index = 2; index < racers.length; index++) racers[index].motor.distance = 92;
     const course = { courseLength: 50, direction: 1, startX: 0, finishX: 50, waterY: 0 };
     const bus = new TurtleBusController(new FakeNode('World'), course,
         racers[0], racers.slice(1), 123, undefined, undefined, undefined,
@@ -297,11 +313,11 @@ test('正式发车跳过临近折返的多数人，选择少数方向的可搭�
     bus.update(3, true);
     assert.equal(bus.seats.phase, 'preview');
     assert.equal(bus.snapshotState().direction, 1);
-    assert.ok(bus.snapshotState().startOffset > 16);
+    assert.equal(bus.snapshotState().startOffset, 7);
     bus.dispose();
 });
 
-test('同一种子复现发车时刻，不同种子给出不同随机等待', () => {
+test('同一种子复现池端发车，不同种子保留短随机等待且不绕过可搭窗口', () => {
     const course = { courseLength: 50, direction: 1, startX: 0, finishX: 50, waterY: 0 };
     const launch = seed => {
         const player = racer(), ai = racer();
@@ -312,38 +328,84 @@ test('同一种子复现发车时刻，不同种子给出不同随机等待', ()
             undefined, undefined, true, undefined, [0, 1], 42);
         let tick = -1;
         for (let index = 0; index < 72; index++) {
-            player.motor.distance = 50 + index * .625;
+            player.motor.distance = 35 + index * .625;
             ai.motor.distance = player.motor.distance;
+            player.raceDirection = ai.raceDirection = player.distance < 50 ? 1 : -1;
             bus.update(.25, true);
             if (bus.seats.phase === 'preview') { tick = index; break; }
         }
         const startOffset = bus.snapshotState()?.startOffset;
+        const delay = bus.launchDelaySeconds;
         bus.dispose();
-        return { tick, startOffset };
+        return { tick, startOffset, delay };
     };
     assert.deepEqual(launch(1), launch(1));
     assert.ok(launch(1).tick >= 0);
-    const timings = Array.from({ length: 12 }, (_, seed) => launch(seed).tick);
-    assert.ok(timings.every(tick => tick >= 0));
-    assert.ok(new Set(timings).size > 1);
+    const timings = Array.from({ length: 12 }, (_, seed) => launch(seed));
+    assert.ok(timings.every(t => t.tick >= 0 && (t.tick + 1) * .25 >= t.delay && t.startOffset === 7));
+    assert.ok(new Set(timings.map(t=>t.delay)).size > 1);
 });
 
-test('海龟本体出生位置有选手时延后上浮，位置空开后再发车', () => {
+test('两端与不同世界池长的正式出生点都留在池端，圈和最长角色不越墙',()=>{
+    for(const scale of [.7,1,1.5])for(const incoming of [1,-1]){
+        const player=racer();player.raceDirection=incoming;
+        const course={courseLength:50,direction:1,startX:0,finishX:50*scale,waterY:0};
+        const bus=new TurtleBusController(new FakeNode('World'),course,player,[],1,
+            undefined,undefined,undefined,undefined,undefined,true);
+        for(let offset=20;offset<49&&!bus.snapshotState();offset+=.1){
+            player.motor.distance=(incoming===1?0:50)+offset;
+            bus.tryStart();
+        }
+        const state=bus.snapshotState();assert.ok(state);
+        assert.equal(state.direction,-incoming);
+        const inset=state.startOffset*scale;
+        assert.ok(inset>=7-1e-6&&inset<7+.1*scale+1e-6);
+        assert.ok(inset-3.5-2.39>.65,'最后一排最长身体保留池壁空间');
+        const origin=state.direction===1?0:course.finishX;
+        assert.ok(Math.abs(bus.visualNode.position.x-origin-state.direction*inset)<1e-6);
+        bus.dispose();
+    }
+});
+
+test('上浮中央的选手按稳定泳道同向挤开，访客仅推动自己的角色',()=>{
+    const course={courseLength:50,direction:1,startX:0,finishX:50,waterY:0};
+    const hostPlayer=racer(),remote=racer(),owner=racer(),guestRemote=racer();
+    const host=new TurtleBusController(new FakeNode('World'),course,hostPlayer,[remote],1,
+        undefined,undefined,undefined,undefined,undefined,true,undefined,[2,4]);
+    const guest=new TurtleBusController(new FakeNode('World'),course,owner,[guestRemote],1,
+        undefined,undefined,undefined,undefined,undefined,true,undefined,[4,2]);
+    host.startTrip(1,0,7);host.update(.8,true);
+    guest.setAuthority(false);guest.applyNetSnapshot(host.snapshotState());
+    remote.node.setPosition(7,0,0);owner.node.setPosition(7,0,0);guestRemote.node.setPosition(7,0,0);
+    host.update(.1,true);guest.updateReplica(.1);
+    assert.ok(remote.node.position.z<0);
+    assert.equal(owner.node.position.z,remote.node.position.z);
+    assert.equal(guestRemote.node.position.z,0);
+    host.dispose();guest.dispose();
+});
+
+test('池端本体可在附近有人时逐渐挤开；水下未接触时和泳圈区域不推人', () => {
     const racers = [racer(), racer(), racer()];
     racers.forEach((swimmer, index) => {
-        swimmer.node.position.x = 37;
-        swimmer.node.position.z = [-4, 0, 4][index];
+        swimmer.motor.distance = 42; swimmer.raceDirection = 1;
+        swimmer.node.position.x = 43; swimmer.node.position.z = [-4, 0, 4][index];
     });
     const course = { courseLength: 50, direction: 1, startX: 0, finishX: 50, waterY: 0 };
     const bus = new TurtleBusController(new FakeNode('World'), course,
-        racers[0], racers.slice(1), 0,
-        undefined, undefined, undefined, undefined, undefined, true,
+        racers[0], racers.slice(1), 0, undefined, undefined, undefined, undefined, undefined, true,
         undefined, [0, 1, 2], 9);
     bus.update(3, true);
-    assert.equal(bus.seats.phase, 'idle');
-    racers.forEach(swimmer => { swimmer.node.position.x = 45; });
-    bus.update(.25, true);
     assert.equal(bus.seats.phase, 'preview');
+    assert.equal(bus.snapshotState().startOffset, 7);
+    const center = bus.snapshotState().routeZ;
+    const swimmer = racers.find(r => r.node.position.z === center);
+    const z = swimmer.node.position.z;
+    bus.update(.25, true);
+    assert.equal(swimmer.node.position.z, z, '龟身仍在水下时不推挤');
+    for (let i = 0; i < 30; i++) bus.update(.05, true);
+    assert.ok(Math.abs(swimmer.node.position.z - z) > .3, '上浮时本体确实让附近人侧移');
+    assert.ok(Math.abs(swimmer.node.position.z - z) < 1.2, '渐进推开而不是瞬移');
+    assert.equal(bus.seats.ringOfSwimmer[0], -1);
     bus.dispose();
 });
 
@@ -591,6 +653,55 @@ test('海龟软避让有速度上限、不附加击倒，圈后握点不被推�
     assert.ok(Math.abs(player.node.position.z)>.001&&Math.abs(player.node.position.z)<=.01601);
     assert.equal(bus.seats.ringOfSwimmer[0],-1);
     bus.dispose();
+});
+
+test('四个泳圈前侧均不推人；本体浮起后泳圈才依次上浮',()=>{
+    const player=racer(),course={courseLength:50,direction:1,startX:0,finishX:50,waterY:0};
+    const bus=new TurtleBusController(new FakeNode('World'),course,player,[],1);
+    for(const direction of [1,-1]){
+        player.raceDirection=direction;bus.direction=direction;bus.routeZ=0;bus.seats.phase='cruising';bus.seats.age=4;
+        bus.visual.update(4,direction,0,16);
+        for(let i=0;i<4;i++){
+            const ring=bus.visual.rings[i].getWorldPosition(new harness.Vec3());
+            player.node.setPosition(ring.x+direction*.15,0,ring.z);
+            bus.applySoftAvoidance(.1,false);
+            assert.equal(player.node.position.z,ring.z,'泳圈前侧不侧推');
+        }
+    }
+    bus.visual.update(1.2,1,0,16);
+    assert.ok(Math.abs(bus.visual.body.position.y)<1e-6,'本体已经浮起');
+    assert.ok(bus.visual.rings.every(r=>r.position.y<-.7),'泳圈仍在水下等待');
+    bus.visual.update(1.5,1,0,16);
+    assert.ok(bus.visual.rings[0].position.y>bus.visual.rings[3].position.y+.15,'圈依次跟上');
+    bus.visual.update(2.3,1,0,16);
+    assert.ok(bus.visual.rings.every(r=>r.position.y>-.03),'开放抓取前四圈均已浮起');
+    bus.dispose();
+});
+
+test('真实划水、翻滚蹬墙与水下滑行后，选手仍能抢到池端发出的空圈',()=>{
+    const {createAiHarness}=require('./helpers/ai-race-harness.cjs');
+    const h=createAiHarness();
+    Object.assign(h.cc,{Node:FakeNode,MeshRenderer:FakeRenderer,Material:FakeMaterial,Color:FakeColor,
+        primitives:harness.cc.primitives,utils:harness.cc.utils});
+    const RealBus=h.load('core/TurtleBusController').TurtleBusController;
+    for(const distance of [35,85])for(const id of ['cartonSwimmer6','cartonSwimmer9','cartonSwimmer15']){
+        const actor=h.create(id,1,1,distance,0);
+        actor.body.cartoonRig.turtleBusRootOffset=2.2;
+        const bus=new RealBus(new FakeNode('World'),actor.body.courseLayout,actor.body,[],13,
+            undefined,undefined,(_seat,riding)=>actor.ai.setTurtleBusRiding(riding),
+            (_seat,z)=>actor.ai.setTurtleBusTargetZ(z));
+        let entry=null,turned=false; const trace=[];
+        for(let i=0;i<2400&&bus.seats.ringOfSwimmer[0]<0;i++){
+            actor.step(1/60);bus.update(1/60,true);
+            turned ||= actor.body.isFlipTurning;
+            entry ||= bus.snapshotState();
+            if(i%30===0&&entry&&bus.seats.age<13)trace.push([+bus.seats.age.toFixed(1),+actor.body.distance.toFixed(1),+actor.body.currentSpeed.toFixed(1),+actor.body.node.position.z.toFixed(1),actor.body.isCollisionActive,bus.targetZForAi(0)]);
+        }
+        assert.ok(turned,'使用真实转身阶段');
+        assert.ok(entry,`${id}/${distance} 应发车`);
+        assert.ok(bus.seats.ringOfSwimmer[0]>=0,`${id}/${distance} 应在真实出水后搭乘，车龄 ${bus.seats.age}，轨迹 ${JSON.stringify(trace)}`);
+        bus.dispose();
+    }
 });
 
 test('独立四鳍保留肩根，绳子端点在上浮、巡航和下潜都接到圈耳',()=>{

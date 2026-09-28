@@ -20,6 +20,8 @@ export const TURTLE_BUS_CONFIG = {
     accelerationSeconds: 0.6,
     cruiseSpeed: 2,
     startOffset: 16,
+    entryWorldInset: 7,
+    launchClaimHorizonSeconds: 10,
     unloadOffset: 42,
     unloadSeconds: 0.6,
     submergeSeconds: 1.4,
@@ -104,6 +106,8 @@ export type TurtleBusRacerSample = Readonly<{
     /** 能在本步从水面抓圈。 */
     boardEligible: boolean;
     rootBack?: number;
+    /** 预测折返者最早浮出水面并恢复抓圈资格的剩余秒数。 */
+    boardReadyAfterSeconds?: number;
 }>;
 
 const BOARDING_START = TURTLE_BUS_CONFIG.previewSeconds;
@@ -190,7 +194,7 @@ export function turtleBusEstimateClaimAge(
         || currentAge < 0) return Infinity;
     const speed = Math.max(0, Math.min(4, racer.forwardSpeed));
     const lateralGap = Math.abs(racer.lateral - turtleBusRingWorldLateral(routeLateral, direction, ring));
-    const lateralReady = Math.max(BOARDING_START,
+    const lateralReady = Math.max(BOARDING_START, currentAge + (racer.boardReadyAfterSeconds ?? 0),
         currentAge + lateralGap / TURTLE_BUS_CONFIG.maximumLateralRate);
     const claimOverhead = TURTLE_BUS_CONFIG.claimConfirmSeconds + TURTLE_BUS_CONFIG.reachSeconds
         + TURTLE_BUS_CONFIG.claimNetworkReserveSeconds;
@@ -201,7 +205,7 @@ export function turtleBusEstimateClaimAge(
         const ringOffset = turtleBusPositionAt(t, startOffset)
             + (TURTLE_BUS_RING_FORWARD_OFFSETS[ring] - passengerRootBack) / worldScale;
         const swimmerOffset = racer.offset + speed * (t - currentAge);
-        if (ringOffset < swimmerOffset) continue;
+        if (swimmerOffset < 0 || ringOffset < swimmerOffset) continue;
         if (ringOffset - swimmerOffset > TURTLE_BUS_CONFIG.maximumClaimRelativeSpeed * 0.2) continue;
         const claimedAt = t + claimOverhead;
         if (unloadStart(startOffset) - claimedAt >= TURTLE_BUS_CONFIG.minimumRideSeconds) return claimedAt;
@@ -213,6 +217,7 @@ export function turtleBusEstimateClaimAge(
 export function turtleBusHasBoardingWindow(
     racers: readonly TurtleBusRacerSample[], direction: TurtleBusDirection,
     routeLateral: number, startOffset: number = TURTLE_BUS_CONFIG.startOffset, worldScale = 1,
+    maximumClaimAge = Infinity,
 ): boolean {
     const viable = new Uint8Array(1 << TURTLE_BUS_SEAT_COUNT);
     viable[0] = 1;
@@ -224,7 +229,8 @@ export function turtleBusHasBoardingWindow(
         racingRacers++;
         let ringMask = 0;
         for (let ring = 0; ring < TURTLE_BUS_SEAT_COUNT; ring++) {
-            if (Number.isFinite(turtleBusEstimateClaimAge(racer, ring, direction, routeLateral, 0, startOffset, worldScale))) {
+            const age = turtleBusEstimateClaimAge(racer, ring, direction, routeLateral, 0, startOffset, worldScale);
+            if (Number.isFinite(age) && age <= maximumClaimAge) {
                 ringMask |= 1 << ring;
             }
         }
