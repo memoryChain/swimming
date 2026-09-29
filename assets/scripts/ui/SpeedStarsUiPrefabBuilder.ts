@@ -28,6 +28,7 @@ export type SpeedStarsUiCallbacks = {
     onDolphinJump: () => void;
     onStroke: (type: StrokeType) => void;
     onStrokeEnd: (type: StrokeType) => void;
+    onStrokeCancel?: () => void;
     onDiveHoldStart: () => void;
     onDiveHoldEnd: (holdSeconds: number) => void;
     onRestart: () => void;
@@ -282,7 +283,10 @@ export class SpeedStarsUiPrefabBuilder {
         fitInputNodeToVisibleScreen(strokePad);
         strokePad.on(Node.EventType.TOUCH_START, (event: EventTouch) => this.beginTouchStroke(event));
         strokePad.on(Node.EventType.TOUCH_END, (event: EventTouch) => this.endTouchStroke(event));
-        strokePad.on(Node.EventType.TOUCH_CANCEL, (event: EventTouch) => this.endTouchStroke(event));
+        strokePad.on(Node.EventType.TOUCH_CANCEL, (event: EventTouch) => {
+            this._callbacks.onStrokeCancel?.();
+            this.endTouchStroke(event);
+        });
         strokePad.on(Node.EventType.MOUSE_UP, () => this.endMouseStroke());
         strokePad.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => {
             if (event.getButton() === EventMouse.BUTTON_LEFT || event.getButton() === EventMouse.BUTTON_RIGHT) {

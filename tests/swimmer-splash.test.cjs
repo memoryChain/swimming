@@ -19,6 +19,36 @@ const cls = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text 
 function method(name, globals) {
     return evaluate(`export class Subject { ${cls.members.find(n => n.name?.getText(source) === name).getText(source)} }`, { TUNING, ...globals }).Subject;
 }
+
+function rigMethod(name, globals = {}) {
+    const source=ts.createSourceFile('CartoonSwimmerRig.ts',fs.readFileSync(path.join(root,'assets/scripts/entity/CartoonSwimmerRig.ts'),'utf8'),ts.ScriptTarget.Latest,true);
+    const cls=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='CartoonSwimmerRig');
+    return evaluate(`export class Subject { ${cls.members.find(n=>n.name?.getText(source)===name).getText(source)} }`,globals).Subject;
+}
+
+test('蝶泳连续两拍不在末段混回自由泳，停划后淡出，特殊动作撤销残留',()=>{
+    const Subject=rigMethod('updateFreestyle');const rig=new Subject();const poses=[];
+    Object.assign(rig,{_loaded:true,root:{},_poseState:{isFreestyleActive:true},_butterflyPoseWeight:0,
+        _armAction:0,_kickAction:0,_treadSpeedOverride:-1,_treadWaterPhase:0,
+        _pose:{setMovementDirection(){},applyFreestyleTreadBlendPose(){},applyButterflyPose:(p,w)=>poses.push([p,w])},
+        updateArmCycleMotion(){},updateKickCycleMotion(){},updateTreadWaterBlend:()=>0,applyTreadBlendModelPlacement(){},
+        visualHandWaterEntry:()=>0,updateSplashSurface(){},
+    });
+    const tick=(p,dt=.1)=>rig.updateFreestyle(dt,0,0,0,0,0,2,1,true,p);
+    tick(.2);tick(.99);assert.equal(poses.at(-1)[1],1,'收拍前继续保持蝶泳');
+    tick(0);assert.equal(poses.at(-1)[1],1,'下一拍不重新淡入');
+    tick(.99);tick(-1,.06);assert.ok(poses.at(-1)[1]<1&&poses.at(-1)[1]>0);
+    tick(-1,.06);tick(-1,.061);assert.equal(rig._butterflyPoseWeight,0);
+    tick(.4);rig._poseState.isFreestyleActive=false;tick(-1);assert.equal(rig._butterflyPoseWeight,0);
+});
+
+test('双手评价反馈覆盖左右各一次，单手评价仍只反馈对应侧',()=>{
+    const StrokeType={LEFT:0,RIGHT:1,BOTH:2};const Subject=rigMethod('triggerStrokeFeedback',{StrokeType});
+    const rig=new Subject(),calls=[];rig._splashEmitter={triggerStrokeFeedback:(side,perfect)=>calls.push([side,perfect])};
+    rig.triggerStrokeFeedback(StrokeType.BOTH,true);
+    assert.deepEqual(calls,[['left',true],['right',true]]);
+    calls.length=0;rig.triggerStrokeFeedback(StrokeType.RIGHT,false);assert.deepEqual(calls,[['right',false]]);
+});
 test('尾流在正向、反向和转向时始终落在双脚后方', () => {
     const math = createHarness();
     const { Node, Vec3 } = math;
@@ -126,6 +156,26 @@ test('拍水在各自手骨落点即时发射少量水滴，无持续补发', ()
         assert.deepEqual(counts,[speed===0?4:6,TUNING.handImpact.fineCount]);
         assert.equal(emitter.sprayTime,0);assert.equal(emitter.sprayRate,0);assert.equal(emitter.sprayCarry,0);
         assert.equal(emitter.keepAlive,TUNING.handImpact.lifetimeMax);
+    }
+});
+
+test('11个角色真实蝶泳轨迹在低帧率和往返方向每拍双手各触水一次', () => {
+    const {createRig, Vec3, SWIMMER_MODEL_FILES}=require('./helpers/character-contact-harness.cjs');
+    const contactClass=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='HandWaterContact');
+    const {HandWaterContact}=evaluate('export '+contactClass.getText(source),{TUNING,Vec3});
+    for(const file of SWIMMER_MODEL_FILES) for(const fps of [15,30,60]) for(const direction of [1,-1]) {
+        const rig=createRig(file);rig.wrapper.setRotationFromEuler(90,90*direction,0);
+        rig.pose.setMovementDirection(direction);
+        const hands=[new HandWaterContact(),new HandWaterContact()],counts=[0,0];
+        const options={getBoneWorldPosition:(name,out)=>rig.pose.getSplashBoneWorldPosition(name,out)};
+        for(let i=0;i<=fps*3;i++) {
+            rig.pose.applyButterflyPose((i%fps)/fps);
+            for(let j=0;j<2;j++) {
+                hands[j].update(options,j?'RightHand':'LeftHand',0,false);
+                if(hands[j].triggered)counts[j]++;
+            }
+        }
+        assert.deepEqual(counts,[3,3],`${file} ${fps}FPS 方向${direction}：不能漏掉或重复双手入水`);
     }
 });
 

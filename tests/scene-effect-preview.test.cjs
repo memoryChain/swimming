@@ -94,7 +94,7 @@ test('反复点击不重建节点或监听，收起保持效果且只拦截可�
 });
 
 test('面板起始触摸直到松开均不驱动全局相机，空白区域继续支持旋转缩放', () => {
-    const { InputRouter } = load('assets/scripts/core/InputRouter.ts', { cc: { Vec2, input: { off(){} }, Input: { EventType:{} } }, './GameConstants':{}, './InputTuning':{} });
+    const { InputRouter } = load('assets/scripts/core/InputRouter.ts', { cc: { Vec2, input: { off(){} }, Input: { EventType:{} } }, './GameConstants':{}, './ButterflyTuning':{BUTTERFLY_TUNING:{chordSeconds:0.09}},'./InputTuning':{} });
     let orbits=0, zooms=0;
     const router = new InputRouter(new Node('input'), { isCameraTouchBlocked: e => e.blocked, onCameraOrbit: () => orbits++, onCameraZoom: () => zooms++ });
     const event = (id,blocked,points=[0]) => ({ blocked,getID:()=>id,getAllTouches:()=>points.map(x=>({getLocation:()=>({x,y:0})})),getDelta:()=>({x:10,y:5}) });

@@ -20,6 +20,7 @@ import { DiveChargeGatherEffect } from '../character/DiveChargeGatherEffect';
 import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
 import type { DivePrepBoneName, DivePrepPoseSample } from '../character/DivePrepPoseCurve';
 import { FreestylePoseController, ProceduralPoseSnapshot } from '../character/FreestylePoseController';
+import { BUTTERFLY_TUNING } from '../core/ButterflyTuning';
 import { FLIP_TURN_KEYFRAME_1, FLIP_TURN_KEYFRAME_2 } from '../character/FlipTurnPoseCurve';
 import { findSampledDebugAction, SAMPLED_ACTION_IDS } from '../character/SampledActionMotionCurve';
 import type { SampledActionId, SampledActionMotion } from '../character/SampledActionMotionCurve';
@@ -238,6 +239,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _lastKickCycle = 0;
     private _hasLastKickCycle = false;
     private _treadWaterWeight = 0;
+    private _butterflyPoseWeight = 0;
     private _treadWaterPhase = 0;
     private _treadExitHold = 0;
     // Networked remote copies: the OWNER's authoritative swim speed drives the
@@ -946,6 +948,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this._animationPlayer.stop();
+        this._butterflyPoseWeight = 0;
         if (active) {
             this.invalidateTreadBlendModelPlacement();
             this._poseState.enterFreestyle();
@@ -1139,6 +1142,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     setDiveStreamlinePose() {
+        this._butterflyPoseWeight = 0;
         this._pose.resetCollisionSoftness();
         if (this._modelDebugMode) {
             return;
@@ -1150,6 +1154,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     startDiveStreamlineTransition(duration = CHARACTER_POSE_TUNING.diveStreamlineTransitionSeconds) {
+        this._butterflyPoseWeight = 0;
         if (this._modelDebugMode) {
             return;
         }
@@ -1159,6 +1164,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     triggerStrokeFeedback(type: StrokeType, perfect: boolean) {
         this._splashEmitter?.triggerStrokeFeedback(type === StrokeType.RIGHT ? 'right' : 'left', perfect);
+        if (type === StrokeType.BOTH) this._splashEmitter?.triggerStrokeFeedback('right', perfect);
     }
 
     triggerArmStroke() {
@@ -1301,6 +1307,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             bodyUpProjection,
         );
         this._pose.setSurfaceBodyUpProjection(bodyUpProjection);
+        // 正常收拍允许短暂淡出；取消、翻身或特殊动作接管立即撤销蝶泳叠加。
+        if (!motor.butterfly?.active && motor.butterfly?.progress !== 1) this._butterflyPoseWeight = 0;
         this.updateFreestyle(
             useDt,
             this._visualLeftArmCycle,
@@ -1310,7 +1318,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             motor.bodyPhase,
             motor.currentSpeed,
             movementDirection,
-            !motor.permitsUprightTreadWater,
+            !motor.permitsUprightTreadWater || !!motor.butterfly?.active,
+            motor.butterfly?.active ? motor.butterfly.progress : -1,
+            motor.butterflyKickCycle,
         );
         // 该补偿只作用于本次水面姿态，水下滑行、转身和独立预览使用默认方向。
         this._pose.setSurfaceBodyUpProjection(1);
@@ -1371,8 +1381,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return used;
     }
 
-    updateFreestyle(dt: number, leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, speed: number, movementDirection = 1, suppressTreadWater = false) {
+    updateFreestyle(dt: number, leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, speed: number, movementDirection = 1, suppressTreadWater = false, butterflyProgress = -1, butterflyKickCycle = 0) {
         if (!this._loaded || !this._poseState.isFreestyleActive || !this.root) {
+            this._butterflyPoseWeight = 0;
             return;
         }
 
@@ -1404,6 +1415,21 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             treadWeight,
         );
 
+        // 接触与水花在最终骨骼姿态之后采样，不能使用被蝶泳覆盖前的自由泳手掌。
+        if (butterflyProgress >= 0 || this._butterflyPoseWeight > 0) {
+            const active = butterflyProgress >= 0;
+            this._butterflyPoseWeight = active ? Math.min(1, this._butterflyPoseWeight + dt / 0.10)
+                : Math.max(0, this._butterflyPoseWeight - dt / 0.18);
+            const p = active ? butterflyProgress : 1;
+            const weight = this._butterflyPoseWeight;
+            this._pose.applyButterflyPose(p, weight * weight * (3 - 2 * weight), butterflyKickCycle);
+            this._leftHandWaterContact = this._rightHandWaterContact = p < 0.52 || p > 0.9 ? 1 : 0;
+            this._leftHandWaterEntry = this.visualHandWaterEntry('left', 0);
+            this._rightHandWaterEntry = this.visualHandWaterEntry('right', 0);
+            this._leftHandWaterProgress = this._rightHandWaterProgress = Math.min(1, p / 0.52);
+            this.updateSplashSurface(speed);
+            return;
+        }
         const splashWeight = 1 - treadWeight;
         this._leftHandWaterContact = this._pose.handWaterContact(leftArmCycle) * splashWeight;
         this._rightHandWaterContact = this._pose.handWaterContact(rightArmCycle) * splashWeight;
@@ -1494,6 +1520,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     updateDebugActionPreview(dt: number) {
         if (!this._loaded || !this._modelDebugMode) {
+            return;
+        }
+        if (this._debugActionPose === 'butterfly') {
+            const phase = positiveMod(this._selfTime * this.motionPreviewSpeedScale() / Math.max(0.35, BUTTERFLY_TUNING.cycleSeconds), 1);
+            this._pose.setMovementDirection(1);
+            this._pose.applyButterflyPose(phase);
             return;
         }
         if (this.isFlipTurnDebugPose()) {
@@ -1622,6 +1654,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     resetPose() {
+        this._butterflyPoseWeight = 0;
         if (!this._loaded || !this.root) {
             return;
         }

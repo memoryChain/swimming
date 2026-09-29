@@ -11,6 +11,8 @@ import { ENTERTAINMENT_TEST_COMBINATIONS, EntertainmentIntensity,
 export type MainGameLaunchMode = 'race' | 'model-debug' | 'ai-debug' | 'underwater-debug';
 
 export interface AiDebugSetup {
+    /** 只由独立蝶泳页签设置；普通调试入口明确清除。 */
+    butterflyTest?: boolean;
     giantWavePreset?: 'three' | 'single';
     /** 两个新单项各自记住选择；开赛仍由 entertainmentIntensity 传递本局有效档位。 */
     giantWaveIntensity?: EntertainmentIntensity;
@@ -63,6 +65,7 @@ export function setEntertainmentRaceGrade(value: number): void {
     catch { /* 本地存储不可用时仅保留本次会话选择。 */ }
 }
 export function setAiDebugSetup(setup: AiDebugSetup) {
+    pendingAiDebugSetup.butterflyTest = setup.butterflyTest === true;
     pendingAiDebugSetup.giantWavePreset = setup.giantWavePreset === 'single' ? 'single' : 'three';
     pendingAiDebugSetup.giantWaveIntensity = (setup.mode === 'giant-wave-brawl'
         ? normalizeEntertainmentIntensity(setup.entertainmentIntensity) : null)

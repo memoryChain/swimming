@@ -1,4 +1,5 @@
 import { CHARACTER_ABILITY_TUNING } from './CharacterAbilityConfig';
+import { BUTTERFLY_TUNING } from './ButterflyTuning';
 import { GIANT_WAVE_TUNING, GIANT_WAVE_INTENSITY_TUNING } from './GiantWaveRules';
 import { GEYSER_TUNING } from './GeyserBrawlRules';
 import { DRAFTING_TUNING } from '../swimmer/DraftingRules';
@@ -89,6 +90,20 @@ type TuningLoadCandidate = {
 };
 
 export const TUNING_GROUPS: TuningGroup[] = [
+    {
+        name: '蝶泳测试',
+        controls: [
+            control('butterfly.chordSeconds', '双手同步容错', '两次按下的最大间隔，仅测试场生效。', () => BUTTERFLY_TUNING.chordSeconds, v => BUTTERFLY_TUNING.chordSeconds = v, 0.01, 0.03, 0.16, 2),
+            control('butterfly.cycleSeconds', '整拍时长', '下次起划生效，包含发力与回臂。', () => BUTTERFLY_TUNING.cycleSeconds, v => BUTTERFLY_TUNING.cycleSeconds = v, 0.05, 0.6, 1.8, 2),
+            control('butterfly.perfectStart', '完美区起点', '整拍进度比例，下次起划生效。', () => BUTTERFLY_TUNING.perfectStart, v => BUTTERFLY_TUNING.perfectStart = v, 0.01, 0.15, 0.5, 2),
+            control('butterfly.perfectEnd', '完美区终点', '整拍进度比例，下次起划生效。', () => BUTTERFLY_TUNING.perfectEnd, v => BUTTERFLY_TUNING.perfectEnd = v, 0.01, 0.2, 0.58, 2),
+            control('butterfly.timeoutProgress', '按住超时点', '超过该进度自动失误，须松手重新开始。', () => BUTTERFLY_TUNING.timeoutProgress, v => BUTTERFLY_TUNING.timeoutProgress = v, 0.01, 0.4, 0.75, 2),
+            control('butterfly.propulsionScale', '整拍推进倍率', '相对单臂推进的测试倍率，不是正式平衡值。', () => BUTTERFLY_TUNING.propulsionScale, v => BUTTERFLY_TUNING.propulsionScale = v, 0.1, 0.5, 3, 1),
+            control('butterfly.energyScale', '整拍体力倍率', '整拍结算一次体力，下次起划生效。', () => BUTTERFLY_TUNING.energyScale, v => BUTTERFLY_TUNING.energyScale = v, 0.1, 0.5, 3, 1),
+            control('butterfly.bodyWaveDegrees', '身体起伏幅度', '仅改变蝶泳骨骼起伏，不改变实际碰撞位置。', () => BUTTERFLY_TUNING.bodyWaveDegrees, v => BUTTERFLY_TUNING.bodyWaveDegrees = v, 1, 0, 16, 0),
+            control('butterfly.bodyHeaveMeters', '身体升沉幅度', '沿水面上下移动模型，不改变碰撞和潜水状态。', () => BUTTERFLY_TUNING.bodyHeaveMeters, v => BUTTERFLY_TUNING.bodyHeaveMeters = v, 0.01, 0, 0.18, 2),
+        ],
+    },
     {
         name: '巨浪冲浪',
         controls: [

@@ -1,4 +1,6 @@
 import { CONDITION_BALANCE } from '../core/ConditionBalance';
+import { BUTTERFLY_TUNING } from '../core/ButterflyTuning';
+import { ButterflyStroke } from './ButterflyStroke';
 import { CharacterAbilityState } from './CharacterAbilityState';
 import { abilityValue, CharacterAbilityId } from '../core/CharacterAbilityConfig';
 import { StrokeHeartRateModel } from '../condition/StrokeHeartRateModel';
@@ -97,6 +99,61 @@ export type StrokeTimingGuide = {
 type ReleaseRanges = { perfect: { start: number; end: number }; good: { start: number; end: number } };
 
 export class SwimmerMotor {
+    /** 只有本地蝶泳测试场创建；普通比赛不分配节拍状态。 */
+    butterfly: ButterflyStroke | null = null;
+    private _butterflyKickCycle = 0;
+    get butterflyKickCycle(): number { return this._butterflyKickCycle; }
+    private _butterflyPower = 1;
+    private _butterflyCost = 0;
+
+    enableButterflyTest(enabled: boolean) {
+        this.butterfly = enabled ? this.butterfly ?? new ButterflyStroke() : null;
+    }
+
+    beginButterfly(): boolean {
+        if (!this.butterfly || !this.isRacing || this._glidePhaseActive || this.isArmStrokeActive
+            || this.axialSteeringProjection() < 0.5) return false;
+        if (!this.butterfly.start(this._conditionCadenceScale)) return false;
+        // 保留进入时的路线，但不继承之前单侧划水留下的持续主动转向。
+        this._headingTurnRate = 0;
+        this._leftStrokeHeld = this._rightStrokeHeld = false;
+        this._kickCadenceHz = 0; this._lastKickTapClock = -1;
+        this._leftKickMotionRemaining = this._rightKickMotionRemaining = 0;
+        this._butterflyCost = CONDITION_BALANCE.energy.drainPerStroke * BUTTERFLY_TUNING.energyScale;
+        this._butterflyPower = this._conditionSpeedScale * (this._playerBalance?.strokePropulsionScale ?? 1)
+            * this.ability.strokePower * BUTTERFLY_TUNING.propulsionScale;
+        this.onArmStrokeStarted?.(StrokeType.BOTH, ++this._armStrokeSequence);
+        this.ability.armStart();
+        this._heartRate.recordStart();
+        return true;
+    }
+
+    releaseButterfly() {
+        if (this.butterfly?.release()) this.settleButterfly();
+    }
+
+    cancelButterfly() { this.butterfly?.reset(); this._butterflyKickCycle = 0; }
+
+    private settleButterfly() {
+        const beat = this.butterfly;
+        if (!beat) return;
+        const quality = beat.quality;
+        this._lastStrokeQuality = quality;
+        this.settleAbility(quality);
+        // 一整拍一次脉冲。失败只给极小推进，不能靠快速双点堆叠基础奖励。
+        const acceleration = quality > 0
+            ? (SWIMMER_BALANCE.strokeBaseAccel + this._effectiveStrokeQualityAccel * quality) * this._butterflyPower
+            : STROKE_QUALITY_TUNING.armStrokeTimeoutAccel * this._butterflyPower;
+        this.startStrokeAcceleration(acceleration, false);
+        this._pendingStrokeQualityResults.push({
+            type: StrokeType.BOTH, strokeQuality: quality, energyCost: this._butterflyCost,
+            badReason: beat.timedOut ? 'timeout' : quality <= 0 ? '蝶泳松手偏早' : undefined,
+            holdSeconds: beat.elapsed, actionSeconds: beat.duration, minHoldSeconds: 0,
+            holdTimeValid: true, holdRatio: beat.progress, inputFreshness: 1,
+            inputLeadSeconds: 0, inputLeadRatio: 0, meanRatio: beat.progress,
+            ratioStdDev: 0, sampleCount: 1,
+        });
+    }
     /** 仅跟游模式绑定，在真实起划时复核有效区。 */
     strokeCostScale: (() => number) | null = null;
     /** 真实手臂动作开始时触发；短点按踢腿不会触发。序号在每次比赛重置。 */
@@ -221,6 +278,7 @@ export class SwimmerMotor {
     }
 
     stopRace() {
+        this.cancelButterfly();
         this.clearGiantWave();
         this.clearTurtleTow();
         this._isRacing = false;
@@ -272,6 +330,7 @@ export class SwimmerMotor {
             this._axialRoll.reset();
         }
         if (active) {
+            this.cancelButterfly();
             this.clearGiantWave();
             this.ability.suspend();
             this._collisionPitch.reset();
@@ -280,6 +339,7 @@ export class SwimmerMotor {
     }
 
     beginFlipTurnPhase() {
+        this.cancelButterfly();
         this.ability.suspend();
         // The flip turn is an input-locked movement phase. Discard any held or
         // queued stroke so it cannot resume halfway through the wall push.
@@ -389,6 +449,7 @@ export class SwimmerMotor {
     }
 
     recordStroke(type: StrokeType): boolean {
+        if (this.butterfly?.active) return false;
         let queued = false;
         if (type === StrokeType.LEFT) {
             const left = this.queueSideStroke(StrokeType.LEFT);
@@ -410,6 +471,7 @@ export class SwimmerMotor {
     }
 
     canRecordStroke(type: StrokeType): boolean {
+        if (this.butterfly?.active) return false;
         if (type === StrokeType.LEFT) {
             return this.canQueueSideStroke(StrokeType.LEFT);
         }
@@ -435,6 +497,8 @@ export class SwimmerMotor {
     // inside the shared PERFECT release window. Keeping this per-hand lets visual
     // feedback combine both hands without one hand turning it off for the other.
     isActiveStrokeInPerfectZone(type: StrokeType): boolean {
+        if (this.butterfly?.active) return this.butterfly.held
+            && this.butterfly.progress >= this.butterfly.perfectStart && this.butterfly.progress <= this.butterfly.perfectEnd;
         const action = type === StrokeType.LEFT ? this._leftActions[0] : this._rightActions[0];
         if (!action || action.startedAt < 0 || action.releasedAt >= 0 || action.strokeQualitySettled) {
             return false;
@@ -445,6 +509,7 @@ export class SwimmerMotor {
     }
 
     isActiveStrokeHeld(type: StrokeType): boolean {
+        if (this.butterfly?.active) return this.butterfly.held;
         const action = type === StrokeType.LEFT ? this._leftActions[0] : this._rightActions[0];
         return !!action && action.startedAt >= 0 && action.releasedAt < 0 && !action.strokeQualitySettled;
     }
@@ -452,7 +517,8 @@ export class SwimmerMotor {
     // A leg-kick tap adds visual kick budget and registers cadence. During
     // underwater glide the same cadence propulsion runs without the surface cap.
     recordKickTap(type: StrokeType, confirmed = true): boolean {
-        const queued = this.queueKickOnly(type);
+        // 蝶泳回臂时也接收短按；双腿同步加拍，不进入单侧手臂/转向队列。
+        const queued = this.queueKickOnly(this.butterfly?.active ? StrokeType.BOTH : type);
         if (!queued) {
             return false;
         }
@@ -528,6 +594,7 @@ export class SwimmerMotor {
     }
 
     setStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0): StrokeQualityResult | null {
+        if (this.butterfly?.active) return null;
         let result: StrokeQualityResult | null = null;
         if (type === StrokeType.LEFT) {
             result = this.setSideHeld(StrokeType.LEFT, held, preHeldSeconds);
@@ -550,6 +617,7 @@ export class SwimmerMotor {
         if (this._glidePhaseActive) this.ability.suspend();
         else this.ability.tick(dt, this.isActiveStrokeHeld(StrokeType.LEFT) || this.isActiveStrokeHeld(StrokeType.RIGHT));
         this._motionClock += dt;
+        if (this.butterfly?.active && this.butterfly.advance(dt)) this.settleButterfly();
         this._armAction = Math.max(0, this._armAction - dt * 4.6);
         this._kickAction = Math.max(0, this._kickAction - dt * 6.8);
         let strokeAcceleration = this.consumeStrokeAcceleration(dt)
@@ -657,6 +725,7 @@ export class SwimmerMotor {
     }
 
     private resetRaceState(initialDistance = 0) {
+        this.cancelButterfly();
         this.clearTurtleTow();
         this._heartRate.reset();
         this.ability.reset();
@@ -893,14 +962,21 @@ export class SwimmerMotor {
     private advancePlayerKicks(dt: number, leftArmDelta: number, rightArmDelta: number) {
         const leftArmStroking = this._leftActions.length > 0;
         const rightArmStroking = this._rightActions.length > 0;
+        const leftTap = this._leftKickMotionRemaining > 0;
+        const rightTap = this._rightKickMotionRemaining > 0;
         // Left leg ↔ right arm
-        this._leftKickCycle += this.advancePlayerLeg(
+        const leftStep = this.advancePlayerLeg(
             dt, '_leftKickMotionRemaining', this._leftKickCycle, rightArmStroking, this._rightArmCycle, rightArmDelta,
         );
         // Right leg ↔ left arm
-        this._rightKickCycle += this.advancePlayerLeg(
+        const rightStep = this.advancePlayerLeg(
             dt, '_rightKickMotionRemaining', this._rightKickCycle, leftArmStroking, this._leftArmCycle, leftArmDelta,
         );
+        this._leftKickCycle += leftStep;
+        this._rightKickCycle += rightStep;
+        if (this.butterfly?.active) {
+            this._butterflyKickCycle += ((leftTap ? leftStep : 0) + (rightTap ? rightStep : 0)) * 0.5;
+        }
     }
 
     private advancePlayerLeg(
@@ -2100,7 +2176,7 @@ export class SwimmerMotor {
     // Keep the full queued arm motion classified as a stroke, including its
     // released follow-through, so the camera does not pull back mid-recovery.
     get isArmStrokeActive(): boolean {
-        return this._leftActions.length > 0 || this._rightActions.length > 0;
+        return !!this.butterfly?.active || this._leftActions.length > 0 || this._rightActions.length > 0;
     }
 
     get lastStrokeQuality(): number {
@@ -2116,6 +2192,7 @@ export class SwimmerMotor {
     }
 
     get strokeTimingGuide(): StrokeTimingGuide {
+        if (this.butterfly?.active) return this.butterflyTimingGuide();
         return this.buildGuideFromAction(this.currentGuideAction());
     }
 
@@ -2124,6 +2201,7 @@ export class SwimmerMotor {
     // still returns whichever side is currently active (earliest-started); this
     // one is scoped to a single hand so the UI can show one dial per hand.
     strokeTimingGuideForSide(type: StrokeType, target?: StrokeTimingGuide): StrokeTimingGuide {
+        if (this.butterfly?.active) return this.butterflyTimingGuide(target);
         const action = type === StrokeType.LEFT ? this._leftActions[0] : this._rightActions[0];
         const usable = action && action.startedAt >= 0 && !action.strokeQualitySettled ? action : null;
         return this.buildGuideFromAction(usable, target);
@@ -2154,6 +2232,19 @@ export class SwimmerMotor {
             return [];
         }
         return this._pendingStrokeQualityResults.splice(0);
+    }
+
+    private butterflyTimingGuide(target?: StrokeTimingGuide): StrokeTimingGuide {
+        const beat = this.butterfly!;
+        const out = target ?? { active: false, currentRatio: 0, holdSeconds: 0, actionSeconds: 0, minHoldRatio: 0, intervals: [] };
+        out.active = beat.held; out.currentRatio = beat.progress; out.displayEndRatio = beat.timeout;
+        out.holdSeconds = beat.elapsed; out.actionSeconds = beat.duration; out.minHoldRatio = 0;
+        out.heartRate = this.heartRate; out.perfectWidthScale = 1;
+        while (out.intervals.length < 2) out.intervals.push({ rating: Rating.GOOD, startRatio: 0, endRatio: 1 });
+        out.intervals.length = 2;
+        out.intervals[0].rating = Rating.GOOD; out.intervals[0].startRatio = 0.16; out.intervals[0].endRatio = beat.timeout;
+        out.intervals[1].rating = Rating.PERFECT; out.intervals[1].startRatio = beat.perfectStart; out.intervals[1].endRatio = beat.perfectEnd;
+        return out;
     }
 
     private currentGuideAction(): StrokeAction | null {

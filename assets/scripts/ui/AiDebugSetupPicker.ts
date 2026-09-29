@@ -161,12 +161,14 @@ export function buildAiDebugSetupPicker(
     const aiContent = makeUiNode('AiTestContent', root);
     const modeContent = makeUiNode('ModeTestContent', root);
     const currencyContent = makeUiNode('CurrencyDebugContent', root);
+    const butterflyContent = makeUiNode('ButterflyTestContent', root);
+    setActive(butterflyContent, false);
     setActive(modeContent, false);
     setActive(currencyContent, false);
 
     const makeTab = (name: string, text: string, x: number, content: Node) => {
-        const tab = button(root, name, text, x, 266, 210, () => selectTab(content), 44);
-        const selected = makeRect('Selected', tab.node, 194, 4, uiColor(66, 222, 255, 255));
+        const tab = button(root, name, text, x, 266, 196, () => selectTab(content), 44);
+        const selected = makeRect('Selected', tab.node, 180, 4, uiColor(66, 222, 255, 255));
         selected.setPosition(0, -20, 0);
         setActive(selected, content === aiContent);
         return { ...tab, selected };
@@ -175,6 +177,7 @@ export function buildAiDebugSetupPicker(
     let aiTab: ReturnType<typeof makeTab>;
     let modeTab: ReturnType<typeof makeTab>;
     let currencyTab: ReturnType<typeof makeTab>;
+    let butterflyTab: ReturnType<typeof makeTab>;
     const selectTab = (content: Node) => {
         if (activeContent === content) return;
         setActive(activeContent, false);
@@ -183,10 +186,12 @@ export function buildAiDebugSetupPicker(
         setActive(aiTab.selected, content === aiContent);
         setActive(modeTab.selected, content === modeContent);
         setActive(currencyTab.selected, content === currencyContent);
+        setActive(butterflyTab.selected, content === butterflyContent);
     };
-    aiTab = makeTab('AiTestTab', '角色 AI 测试', -230, aiContent);
-    modeTab = makeTab('ModeTestTab', '模式测试', 0, modeContent);
-    currencyTab = makeTab('CurrencyDebugTab', '货币调试', 230, currencyContent);
+    aiTab = makeTab('AiTestTab', '角色 AI 测试', -312, aiContent);
+    modeTab = makeTab('ModeTestTab', '模式测试', -104, modeContent);
+    currencyTab = makeTab('CurrencyDebugTab', '货币调试', 104, currencyContent);
+    butterflyTab = makeTab('ButterflyTestTab', '蝶泳测试', 312, butterflyContent);
 
     makeLabel('Subtitle', aiContent, '先设置阵容，再点击右侧智力档开始比赛', 18, uiColor(190, 210, 220)).setPosition(0, 218, 0);
     const mixed = () => setup.opponentCount === 7 && setup.mixedCharacters;
@@ -232,10 +237,11 @@ export function buildAiDebugSetupPicker(
     const seed = button(aiContent, 'Seed', seedText(), -195, -154, 360, cycleSeed);
     makeLabel('Hint', aiContent, '等级与智力应用于全部 AI，玩家使用自己的角色属性', 18, uiColor(190, 210, 220)).setPosition(0, -210, 0);
     let launched = false;
-    const launch = (selectedMode: RaceModeId, difficulty: number, forceFullRoster: boolean) => {
+    const launch = (selectedMode: RaceModeId, difficulty: number, forceFullRoster: boolean, butterfly = false) => {
         if (launched) return;
         launched = true;
         setup.mode = selectedMode;
+        setup.butterflyTest = butterfly;
         if (forceFullRoster) {
             setup.opponentCount = 7;
             setup.mixedCharacters = true;
@@ -247,6 +253,21 @@ export function buildAiDebugSetupPicker(
     AI_DEBUG_DIFFICULTY_TIERS.forEach((tier, i) => button(aiContent, `Tier${i}`, tier.label, 210, 166 - i * 72, 290, () => {
         launch(raceMode, tier.value, false);
     }));
+
+    makeLabel('Title', butterflyContent, '双手同拍 · 蝶泳试游', 30, uiColor(235, 250, 255)).setPosition(0, 168, 0);
+    makeLabel('CharacterHint', butterflyContent, '使用选人界面当前角色，单人测试', 21, uiColor(190, 220, 235)).setPosition(0, 112, 0);
+    makeLabel('InputHint', butterflyContent, '左右半屏同时按住，在完美区松手', 22, uiColor(235, 250, 255)).setPosition(0, 42, 0);
+    makeLabel('SwitchHint', butterflyContent, '整拍期间不能转向；回臂结束可接单侧自由泳', 19, uiColor(190, 220, 235)).setPosition(0, -6, 0);
+    makeLabel('KeyboardHint', butterflyContent, '键盘使用 A + D；短点和一直按住不会连续蝶泳', 18, uiColor(190, 220, 235)).setPosition(0, -52, 0);
+    let butterflyRaceDistance = setup.raceDistance;
+    const butterflyDistance = button(butterflyContent, 'ButterflyDistance', `测试距离 ${butterflyRaceDistance} 米`, 0, -122, 320, () => {
+        butterflyRaceDistance = butterflyRaceDistance === 400 ? 200 : 400;
+        write(butterflyDistance.label, `测试距离 ${butterflyRaceDistance} 米`);
+    });
+    button(butterflyContent, 'ButterflyStart', '开始蝶泳测试', 0, -198, 320, () => {
+        setup.raceDistance = butterflyRaceDistance;
+        launch('competitive', MODE_TEST_DIFFICULTY, false, true);
+    }, 56);
 
     makeLabel('Subtitle', modeContent, '选择事件与强度；点击随机体验可切换固定种子复现', 18, uiColor(190, 210, 220)).setPosition(0, 218, 0);
     const modeViews = new Map<RaceModeId, { selected: Node; label: Label | null }>();

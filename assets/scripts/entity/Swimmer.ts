@@ -1065,6 +1065,7 @@ export class Swimmer extends Component {
     }
 
     stopRace() {
+        this._motor.cancelButterfly();
         this.clearForcedLaunch();
         this._movementSpeed = 0;
         Tween.stopAllByTarget(this.node);
@@ -1159,6 +1160,7 @@ export class Swimmer extends Component {
         if (this._forcedLaunchGrace > 0) this._forcedLaunchGrace = Math.max(0, this._forcedLaunchGrace - dt);
         if (this._forcedLaunchEdge > 0) this._forcedLaunchEdge = Math.max(0, this._forcedLaunchEdge - dt);
         if (this._forcedLaunch) {
+            if (this._motor.butterfly?.active) this._motor.cancelButterfly();
             const launch = this._forcedLaunch;
             this._forcedLaunchAge = Math.min(launch.duration, this._forcedLaunchAge + Math.max(0, dt));
             const sample = sampleForcedLaunch(launch, this._forcedLaunchAge, this._forcedLaunchSample);
@@ -1182,6 +1184,10 @@ export class Swimmer extends Component {
         }
         // 用步前状态覆盖落水交界帧，避免阶段 tick 结束后提前恢复整帧心率。
         const freezeJumpHeartRate = this._phases.isDolphinJumpActive;
+        if (this._motor.butterfly?.active && (this._phases.isUnderwater || this._phases.isFlipTurnActive
+            || this._phases.isDolphinJumpActive || Math.cos(this._motor.axialRollRadians) < 0.2)) {
+            this._motor.cancelButterfly();
+        }
         if (this._phases.tick(dt)) {
             if (this.giantWaveState) this.clearGiantWave();
             this._motor.ability.suspend();
@@ -1295,11 +1301,21 @@ export class Swimmer extends Component {
     // phase state only; the wire format remains the existing held/stroke events.
     get canUseArmStroke(): boolean {
         return this._motor.isRacing
+            && !this._motor.butterfly?.active
             && this._forcedLaunch === null
             && !this._phases.isFlipTurnActive
             && !this._phases.isDolphinJumpActive
             && this._phases.canUseArmStroke;
     }
+
+    enableButterflyTest(enabled: boolean) { this._motor.enableButterflyTest(enabled); }
+    get butterflyState() { return this._motor.butterfly; }
+    beginButterfly(): boolean {
+        if (!this.canUseArmStroke || this._phases.isUnderwater) return false;
+        return this._motor.beginButterfly();
+    }
+    releaseButterfly() { this._motor.releaseButterfly(); }
+    cancelButterfly() { this._motor.cancelButterfly(); }
 
     handleKickStroke(type: StrokeType, confirmed = true): void {
         if (!this._motor.isRacing) {

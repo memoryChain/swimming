@@ -1,6 +1,7 @@
 /** 使用连续居中的泳道。返回0基起始泳道；8泳道双人赛为3，即第4、5道。 */
 export function centeredLaneStart(laneCount: number, racerCount: number): number {
-    if (!Number.isInteger(racerCount) || racerCount < 2 || racerCount > laneCount) throw new Error('参赛人数超出泳道容量');
+    // 泳道分配也用于单人蝶泳测试；正式赛事的最低对手人数由赛事配置校验。
+    if (!Number.isInteger(racerCount) || racerCount < 1 || racerCount > laneCount) throw new Error('参赛人数超出泳道容量');
     return Math.floor((laneCount - racerCount) / 2);
 }
 /** AI数组按实际占用泳道升序保存，未使用泳道必须返回-1。 */

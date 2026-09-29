@@ -1,8 +1,11 @@
 import { EventMouse, EventTouch, input, Input, Node, Vec2 } from 'cc';
 import { StrokeType } from './GameConstants';
 import { INPUT_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
+import { BUTTERFLY_TUNING } from './ButterflyTuning';
 
 export type InputRouterCallbacks = {
+    /** 仅本地蝶泳测试注入，普通比赛使用原输入时序。 */
+    butterfly?: { begin: () => boolean; release: () => void; cancel: () => void };
     onStroke: (type: StrokeType) => void;
     onStrokePressChanged?: (type: StrokeType, pressed: boolean) => void;
     onStrokeHeld: (type: StrokeType, held: boolean, preHeldSeconds?: number) => boolean;
@@ -41,8 +44,11 @@ export class InputRouter {
     // then held longer than the minimum hold threshold it is promoted to an arm
     // stroke (which the leg then follows). Tracked per side so A and D can be held
     // independently in the editor.
-    private readonly _leftPress = { active: false, startedMs: 0, promoted: false };
-    private readonly _rightPress = { active: false, startedMs: 0, promoted: false };
+    private readonly _leftPress = { active: false, startedMs: 0, promoted: false, kickSent: false, pairEligible: false };
+    private readonly _rightPress = { active: false, startedMs: 0, promoted: false, kickSent: false, pairEligible: false };
+    private _butterflyClaimed = false;
+    private _butterflyStarted = false;
+    private _butterflyReleased = false;
     // Awards free-look touch state: whether a multi-finger pinch is in progress and the
     // last measured distance between the first two touch points.
     private _cameraMultiTouch = false;
@@ -137,8 +143,18 @@ export class InputRouter {
         press.active = true;
         press.startedMs = Date.now();
         press.promoted = false;
+        press.kickSent = false;
+        press.pairEligible = true;
         this._callbacks.onStrokePressChanged?.(type, true);
-        this._callbacks.onKickStroke(type);
+        if (this._callbacks.butterfly) {
+            const other = this.pressState(type === StrokeType.LEFT ? StrokeType.RIGHT : StrokeType.LEFT);
+            if (other.active && other.pairEligible && !other.promoted && !other.kickSent
+                && Math.abs(press.startedMs - other.startedMs) <= BUTTERFLY_TUNING.chordSeconds * 1000) {
+                this._butterflyClaimed = true;
+            }
+        } else {
+            this.sendKick(type);
+        }
     }
 
     private endPress(type: StrokeType) {
@@ -148,6 +164,26 @@ export class InputRouter {
         }
         const now = Date.now();
         const thresholdMs = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds) * 1000;
+        if (this._callbacks.butterfly && this._butterflyClaimed) {
+            this.tryBeginButterfly(now, thresholdMs);
+            // 配对只是候选：短按松手仍是踢腿，不能在长按确认前吞掉输入。
+            // 剩余一手继续独立分类，但本次按压不能被下一次短按重新配对。
+            if (!this._butterflyStarted && now - press.startedMs < thresholdMs) {
+                this._butterflyClaimed = false;
+                this._leftPress.pairEligible = this._rightPress.pairEligible = false;
+            } else {
+                if (this._butterflyStarted && !this._butterflyReleased) this._callbacks.butterfly.release();
+                this._butterflyReleased = true;
+                press.active = press.promoted = false;
+                this._callbacks.onStrokePressChanged?.(type, false);
+                if (!this._leftPress.active && !this._rightPress.active) {
+                    this._butterflyClaimed = this._butterflyStarted = false;
+                    this._butterflyReleased = false;
+                }
+                return;
+            }
+        }
+        if (this._callbacks.butterfly) this.sendKick(type);
         // 即使长按跨过分类边界后直接松手、期间没有 tick，也不能误判为短按潜水。
         this.promoteIfDue(type, now, thresholdMs);
         const promoted = press.promoted;
@@ -171,8 +207,31 @@ export class InputRouter {
     tick() {
         const thresholdMs = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds) * 1000;
         const now = Date.now();
+        if (this._callbacks.butterfly) {
+            if (this._butterflyClaimed) { this.tryBeginButterfly(now, thresholdMs); return; }
+            this.flushDeferredKick(StrokeType.LEFT, now);
+            this.flushDeferredKick(StrokeType.RIGHT, now);
+        }
         this.promoteIfDue(StrokeType.LEFT, now, thresholdMs);
         this.promoteIfDue(StrokeType.RIGHT, now, thresholdMs);
+    }
+
+    private sendKick(type: StrokeType) {
+        const press = this.pressState(type);
+        if (press.kickSent) return;
+        press.kickSent = true;
+        this._callbacks.onKickStroke(type);
+    }
+
+    private flushDeferredKick(type: StrokeType, now: number) {
+        const press = this.pressState(type);
+        if (press.active && now - press.startedMs > BUTTERFLY_TUNING.chordSeconds * 1000) this.sendKick(type);
+    }
+
+    private tryBeginButterfly(now: number, thresholdMs: number) {
+        if (this._butterflyStarted || this._butterflyReleased || !this._leftPress.active || !this._rightPress.active) return;
+        if (now - Math.max(this._leftPress.startedMs, this._rightPress.startedMs) < thresholdMs) return;
+        this._butterflyStarted = this._callbacks.butterfly!.begin();
     }
 
     private promoteIfDue(type: StrokeType, now: number, thresholdMs: number) {
@@ -204,6 +263,9 @@ export class InputRouter {
     }
 
     resetStrokeInput() {
+        this._callbacks.butterfly?.cancel();
+        this._butterflyClaimed = this._butterflyStarted = false;
+        this._butterflyReleased = false;
         this._callbacks.onStrokePressChanged?.(StrokeType.LEFT, false);
         this._callbacks.onStrokePressChanged?.(StrokeType.RIGHT, false);
         this._lastPadStrokeType = null;

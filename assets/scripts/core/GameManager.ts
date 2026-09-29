@@ -89,6 +89,7 @@ import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
 import { MineRelayBrawlHud } from '../ui/MineRelayBrawlHud';
 import { DebugLogController } from './DebugLogController';
 import { consumeMainGameLaunchMode, consumeRoomMode, consumeRoomRaceDistance, getAiDebugSetup, prepareAiDebugRaceSeed, getAiDebugDifficulty, getEntertainmentRaceGrade, resolveAiDebugBuildOptions, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
+import { ButterflyDebugHud } from '../ui/ButterflyDebugHud';
 import { consumeNetRaceSession, NetRaceSessionData } from '../net/NetRaceSession';
 import { NetRaceController } from '../net/NetRaceController';
 import { buildNetLanePlan, NetLanePlan } from '../net/NetLanePlan';
@@ -321,6 +322,8 @@ export class GameManager extends Component {
     };
     // AI 测试赛可选 1 或 7 个对手，等级、智力和阵容来自开始页面板。
     private _aiDebugMode = false;
+    private _butterflyTestMode = false;
+    private _butterflyDebugHud: ButterflyDebugHud | null = null;
     private _aiDebugDifficulty = 0.8;
     private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
     private _splashParticlesEnabled: boolean = PERFORMANCE_CONFIG.splash.particleEmittersEnabled;
@@ -751,6 +754,7 @@ export class GameManager extends Component {
         this._aiDifficultyPanel.update(dt);
         const timingGuide = this._aiDebugMode ? this._playerSwimmer.strokeTimingGuide : null;
         const raceActive = this._state === GameState.RACING;
+        this._butterflyDebugHud?.update(dt, raceActive, this._playerSwimmer.butterflyState);
         const raceDistance = getRaceDistance();
         const playerAlive = this._playerSwimmer.node.active;
         const playerBeforeFinish = playerAlive && this._playerSwimmer.distance < raceDistance;
@@ -1173,6 +1177,8 @@ export class GameManager extends Component {
         this._roomMode = consumeRoomMode();
         const roomRaceDistance = consumeRoomRaceDistance();
         this._netSession = consumeNetRaceSession();
+        this._butterflyTestMode = this._aiDebugMode && !this._netSession && !this._roomMode
+            && getAiDebugSetup().butterflyTest === true;
         if ((this._roomMode || this._netSession) && getRaceDifficultyConfig().id === 'giant-wave-brawl') {
             setRaceMode('competitive');
         }
@@ -1505,6 +1511,12 @@ export class GameManager extends Component {
 
     private createInputRouter(): InputRouter {
         return new InputRouter(this.node, {
+            butterfly: this._butterflyTestMode ? {
+                begin: () => this._state === GameState.RACING && !this._playerAutopilotEnabled
+                    && (this._playerSwimmer?.beginButterfly() ?? false),
+                release: () => this._playerSwimmer?.releaseButterfly(),
+                cancel: () => this._playerSwimmer?.cancelButterfly(),
+            } : undefined,
             onStroke: (type) => this.handlePlayerStroke(type),
             onStrokePressChanged: (type, pressed) => {
                 if (this._playerAutopilotEnabled) return;
@@ -4256,6 +4268,7 @@ export class GameManager extends Component {
         const competitors = this.createCompetitorManager().buildPlayer(root);
         this._swimmersRoot = competitors.group;
         this._playerSwimmer = competitors.playerSwimmer;
+        this._playerSwimmer.enableButterflyTest(this._butterflyTestMode);
         this.bindDolphinEnergyCost(this._playerSwimmer, this._playerCondition);
         this._aiController = null;
         this._aiControllers = [];
@@ -4352,7 +4365,7 @@ export class GameManager extends Component {
             this._netLanePlan = buildNetLanePlan(this._netSession, LANE_LAYOUT.laneCount);
             this._playerLaneIndex = this._netLanePlan.playerLane;
         } else {
-            const aiCount = getFixedSoloAiCount();
+            const aiCount = this._butterflyTestMode ? 0 : getFixedSoloAiCount();
             if (aiCount !== undefined) {
                 this._raceLaneCount = aiCount + 1;
                 this._raceLaneStart = centeredLaneStart(LANE_LAYOUT.laneCount, this._raceLaneCount);
@@ -4382,7 +4395,7 @@ export class GameManager extends Component {
             this.debug('deferred AI swimmers skipped for model debug');
             return;
         }
-        if (!RACE_OPPONENTS_ENABLED) {
+        if (!RACE_OPPONENTS_ENABLED || this._butterflyTestMode) {
             this._aiController = null;
             this.debug('race opponents disabled');
             return;
@@ -5260,6 +5273,7 @@ export class GameManager extends Component {
             },
             onStroke: (type) => this._inputRouter?.handleScreenStroke(type),
             onStrokeEnd: (type) => this._inputRouter?.handleScreenStrokeEnd(type),
+            onStrokeCancel: this._butterflyTestMode ? () => this._inputRouter?.resetStrokeInput() : undefined,
             onDiveHoldStart: () => {
                 if (!this._playerAutopilotEnabled) this._gameFlow?.handleDiveChargeStart();
             },
@@ -5335,6 +5349,7 @@ export class GameManager extends Component {
             this._finishRankOverlay.bind(this._raceHud);
             this._preRaceIntroPanel.build(this._raceHud, visibleSize.width, visibleSize.height);
             this.buildAiDebugCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
+            if (this._butterflyTestMode) this._butterflyDebugHud = new ButterflyDebugHud(this._raceHud, visibleSize.width, visibleSize.height);
             this.buildEntertainmentIntensityDebugHud(this._raceHud, visibleSize.width, visibleSize.height);
             // Networked race: an overhead whole-field toggle to compare AI positions
             // across clients.
@@ -5891,7 +5906,7 @@ export class GameManager extends Component {
 
     private applyAiDebugHud() {
         if (this._aiDebugCameraButton?.isValid) {
-            this._aiDebugCameraButton.active = this._aiDebugMode;
+            this._aiDebugCameraButton.active = this._aiDebugMode && !this._butterflyTestMode;
         }
         if (!this._aiDebugMode) {
             this._cameraFollowsAi = false;

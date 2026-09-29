@@ -377,7 +377,7 @@ test('难度列表决定实际1、3、7名AI，空泳道不生成对手，1v1正
 test('居中泳道分配：双人占第4、5道；空泳道不映射到AI', () => {
     const {centeredLaneStart,aiIndexInLaneRange}=load('competitor/RaceLaneAllocation');
     assert.equal(centeredLaneStart(8,2),3);
-    for(let racers=2;racers<=8;racers++) {
+    for(let racers=1;racers<=8;racers++) {
         const start=centeredLaneStart(8,racers);
         for(let player=start;player<start+racers;player++) {
             const indices=[];

@@ -1,4 +1,6 @@
 import { RecoveryFloatPose } from './RecoveryFloatPose';
+import { butterflyExtension, sampleButterflyArm } from './ButterflyMotion';
+import { BUTTERFLY_TUNING } from '../core/ButterflyTuning';
 import { Node, Quat, Vec3 } from 'cc';
 import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
@@ -96,6 +98,10 @@ const SAMPLED_STANDING_SOURCE_BACK_LEAN_DEGREES = 4;
 const SAMPLED_STANDING_MAX_UPRIGHT_CORRECTION_DEGREES = 7;
 
 export class FreestylePoseController {
+    private readonly _butterflyBlendRotations: Quat[] = [];
+    private readonly _butterflyRootPosition = new Vec3();
+    private readonly _butterflyRootRotation = new Quat();
+    private _butterflyApplied = false;
     public root: Node = null;
     public readonly rootBasePos = new Vec3();
     public readonly rootBaseEuler = new Vec3();
@@ -356,6 +362,7 @@ export class FreestylePoseController {
     }
 
     restoreBasePose() {
+        this._butterflyApplied = false;
         this._collisionLimp.reset();
         this.root?.setPosition(this.rootBasePos);
         this.root?.setRotation(this.rootBaseRotation);
@@ -504,6 +511,12 @@ export class FreestylePoseController {
     }
 
     applyFreestylePose(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, upperBodyPower: number, armPower: number, kickPower: number) {
+        if (this._butterflyApplied) {
+            this._butterflyApplied = false;
+            this.applyBoneOffset(this._hips, 0, 0, 0);
+            this.applyBoneOffset(this._spine, 0, 0, 0);
+            this.applyBoneOffset(this._spine1, 0, 0, 0);
+        }
         const rightPhase = positiveMod(this.armPoseCycle(rightArmCycle), Math.PI * 2) / (Math.PI * 2);
         const rightBreath = lerp(this.rightBreathSignal(rightArmCycle),
             smoothPulse(rightPhase, 0.48, 0.64, 0.82, 0.99), this._proneFreestyleWeight);
@@ -549,6 +562,58 @@ export class FreestylePoseController {
         );
         this.applyRootRollAroundMovementAxis(bodyRoll);
         this.root.setRotation(this._tmpResultRotation);
+    }
+
+    /** 在当前自由泳基础上混合整拍动作；所有偏移来自绑定姿势，不累加到上一帧。 */
+    applyButterflyPose(progress: number, weight = 1, extraKickCycle = 0) {
+        if (!this.root || weight <= 0) return;
+        this._butterflyApplied = true;
+        const p = clamp(progress, 0, 1), blend = clamp(weight, 0, 1);
+        for (let i = 0; i < this._manualBones.length; i++) {
+            const bone = this._manualBones[i];
+            Quat.copy(this._butterflyBlendRotations[i], bone.rotation);
+            const base = this._boneBaseRotation.get(bone);
+            if (base) bone.setRotation(base);
+        }
+        Vec3.copy(this._butterflyRootPosition, this.root.position);
+        Quat.copy(this._butterflyRootRotation, this.root.rotation);
+        const cycle = p * Math.PI * 2;
+        const wave = Math.cos((p - 0.50) * Math.PI * 2);
+        const wavePower = BUTTERFLY_TUNING.bodyWaveDegrees;
+        this._proneChestRoll = 0;
+        // 模型旋转为俯泳后局部 Y 指向前方。升沉必须沿世界水面法线施加，
+        // 仅移动可见模型，不改变选手的赛程、碰撞高度或潜水状态。
+        this.root.setPosition(this.rootBasePos);
+        this.root.getWorldPosition(this._tmpGroundHip);
+        this._tmpGroundHip.y += Math.cos((p - 0.52) * Math.PI * 2) * BUTTERFLY_TUNING.bodyHeaveMeters;
+        this.root.setWorldPosition(this._tmpGroundHip);
+        Quat.fromEuler(this._tmpResultRotation, this.rootBaseEuler.x + MOTION_TUNING.swimBodyPitchDegrees - wave * wavePower * 0.45,
+            this.rootBaseEuler.y, this.rootBaseEuler.z);
+        this.root.setRotation(this._tmpResultRotation);
+        this.applyBoneOffset(this._hips, -Math.cos((p - 0.66) * Math.PI * 2) * wavePower * 0.5, 0, 0);
+        this.applyBoneOffset(this._spine, Math.cos((p - 0.59) * Math.PI * 2) * wavePower * 0.4, 0, 0);
+        this.applyBoneOffset(this._spine1, Math.cos((p - 0.52) * Math.PI * 2) * wavePower * 0.45, 0, 0);
+        this.applyBoneOffset(this._torso, Math.cos((p - 0.45) * Math.PI * 2) * wavePower * 0.45, 0, 0);
+        const breath = smoothPulse(p, 0.22, 0.42, 0.52, 0.72);
+        this.applyBoneOffset(this._neck, breath * 5, 0, 0);
+        this.applyBoneOffset(this._head, -4 + breath * 9, 0, 0);
+        this.applySurfaceArm(this._leftShoulder, this._leftArm, this._leftForeArm, this._leftHand, cycle, 1, true);
+        this.applySurfaceArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, cycle, 1, true);
+        // 同相双腿，与躯干错开少量相位；膝关节沿已有受限求解器屈伸。
+        const kick = cycle * 2 - 0.95 + extraKickCycle;
+        this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, kick, 1.35);
+        this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, kick, 1.35);
+        if (blend < 1) {
+            for (let i = 0; i < this._manualBones.length; i++) {
+                const bone = this._manualBones[i];
+                Quat.slerp(this._tmpResultRotation, this._butterflyBlendRotations[i], bone.rotation, blend);
+                bone.setRotation(this._tmpResultRotation);
+            }
+            Vec3.lerp(this._tmpGroundHip, this._butterflyRootPosition, this.root.position, blend);
+            this.root.setPosition(this._tmpGroundHip);
+            Quat.slerp(this._tmpResultRotation, this._butterflyRootRotation, this.root.rotation, blend);
+            this.root.setRotation(this._tmpResultRotation);
+        }
     }
 
     // 必须在本帧基础姿态完成后调用，松弛权重归零后恢复当前划水动作。
@@ -1280,6 +1345,7 @@ export class FreestylePoseController {
             }
         }
         this.resizeRotationBuffer(this._freestyleBlendRotations);
+        this.resizeRotationBuffer(this._butterflyBlendRotations);
         this.resizeRotationBuffer(this._divePrepBlendRotations);
         this.resizeRotationBuffer(this._streamlineBlendRotations);
     }
@@ -1357,8 +1423,8 @@ export class FreestylePoseController {
         visit(root);
     }
 
-    private applySurfaceArm(shoulder: Node, arm: Node, foreArm: Node, hand: Node, cycle: number, power: number) {
-        const weight = this._proneFreestyleWeight;
+    private applySurfaceArm(shoulder: Node, arm: Node, foreArm: Node, hand: Node, cycle: number, power: number, butterfly = false) {
+        const weight = butterfly ? 1 : this._proneFreestyleWeight;
         if (weight < 1 || !shoulder || !hand) {
             this.applyArm(shoulder, arm, foreArm, hand, cycle, power);
             if (weight <= 0 || !shoulder || !arm || !foreArm || !hand) return;
@@ -1369,9 +1435,10 @@ export class FreestylePoseController {
         }
         if (!arm || !foreArm) return;
         const side = arm === this._leftArm ? 1 : -1;
-        sampleProneFreestyleArm(cycle, this._proneUpperDirection, this._proneForeDirection);
+        if (butterfly) sampleButterflyArm(cycle / (Math.PI * 2), this._proneUpperDirection, this._proneForeDirection);
+        else sampleProneFreestyleArm(cycle, this._proneUpperDirection, this._proneForeDirection);
         const reach = Math.max(0, this._proneUpperDirection.y);
-        const extension = proneFreestyleExtensionWeight(cycle);
+        const extension = butterfly ? butterflyExtension(cycle / (Math.PI * 2)) : proneFreestyleExtensionWeight(cycle);
         // 前伸先上举肩带，再求解大臂；只转大臂会在横展的肩头形成 U 型拐角。
         this.applyBoneOffset(shoulder, -2 * reach, side * 2, 0);
         if (extension > 0) this.applyProneReachShoulder(shoulder, arm, side, extension);
@@ -1379,14 +1446,18 @@ export class FreestylePoseController {
             this.movementForwardInRoot(this._tmpMovementForwardRoot);
             this.setProneArmDirection(this._proneUpperDirection, side);
             this.applyBoneDirectionFromRoot(arm, foreArm, this._tmpDirection);
-            const palmTurn = -side * MOTION_TUNING.handPalmTurnDegrees;
+            // 蝶泳横向回臂保留绑定姿态的轴向关系。自由泳的追掌心反求上臂
+            // 会在双臂侧展时把约半圈扭转集中到肩腋，造成真实蒙皮塌缩。
+            const palmTurn = butterfly ? 0 : -side * MOTION_TUNING.handPalmTurnDegrees;
             this.applyBoneAxialRoll(arm, foreArm, palmTurn * 0.25);
             this.setProneArmDirection(this._proneForeDirection, side);
             this.applyBoneDirectionFromRoot(foreArm, hand, this._tmpDirection);
             this.applyBoneAxialRoll(foreArm, hand, palmTurn * 0.58);
-            this.applyBoneOffset(hand, -3 * (1 - reach), palmTurn * 0.17, 0);
-            this.orientPronePalm(foreArm, hand);
-            this.relaxProneElbowTwist(arm, foreArm);
+            this.applyBoneOffset(hand, butterfly ? 0 : -3 * (1 - reach), palmTurn * 0.17, 0);
+            if (!butterfly) {
+                this.orientPronePalm(foreArm, hand);
+                this.relaxProneElbowTwist(arm, foreArm);
+            }
         }
         if (extension > 0) this.applyProneStraightReach(arm, foreArm, hand, extension);
         if (weight < 1) {

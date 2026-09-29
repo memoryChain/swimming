@@ -172,8 +172,8 @@ test('超宽屏靠边，窄屏圆形等比，所有初始文本框非零',()=>{
  for(const name of ['SpeedValue','HeartValue','EnergyValue','Distance','Percent'])assert.ok(find(s.parent,name).getComponent(UITransform).contentSize.width>0);
 });
 test('双侧长按仅处理左右划水，不再触发海豚跳手势',()=>{
- let now=0,jumps=0;const held=[];const callbacks=new Proxy({onStrokeHeld:(side,value)=>{held.push([side,value]);return true;},onDolphinJump:()=>jumps++},{get:(o,k)=>o[k]??(()=>{})});
- const mod=load('assets/scripts/core/InputRouter.ts',{'cc':{Node,Vec2,input:{on(){},off(){}},Input:{EventType:{}},EventMouse:{}},'./GameConstants':{StrokeType:{LEFT:0,RIGHT:1}},'./InputTuning':{INPUT_TUNING:{},STROKE_QUALITY_TUNING:{minHoldSeconds:.1}}},{Date:{now:()=>now}});
+ let now=0,jumps=0;const held=[];const callbacks=new Proxy({onStrokeHeld:(side,value)=>{held.push([side,value]);return true;},onDolphinJump:()=>jumps++},{get:(o,k)=>k==='butterfly'?undefined:o[k]??(()=>{})});
+ const mod=load('assets/scripts/core/InputRouter.ts',{'cc':{Node,Vec2,input:{on(){},off(){}},Input:{EventType:{}},EventMouse:{}},'./GameConstants':{StrokeType:{LEFT:0,RIGHT:1}},'./ButterflyTuning':{BUTTERFLY_TUNING:{chordSeconds:0.09}},'./InputTuning':{INPUT_TUNING:{},STROKE_QUALITY_TUNING:{minHoldSeconds:.1}}},{Date:{now:()=>now}});
  const router=new mod.InputRouter(new Node('input'),callbacks);router.handleScreenStroke(0);router.handleScreenStroke(1);now=3000;router.tick();assert.equal(jumps,0);assert.equal(held.length,2);router.handleScreenStrokeEnd(0);router.handleScreenStrokeEnd(1);assert.equal(held.length,4);
 });
 
@@ -305,8 +305,8 @@ test('手掌即时响应短按，采样不覆盖按压；新按压优先于旧�
 
 test('真实输入在长按门槛前发出按下反馈，松手反馈先于结算，重置清除双侧',()=>{
  let now=0;const events=[];
- const callbacks=new Proxy({onStrokePressChanged:(side,held)=>events.push(['visual',side,held]),onStrokeHeld:(side,held)=>{events.push(['held',side,held]);return true;}},{get:(o,k)=>o[k]??(()=>{})});
- const mod=load('assets/scripts/core/InputRouter.ts',{'cc':{Node,Vec2},'./GameConstants':{StrokeType:{LEFT:0,RIGHT:1}},'./InputTuning':{INPUT_TUNING:{padStrokeDedupeMs:0},STROKE_QUALITY_TUNING:{minHoldSeconds:.1}}},{Date:{now:()=>now}});
+ const callbacks=new Proxy({onStrokePressChanged:(side,held)=>events.push(['visual',side,held]),onStrokeHeld:(side,held)=>{events.push(['held',side,held]);return true;}},{get:(o,k)=>k==='butterfly'?undefined:o[k]??(()=>{})});
+ const mod=load('assets/scripts/core/InputRouter.ts',{'cc':{Node,Vec2},'./GameConstants':{StrokeType:{LEFT:0,RIGHT:1}},'./ButterflyTuning':{BUTTERFLY_TUNING:{chordSeconds:0.09}},'./InputTuning':{INPUT_TUNING:{padStrokeDedupeMs:0},STROKE_QUALITY_TUNING:{minHoldSeconds:.1}}},{Date:{now:()=>now}});
  const router=new mod.InputRouter(new Node('input'),callbacks);
  router.handleScreenStroke(0);assert.deepEqual(events,[['visual',0,true]]);
  now=50;router.handleScreenStrokeEnd(0);assert.deepEqual(events,[['visual',0,true],['visual',0,false]],'短按不结算手臂划水');

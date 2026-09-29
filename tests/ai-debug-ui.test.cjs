@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const { createHarness } = require('./helpers/cocos-math-harness.cjs');
 
 function fixture() {
-    class Label { string = ''; static HorizontalAlign = { LEFT: 0, RIGHT: 1 }; }
+    class Label { string = ''; static HorizontalAlign = { LEFT: 0, RIGHT: 1 }; static Overflow = { SHRINK: 1 }; }
     class Button { static EventType = { CLICK: 'click' }; }
     class UITransform { contentSize = { width: 0, height: 0 }; setContentSize(w, h) { this.width = w; this.height = h; this.contentSize = { width: w, height: h }; } }
     class BlockInputEvents {}
@@ -69,6 +69,46 @@ const findNode = (node, name) => descendants(node).find(child => child.name === 
 const emptyCurrencyDebug = () => ({
     read: () => ({ coins: 0, breakthroughGems: 0 }),
     adjust: async () => ({ coins: 0, breakthroughGems: 0 }),
+});
+
+test('第四页蝶泳测试反复切换不重建、启动单独标记且普通入口清除标记', () => {
+    const { Node, load } = fixture();
+    const { getAiDebugSetup } = load('core/GameLaunchOptions');
+    const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
+    const panel = new Node('Panel'); let starts = 0;
+    buildAiDebugSetupPicker(panel, () => starts++, emptyCurrencyDebug());
+    const nodes = descendants(panel), listeners = nodes.map(n => n.events.size);
+    for(let i=0;i<20;i++) {
+        findNode(panel,'ButterflyTestTab').click();
+        assert.equal(findNode(panel,'ButterflyTestContent').active,true);
+        assert.equal(findNode(panel,'AiTestContent').active,false);
+        findNode(panel,'CurrencyDebugTab').click();
+        assert.equal(findNode(panel,'ButterflyTestContent').active,false);
+    }
+    assert.deepEqual(descendants(panel),nodes);
+    assert.deepEqual(nodes.map(n=>n.events.size),listeners);
+    findNode(panel,'ButterflyStart').click();findNode(panel,'ButterflyStart').click();
+    assert.equal(starts,1);assert.equal(getAiDebugSetup().butterflyTest,true);
+    assert.equal(getAiDebugSetup().mode,'competitive');
+    const other = new Node('Other');buildAiDebugSetupPicker(other,()=>{},emptyCurrencyDebug());
+    findNode(other,'ModeStart').click();assert.equal(getAiDebugSetup().butterflyTest,false);
+});
+
+test('蝶泳读数限频，隐藏不读取节拍，重复内容不重写文字', () => {
+    const { Node, load } = fixture();
+    const { ButterflyDebugHud } = load('ui/ButterflyDebugHud');
+    const parent = new Node('Hud');
+    const hud = new ButterflyDebugHud(parent,1280,720);
+    let writes=0, text='';
+    Object.defineProperty(hud.label,'string',{get:()=>text,set:v=>{writes++;text=v;}});
+    const hidden = new Proxy({}, {get(){throw Error('隐藏时不能读取蝶泳状态');}});
+    for(let i=0;i<100;i++) hud.update(.02,false,hidden);
+    assert.equal(writes,0);
+    const beat={active:true,held:true,progress:.35,lastQuality:-1};
+    hud.update(.11,true,beat);assert.equal(writes,1);
+    for(let i=0;i<100;i++) hud.update(.02,true,beat);
+    assert.equal(writes,1);
+    parent.active=false;hud.update(1,true,hidden);assert.equal(writes,1);
 });
 
 test('随机体验只在开赛换种子，切回固定模式可以复现上一局且切换不重建控件', () => {
