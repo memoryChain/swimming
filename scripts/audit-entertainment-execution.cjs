@@ -47,10 +47,11 @@ function replay(seed, distance, grade, speed, fps = 30) {
     const finish = distance / speed;
     for (let frame = 1; frame / fps < finish; frame++) {
         const seconds = frame / fps;
-        const index = director.snapshot().eventIndex;
+        const beforeIndex = director.snapshot().eventIndex;
         const transition = director.update(1 / fps, seconds * speed, true, speed);
         for (const [key, label] of [['previewEvent', '预告'], ['activatedEvent', '激活'], ['finishedEvent', '结束']]) {
             if (transition[key] === null) continue;
+            const index = key === 'finishedEvent' ? beforeIndex : director.snapshot().eventIndex;
             timeline.push({ phase: label, event: entertainmentEventName(transition[key]), index,
                 seconds: +seconds.toFixed(2), distance: +(seconds * speed).toFixed(2) });
             if (key === 'activatedEvent') activated.add(index);

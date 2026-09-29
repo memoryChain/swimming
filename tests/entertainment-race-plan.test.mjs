@@ -9,7 +9,7 @@ import LitterModule from '../assets/scripts/core/LitterBrawlController.ts';
 import ObstacleModule from '../assets/scripts/core/ObstacleBrawlRules.ts';
 import IntensityModule from '../assets/scripts/core/EntertainmentIntensity.ts';
 
-const { buildEntertainmentRacePlan, normalizeEntertainmentRaceGrade } = PlanModule;
+const { buildEntertainmentRacePlan, normalizeEntertainmentRaceGrade, entertainmentScheduleSpeed } = PlanModule;
 const { EntertainmentEventId: E, EntertainmentModeDirector } = DirectorModule;
 const { buildGradedStimulantSchedule, avoidGradedSupplyBuoys } = SupplyModule;
 const { MinefieldBrawlController } = MineModule;
@@ -18,14 +18,78 @@ const { LitterBrawlController, LITTER_BRAWL_TUNING } = LitterModule;
 const { buildObstaclePlan } = ObstacleModule;
 const { entertainmentIntensityProfile } = IntensityModule;
 
-test('预算跳过机会段以索引和锚点恢复，接管不复活已取消主段且不截断当前事件', () => {
+test('班车预检使用余量静默等候，失约在公开前换低档漩涡并可跨端恢复', () => {
+    let seed = 1;
+    while (buildEntertainmentRacePlan(seed, 200, 2).stages[0].event !== E.TURTLE_BUS) seed++;
+    for (const grade of [1, 2]) {
+        const plan = buildEntertainmentRacePlan(seed, 200, grade);
+        let probes = 0;
+        const host = new EntertainmentModeDirector(seed, 200, true, undefined, undefined, undefined,
+            plan, () => { probes++; return 0; });
+        const waiting = host.update(4, 40, true, 2.5);
+        assert.equal(waiting.previewEvent, null);
+        assert.equal(waiting.activatedEvent, null);
+        host.update(.1, 41, true, 2.5);
+        assert.equal(probes, 1);
+        const next = host.update(1, 150, true, 2.5);
+        assert.equal(next.previewEvent, grade === 1 ? null : E.WHIRLPOOL);
+        assert.equal(next.activatedEvent, null);
+        const guest = new EntertainmentModeDirector(seed, 200, true, undefined, undefined, undefined, plan);
+        assert.equal(guest.applySnapshot(host.snapshot()).snapshotAccepted, true);
+        assert.deepEqual(guest.selectedEvents(), host.selectedEvents());
+        if (grade === 2) {
+            assert.equal(host.update(6, 152, true, 2.5).activatedEvent, E.WHIRLPOOL);
+            assert.equal(host.secondsRemaining(), 8);
+            assert.equal(guest.applySnapshot(host.snapshot()).snapshotAccepted, true);
+            assert.equal(guest.currentEvent(), E.WHIRLPOOL);
+        } else assert.equal(host.stageSkipReason(0), 'no-boarding-window');
+        host.reset();
+        assert.equal(host.selectedEvents()[0], E.TURTLE_BUS);
+    }
+});
+
+test('已确认海龟航段立即交给自身预告，导演按真实航次结束并保留后段', () => {
+    const plan = buildEntertainmentRacePlan(5, 200, 5);
+    assert.equal(plan.stages[0].event, E.TURTLE_BUS);
+    const host = new EntertainmentModeDirector(5, 200, true, undefined, undefined, undefined, plan, () => 24);
+    const start = host.update(4, 30, true, 2.5);
+    assert.equal(start.activatedEvent, E.TURTLE_BUS);
+    assert.equal(start.previewEvent, null);
+    assert.equal(host.secondsRemaining(), 24);
+    assert.equal(host.update(24, 90, false, 2.5).finishedEvent, null);
+    assert.equal(host.update(.25, 91, true, 2.5).finishedEvent, E.TURTLE_BUS);
+    assert.equal(host.update(5, 110, true, 2.5).previewEvent, E.SHARK);
+});
+
+test('各档主事件在标准短长局完整启动，短暂提速不触发永久跳段', () => {
+    for (const distance of [200, 400]) for (let grade = 1; grade <= 5; grade++) {
+        for (let seed = 1; seed <= 100; seed++) {
+            const plan = buildEntertainmentRacePlan(seed, distance, grade);
+            const director = new EntertainmentModeDirector(seed, distance, true, undefined, undefined, undefined, plan);
+            const completed = new Set();
+            let progress = 0;
+            for (let frame = 1; progress < distance; frame++) {
+                const time = frame / 30;
+                progress += (time >= 12 && time < 13 ? 5 : 2.5) / 30;
+                if (progress >= distance) break;
+                const before = director.snapshot().eventIndex;
+                const result = director.update(1 / 30, progress, true, entertainmentScheduleSpeed(progress, time));
+                if (result.finishedEvent !== null && before < plan.stages.length) completed.add(before);
+            }
+            assert.equal(completed.size, plan.stages.length, `${distance}:${grade}:${seed}`);
+            assert.equal(director.skippedStageMask(), 0);
+        }
+    }
+});
+
+test('短局巨浪和鲨鱼都兑现，接管延续主段且不截断已启动事件', () => {
     const plan = buildEntertainmentRacePlan(6, 200, 5);
     const host = new EntertainmentModeDirector(6, 200, true, undefined, undefined, undefined, plan);
     let guest;
     for (let frame = 1; frame < 80 * 30; frame++) {
         const distance = frame / 30 * 2.5;
         const result = host.update(1 / 30, distance, true, 2.5);
-        if (!guest && host.skippedStageMask() !== 0) {
+        if (!guest && result.activatedEvent === E.GIANT_WAVE) {
             guest = new EntertainmentModeDirector(6, 200, true, undefined, undefined, undefined, plan);
             assert.equal(guest.applySnapshot(host.snapshot()).snapshotAccepted, true);
             assert.equal(guest.skippedStageMask(), host.skippedStageMask());
@@ -36,15 +100,20 @@ test('预算跳过机会段以索引和锚点恢复，接管不复活已取消�
         }
     }
     assert.ok(guest);
-    assert.equal(host.snapshot().activatedMask & (1 << E.GIANT_WAVE), 0);
-    assert.ok(host.snapshot().activatedMask & (1 << E.CANNON));
+    assert.ok(host.snapshot().activatedMask & (1 << E.GIANT_WAVE));
     assert.ok(host.snapshot().activatedMask & (1 << E.SHARK));
     const director = new EntertainmentModeDirector(6, 200, true, undefined, undefined, undefined, plan);
     director.update(4, 60, true, 2.5);
     director.update(6, 75, true, 2.5);
-    assert.equal(director.currentEvent(), E.CANNON);
+    assert.equal(director.currentEvent(), E.GIANT_WAVE);
     assert.equal(director.update(30, 150, false, 8).finishedEvent, null);
-    assert.equal(director.currentEvent(), E.CANNON);
+    assert.equal(director.currentEvent(), E.GIANT_WAVE);
+    const late = new EntertainmentModeDirector(6, 200, true, undefined, undefined, undefined, plan);
+    late.update(4, 150, true, 8);
+    assert.notEqual(late.skippedStageMask(), 0);
+    assert.equal(guest.applySnapshot({ ...late.snapshot(), revision: 999 }).snapshotAccepted, true);
+    assert.equal(guest.skippedStageMask(), late.skippedStageMask());
+    assert.equal(guest.update(30, 190, true, 8).activatedEvent, null);
 });
 
 test('浮标过期批次、尾段取消经快照恢复后不会再补投且保留已启用浮标', () => {
@@ -67,13 +136,13 @@ test('浮标过期批次、尾段取消经快照恢复后不会再补投且保�
     assert.deepEqual(guest.mines().map(mine => mine.active), [false, true, false]);
 });
 
-test('场地事件可穿插前中后段，强挑战有进度门槛且不增加整局预算', () => {
+test('短局场地优先，长局场地只穿插前中段，强挑战保留进度门槛', () => {
     for (const distance of [200, 400]) for (let grade = 2; grade <= 5; grade++) {
         const positions = new Map([E.TURTLE_BUS, E.WHIRLPOOL, E.GEYSER, E.GIANT_WAVE].map(event => [event, new Set()]));
         const schedules = new Set();
         for (let seed = 1; seed <= 1000; seed++) {
             const plan = buildEntertainmentRacePlan(seed, distance, grade);
-            const count = grade === 2 ? 1 : grade === 5 || distance === 400 ? 3 : 2;
+            const count = grade === 2 ? 1 : distance === 400 ? 3 : 2;
             assert.equal(plan.stages.length, count);
             for (const [index, stage] of plan.stages.entries()) {
                 positions.get(stage.event)?.add(index);
@@ -83,7 +152,7 @@ test('场地事件可穿插前中后段，强挑战有进度门槛且不增加�
             }
             schedules.add(plan.stages.map(s => `${s.event}:${s.previewProgress.toFixed(3)}`).join(','));
         }
-        for (const slots of positions.values()) assert.equal(slots.size, grade === 2 ? 1 : distance === 400 || grade === 5 ? 3 : 2);
+        for (const slots of positions.values()) assert.equal(slots.size, grade === 2 || distance === 200 ? 1 : 2);
         assert.ok(schedules.size > 200);
     }
 });
@@ -178,7 +247,7 @@ test('最高档完整障碍配额、首波减量及双炮只作用于长局', ()
     assert.deepEqual(short.obstacle.litterWaveCounts, [4, 7, 7, 7, 7]);
     assert.equal(short.obstacle.litterWaveCounts.reduce((a, b) => a + b, 0), 32);
     assert.equal(long.obstacle.litterWaveCounts.reduce((a, b) => a + b, 0), 75);
-    assert.equal(short.stages.find(stage => stage.event === E.CANNON).actionCount, 3);
+    assert.equal(short.stages.find(stage => stage.event === E.CANNON), undefined);
     assert.equal(long.stages.find(stage => stage.event === E.CANNON).actionCount, 6);
     assert.equal(long.stages.find(stage => stage.event === E.CANNON).intensity, 4);
     assert.ok(short.stages.some(stage => stage.event === E.SHARK && stage.previewProgress >= .48));
@@ -213,8 +282,12 @@ test('导演按五档主挑战运行，一级没有主事件，重复水球保�
         let serial = 0;
         for (const stage of plan.stages) {
             const distance = stage.previewProgress * 400;
-            assert.equal(director.update(8, distance).previewEvent, stage.event);
-            assert.equal(director.update(6, distance).activatedEvent, stage.event);
+            if (stage.event === E.TURTLE_BUS) {
+                assert.equal(director.update(8, distance).activatedEvent, stage.event);
+            } else {
+                assert.equal(director.update(8, distance).previewEvent, stage.event);
+                assert.equal(director.update(6, distance).activatedEvent, stage.event);
+            }
             assert.equal(director.snapshot().activationSerial, ++serial);
             assert.equal(guest.applySnapshot(director.snapshot()).snapshotAccepted, true);
             assert.equal(guest.currentEvent(), stage.event);

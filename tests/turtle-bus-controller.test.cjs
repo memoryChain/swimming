@@ -246,6 +246,67 @@ test('开发灰模从反向池端出场，玩家实际接近后自动抓稳且�
     assert.equal(player.motor.onArmStrokeStarted, null);
 });
 
+test('综合班车预检不显形不牵引，确认航次后只启动一次且按实际时长结束', () => {
+    const course = { courseLength: 50, direction: 1, startX: 0, finishX: 50, waterY: 0 };
+    const player = racer(), ai = racer();
+    player.motor.distance = ai.motor.distance = 42;
+    player.raceDirection = ai.raceDirection = 1;
+    let previews = 0;
+    const bus = new TurtleBusController(new FakeNode('World'), course, player, [ai], 1,
+        () => previews++, undefined, undefined, undefined, undefined, true, undefined, [3, 4], 7);
+    const duration = bus.prepareLaunch();
+    assert.ok(duration > 20 && duration < 30);
+    assert.equal(bus.seats.phase, 'idle');
+    bus.update(5, true);
+    assert.equal(bus.seats.phase, 'idle');
+    assert.equal(previews, 0);
+    assert.equal(player.motor.tow, null);
+    bus.activatePreparedLaunch();
+    bus.activatePreparedLaunch();
+    assert.equal(previews, 1);
+    assert.equal(bus.seats.phase, 'preview');
+    assert.equal(bus.snapshotState().tripId, 7);
+    for (let frame = 0; frame < Math.ceil(duration * 30) + 1; frame++) bus.update(1 / 30, true);
+    assert.equal(bus.isDone, true);
+    bus.dispose();
+});
+
+test('综合导演与真实班车预检串接：有窗口发车、无窗口替补，后段仍能完成', () => {
+    const { EntertainmentModeDirector, EntertainmentEventId: E } = harness.load(path.join(harness.root,
+        'assets/scripts/core/EntertainmentModeDirector.ts'));
+    const { buildEntertainmentRacePlan } = harness.load(path.join(harness.root,
+        'assets/scripts/core/EntertainmentRacePlan.ts'));
+    let departures = 0;
+    for (const speed of [2, 2.5, 3.5]) for (const eligible of [true, false]) {
+        const plan = buildEntertainmentRacePlan(5, 200, 5);
+        const player = racer(), ai = racer();
+        player.isCollisionActive = ai.isCollisionActive = eligible;
+        player.currentSpeed = ai.currentSpeed = speed;
+        const bus = new TurtleBusController(new FakeNode('World'),
+            { courseLength: 50, direction: 1, startX: 0, finishX: 50, waterY: 0 },
+            player, [ai], 5, () => departures++, undefined, undefined, undefined, undefined, true);
+        const director = new EntertainmentModeDirector(5, 200, true, undefined, undefined, undefined,
+            plan, () => bus.prepareLaunch());
+        const completed = [];
+        let launched = false;
+        for (let frame = 1; frame / 30 * speed < 200; frame++) {
+            const progress = frame / 30 * speed;
+            player.motor.distance = ai.motor.distance = progress;
+            player.raceDirection = ai.raceDirection = Math.floor(progress / 50) % 2 === 0 ? 1 : -1;
+            if (launched) bus.update(1 / 30, true);
+            const result = director.update(1 / 30, progress,
+                director.currentEvent() !== E.TURTLE_BUS || bus.isDone, speed);
+            if (result.activatedEvent === E.TURTLE_BUS) { bus.activatePreparedLaunch(); launched = true; }
+            if (result.finishedEvent !== null) completed.push(result.finishedEvent);
+        }
+        assert.ok(completed.includes(E.SHARK), `${speed}:${eligible}:${completed}`);
+        assert.ok(completed.includes(E.TURTLE_BUS) || completed.includes(E.WHIRLPOOL));
+        if (!eligible) assert.equal(launched, false);
+        bus.dispose();
+    }
+    assert.ok(departures > 0);
+});
+
 test('正式班车至少两名选手有不同空圈可搭才出场，无可达窗口十八秒后请求替换', () => {
     const course = { courseLength: 50, direction: 1, startX: 0, finishX: 50, waterY: 0 };
     const player = racer(), ai = racer();

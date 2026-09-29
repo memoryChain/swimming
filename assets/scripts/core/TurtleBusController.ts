@@ -56,6 +56,8 @@ export class TurtleBusController {
     private readonly ringWorld = new Vec3();
     private readonly rootBack = new Float32Array(TURTLE_BUS_MAX_SWIMMERS);
     private started = false;
+    private preparedLaunch = false;
+    private awaitingActivation = false;
     private plannerElapsed = 0;
     private launchWait = 0;
     private aiPlannerElapsed = 0;
@@ -108,6 +110,8 @@ export class TurtleBusController {
         this.startOffset = TURTLE_BUS_CONFIG.startOffset;
         this.cancelAge = undefined;
         this.started = false;
+        this.preparedLaunch = false;
+        this.awaitingActivation = false;
         this.plannerElapsed = 0;
         this.launchWait = 0;
         this.aiPlannerElapsed = 0;
@@ -160,7 +164,25 @@ export class TurtleBusController {
     }
 
     get isDone(): boolean { return this.seats.phase === 'done'; }
+    get isAwaitingActivation(): boolean { return this.awaitingActivation; }
     get visualNode(): Node { return this.visual.node; }
+
+    /** 综合排期先确认现时可搭航段；不启动上浮、广播或 AI 牵引。 */
+    prepareLaunch(): number {
+        if (!this.authoritative || this.started) return 0;
+        this.awaitingActivation = true;
+        this.preparedLaunch = false;
+        this.bindSwimmers();
+        this.tryStart(true);
+        return this.preparedLaunch ? turtleBusDoneAge(this.startOffset) : 0;
+    }
+
+    activatePreparedLaunch(): void {
+        if (!this.authoritative || !this.preparedLaunch) return;
+        this.awaitingActivation = false;
+        this.preparedLaunch = false;
+        this.startTrip(this.direction, this.routeZ, this.startOffset);
+    }
 
     private worldScale(): number {
         return Math.abs(this.course.finishX - this.course.startX) / this.course.courseLength;
@@ -357,7 +379,7 @@ export class TurtleBusController {
     }
 
     update(dt: number, racing: boolean): void {
-        if (!racing || !this.authoritative) return;
+        if (!racing || !this.authoritative || this.awaitingActivation) return;
         this.bindSwimmers();
         if (!this.started) {
             this.launchWait += dt;
@@ -624,7 +646,7 @@ export class TurtleBusController {
         return sample;
     }
 
-    private tryStart(): void {
+    private tryStart(prepareOnly = false): void {
         if (!this.player.motor.isRacing || !this.player.node.active) return;
         // 留出末排圈、最长角色身体和池壁余量；不随选手往中段平移。
         const candidateOffset = Math.ceil(TURTLE_BUS_CONFIG.entryWorldInset / this.worldScale() * 10) / 10;
@@ -640,7 +662,12 @@ export class TurtleBusController {
                 if (this.formalMode) {
                     if (!turtleBusHasBoardingWindow(this.samples, direction, center, candidateOffset,
                         this.worldScale(), TURTLE_BUS_CONFIG.launchClaimHorizonSeconds)) continue;
-                    this.startTrip(direction, center, candidateOffset);
+                    if (prepareOnly) {
+                        this.direction = direction;
+                        this.routeZ = center;
+                        this.startOffset = candidateOffset;
+                        this.preparedLaunch = true;
+                    } else this.startTrip(direction, center, candidateOffset);
                     return;
                 }
                 // 独立试玩优先给玩家留空圈；已游远时等待下一池端窗口。

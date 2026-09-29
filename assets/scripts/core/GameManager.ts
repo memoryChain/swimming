@@ -121,7 +121,7 @@ import { entertainmentIntensityProfile, entertainmentTestCombinationEvents,
     type EntertainmentIntensityProfile } from './EntertainmentIntensity';
 import { EntertainmentIntensityDebugHud } from '../ui/EntertainmentIntensityDebugHud';
 import { avoidGradedSupplyBuoys, buildEntertainmentStimulantSchedule, buildGradedStimulantSchedule } from './StimulantBrawlRules';
-import { buildEntertainmentRacePlan, type EntertainmentMainStage, type EntertainmentRacePlan } from './EntertainmentRacePlan';
+import { buildEntertainmentRacePlan, entertainmentScheduleSpeed, ENTERTAINMENT_TURTLE_FALLBACK_STAGE, type EntertainmentMainStage, type EntertainmentRacePlan } from './EntertainmentRacePlan';
 import {
     createWhirlpoolVisualResources,
     disposeWhirlpoolVisualResources,
@@ -1689,7 +1689,7 @@ export class GameManager extends Component {
         this.createTurtleBus(false);
     }
 
-    private createTurtleBus(formal: boolean): void {
+    private createTurtleBus(formal: boolean, preparing = false): void {
         if (!this._worldRoot?.isValid || !this._playerSwimmer?.node?.isValid) return;
         this._turtleBus?.dispose();
         const lanes = [this._playerLaneIndex];
@@ -1739,7 +1739,7 @@ export class GameManager extends Component {
                 }
             } : undefined,
             lanes,
-            formal ? this._entertainmentDirector?.snapshot().activationSerial ?? 1 : 1,
+            formal ? (this._entertainmentDirector?.snapshot().activationSerial ?? 1) + (preparing ? 1 : 0) : 1,
             turtleBusFeelSnapshot(!!this._netSession));
         if (formal && this._netRaceController) {
             this._turtleBus.setAuthority(this._netRaceController.isHost);
@@ -1820,7 +1820,8 @@ export class GameManager extends Component {
                 debugIntensity
                     ? this.debugEntertainmentProfile(EntertainmentEventId.WHIRLPOOL)!.whirlpoolSuperCount > 0
                     : undefined,
-                this._entertainmentRacePlan ?? undefined)
+                this._entertainmentRacePlan ?? undefined,
+                this._entertainmentRacePlan ? () => this.prepareEntertainmentTurtle() : undefined)
             : null;
         // 赛前预热共用水花，首次事件不再集中创建六份网格和十个槽位。
         if (this._entertainmentDirector || isStimulantBrawlMode() || isSharkBrawlMode()
@@ -1962,7 +1963,8 @@ export class GameManager extends Component {
         }
         const canFinish = this.canFinishEntertainmentEvent(current);
         const transition = director.update(dt, this.entertainmentLeaderDistance(), canFinish,
-            this._entertainmentRacePlan ? this.entertainmentReferenceSpeed() : 0);
+            this._entertainmentRacePlan ? entertainmentScheduleSpeed(this.entertainmentLeaderDistance(),
+                this._raceManager?.elapsedSeconds ?? 0) : 0);
         this.handleEntertainmentDirectorTransition(transition);
     }
 
@@ -1996,6 +1998,11 @@ export class GameManager extends Component {
 
     private handleEntertainmentDirectorTransition(transition: EntertainmentDirectorTransition) {
         const director = this._entertainmentDirector;
+        // 权威跳段或切主后的替补都会清理尚未公开的班车，不保留隐藏监听器。
+        if (this._turtleBus?.isAwaitingActivation && director?.currentEvent() !== EntertainmentEventId.TURTLE_BUS) {
+            this._turtleBus.dispose();
+            this._turtleBus = null;
+        }
         // 断流恢复可能直接跳到其他事件，旧炮火预告也必须结束。
         if (this._cannonPreviewPending && (transition.cancelledPreview
             || transition.activatedEvent !== null || transition.recoveredEvent !== null
@@ -2109,6 +2116,7 @@ export class GameManager extends Component {
                 }
                 break;
             case EntertainmentEventId.WHIRLPOOL:
+                if (!this._whirlpoolVisualResources) this._whirlpoolVisualResources = createWhirlpoolVisualResources();
                 setRuntimeWhirlpoolSpawns(this.entertainmentWhirlpoolSpawns(anchorDistance));
                 if (playActivationEntrance) {
                     this._whirlpoolActivationPreviewPending = true;
@@ -2145,7 +2153,8 @@ export class GameManager extends Component {
                 this.setupLitterBrawl();
                 break;
             case EntertainmentEventId.TURTLE_BUS:
-                this.createTurtleBus(true);
+                if (this._turtleBus?.isAwaitingActivation) this._turtleBus.activatePreparedLaunch();
+                else this.createTurtleBus(true);
                 break;
             case EntertainmentEventId.GEYSER:
                 this.createGeyserBrawl(anchorDistance);
@@ -2171,12 +2180,7 @@ export class GameManager extends Component {
                     break;
                 case EntertainmentEventId.WHIRLPOOL:
                     if (!this._whirlpoolBrawl) {
-                        setRuntimeWhirlpoolSpawns(entertainmentWhirlpoolSpawn(
-                            getSharedRandomSeed(),
-                            this.entertainmentAnchorDistance(event),
-                            getRaceDistance(),
-                            director.isSpecialEvent(event),
-                        ));
+                        setRuntimeWhirlpoolSpawns(this.entertainmentWhirlpoolSpawns(this.entertainmentAnchorDistance(event)));
                     }
                     break;
                 case EntertainmentEventId.MINEFIELD:
@@ -2228,14 +2232,19 @@ export class GameManager extends Component {
     }
 
     private entertainmentReferenceSpeed(): number {
+        // 障碍仍按更保守的瞬时速度检查出生安全，主事件的局长估计单独使用平均进度速度。
         const distance = this.entertainmentLeaderDistance();
-        let speed = distance / Math.max(1, this._raceManager?.elapsedSeconds ?? 0);
+        let speed = entertainmentScheduleSpeed(distance, this._raceManager?.elapsedSeconds ?? 0);
         if (this._playerSwimmer?.distance === distance) speed = Math.max(speed, this._playerSwimmer.currentSpeed);
         for (const swimmer of this._aiSwimmers) {
             if (swimmer?.node?.active && swimmer.distance === distance) speed = Math.max(speed, swimmer.currentSpeed);
         }
-        // 从现有权威距离、比赛时钟和领游速度派生，迁移无需重置历史采样器。
         return Math.max(0.5, Math.ceil((Number.isFinite(speed) ? speed : 0.5) * 10) / 10);
+    }
+
+    private prepareEntertainmentTurtle(): number {
+        if (!this._turtleBus) this.createTurtleBus(true, true);
+        return this._turtleBus?.prepareLaunch() ?? 0;
     }
 
     private canContinueGradedObstacleSpawns(): boolean {
@@ -2249,7 +2258,14 @@ export class GameManager extends Component {
         const director = this._entertainmentDirector;
         if (!plan || !director || director.currentEvent() !== event) return null;
         const index = director.snapshot().eventIndex;
-        if (index < plan.stages.length) return plan.stages[index];
+        if (index < plan.stages.length) {
+            const stage = plan.stages[index];
+            // 班车无可搭航段时由房主在公开前改选一档漩涡，不能沿用班车规格。
+            if (stage.event === EntertainmentEventId.TURTLE_BUS && event === EntertainmentEventId.WHIRLPOOL) {
+                return ENTERTAINMENT_TURTLE_FALLBACK_STAGE;
+            }
+            return stage;
+        }
         const intensity = event === EntertainmentEventId.CANNON ? 3
             : event === EntertainmentEventId.SHARK ? 3
                 : plan.grade === 3 ? 1 : plan.grade === 4 ? 2 : 3;
@@ -2288,7 +2304,11 @@ export class GameManager extends Component {
     }
 
     private entertainmentWhirlpoolSpawns(anchorDistance: number) {
-        const profile = this.debugEntertainmentProfile(EntertainmentEventId.WHIRLPOOL);
+        // 驻留漩涡恢复时导演可能已进入下一段，仍须按原段或班车替补规格重建。
+        const index = this._entertainmentDirector?.selectedEvents().indexOf(EntertainmentEventId.WHIRLPOOL) ?? -1;
+        const stage = this._entertainmentRacePlan?.stages[index];
+        const profile = stage ? this._gradedEntertainmentProfiles?.[(stage.event === EntertainmentEventId.TURTLE_BUS
+            ? 1 : stage.intensity) - 1] : this.debugEntertainmentProfile(EntertainmentEventId.WHIRLPOOL);
         if (profile) return entertainmentGradedWhirlpoolSpawns(
             getSharedRandomSeed(), anchorDistance, getRaceDistance(),
             this._entertainmentRacePlan ? 1 : profile.whirlpoolCount, profile.whirlpoolRadiusScale,

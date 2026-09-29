@@ -2,6 +2,7 @@ import { EntertainmentEventId } from './EntertainmentModeDirector';
 import { SeededRandom } from './SharedRNG';
 import { geyserSpec } from './GeyserBrawlRules';
 import { ENTERTAINMENT_GIANT_WAVE_SECONDS } from './GiantWaveRules';
+import { TURTLE_BUS_CONFIG, turtleBusDoneAge } from './TurtleBusRules';
 import type { ObstacleLayout } from './ObstacleBrawlRules';
 
 /** The whole-race grade is independent of AI skill and an individual event's intensity. */
@@ -15,6 +16,13 @@ export type EntertainmentMainStage = Readonly<{
     durationSeconds: number;
     required: boolean;
 }>;
+
+export const ENTERTAINMENT_TURTLE_FALLBACK_STAGE: EntertainmentMainStage = Object.freeze({
+    event: EntertainmentEventId.WHIRLPOOL, intensity: 1, previewProgress: 0,
+    actionCount: 1, durationSeconds: 8, required: true,
+});
+// 标准尺度的名义航次；启动前由控制器使用实际场地尺度重新核算。
+const TURTLE_TRIP_SECONDS = turtleBusDoneAge(TURTLE_BUS_CONFIG.entryWorldInset);
 
 export type EntertainmentObstacleBudget = Readonly<{
     layout: ObstacleLayout;
@@ -33,7 +41,7 @@ export type EntertainmentSupplyBudget = Readonly<{
 
 export type EntertainmentRacePlan = Readonly<{
     version: 1;
-    balanceVersion: 6;
+    balanceVersion: 7;
     identity: number;
     seed: number;
     raceDistance: 200 | 400;
@@ -89,6 +97,12 @@ export function normalizeEntertainmentRaceGrade(value: unknown): EntertainmentRa
         ? value as EntertainmentRaceGrade : null;
 }
 
+/** 用已有权威距离和时钟估计局长；短暂冲刺不再被外推成整段持续高速。 */
+export function entertainmentScheduleSpeed(distance: number, elapsedSeconds: number): number {
+    const speed = distance / Math.max(1, elapsedSeconds);
+    return Math.max(0.5, Math.ceil((Number.isFinite(speed) ? speed : 0.5) * 10 - 1e-8) / 10);
+}
+
 function spreadProgress(count: number, first: number, last: number, random: SeededRandom, jitter: number): number[] {
     const progress: number[] = [];
     for (let index = 0; index < count; index++) {
@@ -110,22 +124,22 @@ function mainStage(event: EntertainmentEventId, intensity: EntertainmentRaceGrad
 
 function buildMainStages(seed: number, raceDistance: 200 | 400, grade: EntertainmentRaceGrade): EntertainmentMainStage[] {
     const longRace = raceDistance === 400;
-    // 场地事件与挑战数量不变，随机选择插入段落；独立子流不扰动补给和障碍。
+    // 短局先兑现场地和代表挑战；长局只在前中段穿插，独立子流不扰动补给和障碍。
     const random = new SeededRandom((seed ^ 0x454e5635) >>> 0);
     const choice = random.int(100);
     const environment = choice < 20 ? EntertainmentEventId.TURTLE_BUS
         : choice < 50 ? EntertainmentEventId.WHIRLPOOL
             : choice < 75 ? EntertainmentEventId.GEYSER : EntertainmentEventId.GIANT_WAVE;
     if (grade === 1) return choice < 20
-        ? [mainStage(environment, 1, 0.24 + random.next() * 0.26, 1, 15, false)] : [];
+        ? [mainStage(environment, 1, 0.12 + random.next() * 0.06, 1, TURTLE_TRIP_SECONDS, true)] : [];
     const challenges = grade === 2 ? [] : grade === 3
         ? longRace ? [EntertainmentEventId.TIMED_BOMB, EntertainmentEventId.TIMED_BOMB] : [EntertainmentEventId.TIMED_BOMB]
         : grade === 4 ? longRace ? [EntertainmentEventId.TIMED_BOMB, EntertainmentEventId.CANNON] : [EntertainmentEventId.CANNON]
-            : [EntertainmentEventId.CANNON, EntertainmentEventId.SHARK];
-    const environmentIndex = random.int(challenges.length + 1);
+            : longRace ? [EntertainmentEventId.CANNON, EntertainmentEventId.SHARK] : [EntertainmentEventId.SHARK];
+    const environmentIndex = longRace ? random.int(Math.min(2, challenges.length + 1)) : 0;
     challenges.splice(environmentIndex, 0, environment);
-    const anchors = challenges.length === 1 ? [0.26 + random.next() * 0.26]
-        : challenges.length === 2 ? [0.20, 0.52] : longRace ? [0.14, 0.38, 0.64] : [0.14, 0.36, 0.58];
+    const anchors = challenges.length === 1 ? [0.12 + random.next() * 0.06]
+        : challenges.length === 2 ? [0.14, 0.48] : [0.14, 0.36, 0.60];
     return challenges.map((event, index) => {
         // 前段先留给轻障碍和补给；炮击、鲨鱼有最低进度门槛，完整预告另计。
         let progress = anchors[index] + (random.next() * 2 - 1) * 0.015;
@@ -135,10 +149,10 @@ function buildMainStages(seed: number, raceDistance: 200 | 400, grade: Entertain
         if (event === environment) return mainStage(event,
             event === EntertainmentEventId.TURTLE_BUS ? 1 : event === EntertainmentEventId.WHIRLPOOL
                 ? Math.min(2, environmentLevel) as EntertainmentRaceGrade : environmentLevel,
-            progress, 1, event === EntertainmentEventId.TURTLE_BUS ? 15
+            progress, 1, event === EntertainmentEventId.TURTLE_BUS ? TURTLE_TRIP_SECONDS
                 : event === EntertainmentEventId.GEYSER ? geyserSpec(environmentLevel).actionSeconds
                     : event === EntertainmentEventId.GIANT_WAVE ? ENTERTAINMENT_GIANT_WAVE_SECONDS : 8,
-            grade === 2);
+            true);
         if (event === EntertainmentEventId.TIMED_BOMB) return mainStage(event, grade === 3 ? 1 : 2,
             progress, 1, grade === 3 ? 11.5 : 10.5, grade === 3 && challenges.indexOf(event) === index);
         if (event === EntertainmentEventId.CANNON) return mainStage(event, grade === 4 ? 2 : longRace ? 4 : 3,
@@ -173,7 +187,7 @@ export function buildEntertainmentRacePlan(seed: number, distance: number,
     const supplyWaves = longRace ? numbers.supplyWaves400 : numbers.supplyWaves200;
     const plan = {
         version: 1,
-        balanceVersion: 6,
+        balanceVersion: 7,
         seed: safeSeed,
         raceDistance,
         grade,
