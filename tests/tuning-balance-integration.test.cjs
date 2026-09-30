@@ -51,6 +51,18 @@ function heldStrokeFixture(ratio = 0.6, fixedSpeed = true) {
     return { ...h, motor, StrokeType, inputs, start };
 }
 
+test('蝶泳甜区收束进度可保存重载，旧配置缺字段时使用默认值', () => {
+    const h = setup(); h.tuning.loadSavedTuningAsync(() => {});
+    const item = h.controls.get('butterfly.windowTransitionEndProgress');
+    assert.ok(item); assert.equal(item.get(), .12);
+    item.set(.1); assert.equal(h.tuning.saveCurrentTuning().ok, true);
+    item.set(.15); h.tuning.loadSavedTuningAsync(() => {});
+    assert.equal(item.get(), .1);
+    h.saved.clear(); delete h.project.values['butterfly.windowTransitionEndProgress'];
+    h.tuning.resetTuningToDefaults(); h.tuning.loadSavedTuningAsync(() => {});
+    assert.equal(item.get(), .12);
+});
+
 test('娱乐强度参数含巨浪五档，保存与重载会影响下一局实际规格', () => {
     const h = setup(); h.tuning.loadSavedTuningAsync(() => {});
     const controls = [...h.controls.keys()].filter(id => id.startsWith('entertainment.'));
@@ -366,30 +378,38 @@ test('三个入口的 AI 阵容强度一致，换局后体重匹配模型，同�
     const Flow = vm.runInNewContext(ts.transpileModule(`class Flow { ${method.getText(source)} }; Flow`,
         { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText,
         { ...launch, reseedSharedRandom, RACE_OPPONENTS_ENABLED: true });
-    for (const opponentCount of [1, 7]) for (const mixedCharacters of [false, true]) for (let playerLane = 0; playerLane < 8; playerLane++) {
+    for (const butterflyTest of [false, true]) for (const opponentCount of [1, 7]) for (const mixedCharacters of [false, true]) for (let playerLane = 0; playerLane < 8; playerLane++) {
         const primaryLane = (playerLane + 1) % 8;
-        launch.setAiDebugSetup({ characterId: 'muscleMan', level: 30, mode: 'competitive', seed: 42, opponentCount, mixedCharacters });
+        launch.setAiDebugSetup({ characterId: 'muscleMan', level: 30, mode: 'competitive', seed: 42, opponentCount, mixedCharacters,
+            butterflyTest, butterflyOpponentCount: 7 });
         const manager = new CompetitorManager({
             laneLayout: { laneCount: 8, centerZ: lane => lane * 2.625 },
             courseLayout: { startX: 0, swimY: 0 }, playerLaneIndex: playerLane, primaryAiLaneIndex: primaryLane,
         });
         const group = new cc.Node('调试阵容'); group.isValid = true;
         const owner = new Flow(), stopAfterBuild = new Error('已创建阵容'); let result;
-        Object.assign(owner, { _aiDebugMode: true, _netSession: null, _aiDebugDifficulty: 1,
-            _primaryAiLaneIndex: primaryLane, _swimmersRoot: group,
+        Object.assign(owner, { _aiDebugMode: true, _netSession: null, _aiDebugDifficulty: 1, _butterflyTestMode: butterflyTest,
+            _primaryAiLaneIndex: primaryLane, _swimmersRoot: group, debug() {},
             createCompetitorManager: () => ({ buildAi(root, options) { result = manager.buildAi(root, options); throw stopAfterBuild; } }) });
         assert.throws(() => owner.buildDeferredAiSwimmers(), e => e === stopAfterBuild);
-        assert.equal(result.aiSwimmers.length, opponentCount);
-        assert.equal(result.aiControllers.length, opponentCount);
+        const expectedCount = butterflyTest ? 7 : opponentCount;
+        assert.equal(result.aiSwimmers.length, expectedCount);
+        assert.equal(result.aiControllers.length, expectedCount);
         assert.ok(result.primaryAiController);
         const lanes = result.aiSwimmers.map(s => s.node.position.z / 2.625);
         assert.ok(!lanes.includes(playerLane));
-        assert.equal(new Set(lanes).size, opponentCount);
+        assert.equal(new Set(lanes).size, expectedCount);
         for (const ai of result.aiControllers) { assert.equal(ai.level, 30); assert.equal(ai.difficulty, 1); }
         const ids = new Set(result.aiControllers.map(ai => ai.characterId));
-        if (opponentCount === 7 && mixedCharacters) assert.equal(ids.size, 7);
+        if (butterflyTest || (opponentCount === 7 && mixedCharacters)) assert.equal(ids.size, 7);
         else assert.deepEqual([...ids], ['muscleMan']);
         // 网络比赛即使存在调试标记，也不能采用本地的测试阵容覆盖。
+        if (butterflyTest) {
+            launch.setAiDebugSetup({ ...launch.getAiDebugSetup(), butterflyOpponentCount: 0 });
+            owner.buildDeferredAiSwimmers();
+            assert.equal(owner._aiController, null);
+            launch.setAiDebugSetup({ ...launch.getAiDebugSetup(), butterflyOpponentCount: 7 });
+        }
         owner._netSession = {};
         assert.throws(() => owner.buildDeferredAiSwimmers(), e => e === stopAfterBuild);
         assert.equal(result.aiSwimmers.length, 7);

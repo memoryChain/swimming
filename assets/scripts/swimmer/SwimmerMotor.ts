@@ -105,6 +105,9 @@ type ReleaseRanges = { perfect: { start: number; end: number }; good: { start: n
 export class SwimmerMotor {
     /** 只有本地蝶泳测试场创建；普通比赛不分配节拍状态。 */
     butterfly: ButterflyStroke | null = null;
+    private _butterflyPreview: ButterflyStroke | null = null;
+    private _butterflyPreviewRequested = false;
+    setButterflyPreview(enabled: boolean) { this._butterflyPreviewRequested = enabled && this.butterfly !== null; }
     private _butterflyKickCycle = 0;
     get butterflyKickCycle(): number { return this._butterflyKickCycle; }
     private _butterflyPower = 1;
@@ -121,13 +124,24 @@ export class SwimmerMotor {
     enableButterflyTest(enabled: boolean) {
         if (!enabled) this.cancelButterfly(false);
         this.butterfly = enabled ? this.butterfly ?? new ButterflyStroke() : null;
+        this._butterflyPreview = enabled ? this._butterflyPreview ?? new ButterflyStroke() : null;
+        if (!enabled) this._butterflyPreviewRequested = false;
         this._butterflyPulse = enabled ? this._butterflyPulse ?? new ButterflyPropulsion() : null;
     }
 
+    private _butterflyInterruptionVersion = 0;
+    get butterflyInterruptionVersion(): number { return this._butterflyInterruptionVersion; }
+    get isButterflyRecoveryLocked(): boolean { return this._butterflyRecoveryUntil > this._motionClock; }
+    get butterflyAdmission(): 'ready' | 'wait' | 'fallback' {
+        if (!this.butterfly || !this.isRacing || this._glidePhaseActive
+            || this.axialSteeringProjection() < 0.5) return 'fallback';
+        return this.isArmStrokeActive ? 'wait' : 'ready';
+    }
+
     beginButterfly(): boolean {
-        if (!this.butterfly || !this.isRacing || this._glidePhaseActive || this.isArmStrokeActive
-            || this.axialSteeringProjection() < 0.5) return false;
+        if (this.butterflyAdmission !== 'ready') return false;
         if (!this.butterfly.start(this._conditionCadenceScale, this.heartRate, this.ability.perfectWidth)) return false;
+        this._butterflyPreviewRequested = false;
         // 保留进入时的路线，但不继承之前单侧划水留下的持续主动转向。
         this._headingTurnRate = 0;
         this._leftStrokeHeld = this._rightStrokeHeld = false;
@@ -160,7 +174,9 @@ export class SwimmerMotor {
     }
 
     cancelButterfly(preserveRecovery = true) {
+        this._butterflyPreviewRequested = false;
         const beat = this.butterfly;
+        if (beat?.active) this._butterflyInterruptionVersion++;
         if (preserveRecovery && beat?.active) {
             // 触摸取消撤下姿态，但不能用取消跳过回臂来抢下一次推进。
             this._butterflyRecoveryUntil = Math.max(this._butterflyRecoveryUntil,
@@ -2250,6 +2266,8 @@ export class SwimmerMotor {
 
     get strokeTimingGuide(): StrokeTimingGuide {
         if (this.butterfly?.active) return this.butterflyTimingGuide();
+        const preview = this.pendingButterflyTimingGuide();
+        if (preview) return preview;
         return this.buildGuideFromAction(this.currentGuideAction());
     }
 
@@ -2259,6 +2277,8 @@ export class SwimmerMotor {
     // one is scoped to a single hand so the UI can show one dial per hand.
     strokeTimingGuideForSide(type: StrokeType, target?: StrokeTimingGuide): StrokeTimingGuide {
         if (this.butterfly?.active) return this.butterflyTimingGuide(target);
+        const preview = this.pendingButterflyTimingGuide(target);
+        if (preview) return preview;
         const action = type === StrokeType.LEFT ? this._leftActions[0] : this._rightActions[0];
         const usable = action && action.startedAt >= 0 && !action.strokeQualitySettled ? action : null;
         return this.buildGuideFromAction(usable, target);
@@ -2291,8 +2311,13 @@ export class SwimmerMotor {
         return this._pendingStrokeQualityResults.splice(0);
     }
 
-    private butterflyTimingGuide(target?: StrokeTimingGuide): StrokeTimingGuide {
-        const beat = this.butterfly!;
+    private pendingButterflyTimingGuide(target?: StrokeTimingGuide): StrokeTimingGuide | null {
+        if (!this._butterflyPreviewRequested || !this._butterflyPreview || this.butterflyAdmission !== 'ready') return null;
+        this._butterflyPreview.prepareWindow(this._conditionCadenceScale, this.heartRate, this.ability.perfectWidth);
+        return this.butterflyTimingGuide(target, this._butterflyPreview);
+    }
+
+    private butterflyTimingGuide(target?: StrokeTimingGuide, beat = this.butterfly!): StrokeTimingGuide {
         const out = target ?? { active: false, currentRatio: 0, holdSeconds: 0, actionSeconds: 0, minHoldRatio: 0, intervals: [] };
         out.active = beat.held; out.currentRatio = beat.progress; out.displayEndRatio = beat.timeout;
         out.holdSeconds = beat.elapsed; out.actionSeconds = beat.duration; out.minHoldRatio = 0;

@@ -1512,6 +1512,10 @@ export class GameManager extends Component {
     private createInputRouter(): InputRouter {
         return new InputRouter(this.node, {
             butterfly: this._butterflyTestMode ? {
+                admission: () => this._state === GameState.RACING && !this._playerAutopilotEnabled
+                    ? this._playerSwimmer?.butterflyAdmission ?? 'fallback' : 'fallback',
+                interruptionVersion: () => this._playerSwimmer?.butterflyInterruptionVersion ?? 0,
+                preview: (enabled) => this._playerSwimmer?.setButterflyPreview(enabled),
                 begin: () => this._state === GameState.RACING && !this._playerAutopilotEnabled
                     && (this._playerSwimmer?.beginButterfly() ?? false),
                 release: () => this._playerSwimmer?.releaseButterfly(),
@@ -4385,7 +4389,7 @@ export class GameManager extends Component {
             this._netLanePlan = buildNetLanePlan(this._netSession, LANE_LAYOUT.laneCount);
             this._playerLaneIndex = this._netLanePlan.playerLane;
         } else {
-            const aiCount = this._butterflyTestMode ? 0 : getFixedSoloAiCount();
+            const aiCount = this._butterflyTestMode ? (getAiDebugSetup().butterflyOpponentCount === 7 ? 7 : 0) : getFixedSoloAiCount();
             if (aiCount !== undefined) {
                 this._raceLaneCount = aiCount + 1;
                 this._raceLaneStart = centeredLaneStart(LANE_LAYOUT.laneCount, this._raceLaneCount);
@@ -4415,7 +4419,7 @@ export class GameManager extends Component {
             this.debug('deferred AI swimmers skipped for model debug');
             return;
         }
-        if (!RACE_OPPONENTS_ENABLED || this._butterflyTestMode) {
+        if (!RACE_OPPONENTS_ENABLED || (this._butterflyTestMode && getAiDebugSetup().butterflyOpponentCount !== 7)) {
             this._aiController = null;
             this.debug('race opponents disabled');
             return;

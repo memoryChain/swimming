@@ -1303,6 +1303,7 @@ export class Swimmer extends Component {
     get canUseArmStroke(): boolean {
         return this._motor.isRacing
             && !this._motor.butterfly?.active
+            && !this._motor.isButterflyRecoveryLocked
             && this._forcedLaunch === null
             && !this._phases.isFlipTurnActive
             && !this._phases.isDolphinJumpActive
@@ -1311,6 +1312,13 @@ export class Swimmer extends Component {
 
     enableButterflyTest(enabled: boolean) { this._motor.enableButterflyTest(enabled); }
     get butterflyState() { return this._motor.butterfly; }
+    setButterflyPreview(enabled: boolean) { this._motor.setButterflyPreview(enabled); }
+    get butterflyInterruptionVersion(): number { return this._motor.butterflyInterruptionVersion; }
+    get butterflyAdmission(): 'ready' | 'wait' | 'fallback' {
+        if (!this._motor.isRacing || this._forcedLaunch !== null || this._phases.isUnderwater
+            || this._phases.isFlipTurnActive || this._phases.isDolphinJumpActive || !this._phases.canUseArmStroke) return 'fallback';
+        return this._motor.butterflyAdmission;
+    }
     beginButterfly(): boolean {
         if (!this.canUseArmStroke || this._phases.isUnderwater) return false;
         return this._motor.beginButterfly();

@@ -13,6 +13,8 @@ export type MainGameLaunchMode = 'race' | 'model-debug' | 'ai-debug' | 'underwat
 export interface AiDebugSetup {
     /** 只由独立蝶泳页签设置；普通调试入口明确清除。 */
     butterflyTest?: boolean;
+    /** 蝶泳页独立记住单人／7 AI，不受其他测试页人数影响。 */
+    butterflyOpponentCount?: 0 | 7;
     giantWavePreset?: 'three' | 'single';
     /** 两个新单项各自记住选择；开赛仍由 entertainmentIntensity 传递本局有效档位。 */
     giantWaveIntensity?: EntertainmentIntensity;
@@ -66,6 +68,7 @@ export function setEntertainmentRaceGrade(value: number): void {
 }
 export function setAiDebugSetup(setup: AiDebugSetup) {
     pendingAiDebugSetup.butterflyTest = setup.butterflyTest === true;
+    pendingAiDebugSetup.butterflyOpponentCount = setup.butterflyOpponentCount === 7 ? 7 : 0;
     pendingAiDebugSetup.giantWavePreset = setup.giantWavePreset === 'single' ? 'single' : 'three';
     pendingAiDebugSetup.giantWaveIntensity = (setup.mode === 'giant-wave-brawl'
         ? normalizeEntertainmentIntensity(setup.entertainmentIntensity) : null)
@@ -103,9 +106,9 @@ export function setAiDebugSetup(setup: AiDebugSetup) {
 /** 只在本地 AI 测试赛使用；所有对手共用所选等级和智力，多角色沿用赛事随机阵容。 */
 export function resolveAiDebugBuildOptions(setup: Readonly<AiDebugSetup>, primaryLane: number, difficulty: number) {
     return {
-        soloLane: setup.opponentCount === 1 ? primaryLane : undefined,
+        soloLane: !setup.butterflyTest && setup.opponentCount === 1 ? primaryLane : undefined,
         difficultyOverride: difficulty,
-        characterId: setup.opponentCount === 7 && setup.mixedCharacters ? undefined : setup.characterId,
+        characterId: setup.butterflyTest || (setup.opponentCount === 7 && setup.mixedCharacters) ? undefined : setup.characterId,
         level: setup.level,
     };
 }

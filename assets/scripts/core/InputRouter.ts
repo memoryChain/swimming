@@ -5,7 +5,12 @@ import { BUTTERFLY_TUNING } from './ButterflyTuning';
 
 export type InputRouterCallbacks = {
     /** 仅本地蝶泳测试注入，普通比赛使用原输入时序。 */
-    butterfly?: { begin: () => boolean; release: () => void; cancel: () => void };
+    butterfly?: {
+        begin: () => boolean; release: () => void; cancel: () => void;
+        admission?: () => 'ready' | 'wait' | 'fallback';
+        interruptionVersion?: () => number;
+        preview?: (enabled: boolean) => void;
+    };
     onStroke: (type: StrokeType) => void;
     onStrokePressChanged?: (type: StrokeType, pressed: boolean) => void;
     onStrokeHeld: (type: StrokeType, held: boolean, preHeldSeconds?: number) => boolean;
@@ -49,6 +54,8 @@ export class InputRouter {
     private _butterflyClaimed = false;
     private _butterflyStarted = false;
     private _butterflyReleased = false;
+    private _butterflyInterruptionVersion = 0;
+    private _butterflyPreviewVisible = false;
     // Awards free-look touch state: whether a multi-finger pinch is in progress and the
     // last measured distance between the first two touch points.
     private _cameraMultiTouch = false;
@@ -151,6 +158,7 @@ export class InputRouter {
             if (other.active && other.pairEligible && !other.promoted && !other.kickSent
                 && Math.abs(press.startedMs - other.startedMs) <= BUTTERFLY_TUNING.chordSeconds * 1000) {
                 this._butterflyClaimed = true;
+                this.setButterflyPreview(true);
             }
         } else {
             this.sendKick(type);
@@ -164,13 +172,13 @@ export class InputRouter {
         }
         const now = Date.now();
         const thresholdMs = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds) * 1000;
+        if (this._callbacks.butterfly) this.syncButterflyInterruption();
         if (this._callbacks.butterfly && this._butterflyClaimed) {
             this.tryBeginButterfly(now, thresholdMs);
-            // 配对只是候选：短按松手仍是踢腿，不能在长按确认前吞掉输入。
+            // 未成功接管的配对在松手时退回原分类，短按或长按都不能被吞掉。
             // 剩余一手继续独立分类，但本次按压不能被下一次短按重新配对。
-            if (!this._butterflyStarted && now - press.startedMs < thresholdMs) {
-                this._butterflyClaimed = false;
-                this._leftPress.pairEligible = this._rightPress.pairEligible = false;
+            if (!this._butterflyStarted) {
+                this.fallbackToFreestyle();
             } else {
                 if (this._butterflyStarted && !this._butterflyReleased) this._callbacks.butterfly.release();
                 this._butterflyReleased = true;
@@ -208,7 +216,11 @@ export class InputRouter {
         const thresholdMs = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds) * 1000;
         const now = Date.now();
         if (this._callbacks.butterfly) {
-            if (this._butterflyClaimed) { this.tryBeginButterfly(now, thresholdMs); return; }
+            this.syncButterflyInterruption();
+            if (this._butterflyClaimed) {
+                this.tryBeginButterfly(now, thresholdMs);
+                if (this._butterflyClaimed) return;
+            }
             this.flushDeferredKick(StrokeType.LEFT, now);
             this.flushDeferredKick(StrokeType.RIGHT, now);
         }
@@ -230,8 +242,36 @@ export class InputRouter {
 
     private tryBeginButterfly(now: number, thresholdMs: number) {
         if (this._butterflyStarted || this._butterflyReleased || !this._leftPress.active || !this._rightPress.active) return;
+        const admission = this._callbacks.butterfly?.admission?.();
+        if (admission === 'fallback') { this.fallbackToFreestyle(); return; }
         if (now - Math.max(this._leftPress.startedMs, this._rightPress.startedMs) < thresholdMs) return;
+        if (admission === 'wait') return;
         this._butterflyStarted = this._callbacks.butterfly!.begin();
+        if (this._butterflyStarted) {
+            this.setButterflyPreview(false);
+            this._butterflyInterruptionVersion = this._callbacks.butterfly?.interruptionVersion?.() ?? 0;
+        } else {
+            this.fallbackToFreestyle();
+        }
+    }
+
+    private fallbackToFreestyle() {
+        this.setButterflyPreview(false);
+        this._butterflyClaimed = this._butterflyStarted = this._butterflyReleased = false;
+        this._leftPress.pairEligible = this._rightPress.pairEligible = false;
+    }
+
+    private syncButterflyInterruption() {
+        if (this._butterflyStarted && this._callbacks.butterfly?.interruptionVersion
+            && this._callbacks.butterfly.interruptionVersion() !== this._butterflyInterruptionVersion) {
+            this.fallbackToFreestyle();
+        }
+    }
+
+    private setButterflyPreview(visible: boolean) {
+        if (this._butterflyPreviewVisible === visible) return;
+        this._butterflyPreviewVisible = visible;
+        this._callbacks.butterfly?.preview?.(visible);
     }
 
     private promoteIfDue(type: StrokeType, now: number, thresholdMs: number) {
@@ -263,6 +303,7 @@ export class InputRouter {
     }
 
     resetStrokeInput() {
+        this.setButterflyPreview(false);
         this._callbacks.butterfly?.cancel();
         this._butterflyClaimed = this._butterflyStarted = false;
         this._butterflyReleased = false;

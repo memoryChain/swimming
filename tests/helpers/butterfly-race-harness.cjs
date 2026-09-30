@@ -9,7 +9,8 @@ const file = path.join(h.root,'assets/scripts/entity/Swimmer.ts');
 const source = ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
 const decl = source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='Swimmer');
 const names = ['makeStrokeQualityResult','updatePerfectComboIdle','tryDolphinJump','canUseDolphinAbility',
-    'motor','courseLayout','startPosition','canUseArmStroke','beginButterfly','releaseButterfly','cancelButterfly'];
+    'motor','courseLayout','startPosition','canUseArmStroke','butterflyAdmission','butterflyInterruptionVersion',
+    'beginButterfly','releaseButterfly','cancelButterfly'];
 const members = decl.members.filter(n=>names.includes(n.name?.getText(source)));
 if(members.length!==names.length)throw new Error('实体测试入口缺失');
 const js = ts.transpileModule(`class Body {${members.map(n=>n.getText(source)).join('\n')}}`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;

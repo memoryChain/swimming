@@ -89,9 +89,39 @@ test('第四页蝶泳测试反复切换不重建、启动单独标记且普通�
     assert.deepEqual(nodes.map(n=>n.events.size),listeners);
     findNode(panel,'ButterflyStart').click();findNode(panel,'ButterflyStart').click();
     assert.equal(starts,1);assert.equal(getAiDebugSetup().butterflyTest,true);
+    assert.equal(getAiDebugSetup().butterflyOpponentCount,0);
     assert.equal(getAiDebugSetup().mode,'competitive');
     const other = new Node('Other');buildAiDebugSetupPicker(other,()=>{},emptyCurrencyDebug());
     findNode(other,'ModeStart').click();assert.equal(getAiDebugSetup().butterflyTest,false);
+});
+
+test('蝶泳8人选择只更新控件，独立记住人数与距离，生成7个混合AI', () => {
+    const { Node, Label, load } = fixture();
+    const { getAiDebugSetup, resolveAiDebugBuildOptions } = load('core/GameLaunchOptions');
+    const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
+    const panel = new Node('Panel'); let starts = 0;
+    buildAiDebugSetupPicker(panel, () => starts++, emptyCurrencyDebug());
+    const nodes = descendants(panel), listeners = nodes.map(n => n.events.size);
+    const players = findNode(panel, 'ButterflyPlayers');
+    for (let i = 0; i < 21; i++) players.click();
+    findNode(panel, 'LevelUp').click();
+    findNode(panel, 'ButterflyTestTab').click();
+    assert.match(findNode(findNode(panel, 'ButterflyTestContent'), 'CharacterHint').getComponent(Label).string, /等级 2/);
+    assert.deepEqual(descendants(panel), nodes);
+    assert.deepEqual(nodes.map(n => n.events.size), listeners);
+    findNode(panel, 'ButterflyDistance').click();
+    findNode(panel, 'ButterflyStart').click();findNode(panel, 'ButterflyStart').click();
+    assert.equal(starts, 1);
+    assert.equal(getAiDebugSetup().butterflyOpponentCount, 7);
+    assert.equal(getAiDebugSetup().raceDistance, 400);
+    const options = resolveAiDebugBuildOptions(getAiDebugSetup(), 3, .6);
+    assert.equal(options.soloLane, undefined);
+    assert.equal(options.characterId, undefined);
+    const next = new Node('Next');
+    buildAiDebugSetupPicker(next, () => {}, emptyCurrencyDebug());
+    findNode(next, 'ButterflyPlayers').click();
+    findNode(next, 'ButterflyStart').click();
+    assert.equal(getAiDebugSetup().butterflyOpponentCount, 0);
 });
 
 test('蝶泳读数限频，隐藏不读取节拍，重复内容不重写文字', () => {

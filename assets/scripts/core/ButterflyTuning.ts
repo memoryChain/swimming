@@ -2,8 +2,9 @@
 export const BUTTERFLY_TUNING = {
     chordSeconds: 0.09,
     cycleSeconds: 0.95,
-    perfectStart: 0.32,
-    perfectEnd: 0.46,
+    perfectStart: 0.31,
+    perfectEnd: 0.53,
+    windowTransitionEndProgress: 0.12,
     timeoutProgress: 0.60,
     propulsionScale: 2.5,
     energyScale: 2,

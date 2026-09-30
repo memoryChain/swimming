@@ -187,6 +187,7 @@ export function buildAiDebugSetupPicker(
         setActive(modeTab.selected, content === modeContent);
         setActive(currencyTab.selected, content === currencyContent);
         setActive(butterflyTab.selected, content === butterflyContent);
+        if (content === butterflyContent) updateButterflyHint();
     };
     aiTab = makeTab('AiTestTab', '角色 AI 测试', -312, aiContent);
     modeTab = makeTab('ModeTestTab', '模式测试', -104, modeContent);
@@ -255,17 +256,29 @@ export function buildAiDebugSetupPicker(
     }));
 
     makeLabel('Title', butterflyContent, '双手同拍 · 蝶泳试游', 30, uiColor(235, 250, 255)).setPosition(0, 168, 0);
-    makeLabel('CharacterHint', butterflyContent, '使用选人界面当前角色，单人测试', 21, uiColor(190, 220, 235)).setPosition(0, 112, 0);
+    let butterflyOpponentCount: 0 | 7 = setup.butterflyOpponentCount === 7 ? 7 : 0;
+    const butterflyCharacterHint = makeLabel('CharacterHint', butterflyContent, '', 21, uiColor(190, 220, 235));
+    butterflyCharacterHint.setPosition(0, 112, 0);
+    const updateButterflyHint = () => write(butterflyCharacterHint.getComponent(Label), butterflyOpponentCount === 7
+        ? `当前角色 + 7 个自由泳 AI（等级 ${setup.level}）`
+        : '使用选人界面当前角色，单人测试');
+    updateButterflyHint();
     makeLabel('InputHint', butterflyContent, '左右半屏同时按住，在完美区松手', 22, uiColor(235, 250, 255)).setPosition(0, 42, 0);
     makeLabel('SwitchHint', butterflyContent, '整拍期间不能转向；回臂结束可接单侧自由泳', 19, uiColor(190, 220, 235)).setPosition(0, -6, 0);
     makeLabel('KeyboardHint', butterflyContent, '键盘使用 A + D；短点和一直按住不会连续蝶泳', 18, uiColor(190, 220, 235)).setPosition(0, -52, 0);
     let butterflyRaceDistance = setup.raceDistance;
-    const butterflyDistance = button(butterflyContent, 'ButterflyDistance', `测试距离 ${butterflyRaceDistance} 米`, 0, -122, 320, () => {
+    const butterflyPlayers = button(butterflyContent, 'ButterflyPlayers', butterflyOpponentCount === 7 ? '8人比赛（7个 AI）' : '单人测试', -185, -122, 340, () => {
+        butterflyOpponentCount = butterflyOpponentCount === 7 ? 0 : 7;
+        write(butterflyPlayers.label, butterflyOpponentCount === 7 ? '8人比赛（7个 AI）' : '单人测试');
+        updateButterflyHint();
+    });
+    const butterflyDistance = button(butterflyContent, 'ButterflyDistance', `测试距离 ${butterflyRaceDistance} 米`, 185, -122, 340, () => {
         butterflyRaceDistance = butterflyRaceDistance === 400 ? 200 : 400;
         write(butterflyDistance.label, `测试距离 ${butterflyRaceDistance} 米`);
     });
     button(butterflyContent, 'ButterflyStart', '开始蝶泳测试', 0, -198, 320, () => {
         setup.raceDistance = butterflyRaceDistance;
+        setup.butterflyOpponentCount = butterflyOpponentCount;
         launch('competitive', MODE_TEST_DIFFICULTY, false, true);
     }, 56);
 
