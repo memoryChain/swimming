@@ -13,7 +13,7 @@ function beat(f,released=true){
 }
 function recoverArms(f){for(let i=0;i<180&&f.body.motor.isArmStrokeActive;i++)f.body.stepSimulation(1/60);f.flush();}
 
-test('三类正式规则中蝶泳方向冻结，自由泳保留各自转向规则，正常冲线只广播一次并清预算',()=>{
+test('无外力时三类正式规则中蝶泳停止自身转向，自由泳保留各自转向规则，正常冲线只广播一次并清预算',()=>{
     for(const mode of ['beginner','competitive','entertainment-brawl']){
         B.setRaceMode(mode);B.setSoloRaceDistance(200);
         const f=createBody(),m=f.body.motor;m.setSteeringEnabled(true);
@@ -94,6 +94,25 @@ test('正式娱乐驻留漩涡在蝶泳中施加实际水流与阻力，模型�
             rows.push([m.distance,m.currentSpeed,m.heading,m.axialRollRadians]);
         }
         assert.deepEqual(rows[0],rows[1]);
+    }finally{W.setRuntimeWhirlpoolSpawns(null);D.resetEntertainmentEventRuntime();}
+});
+
+test('实体进入漩涡后起划保留已受水流的偏航，蝶泳中漩涡仍可改变朝向',()=>{
+    const D=load('core/EntertainmentModeDirector'),W=load('core/WhirlpoolBrawlRules');
+    B.setRaceMode('entertainment-brawl');B.setSoloRaceDistance(200);
+    const director=new D.EntertainmentModeDirector(17,200,true,undefined,[D.EntertainmentEventId.WHIRLPOOL]);
+    for(let i=0;i<200&&!D.isEntertainmentEventResident(D.EntertainmentEventId.WHIRLPOOL);i++)director.update(.1,30,true,2.5);
+    W.setRuntimeWhirlpoolSpawns([{id:0,distance:30,centerFraction:0,spin:1,variant:'super'}]);
+    try{
+        // 离开完全对称的中心点，才能采到真实切向偏航力。
+        const f=createBody(),m=f.body.motor;m.setFlipTurnDistance(29.5);
+        f.body.stepSimulation(.05);
+        const rate=m.headingTurnRate,heading=m.heading;
+        assert.ok(Math.abs(rate)>1e-6,'真实实体已受到漩涡偏航力');
+        assert.equal(f.body.beginButterfly(),true);
+        near(m.headingTurnRate,rate);near(m.heading,heading);
+        f.body.stepSimulation(.05);
+        assert.ok(Math.abs(m.heading-heading)>1e-6,'起划后水流继续改变朝向');
     }finally{W.setRuntimeWhirlpoolSpawns(null);D.resetEntertainmentEventRuntime();}
 });
 

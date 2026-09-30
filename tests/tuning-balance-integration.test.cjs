@@ -74,6 +74,19 @@ test('蝶泳水面深度阈值可保存重载，旧配置沿用五厘米默认�
     h.tuning.resetTuningToDefaults(); h.tuning.loadSavedTuningAsync(() => {}); assert.equal(item.get(), .05);
 });
 
+test('蝶泳独立GOOD系数可保存重载，旧配置默认0.95且不覆盖自由泳', () => {
+    const h = setup(); h.tuning.loadSavedTuningAsync(() => {});
+    const item = h.controls.get('butterfly.goodPropulsionScale');
+    const free = h.controls.get('speed.strokeGoodPropulsionScale');
+    assert.ok(item); assert.equal(item.get(), .95); assert.equal(free.get(), .6);
+    item.set(.8); assert.equal(h.tuning.saveCurrentTuning().ok, true);
+    item.set(.4); h.tuning.loadSavedTuningAsync(() => {});
+    assert.equal(item.get(), .8); assert.equal(free.get(), .6);
+    h.saved.clear(); delete h.project.values['butterfly.goodPropulsionScale'];
+    h.tuning.resetTuningToDefaults(); h.tuning.loadSavedTuningAsync(() => {});
+    assert.equal(item.get(), .95); assert.equal(free.get(), .6);
+});
+
 test('蝶泳甜区收束进度可保存重载，旧配置缺字段时使用默认值', () => {
     const h = setup(); h.tuning.loadSavedTuningAsync(() => {});
     const item = h.controls.get('butterfly.windowTransitionEndProgress');

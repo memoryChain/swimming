@@ -5,6 +5,7 @@
     "butterfly.perfectStart": 0.31,
     "butterfly.perfectEnd": 0.53,
     "butterfly.windowTransitionEndProgress": 0.12,
+    "butterfly.goodPropulsionScale": 0.95,
     "entertainment.turtleBus.claimConfirmSeconds": 0,
     "entertainment.turtleBus.catchRadius": 0.9,
     "entertainment.turtleBus.boardingProtectionSeconds": 1.2,

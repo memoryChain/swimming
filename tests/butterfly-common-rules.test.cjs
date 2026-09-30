@@ -7,6 +7,60 @@ const {ULTIMATE_ENERGY_BALANCE:u}=load('core/UltimateEnergyBalance');
 const near=(a,b,e=1e-8)=>assert.ok(Math.abs(a-b)<e,`${a} != ${b}`);
 function settle(f,p=.39){const m=f.body.motor;assert.ok(m.beginButterfly());m.butterfly.advance(m.butterfly.duration*p);m.releaseButterfly();f.flush();return m;}
 
+test('蝶泳独立GOOD系数只提高良好推进，计费、蓄气、连击和其他评价不变',()=>{
+    const old=t.goodPropulsionScale;
+    const sample=(scale,p,pulse)=>{
+        t.goodPropulsionScale=scale;
+        const f=createBody(),m=f.body.motor;
+        m._physics.step=s=>s;
+        const previousPulse=t.pulseEnabled;t.pulseEnabled=pulse?1:0;
+        try{
+            assert.ok(m.beginButterfly());m.update(m.butterfly.duration*p,{isAI:false});
+            m.releaseButterfly();f.flush();
+        }finally{t.pulseEnabled=previousPulse;}
+        return {impulse:pulse?m._butterflyPulse.impulseBudget:m._strokeAcceleration*m._strokeAccelerationSeconds,
+            quality:m.butterfly.quality,energy:f.condition.energy,gain:f.body._ultimate.energy,
+            combo:f.body._strokeQualityCombo,cycle:m.butterfly.duration};
+    };
+    try{
+        for(const pulse of [false,true])for(const p of [.05,.2,.42,.7]){
+            const before=sample(.6,p,pulse),after=sample(.95,p,pulse);
+            const {impulse:a,...stateA}=before,{impulse:b,...stateB}=after;
+            assert.deepEqual(stateB,stateA);near(after.energy,98);
+            if(p===.2){assert.equal(after.quality,.5);near(b/a,(1.5+2.6*.5*.95)/(1.5+2.6*.5*.6));}
+            else near(b,a);
+        }
+    }finally{t.goodPropulsionScale=old;}
+});
+
+test('蝶泳GOOD系数起划锁定，并与自由泳GOOD调参相互独立',()=>{
+    const balance=load('core/GameBalance').SWIMMER_BALANCE;
+    const old=t.goodPropulsionScale,oldFree=balance.strokeGoodPropulsionScale;
+    const butterfly=(scale,freeScale,afterStart=scale)=>{
+        t.goodPropulsionScale=scale;balance.strokeGoodPropulsionScale=freeScale;
+        const f=createBody(),m=f.body.motor;assert.ok(m.beginButterfly());
+        t.goodPropulsionScale=afterStart;
+        m.butterfly.advance(m.butterfly.duration*.2);m.releaseButterfly();f.flush();
+        assert.equal(m.butterfly.quality,.5);
+        return m._butterflyPulse.impulseBudget;
+    };
+    const freestyle=scale=>{
+        t.goodPropulsionScale=scale;balance.strokeGoodPropulsionScale=.6;
+        const f=createBody(),m=f.body.motor;m._physics.step=s=>s;
+        m.setStrokeHeld(StrokeType.LEFT,true,.2);assert.ok(m.recordStroke(StrokeType.LEFT));
+        m.update(.001,{isAI:false});m._leftActions[0].progress=.2*Math.PI*2;
+        f.settle(m.setStrokeHeld(StrokeType.LEFT,false));
+        return {impulse:m._strokeAcceleration*m._strokeAccelerationSeconds,energy:f.condition.energy,
+            gain:f.body._ultimate.energy,good:f.body._goodStrokeQualityCount};
+    };
+    try{
+        const base=butterfly(.6,.6);
+        near(butterfly(.6,.1,.95),base);
+        assert.ok(butterfly(.95,.1)>base);
+        assert.deepEqual(freestyle(.6),freestyle(.95));
+    }finally{t.goodPropulsionScale=old;balance.strokeGoodPropulsionScale=oldFree;}
+});
+
 test('真实实体双臂扣2点、一次连击、双份基础蓄气，重复松手不重复奖励',()=>{
     const f=createBody();const m=settle(f);
     near(f.condition.energy,98);near(f.body.settledStrokeEnergy,2);

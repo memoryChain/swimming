@@ -116,12 +116,15 @@ export class SwimmerMotor {
     private _butterflyUltimateGain = 1;
     private _butterflyPerfectReward = 1;
     private _butterflyGoodReward = 1;
+    private _butterflyGoodPropulsionScale = 0.95;
     private _butterflyPulse: ButterflyPropulsion | null = null;
     private _butterflyPulseEnabled = false;
     private _butterflyPulseSeconds = 0.2;
     private _butterflyPulseBudgetScale = 1;
 
     enableButterfly(enabled: boolean) {
+        // 中途启用时已有转向来源未知，按外部状态保留；正常比赛在起跑前启用。
+        if (enabled && !this.butterfly) this._externalHeadingTurnRate = this._headingTurnRate;
         if (!enabled) this.cancelButterfly(false);
         this.butterfly = enabled ? this.butterfly ?? new ButterflyStroke() : null;
         this._butterflyPreview = enabled ? this._butterflyPreview ?? new ButterflyStroke() : null;
@@ -150,8 +153,8 @@ export class SwimmerMotor {
         if (this.butterflyAdmission !== 'ready') return false;
         if (!this.butterfly.start(this._conditionCadenceScale, this.heartRate, this.ability.perfectWidth)) return false;
         this._butterflyPreviewRequested = false;
-        // 保留进入时的路线，但不继承之前单侧划水留下的持续主动转向。
-        this._headingTurnRate = 0;
+        // 只移除自身划水的转向分量；水流及池壁施加的转向继续作用。
+        this._headingTurnRate = this._externalHeadingTurnRate;
         this._leftStrokeHeld = this._rightStrokeHeld = false;
         this._kickCadenceHz = 0; this._lastKickTapClock = -1;
         this._leftKickMotionRemaining = this._rightKickMotionRemaining = 0;
@@ -160,6 +163,8 @@ export class SwimmerMotor {
         this._butterflyUltimateGain = BUTTERFLY_TUNING.ultimateGainScale;
         this._butterflyPerfectReward = this.ability.qualityReward(1);
         this._butterflyGoodReward = this.ability.qualityReward(0.5);
+        this._butterflyGoodPropulsionScale = clamp01(Number.isFinite(BUTTERFLY_TUNING.goodPropulsionScale)
+            ? BUTTERFLY_TUNING.goodPropulsionScale : 0.95);
         this._butterflyPulseEnabled = BUTTERFLY_TUNING.pulseEnabled >= 0.5;
         this._butterflyPulseSeconds = Math.min(0.4,
             clamp(Number.isFinite(BUTTERFLY_TUNING.pulseSeconds) ? BUTTERFLY_TUNING.pulseSeconds : 0.2, 0.12, 0.3)
@@ -208,7 +213,7 @@ export class SwimmerMotor {
         this._lastStrokeQuality = quality;
         this.settleAbility(quality, beat.duration + Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds));
         // 一整拍一次脉冲。失败只给极小推进，不能靠快速双点堆叠基础奖励。
-        const goodScale = quality > 0 && quality < 1 ? clamp01(SWIMMER_BALANCE.strokeGoodPropulsionScale) : 1;
+        const goodScale = quality > 0 && quality < 1 ? this._butterflyGoodPropulsionScale : 1;
         const reward = quality >= 1 ? this._butterflyPerfectReward : this._butterflyGoodReward;
         const acceleration = quality > 0
             ? (SWIMMER_BALANCE.strokeBaseAccel + this._effectiveStrokeQualityAccel * quality * goodScale * reward) * this._butterflyPower
@@ -325,6 +330,8 @@ export class SwimmerMotor {
     // keeps bending the path until water drag or an opposite stroke removes it.
     private _heading = 0;
     private _headingTurnRate = 0;
+    // 总转向仍走原积分路径；仅有蝶泳能力时追踪外部分量，供起划保留。
+    private _externalHeadingTurnRate = 0;
     // Signed direction toward the pool interior while recovering from a side-wall
     // contact. The recovery drives the already-synced heading/turn-rate channels;
     // it adds no render-only state or per-frame allocation.
@@ -392,6 +399,7 @@ export class SwimmerMotor {
         this._speedCapBonus = Math.max(0, this._currentSpeed - SWIMMER_BALANCE.maxSpeed);
         this._heading = 0;
         this._headingTurnRate = 0;
+        this._externalHeadingTurnRate = 0;
         this._poolWallRecoveryDirection = 0;
         this.clearKnockback();
         this._axialRoll.reset();
@@ -456,6 +464,7 @@ export class SwimmerMotor {
         // Push off the wall straight ahead; the player steers again after the turn.
         this._heading = 0;
         this._headingTurnRate = 0;
+        this._externalHeadingTurnRate = 0;
         this._poolWallRecoveryDirection = 0;
         this._axialRoll.reset();
         this._collisionPitch.reset();
@@ -858,6 +867,7 @@ export class SwimmerMotor {
         this._lastKickTapClock = -1;
         this._heading = 0;
         this._headingTurnRate = 0;
+        this._externalHeadingTurnRate = 0;
         this._poolWallRecoveryDirection = 0;
         this._lateralOffset = 0;
         this._axialRoll.reset();
@@ -1485,6 +1495,7 @@ export class SwimmerMotor {
     private clearSteeringOffset() {
         this._heading = 0;
         this._headingTurnRate = 0;
+        this._externalHeadingTurnRate = 0;
         this._poolWallRecoveryDirection = 0;
     }
 
@@ -1598,6 +1609,8 @@ export class SwimmerMotor {
             -maxRate,
             maxRate,
         );
+        // 权威校正没有本地划水来源信息，不能被切换泳姿卸除。
+        if (this.butterfly && useBlend > 0) this._externalHeadingTurnRate = this._headingTurnRate;
     }
 
     get lateralOffset(): number {
@@ -1687,6 +1700,7 @@ export class SwimmerMotor {
         if (inwardHeading >= escapeHeading) {
             if (inwardTurnRate < 0) {
                 this._headingTurnRate = 0;
+                this._externalHeadingTurnRate = 0;
             }
             this._poolWallRecoveryDirection = 0;
             return;
@@ -1700,6 +1714,7 @@ export class SwimmerMotor {
             // intentionally disabled helper cannot trap the swimmer at the wall.
             this._headingTurnRate = inwardSign * Math.max(0, inwardTurnRate);
             this._poolWallRecoveryDirection = 0;
+            if (inwardTurnRate < 0) this._externalHeadingTurnRate = 0;
             return;
         }
         const requiredRate = (escapeHeading - inwardHeading) * correctionRate;
@@ -1708,6 +1723,7 @@ export class SwimmerMotor {
             Math.max(0, inwardTurnRate, requiredRate),
         );
         this._poolWallRecoveryDirection = inwardSign;
+        if (this.butterfly) this._externalHeadingTurnRate = this._headingTurnRate;
     }
 
     // Shift race progress by a small amount (used by swimmer-vs-swimmer collision
@@ -1793,6 +1809,13 @@ export class SwimmerMotor {
         }
         if (isRaceSteeringEnabled()) {
             const maxRate = safeMaxTurnRateRadians();
+            if (this.butterfly) {
+                this._externalHeadingTurnRate = clamp(
+                    this._externalHeadingTurnRate + finiteOr(yawAcceleration, 0) * step,
+                    -maxRate,
+                    maxRate,
+                );
+            }
             this._headingTurnRate = clamp(
                 this._headingTurnRate + finiteOr(yawAcceleration, 0) * step,
                 -maxRate,
@@ -1849,6 +1872,9 @@ export class SwimmerMotor {
         this._heading = clamp(finiteOr(this._heading, 0), -maxHeading, maxHeading);
         const maxRate = safeMaxTurnRateRadians();
         this._headingTurnRate = clamp(finiteOr(this._headingTurnRate, 0), -maxRate, maxRate);
+        if (this.butterfly) {
+            this._externalHeadingTurnRate = clamp(finiteOr(this._externalHeadingTurnRate, 0), -maxRate, maxRate);
+        }
         const step = Math.max(0, dt);
         this.updatePoolWallRecovery(step);
         this._heading += this._headingTurnRate * step;
@@ -1857,18 +1883,25 @@ export class SwimmerMotor {
             this._heading = maxHeading;
             if (this._headingTurnRate > 0) {
                 this._headingTurnRate = 0;
+                this._externalHeadingTurnRate = Math.min(0, this._externalHeadingTurnRate);
             }
         } else if (this._heading <= -maxHeading) {
             this._heading = -maxHeading;
             if (this._headingTurnRate < 0) {
                 this._headingTurnRate = 0;
+                this._externalHeadingTurnRate = Math.max(0, this._externalHeadingTurnRate);
             }
         }
         const modeDragScale = isStimulantBrawlMode() && this._calmSlushTimer <= 0
             ? stimulantTurnDragScale(this.heartRate)
             : 1;
         const drag = Math.max(0, finiteOr(STEERING_TUNING.turnAngularDrag, 0)) * modeDragScale;
-        this._headingTurnRate *= Math.exp(-drag * step);
+        const decay = Math.exp(-drag * step);
+        this._headingTurnRate *= decay;
+        if (this.butterfly) {
+            this._externalHeadingTurnRate *= decay;
+            if (Math.abs(this._externalHeadingTurnRate) < 1e-5) this._externalHeadingTurnRate = 0;
+        }
         if (Math.abs(this._headingTurnRate) < 1e-5) {
             this._headingTurnRate = 0;
         }
@@ -1893,6 +1926,8 @@ export class SwimmerMotor {
             -wallMaxRate,
             wallMaxRate,
         );
+        // 池壁已接管转向，保留这份恢复速度，避免起划打断脱墙。
+        if (this.butterfly) this._externalHeadingTurnRate = this._headingTurnRate;
     }
 
     private finishPoolWallRecoveryIfReady() {
@@ -1910,6 +1945,7 @@ export class SwimmerMotor {
         }
         this._heading = target;
         this._headingTurnRate = 0;
+        this._externalHeadingTurnRate = 0;
         this._poolWallRecoveryDirection = 0;
     }
 

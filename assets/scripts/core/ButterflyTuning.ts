@@ -10,6 +10,7 @@ export const BUTTERFLY_TUNING = {
     windowTransitionEndProgress: 0.12,
     timeoutProgress: 0.60,
     propulsionScale: 2.5,
+    goodPropulsionScale: 0.95,
     energyScale: 2,
     ultimateGainScale: 2,
     pulseEnabled: 1,
