@@ -18,6 +18,7 @@ import type { CharacterSupportPlane } from './CharacterSupportPlane';
 import type { CharacterHandContact } from './CharacterHandContact';
 import type { SurfaceSwimStyle } from '../core/ResourcePaths';
 import { proneFreestyleExtensionWeight, proneFreestyleRollSignal, proneFreestyleWeight, sampleProneFreestyleArm } from './ProneFreestyleMotion';
+import { FREESTYLE_BREATHING_TUNING } from './FreestyleBreathingMotion';
 
 type InterpolatedActionSample = SampledActionMotionSample & {
     nextFootOrientationDeltas?: SampledActionMotionSample['footOrientationDeltas'];
@@ -99,6 +100,16 @@ const SAMPLED_STANDING_SOURCE_BACK_LEAN_DEGREES = 4;
 const SAMPLED_STANDING_MAX_UPRIGHT_CORRECTION_DEGREES = 7;
 
 export class FreestylePoseController {
+    private _breathingTestWeight = -1;
+    private _breathingTestHeadWeight = 0;
+    private _breathingBodyApplied = false;
+
+    /** -1 使用正式动作；0..1 在本地测试中协调胸肩侧转和头颈换气。 */
+    setBreathingTestWeight(weight: number, headWeight = weight): void {
+        this._breathingTestWeight = weight < 0 ? -1 : clamp(weight, 0, 1);
+        this._breathingTestHeadWeight = clamp(headWeight, 0, 1);
+    }
+
     private readonly _butterflyBlendRotations: Quat[] = [];
     private readonly _butterflyRootPosition = new Vec3();
     private readonly _butterflyRootRotation = new Quat();
@@ -364,6 +375,7 @@ export class FreestylePoseController {
 
     restoreBasePose() {
         this._butterflyApplied = false;
+        this._breathingBodyApplied = false;
         this._collisionLimp.reset();
         this.root?.setPosition(this.rootBasePos);
         this.root?.setRotation(this.rootBaseRotation);
@@ -512,6 +524,10 @@ export class FreestylePoseController {
     }
 
     applyFreestylePose(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, upperBodyPower: number, armPower: number, kickPower: number) {
+        if (this._breathingBodyApplied) {
+            this.applyBoneOffset(this._hips, 0, 0, 0);
+            this._breathingBodyApplied = false;
+        }
         if (this._butterflyApplied) {
             this._butterflyApplied = false;
             this.applyBoneOffset(this._hips, 0, 0, 0);
@@ -533,6 +549,25 @@ export class FreestylePoseController {
         this.applySurfaceArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(rightArmCycle), armPower);
         this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, leftKickCycle, kickPower);
         this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, rightKickCycle, kickPower);
+        this.applyBreathingBodyTurn();
+    }
+
+    private applyBreathingBodyTurn(): void {
+        const weight = this._breathingTestWeight;
+        if (weight <= 0) return;
+        // 在手臂方向求解之后带动整条肩臂，保持肘腕的局部关节关系。
+        // 已有胸廓侧转的角色混到同一目标，不在原侧转上再加一整份角度。
+        const chestDelta = (-FREESTYLE_BREATHING_TUNING.chestTurnDegrees - this._proneChestRoll) * weight;
+        const pelvisTurn = -FREESTYLE_BREATHING_TUNING.pelvisTurnDegrees * weight;
+        const chestBase = this._spine1 && this._spine1 !== this._torso ? this._spine1 : null;
+        this.applyWorldAxisRoll(this._hips, pelvisTurn);
+        // 大部分转动放在胸廓下段，肩腋权重所在的上段只承担小幅扭动。
+        if (chestBase) this.applyWorldAxisRoll(chestBase, chestDelta * 0.8);
+        this.applyWorldAxisRoll(this._torso, chestDelta * (chestBase ? 0.2 : 1));
+        const headCounter = -(pelvisTurn + chestDelta) * lerp(0.85, 0.25, this._breathingTestHeadWeight);
+        this.applyWorldAxisRoll(this._neck, headCounter * 0.65);
+        this.applyWorldAxisRoll(this._head, headCounter * 0.35);
+        this._breathingBodyApplied = true;
     }
 
     applyFreestyleRootMotion(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, rightBreath = 0) {
@@ -2542,8 +2577,12 @@ export class FreestylePoseController {
         const rightReach = Math.max(0, -reach);
         const breathRatio = clamp(rightBreath, 0, 1);
         const breathTurn = -MOTION_TUNING.rightBreathTurnDegrees * breathRatio * 0.18;
-        const headBreathTurn = breathTurn * FREESTYLE_POSE_TUNING.freestyleRightBreathHeadTurnScale;
+        const testBreathing = this._breathingTestWeight >= 0;
+        const headBreathRatio = testBreathing ? this._breathingTestHeadWeight : breathRatio;
+        const headBreathTurn = testBreathing ? 0
+            : breathTurn * FREESTYLE_POSE_TUNING.freestyleRightBreathHeadTurnScale;
         const breathLift = smoothRange(breathRatio, 0.08, 0.82);
+        const headBreathLift = testBreathing ? smoothRange(headBreathRatio, 0.08, 0.82) : breathLift;
 
         const swimHeadLift = this._swimHeadLiftDegrees;
         // 胸段也由当前姿态完整赋值，翻成仰泳后不残留上一帧的转体。
@@ -2558,13 +2597,19 @@ export class FreestylePoseController {
             if (chestBase) this.applyWorldAxisRoll(chestBase, this._proneChestRoll * 0.6);
             this.applyWorldAxisRoll(this._torso, this._proneChestRoll * (chestBase ? 0.4 : 1));
         }
-        this.applyBoneOffset(this._neck, (swimHeadLift * 0.72 + breathLift * 3.0) * this._surfaceLiftDirection, headBreathTurn * 0.28, 0);
-        this.applyBoneOffset(this._head, (-2.5 + swimHeadLift * 1.15 + breathLift * 2.1) * this._surfaceLiftDirection, headBreathTurn * 0.5, 0);
+        this.applyBoneOffset(this._neck, (swimHeadLift * 0.72 + headBreathLift * 3.0) * this._surfaceLiftDirection, headBreathTurn * 0.28, 0);
+        this.applyBoneOffset(this._head, (-2.5 + swimHeadLift * 1.15 + headBreathLift * 2.1) * this._surfaceLiftDirection, headBreathTurn * 0.5, 0);
         if (proneWeight > 0.000001) {
             // 不换气时头颈抵消胸廓侧转；右侧换气时逐渐允许头跟随肩膀。
-            const counterRoll = -this._proneChestRoll * lerp(0.85, 0.25, breathRatio);
+            const counterRoll = -this._proneChestRoll * lerp(0.85, 0.25, headBreathRatio);
             this.applyWorldAxisRoll(this._neck, counterRoll * 0.65);
             this.applyWorldAxisRoll(this._head, counterRoll * 0.35);
+        }
+        if (testBreathing && headBreathRatio > 0) {
+            // 沿实际游进的长轴侧转，随前后倾斜和往返方向变化，不猜骨骼局部 Y 轴。
+            const turn = -FREESTYLE_BREATHING_TUNING.headTurnDegrees * headBreathRatio;
+            this.applyWorldAxisRoll(this._neck, turn * 0.35);
+            this.applyWorldAxisRoll(this._head, turn * 0.65);
         }
         this.applyBoneOffset(this._leftShoulder, leftReach * -2, 0, leftReach * -3);
         this.applyBoneOffset(this._rightShoulder, rightReach * -2 - breathLift * 3.2, 0, rightReach * 3 - breathLift * 1.8);

@@ -1310,7 +1310,13 @@ export class Swimmer extends Component {
             && this._phases.canUseArmStroke;
     }
 
-    enableButterflyTest(enabled: boolean) { this._motor.enableButterflyTest(enabled); }
+    private _freestyleBreathingTestEnabled = false;
+    /** 表现开关独立于蝶泳输入，八人测试中的自由泳 AI 也可启用。 */
+    enableFreestyleBreathingTest(enabled: boolean) { this._freestyleBreathingTestEnabled = enabled; }
+    enableButterflyTest(enabled: boolean) {
+        this._motor.enableButterflyTest(enabled);
+        this.enableFreestyleBreathingTest(enabled);
+    }
     get butterflyState() { return this._motor.butterfly; }
     setButterflyPreview(enabled: boolean) { this._motor.setButterflyPreview(enabled); }
     get butterflyInterruptionVersion(): number { return this._motor.butterflyInterruptionVersion; }
@@ -1605,6 +1611,11 @@ export class Swimmer extends Component {
                 bodyPitchRadians,
                 this._motor.heading,
                 bodyUpProjection,
+                this._freestyleBreathingTestEnabled && this._motor.isRacing
+                    && !this._forcedLaunch && !this._entertainmentKnocked && !this._phases.isUnderwater
+                    && !this._phases.isDiveGlidePoseActive && !this._phases.isFlipTurnActive
+                    && !this._phases.isDolphinJumpActive && this._motor.ability.depth <= 0.05,
+                this._freestyleBreathingTestEnabled,
             );
         }
     }
