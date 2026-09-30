@@ -190,6 +190,33 @@ test('绑定水滴材质保留手部可见长度，不覆盖成脚部短水滴',
     assert(hand.renderer.lengthScale>leg.renderer.lengthScale);
 });
 
+test('操作改变蝶泳浮潜后，早松、晚松、超时和加踢腿仍有双手真实入水', () => {
+    const {createRig,Vec3,SWIMMER_MODEL_FILES,load}=require('./helpers/character-contact-harness.cjs');
+    const {ButterflyStroke}=load(path.join(root,'assets/scripts/swimmer/ButterflyStroke.ts'));
+    const contactClass=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='HandWaterContact');
+    const {HandWaterContact}=evaluate('export '+contactClass.getText(source),{TUNING,Vec3});
+    for(const file of SWIMMER_MODEL_FILES)for(const release of [.22,.39,.56,2])for(const direction of [1,-1]) {
+        const rig=createRig(file);rig.wrapper.setRotationFromEuler(90,90*direction,0);rig.pose.setMovementDirection(direction);
+        const hands=[new HandWaterContact(),new HandWaterContact()],counts=[0,0];
+        const options={getBoneWorldPosition:(name,out)=>rig.pose.getSplashBoneWorldPosition(name,out)};
+        const beat=new ButterflyStroke();
+        for(let lap=0;lap<3;lap++) {
+            beat.start();
+            for(let frame=0;frame<=16;frame++) {
+                if(beat.held&&beat.progress>=release)beat.release();
+                if(release===.39 && frame>=8 && frame%2===0)beat.buoyancy.kick();
+                rig.pose.applyButterflyPose(beat.progress,1,0,beat.buoyancy);
+                for(let j=0;j<2;j++) {
+                    hands[j].update(options,j?'RightHand':'LeftHand',0,false);
+                    if(hands[j].triggered)counts[j]++;
+                }
+                beat.advance(beat.duration/16);
+            }
+        }
+        assert.deepEqual(counts,[3,3],`${file} 松手${release} 方向${direction}：升沉不能漏水花或重复触水`);
+    }
+});
+
 test('水滴与水片消费同一次真实接触，前伸信号不会提前喷发', () => {
     const {Vec3}=createHarness();
     const Subject=method('updateParticleEmitters',{lerp:(a,b,t)=>a+(b-a)*t,clamp:(v,a,b)=>Math.max(a,Math.min(b,v))});

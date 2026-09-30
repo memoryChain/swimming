@@ -21,6 +21,7 @@ import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loa
 import type { DivePrepBoneName, DivePrepPoseSample } from '../character/DivePrepPoseCurve';
 import { FreestylePoseController, ProceduralPoseSnapshot } from '../character/FreestylePoseController';
 import { BUTTERFLY_TUNING } from '../core/ButterflyTuning';
+import type { ButterflyBuoyancy } from '../swimmer/ButterflyBuoyancy';
 import { FLIP_TURN_KEYFRAME_1, FLIP_TURN_KEYFRAME_2 } from '../character/FlipTurnPoseCurve';
 import { findSampledDebugAction, SAMPLED_ACTION_IDS } from '../character/SampledActionMotionCurve';
 import type { SampledActionId, SampledActionMotion } from '../character/SampledActionMotionCurve';
@@ -1321,6 +1322,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             !motor.permitsUprightTreadWater || !!motor.butterfly?.active,
             motor.butterfly?.active ? motor.butterfly.progress : -1,
             motor.butterflyKickCycle,
+            motor.butterfly?.buoyancy,
         );
         // 该补偿只作用于本次水面姿态，水下滑行、转身和独立预览使用默认方向。
         this._pose.setSurfaceBodyUpProjection(1);
@@ -1381,7 +1383,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return used;
     }
 
-    updateFreestyle(dt: number, leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, speed: number, movementDirection = 1, suppressTreadWater = false, butterflyProgress = -1, butterflyKickCycle = 0) {
+    updateFreestyle(dt: number, leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, speed: number, movementDirection = 1, suppressTreadWater = false, butterflyProgress = -1, butterflyKickCycle = 0, buoyancy?: Readonly<ButterflyBuoyancy>) {
         if (!this._loaded || !this._poseState.isFreestyleActive || !this.root) {
             this._butterflyPoseWeight = 0;
             return;
@@ -1422,7 +1424,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 : Math.max(0, this._butterflyPoseWeight - dt / 0.18);
             const p = active ? butterflyProgress : 1;
             const weight = this._butterflyPoseWeight;
-            this._pose.applyButterflyPose(p, weight * weight * (3 - 2 * weight), butterflyKickCycle);
+            this._pose.applyButterflyPose(p, weight * weight * (3 - 2 * weight), butterflyKickCycle, buoyancy);
             this._leftHandWaterContact = this._rightHandWaterContact = p < 0.52 || p > 0.9 ? 1 : 0;
             this._leftHandWaterEntry = this.visualHandWaterEntry('left', 0);
             this._rightHandWaterEntry = this.visualHandWaterEntry('right', 0);

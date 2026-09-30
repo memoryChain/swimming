@@ -27,7 +27,9 @@ export class ButterflyDebugHud {
         const phase = !beat.active ? '自由泳 · 可以切换' : beat.held ? '蝶泳抱水 · 等待松手' : '蝶泳回臂 · 暂不能转向';
         const rating = beat.lastQuality < 0 ? '等待第一拍' : beat.lastTimedOut ? '按住超时'
             : beat.lastQuality === 1 ? '完美' : beat.lastQuality > 0 ? '良好' : '松手偏早';
-        const next = `${phase}　${beat.active ? Math.round(beat.progress * 100) : 0}%\n上一拍：${rating}　双手按住发力，松手后接下一拍`;
+        const account = beat.lastQuality < 0 ? '按住更深，松手回浮，短按打腿'
+            : `计费 ${beat.lastEnergyCost.toFixed(1)} 点 · 蓄气 +${beat.lastUltimateGain.toFixed(1)}`;
+        const next = `${phase}　${beat.active ? Math.round(beat.progress * 100) : 0}% · 起划心率 ${Math.round(beat.heartRate)}\n上一拍：${rating}　${account}`;
         if (this.label.string !== next) this.label.string = next;
     }
 }

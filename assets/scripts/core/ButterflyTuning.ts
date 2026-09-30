@@ -1,12 +1,20 @@
 /** 仅蝶泳测试场启用；数值通过统一调试面板保存。 */
 export const BUTTERFLY_TUNING = {
     chordSeconds: 0.09,
-    cycleSeconds: 1.05,
+    cycleSeconds: 0.95,
     perfectStart: 0.32,
     perfectEnd: 0.46,
     timeoutProgress: 0.60,
-    propulsionScale: 1.8,
-    energyScale: 1.7,
+    propulsionScale: 2.5,
+    energyScale: 2,
+    ultimateGainScale: 2,
+    pulseEnabled: 1,
+    pulseSeconds: 0.20,
+    pulseBudgetScale: 1.02,
     bodyWaveDegrees: 9,
     bodyHeaveMeters: 0.10,
+    holdDepthMeters: 0.26,
+    releaseLiftMeters: 0.09,
+    kickLiftMeters: 0.075,
+    buoyancyResponseSeconds: 0.10,
 };

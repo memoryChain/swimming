@@ -64,15 +64,16 @@ export class UltimateEnergyModel {
     }
 
     // 一次划水结算的积攒。combo 为该击之后的连续 PERFECT 数（用于每 N 连击额外奖励）。
-    addStrokeRating(rating: Rating, combo: number) {
+    addStrokeRating(rating: Rating, combo: number, strokeScale = 1) {
         const b = ULTIMATE_ENERGY_BALANCE;
+        const scale = Number.isFinite(strokeScale) ? clamp(strokeScale, 0, 3) : 1;
         if (rating === Rating.PERFECT) {
-            this.add(b.perfectGain);
+            this.add(b.perfectGain * scale);
             if (combo > 0 && combo % b.comboEvery === 0) {
                 this.add(b.comboBonus);
             }
         } else if (rating === Rating.GOOD) {
-            this.add(b.goodGain);
+            this.add(b.goodGain * scale);
         }
     }
 

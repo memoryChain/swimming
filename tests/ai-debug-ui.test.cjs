@@ -104,11 +104,14 @@ test('蝶泳读数限频，隐藏不读取节拍，重复内容不重写文字',
     const hidden = new Proxy({}, {get(){throw Error('隐藏时不能读取蝶泳状态');}});
     for(let i=0;i<100;i++) hud.update(.02,false,hidden);
     assert.equal(writes,0);
-    const beat={active:true,held:true,progress:.35,lastQuality:-1};
+    const beat={active:true,held:true,progress:.35,lastQuality:-1,heartRate:120,lastEnergyCost:0,lastUltimateGain:0};
     hud.update(.11,true,beat);assert.equal(writes,1);
     for(let i=0;i<100;i++) hud.update(.02,true,beat);
     assert.equal(writes,1);
-    parent.active=false;hud.update(1,true,hidden);assert.equal(writes,1);
+    beat.lastQuality=1;beat.lastEnergyCost=1.5;beat.lastUltimateGain=2.3;
+    hud.update(.11,true,beat);assert.equal(writes,2);
+    assert.match(text,/计费 1.5 点 · 蓄气 \+2.3/);assert.match(text,/起划心率 120/);
+    parent.active=false;hud.update(1,true,hidden);assert.equal(writes,2);
 });
 
 test('随机体验只在开赛换种子，切回固定模式可以复现上一局且切换不重建控件', () => {

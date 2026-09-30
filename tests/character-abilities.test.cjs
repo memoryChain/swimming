@@ -175,6 +175,7 @@ function bodyFixture(id) {
     const js = ts.transpileModule(`class Body {${members.map(n=>n.getText(source)).join('\n')}}`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
     const Body = vm.runInNewContext(js+';Body',{DOLPHIN_JUMP,abilityValue,getRaceDistance,Quat:h.cc.Quat,Tween:{stopAllByTarget(){}}});
     const body = new Body(); body._motor = motor(id); body.node = new h.cc.Node(); body.node.active = true;
+    body._forcedLaunch = null;
     body._courseLayout = load('venue/RaceCourseLayout').DEFAULT_RACE_COURSE_LAYOUT;
     body._startPosition = new h.cc.Vec3();
     body._tmpCourseRotation = new h.cc.Quat(); body._cameraNeutralCourseRotation = new h.cc.Quat();

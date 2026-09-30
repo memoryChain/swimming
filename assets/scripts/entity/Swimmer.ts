@@ -80,6 +80,7 @@ export class Swimmer extends Component {
     private _hasStartPosition = false;
     private _strokeQualityCombo = 0;    private _maxStrokeQualityCombo = 0;
     private _perfectComboIdleSeconds = 0;
+    private _perfectComboIdleLimit = PERFECT_COMBO_IDLE_SECONDS;
     private _perfectStrokeQualityCount = 0;
     private _goodStrokeQualityCount = 0;
     private _missStrokeQualityCount = 0;
@@ -1441,6 +1442,7 @@ export class Swimmer extends Component {
         this._strokeQualityCombo = 0;
         this._maxStrokeQualityCombo = 0;
         this._perfectComboIdleSeconds = 0;
+        this._perfectComboIdleLimit = PERFECT_COMBO_IDLE_SECONDS;
         this._perfectStrokeQualityCount = 0;
         this._goodStrokeQualityCount = 0;
         this._missStrokeQualityCount = 0;
@@ -1525,8 +1527,15 @@ export class Swimmer extends Component {
             }
         }
         this._maxStrokeQualityCombo = Math.max(this._maxStrokeQualityCombo, this._strokeQualityCombo);
-        this._ultimate.addStrokeRating(rating, this._strokeQualityCombo);
+        this._perfectComboIdleLimit = strokeQualityResult.comboIdleSeconds ?? PERFECT_COMBO_IDLE_SECONDS;
+        const debugBeat = type === StrokeType.BOTH ? this._motor.butterfly : null;
+        const energyBefore = debugBeat ? this._ultimate.energy : 0;
+        this._ultimate.addStrokeRating(rating, this._strokeQualityCombo, strokeQualityResult.ultimateGainScale ?? 1);
         const energyCost = strokeQualityResult.energyCost ?? CONDITION_BALANCE.energy.drainPerStroke;
+        if (debugBeat) {
+            debugBeat.lastEnergyCost = this._motor.ability.infiniteStamina ? 0 : energyCost;
+            debugBeat.lastUltimateGain = this._ultimate.energy - energyBefore;
+        }
         this.settledStrokeEnergy += energyCost;
         if (!this.isAI) {
             this._pendingConditionInputs.push({
@@ -1557,7 +1566,7 @@ export class Swimmer extends Component {
             return;
         }
         this._perfectComboIdleSeconds += Math.max(0, dt);
-        if (this._perfectComboIdleSeconds >= PERFECT_COMBO_IDLE_SECONDS) {
+        if (this._perfectComboIdleSeconds >= this._perfectComboIdleLimit) {
             this._strokeQualityCombo = 0;
             this._perfectComboIdleSeconds = 0;
         }

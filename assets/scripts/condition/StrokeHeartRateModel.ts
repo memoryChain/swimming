@@ -4,6 +4,8 @@ import { HEART_RATE_TRAITS, HEART_RATE_TUNING, HeartRateTraitId } from '../core/
 /** 只记录实际开始的手臂动作。固定环形队列，不按按键或结算重复计数。 */
 export class StrokeHeartRateModel {
     private readonly starts = new Float64Array(128);
+    private readonly loads = new Uint8Array(128);
+    private totalLoad = 0;
     private head = 0;
     private count = 0;
     private clock = 0;
@@ -21,12 +23,13 @@ export class StrokeHeartRateModel {
     reset() {
         this.head = 0;
         this.count = 0;
+        this.totalLoad = 0;
         this.clock = 0;
         this.value = 80;
         this.recoveryHoldUntil = 0;
     }
     get heartRate(): number { return this.value; }
-    get strokeRate(): number { return this.count / HEART_RATE_TUNING.sampleSeconds; }
+    get strokeRate(): number { return this.totalLoad / HEART_RATE_TUNING.sampleSeconds; }
     get targetHeartRate(): number {
         const load = this.breathControl && this.strokeRate <= abilityValue('coachMaxStrokeHz', 0.5, 4)
             ? abilityValue('coachHeartLoad', 0.1, 1) : 1;
@@ -49,12 +52,16 @@ export class StrokeHeartRateModel {
         }
     }
 
-    recordStart() {
+    recordStart(arms: 1 | 2 = 1) {
         if (this.count === this.starts.length) {
+            this.totalLoad -= this.loads[this.head];
             this.head = (this.head + 1) % this.starts.length;
             this.count--;
         }
-        this.starts[(this.head + this.count) % this.starts.length] = this.clock;
+        const index = (this.head + this.count) % this.starts.length;
+        this.starts[index] = this.clock;
+        this.loads[index] = arms;
+        this.totalLoad += arms;
         this.count++;
     }
 
@@ -68,6 +75,7 @@ export class StrokeHeartRateModel {
             if (expiry > end + 1e-10) break;
             if (!freezeValue) this.approachInterval(Math.max(0, expiry - this.clock));
             this.clock = Math.max(this.clock, Math.min(end, expiry));
+            this.totalLoad -= this.loads[this.head];
             this.head = (this.head + 1) % this.starts.length;
             this.count--;
         }

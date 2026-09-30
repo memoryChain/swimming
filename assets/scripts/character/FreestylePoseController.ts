@@ -1,6 +1,7 @@
 import { RecoveryFloatPose } from './RecoveryFloatPose';
 import { butterflyExtension, sampleButterflyArm } from './ButterflyMotion';
 import { BUTTERFLY_TUNING } from '../core/ButterflyTuning';
+import type { ButterflyBuoyancy } from '../swimmer/ButterflyBuoyancy';
 import { Node, Quat, Vec3 } from 'cc';
 import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
@@ -565,7 +566,7 @@ export class FreestylePoseController {
     }
 
     /** 在当前自由泳基础上混合整拍动作；所有偏移来自绑定姿势，不累加到上一帧。 */
-    applyButterflyPose(progress: number, weight = 1, extraKickCycle = 0) {
+    applyButterflyPose(progress: number, weight = 1, extraKickCycle = 0, buoyancy?: Readonly<ButterflyBuoyancy>) {
         if (!this.root || weight <= 0) return;
         this._butterflyApplied = true;
         const p = clamp(progress, 0, 1), blend = clamp(weight, 0, 1);
@@ -579,21 +580,28 @@ export class FreestylePoseController {
         Quat.copy(this._butterflyRootRotation, this.root.rotation);
         const cycle = p * Math.PI * 2;
         const wave = Math.cos((p - 0.50) * Math.PI * 2);
-        const wavePower = BUTTERFLY_TUNING.bodyWaveDegrees;
+        const wavePower = BUTTERFLY_TUNING.bodyWaveDegrees * (buoyancy?.waveScale ?? 1);
         this._proneChestRoll = 0;
         // 模型旋转为俯泳后局部 Y 指向前方。升沉必须沿世界水面法线施加，
         // 仅移动可见模型，不改变选手的赛程、碰撞高度或潜水状态。
         this.root.setPosition(this.rootBasePos);
         this.root.getWorldPosition(this._tmpGroundHip);
         this._tmpGroundHip.y += Math.cos((p - 0.52) * Math.PI * 2) * BUTTERFLY_TUNING.bodyHeaveMeters;
+        this._tmpGroundHip.y += buoyancy?.offsetY ?? 0;
         this.root.setWorldPosition(this._tmpGroundHip);
-        Quat.fromEuler(this._tmpResultRotation, this.rootBaseEuler.x + MOTION_TUNING.swimBodyPitchDegrees - wave * wavePower * 0.45,
+        Quat.fromEuler(this._tmpResultRotation, this.rootBaseEuler.x + MOTION_TUNING.swimBodyPitchDegrees - wave * wavePower * 0.25 + (buoyancy?.chestPitch ?? 0),
             this.rootBaseEuler.y, this.rootBaseEuler.z);
         this.root.setRotation(this._tmpResultRotation);
-        this.applyBoneOffset(this._hips, -Math.cos((p - 0.66) * Math.PI * 2) * wavePower * 0.5, 0, 0);
-        this.applyBoneOffset(this._spine, Math.cos((p - 0.59) * Math.PI * 2) * wavePower * 0.4, 0, 0);
-        this.applyBoneOffset(this._spine1, Math.cos((p - 0.52) * Math.PI * 2) * wavePower * 0.45, 0, 0);
-        this.applyBoneOffset(this._torso, Math.cos((p - 0.45) * Math.PI * 2) * wavePower * 0.45, 0, 0);
+        // 先定义各段相对身体轴的方向，再取父子差值，避免局部旋转叠加成整背同弯。
+        // 胸部先压入／抬起，波峰依次经过腰、髋、大腿；一周期内形成连续的曲率变化。
+        const pelvisPitch = Math.cos((p - 0.99) * Math.PI * 2) * wavePower * 0.85;
+        const waistPitch = Math.cos((p - 0.87) * Math.PI * 2) * wavePower * 0.8;
+        const backPitch = Math.cos((p - 0.76) * Math.PI * 2) * wavePower * 0.95;
+        const chestPitch = Math.cos((p - 0.65) * Math.PI * 2) * wavePower * 1.05;
+        this.applyBoneOffset(this._hips, pelvisPitch + (buoyancy?.hipPitch ?? 0), 0, 0);
+        this.applyBoneOffset(this._spine, waistPitch - pelvisPitch, 0, 0);
+        this.applyBoneOffset(this._spine1, backPitch - waistPitch, 0, 0);
+        this.applyBoneOffset(this._torso, chestPitch - backPitch, 0, 0);
         const breath = smoothPulse(p, 0.22, 0.42, 0.52, 0.72);
         this.applyBoneOffset(this._neck, breath * 5, 0, 0);
         this.applyBoneOffset(this._head, -4 + breath * 9, 0, 0);
@@ -601,8 +609,9 @@ export class FreestylePoseController {
         this.applySurfaceArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, cycle, 1, true);
         // 同相双腿，与躯干错开少量相位；膝关节沿已有受限求解器屈伸。
         const kick = cycle * 2 - 0.95 + extraKickCycle;
-        this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, kick, 1.35);
-        this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, kick, 1.35);
+        const thighFollow = Math.cos((p - 1.10) * Math.PI * 2) * wavePower * 0.7 - pelvisPitch;
+        this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, kick, 1.35, thighFollow);
+        this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, kick, 1.35, thighFollow);
         if (blend < 1) {
             for (let i = 0; i < this._manualBones.length; i++) {
                 const bone = this._manualBones[i];
@@ -2609,7 +2618,7 @@ export class FreestylePoseController {
         return out;
     }
 
-    private applyLeg(upLeg: Node, leg: Node, foot: Node, toe: Node, cycle: number, power: number) {
+    private applyLeg(upLeg: Node, leg: Node, foot: Node, toe: Node, cycle: number, power: number, bodyFollowDegrees = 0) {
         if (!upLeg || !leg) {
             return;
         }
@@ -2626,7 +2635,7 @@ export class FreestylePoseController {
         const footPitch = ankle * 8 * power - plantarFlex * power;
         const toePitch = ankle * 4.5 * power - plantarFlex * 0.62 * power;
 
-        this.applyBoneOffset(upLeg, hip * 6.5 * power, side * 0.35 * highNeutral, 0);
+        this.applyBoneOffset(upLeg, hip * 6.5 * power + bodyFollowDegrees, side * 0.35 * highNeutral, 0);
         this.applyBoneOffset(leg, knee * 10.5 * power - downBeat * 4.5 * power, side * 0.2 * highNeutral, side * 0.35 * highNeutral);
         // 自由泳脚掌沿身体中线绷直。旧的侧向扭转会在下踢时把一侧鞋底
         // 明显甩向外侧，并因左右腿相位不同而看起来像单侧绑定错误。
