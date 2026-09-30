@@ -6,22 +6,27 @@ const {StrokeType,Rating}=load('core/GameConstants');
 const {setSoloRaceDistance}=load('core/GameBalance');
 const {resolveModifiersFromDigest}=load('progression/RaceModifiers');
 
-function race({butterfly=true,distance=200,fps=120,characterId,level=1,quality='perfect',gap=.02,dolphin=false,pressKicks=false,mixed=false,pulse,kickHz=0,dolphinMinClearance=0}={}){
+function race({butterfly=true,distance=200,fps=120,characterId,level=1,quality='perfect',gap=.02,dolphin=false,pressKicks=false,mixed=false,pulse,kickHz=0,dolphinMinClearance=0,modeId='competitive'}={}){
     if(pulse!==undefined)load('core/ButterflyTuning').BUTTERFLY_TUNING.pulseEnabled=pulse?1:0;
     setSoloRaceDistance(distance);
+    load('core/GameBalance').setRaceMode(modeId);
     const profile=resolveModifiersFromDigest(characterId?{characterId,level}:null);
     const f=createBody(profile.abilityId??'none',profile.balance),b=f.body,m=b.motor;
     const phases=b._phases,dt=1/fps;
     let time=0,pressed=false,nextPress=0,side=StrokeType.LEFT,index=0,currentQuality=quality;
     let depletedAt=null,firstDolphin=null,jumps=0,turns=0,oldTurn=false,peakHeart=80,firstCharge=null;
     let mode=butterfly,previousMode=mode;
-    let nextKick=0,extraKicks=0;
+    let nextKick=0,extraKicks=0,butterflyStarts=0,fallbackArms=0;
     const trace=[];
     const phaseEvents=[];
     const router=new InputRouter({}, {
-        butterfly:{begin:()=>b.beginButterfly(),release:()=>b.releaseButterfly(),cancel:()=>b.cancelButterfly()},
-        onStrokeHeld:(s,held,pre)=>{f.settle(m.setStrokeHeld(s,held,pre));return true;},
-        onStroke:s=>m.recordStroke(s),onKickStroke:s=>{if(pressKicks)m.recordKickTap(s);},
+        butterfly:{admission:()=>b.butterflyAdmission,interruptionVersion:()=>b.butterflyInterruptionVersion,
+            begin:()=>{const ok=b.beginButterfly();if(ok)butterflyStarts++;return ok;},
+            release:()=>b.releaseButterfly(),cancel:()=>b.cancelButterfly()},
+        onStrokeHeld:(s,held,pre)=>{if(held&&!b.canUseArmStroke)return false;f.settle(m.setStrokeHeld(s,held,pre));return true;},
+        onStroke:s=>{if(m.recordStroke(s)&&mode)fallbackArms++;},
+        onKickStroke:s=>{if(pressKicks)m.recordKickTap(s,false);},
+        onKickConfirmed:()=>{if(pressKicks)m.confirmKickAbility();},
     });
     const oldNow=Date.now;Date.now=()=>1000+time*1000;
     try{
@@ -64,14 +69,10 @@ function race({butterfly=true,distance=200,fps=120,characterId,level=1,quality='
                 }
             }
             f.flush();f.updateCondition();
-            b._ultimate.tick(dt);b.updatePerfectComboIdle(dt);
-            const freeze=phases.isDolphinJumpActive;
-            if(phases.tick(dt)){m.ability.suspend();m.tickRestingHeartRate(dt,freeze);}
-            else{
-                m.update(dt,{isAI:false});phases.updateDiveUnderwaterTimer(dt);
-                b.node.setPosition(b.courseLayout.distanceToWorldX(m.distance),phases.visualSwimY(),0);
-                m.setCourseDirection(b.courseLayout.directionAtDistance(m.distance));
-            }
+            b.stepSimulation(dt);
+            if(!phases.isFlipTurnActive&&!phases.isDolphinJumpActive)
+                b.node.setPosition(b.courseLayout.distanceToWorldX(m.distance),phases.visualSwimY(),m.lateralOffset);
+            m.setCourseDirection(b.courseLayout.directionAtDistance(m.distance));
             if(phases.isFlipTurnActive&&!oldTurn){turns++;phaseEvents.push({event:'turn',time,distance:m.distance,speed:m.currentSpeed});}
             oldTurn=phases.isFlipTurnActive;
             f.flush();f.updateCondition();
@@ -82,7 +83,7 @@ function race({butterfly=true,distance=200,fps=120,characterId,level=1,quality='
         }
     }finally{Date.now=oldNow;}
     if(m.distance<distance-1e-5)throw new Error('回放未完赛');
-    return {stroke:mixed?'混合':butterfly?'蝶泳':'自由泳',characterId:characterId??'neutral',level,distance,fps,quality,gap,dolphin,pressKicks,kickHz,extraKicks,pulse,dolphinMinClearance,
+    return {stroke:mixed?'混合':butterfly?'蝶泳':'自由泳',characterId:characterId??'neutral',level,distance,fps,modeId,quality,gap,dolphin,pressKicks,kickHz,extraKicks,pulse,dolphinMinClearance,butterflyStarts,fallbackArms,
         seconds:time,meanSpeed:distance/time,energyRemaining:f.condition.energy,nominalStrokeCost:b.settledStrokeEnergy,
         skillCost:f.skillCost,depletedAt,firstCharge,firstDolphin,jumps,turns,peakHeart,
         perfect:b._perfectStrokeQualityCount,good:b._goodStrokeQualityCount,bad:b._missStrokeQualityCount,phaseEvents,trace};
@@ -90,8 +91,22 @@ function race({butterfly=true,distance=200,fps=120,characterId,level=1,quality='
 if(require.main===module){
     const results=[];
     const characters=process.argv.includes('--characters'),sweep=process.argv.includes('--sweep');
+    const formal=process.argv.includes('--formal');
     const scenarios=[];
-    if(characters){
+    if(formal){
+        // 标准与狂野的无碰撞赛程基线；娱乐事件另由组合规则回放验证。
+        for(const c of load('app/PlayerCharacterConfig').PLAYER_CHARACTER_DEFINITIONS)
+            for(const level of [1,30])for(const distance of [200,400])
+                for(const modeId of ['beginner','competitive'])for(const strategy of ['free','butterfly','mixed'])
+                    scenarios.push({characterId:c.id,level,distance,modeId,fps:60,dolphin:true,pressKicks:true,
+                        dolphinMinClearance:12,butterfly:strategy!=='free',mixed:strategy==='mixed'});
+        for(const fps of [15,30,60])for(const distance of [200,400])for(const mixed of [false,true])
+            scenarios.push({modeId:'entertainment-brawl',fps,distance,mixed,dolphin:true,pressKicks:true,dolphinMinClearance:12});
+        for(const c of load('app/PlayerCharacterConfig').PLAYER_CHARACTER_DEFINITIONS
+            .filter(c=>['powerKick','perfectChain','kickDive','frogHop'].includes(c.abilityId)))for(const distance of [200,400])
+            for(const mixed of [false,true])scenarios.push({characterId:c.id,distance,mixed,quality:'mixed',fps:60,
+                dolphin:true,pressKicks:true,kickHz:4.8,dolphinMinClearance:12});
+    }else if(characters){
         for(const c of load('app/PlayerCharacterConfig').PLAYER_CHARACTER_DEFINITIONS)for(const butterfly of [false,true])
             scenarios.push({characterId:c.id,distance:200,fps:60,dolphin:true,pressKicks:true,butterfly});
         for(const fps of [15,30,60])for(const mixed of [false,true])
@@ -108,7 +123,7 @@ if(require.main===module){
     }
     fs.mkdirSync(path.resolve('.cache/butterfly-balance'),{recursive:true});
     const output=process.argv.slice(2).find(arg=>!arg.startsWith('--'))
-        ||`.cache/butterfly-balance/${characters?'characters':sweep?'sweep':'race'}.json`;
+        ||`.cache/butterfly-balance/${formal?'local-formal':characters?'characters':sweep?'sweep':'race'}.json`;
     fs.writeFileSync(path.resolve(output),JSON.stringify(results,null,2));
 }
 module.exports={race};

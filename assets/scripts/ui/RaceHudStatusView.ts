@@ -1,6 +1,8 @@
 import { HEART_TIERS, heartRateTier } from './HeartRatePresentation';
 import { RaceStrokeView } from './RaceStrokeView';
 import { RaceHudEntrance } from './RaceHudEntrance';
+import { ButterflyStatusView } from './ButterflyStatusView';
+import type { InputRouter } from '../core/InputRouter';
 import { StrokeType } from '../core/GameConstants';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 import { BlockInputEvents, Button, Color, Font, Label, Node, Sprite, SpriteFrame, UIOpacity, UITransform, Vec2, view, sys } from 'cc';
@@ -99,6 +101,7 @@ export class RaceHudStatusView {
     private ready = false;
     private observedSwimmer: Swimmer | null = null;
     private scale = 1;
+    private butterflyStatus: ButterflyStatusView | null = null;
 
     constructor(parent: Node, onJump: () => void) {
         this.root = makeUiNode('RaceHudStatus', parent);
@@ -218,6 +221,14 @@ export class RaceHudStatusView {
         if (this.jump.active === supported) return;
         this.entrance.setPartVisible(this.jump, supported);
         if (!supported) this.setReady(false);
+    }
+
+    enableButterflyStatus(): void {
+        if (!this.butterflyStatus) this.butterflyStatus = new ButterflyStatusView(this.top);
+    }
+
+    updateButterflyStatus(dt: number, visible: boolean, swimmer: Swimmer, input: InputRouter): void {
+        this.butterflyStatus?.update(dt, visible && !this.observedSwimmer, swimmer, input);
     }
 
     setObservedSwimmer(swimmer: Swimmer | null) {

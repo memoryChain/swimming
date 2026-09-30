@@ -135,13 +135,61 @@ test('蝶泳读数限频，隐藏不读取节拍，重复内容不重写文字',
     for(let i=0;i<100;i++) hud.update(.02,false,hidden);
     assert.equal(writes,0);
     const beat={active:true,held:true,progress:.35,lastQuality:-1,heartRate:120,lastEnergyCost:0,lastUltimateGain:0};
-    hud.update(.11,true,beat);assert.equal(writes,1);
-    for(let i=0;i<100;i++) hud.update(.02,true,beat);
+    const swimmer={butterflyState:beat,isButterflyRecoveryLocked:false,butterflyAdmission:'ready'};
+    hud.update(.11,true,swimmer);assert.equal(writes,1);
+    for(let i=0;i<100;i++) hud.update(.02,true,swimmer);
     assert.equal(writes,1);
     beat.lastQuality=1;beat.lastEnergyCost=1.5;beat.lastUltimateGain=2.3;
-    hud.update(.11,true,beat);assert.equal(writes,2);
+    hud.update(.11,true,swimmer);assert.equal(writes,2);
     assert.match(text,/计费 1.5 点 · 蓄气 \+2.3/);assert.match(text,/起划心率 120/);
     parent.active=false;hud.update(1,true,hidden);assert.equal(writes,2);
+});
+
+test('蝶泳恢复和旧手提示使用实际状态，隐藏及限频期间不读取实体和输入', () => {
+    const { Node, load } = fixture();
+    const hud = new (load('ui/ButterflyDebugHud').ButterflyDebugHud)(new Node('Hud'),1280,720);
+    const hidden = new Proxy({}, { get(){throw Error('隐藏或未到采样时不能读取状态');} });
+    hud.update(.2,false,hidden,hidden);
+    hud.update(.02,true,hidden,hidden);
+    const beat={active:false,held:false,progress:0,lastQuality:1,heartRate:140,lastEnergyCost:2,lastUltimateGain:3};
+    const swimmer={butterflyState:beat,isButterflyRecoveryLocked:true,butterflyAdmission:'wait'};
+    const input={butterflyRepressMask:0};
+    hud.update(.11,true,swimmer,input);
+    assert.match(hud.label.string,/恢复中.*可打腿/);assert.doesNotMatch(hud.label.string,/可以进入蝶泳/);
+    swimmer.isButterflyRecoveryLocked=false;swimmer.butterflyAdmission='fallback';
+    hud.update(.11,true,swimmer,input);assert.match(hud.label.string,/当前按自由泳处理/);
+    swimmer.butterflyAdmission='wait';
+    hud.update(.11,true,swimmer,input);assert.match(hud.label.string,/等待手臂回收/);
+    swimmer.butterflyAdmission='ready';input.butterflyRepressMask=2;
+    hud.update(.11,true,swimmer,input);assert.match(hud.label.string,/右手需松开重按/);
+    input.butterflyRepressMask=1;hud.update(.11,true,swimmer,input);assert.match(hud.label.string,/左手需松开重按/);
+    input.butterflyRepressMask=3;hud.update(.11,true,swimmer,input);assert.match(hud.label.string,/双手需松开重按/);
+    beat.active=beat.held=true;
+    hud.update(.11,true,swimmer,input);assert.match(hud.label.string,/松手发力/);assert.doesNotMatch(hud.label.string,/需松开重按/);
+});
+
+test('蝶泳闲置面板每次采样只判定一次准入，稳定读数不重复格式化', () => {
+    const { Node, load } = fixture();
+    const parent = new Node('Hud');
+    const hud = new (load('ui/ButterflyDebugHud').ButterflyDebugHud)(parent,1280,720);
+    let admissions=0,formats=0,writes=0,text='';
+    const beat={active:false,held:false,progress:0,lastQuality:1,lastTimedOut:false,heartRate:120.1,lastEnergyCost:2,lastUltimateGain:3};
+    const swimmer={butterflyState:beat,isButterflyRecoveryLocked:false,get butterflyAdmission(){admissions++;return 'ready';}};
+    const input={butterflyRepressMask:0};
+    Object.defineProperty(hud.label,'string',{get:()=>text,set:value=>{writes++;text=value;}});
+    const original=Number.prototype.toFixed;
+    Number.prototype.toFixed=function(digits){formats++;return original.call(this,digits);};
+    try{
+        for(let i=0;i<20;i++)hud.update(.11,true,swimmer,input);
+        assert.equal(admissions,20);assert.equal(formats,2);assert.equal(writes,1);
+        beat.heartRate=120.2;hud.update(.11,true,swimmer,input);
+        assert.equal(formats,2);assert.equal(writes,1,'整数心率不变时不重建文本');
+        input.butterflyRepressMask=2;hud.update(.11,true,swimmer,input);
+        assert.equal(formats,4);assert.equal(writes,2);assert.match(text,/右手需松开重按/);
+        const before=admissions;parent.active=false;
+        for(let i=0;i<20;i++)hud.update(.11,true,swimmer,input);
+        assert.equal(admissions,before);assert.equal(formats,4);assert.equal(writes,2);
+    }finally{Number.prototype.toFixed=original;}
 });
 
 test('随机体验只在开赛换种子，切回固定模式可以复现上一局且切换不重建控件', () => {

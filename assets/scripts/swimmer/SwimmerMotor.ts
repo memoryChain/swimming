@@ -1,5 +1,5 @@
 import { CONDITION_BALANCE } from '../core/ConditionBalance';
-import { BUTTERFLY_TUNING } from '../core/ButterflyTuning';
+import { BUTTERFLY_TUNING, butterflyDepthAllowsStroke, butterflyPoseAllowsStroke } from '../core/ButterflyTuning';
 import { ButterflyStroke } from './ButterflyStroke';
 import { ButterflyPropulsion } from './ButterflyPropulsion';
 import { CharacterAbilityState } from './CharacterAbilityState';
@@ -103,7 +103,7 @@ export type StrokeTimingGuide = {
 type ReleaseRanges = { perfect: { start: number; end: number }; good: { start: number; end: number } };
 
 export class SwimmerMotor {
-    /** 只有本地蝶泳测试场创建；普通比赛不分配节拍状态。 */
+    /** 只有启用蝶泳能力的选手创建；自由泳 AI 和未开放的入口不分配节拍状态。 */
     butterfly: ButterflyStroke | null = null;
     private _butterflyPreview: ButterflyStroke | null = null;
     private _butterflyPreviewRequested = false;
@@ -121,7 +121,7 @@ export class SwimmerMotor {
     private _butterflyPulseSeconds = 0.2;
     private _butterflyPulseBudgetScale = 1;
 
-    enableButterflyTest(enabled: boolean) {
+    enableButterfly(enabled: boolean) {
         if (!enabled) this.cancelButterfly(false);
         this.butterfly = enabled ? this.butterfly ?? new ButterflyStroke() : null;
         this._butterflyPreview = enabled ? this._butterflyPreview ?? new ButterflyStroke() : null;
@@ -129,12 +129,20 @@ export class SwimmerMotor {
         this._butterflyPulse = enabled ? this._butterflyPulse ?? new ButterflyPropulsion() : null;
     }
 
+    /** 兼容现有测试工具；运行时能力不依赖测试场配置。 */
+    enableButterflyTest(enabled: boolean) { this.enableButterfly(enabled); }
+
     private _butterflyInterruptionVersion = 0;
     get butterflyInterruptionVersion(): number { return this._butterflyInterruptionVersion; }
     get isButterflyRecoveryLocked(): boolean { return this._butterflyRecoveryUntil > this._motionClock; }
+    get isTurtleTowActive(): boolean { return Number.isFinite(this._turtleTowTargetDistance); }
+    get butterflyEnvironmentReady(): boolean {
+        return !this.isTurtleTowActive && butterflyDepthAllowsStroke(this.ability.depth);
+    }
     get butterflyAdmission(): 'ready' | 'wait' | 'fallback' {
         if (!this.butterfly || !this.isRacing || this._glidePhaseActive
-            || this.axialSteeringProjection() < 0.5) return 'fallback';
+            || !this.butterflyEnvironmentReady
+            || !butterflyPoseAllowsStroke(this.collisionPitchRadians, this.axialRollRadians)) return 'fallback';
         return this.isArmStrokeActive ? 'wait' : 'ready';
     }
 
@@ -170,6 +178,11 @@ export class SwimmerMotor {
     }
 
     releaseButterfly() {
+        if (this.butterfly?.active && (!this.butterflyEnvironmentReady
+            || !butterflyPoseAllowsStroke(this.collisionPitchRadians, this.axialRollRadians, true))) {
+            this.cancelButterfly();
+            return;
+        }
         if (this.butterfly?.release()) this.settleButterfly();
     }
 
@@ -682,9 +695,15 @@ export class SwimmerMotor {
             return false;
         }
 
+        if (this.butterfly?.active && (!this.butterflyEnvironmentReady
+            || !butterflyPoseAllowsStroke(this.collisionPitchRadians, this.axialRollRadians, true))) {
+            this.cancelButterfly();
+        }
         this._heartRate.tick(dt);
         if (this._glidePhaseActive) this.ability.suspend();
         else this.ability.tick(dt, this.isActiveStrokeHeld(StrokeType.LEFT) || this.isActiveStrokeHeld(StrokeType.RIGHT));
+        // 能力推进后复核真实深度，不能在跨入水下的同一步继续结算蝶泳。
+        if (this.butterfly?.active && !this.butterflyEnvironmentReady) this.cancelButterfly();
         this._motionClock += dt;
         if (this.butterfly?.active && this.butterfly.advance(dt)) this.settleButterfly();
         this._armAction = Math.max(0, this._armAction - dt * 4.6);

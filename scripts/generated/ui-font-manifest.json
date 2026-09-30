@@ -14,13 +14,13 @@
       "path": "assets/race/fonts/ShuiMasterUI-Regular.ttf",
       "weight": 400,
       "bytes": 505028,
-      "sha256": "a7549a636bec52d9a7399156ce165c2a53ab9a49a08a251847ae38ba8aa18920"
+      "sha256": "eec78d16333fdb3ed192e9f509dbf3ac3f559ae9461926eec18e6683ca9ab4d4"
     },
     {
       "path": "assets/race/fonts/ShuiMasterUI-SemiBold.ttf",
       "weight": 600,
       "bytes": 504632,
-      "sha256": "d311c8fc3da9d584bffe4105c64cefa53e4e77890c243e90ab987c432c3c2790"
+      "sha256": "df6dbe10ea05d6bb5d8360203099a3fb167725b4f1059a73d820aa3476be8daa"
     }
   ]
 }

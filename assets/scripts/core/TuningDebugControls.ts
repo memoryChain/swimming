@@ -94,6 +94,9 @@ export const TUNING_GROUPS: TuningGroup[] = [
         name: '蝶泳测试',
         controls: [
             control('butterfly.chordSeconds', '双手同步容错', '两次按下的最大间隔，仅测试场生效。', () => BUTTERFLY_TUNING.chordSeconds, v => BUTTERFLY_TUNING.chordSeconds = v, 0.01, 0.03, 0.16, 2),
+            control('butterfly.entryPoseProjection', '起划姿态要求', '逻辑前后、左右及合成朝向须达到该投影；越高越要求俯身平稳，即时生效。', () => BUTTERFLY_TUNING.entryPoseProjection, v => BUTTERFLY_TUNING.entryPoseProjection = v, 0.05, 0.3, 0.85, 2),
+            control('butterfly.sustainPoseProjection', '受撞姿态容错', '低于该投影中断蝶泳；自动小于起划要求，避免临界姿态反复切换，即时生效。', () => BUTTERFLY_TUNING.sustainPoseProjection, v => BUTTERFLY_TUNING.sustainPoseProjection = v, 0.05, 0, 0.5, 2),
+            control('butterfly.surfaceDepthMeters', '水面起划深度', '真实潜水深度超过此值时按自由泳处理，不计算模型浮潜，即时生效。', () => BUTTERFLY_TUNING.surfaceDepthMeters, v => BUTTERFLY_TUNING.surfaceDepthMeters = v, 0.01, 0, 0.2, 2, ' m'),
             control('butterfly.cycleSeconds', '整拍时长', '下次起划生效，包含发力与回臂。', () => BUTTERFLY_TUNING.cycleSeconds, v => BUTTERFLY_TUNING.cycleSeconds = v, 0.05, 0.6, 1.8, 2),
             control('butterfly.perfectStart', '完美区起点', '整拍进度比例，下次起划生效。', () => BUTTERFLY_TUNING.perfectStart, v => BUTTERFLY_TUNING.perfectStart = v, 0.01, 0.15, 0.5, 2),
             control('butterfly.perfectEnd', '完美区终点', '整拍进度比例，下次起划生效。', () => BUTTERFLY_TUNING.perfectEnd, v => BUTTERFLY_TUNING.perfectEnd = v, 0.01, 0.2, 0.58, 2),

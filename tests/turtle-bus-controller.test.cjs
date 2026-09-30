@@ -840,3 +840,47 @@ test('真实马达在30/60/120Hz抓稳后持续跟圈，不靠逐帧改写人物
         bus.dispose();
     }
 });
+
+test('启用蝶泳时抓圈双按仍逐手自由泳下车，保护期不攒松手，离车后重按才能蝶泳',()=>{
+    const {load}=require('../scripts/analyze-stroke-efficiency.cjs');
+    const {SwimmerMotor}=load('swimmer/SwimmerMotor'),{InputRouter}=load('core/InputRouter');
+    const old=Date.now;let now=1000;Date.now=()=>now;
+    try{
+        const motor=new SwimmerMotor();motor.startRace(16+TURTLE_BUS_RING_FORWARD_OFFSETS[1]-2.1-.5,2);
+        motor.enableButterfly(true);motor.setLateralOffset(-.35);
+        const player={motor,node:new FakeNode('Player'),startPosition:{z:0},raceDirection:1,
+            isCollisionActive:true,isEntertainmentInvulnerable:false,
+            cartoonRig:{turtleBusRootOffset:2.1,setTurtleBusRingTarget(){}},
+            get distance(){return motor.distance;},get currentSpeed(){return motor.currentSpeed;},
+            get movementHeading(){return motor.heading;},applyCollisionPush(_x,z){motor.setLateralOffset(motor.lateralOffset+z);}};
+        const bus=new TurtleBusController(new FakeNode('World'),{courseLength:50,direction:1,startX:0,finishX:50,waterY:.055,poolWidth:20},player,[],1);
+        player.node.setPosition(motor.distance,0,motor.lateralOffset);bus.startTrip(1,0,16);bus.update(3,true);
+        assert.equal(bus.seats.hands[0],3);assert.equal(motor.isTurtleTowActive,true);
+        assert.equal(motor.butterflyAdmission,'fallback');assert.equal(motor.beginButterfly(),false);
+        bus.onStroke(0,StrokeType.BOTH,motor.armStrokeSequence+1);
+        assert.equal(bus.seats.hands[0],3,'非逐手指令不得误认成右手');
+        const starts=[],settled=[];let butterflyStarts=0;
+        const router=new InputRouter({}, {
+            butterfly:{admission:()=>motor.butterflyAdmission,interruptionVersion:()=>motor.butterflyInterruptionVersion,
+                begin:()=>{const ok=motor.beginButterfly();if(ok)butterflyStarts++;return ok;},
+                release:()=>motor.releaseButterfly(),cancel:()=>motor.cancelButterfly()},
+            onKickStroke:side=>motor.recordKickTap(side,false),onKickConfirmed:()=>motor.confirmKickAbility(),
+            onStrokeHeld:(side,held,pre)=>{const result=motor.setStrokeHeld(side,held,pre);if(result)settled.push(result);return true;},
+            onStroke:side=>{if(motor.recordStroke(side))starts.push(side);}
+        });
+        const press=()=>{router.handleScreenStroke(StrokeType.LEFT);router.handleScreenStroke(StrokeType.RIGHT);now+=230;router.tick();};
+        const release=()=>{router.handleScreenStrokeEnd(StrokeType.LEFT);router.handleScreenStrokeEnd(StrokeType.RIGHT);};
+        const step=()=>{now+=1000/60;motor.update(1/60,{isAI:false});player.node.setPosition(motor.distance,0,motor.lateralOffset);bus.update(1/60,true);router.tick();settled.push(...motor.consumeStrokeQualityResults());};
+        press();assert.equal(butterflyStarts,0);assert.deepEqual(starts,[StrokeType.LEFT,StrokeType.RIGHT]);
+        assert.equal(bus.seats.hands[0],3,'上车保护期间消费起划而不松圈');release();
+        for(let i=0;i<90;i++)step();assert.equal(bus.seats.hands[0],3,'保护结束不补发旧起划');
+        assert.equal(motor.isArmStrokeActive,false);press();
+        assert.equal(butterflyStarts,0);assert.equal(bus.seats.hands[0],0);assert.equal(motor.isTurtleTowActive,false);
+        router.tick();assert.equal(butterflyStarts,0,'离车同次按压不自动改为蝶泳');release();
+        for(let i=0;i<90&&motor.isArmStrokeActive;i++)step();
+        assert.equal(settled.length,4);assert.ok(settled.every(r=>r.type!==StrokeType.BOTH),'只有四次独立自由泳结算');
+        const perStroke=load('core/ConditionBalance').CONDITION_BALANCE.energy.drainPerStroke;
+        assert.equal(settled.reduce((sum,r)=>sum+(r.energyCost??perStroke),0),4);
+        press();assert.equal(butterflyStarts,1);assert.equal(motor.butterfly.held,true);release();bus.dispose();
+    }finally{Date.now=old;}
+});

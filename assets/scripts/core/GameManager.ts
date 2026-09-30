@@ -90,6 +90,8 @@ import { MineRelayBrawlHud } from '../ui/MineRelayBrawlHud';
 import { DebugLogController } from './DebugLogController';
 import { consumeMainGameLaunchMode, consumeRoomMode, consumeRoomRaceDistance, getAiDebugSetup, prepareAiDebugRaceSeed, getAiDebugDifficulty, getEntertainmentRaceGrade, resolveAiDebugBuildOptions, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
 import { ButterflyDebugHud } from '../ui/ButterflyDebugHud';
+import { resolveButterflyAvailability } from './ButterflyAvailability';
+import type { MainGameLaunchMode } from './GameLaunchOptions';
 import { consumeNetRaceSession, NetRaceSessionData } from '../net/NetRaceSession';
 import { NetRaceController } from '../net/NetRaceController';
 import { buildNetLanePlan, NetLanePlan } from '../net/NetLanePlan';
@@ -322,7 +324,9 @@ export class GameManager extends Component {
     };
     // AI 测试赛可选 1 或 7 个对手，等级、智力和阵容来自开始页面板。
     private _aiDebugMode = false;
+    private _launchMode: MainGameLaunchMode = 'race';
     private _butterflyTestMode = false;
+    private _butterflyEnabled = false;
     private _butterflyDebugHud: ButterflyDebugHud | null = null;
     private _aiDebugDifficulty = 0.8;
     private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
@@ -573,6 +577,7 @@ export class GameManager extends Component {
                     // Resolve the launch kind first so AI tests use their chosen grade,
                     // event overrides, distance and seed while those systems initialize.
                     const launchMode = consumeMainGameLaunchMode();
+                    this._launchMode = launchMode;
                     this._aiDebugMode = launchMode === 'ai-debug';
                     if (this._aiDebugMode) this._aiDebugDifficulty = getAiDebugDifficulty();
                     this.buildScene((error) => {
@@ -588,9 +593,6 @@ export class GameManager extends Component {
                             } else if (launchMode === 'underwater-debug') {
                                 this.enterUnderwaterDebug();
                             } else {
-                                if (!this._aiDebugMode && getRaceDifficultyConfig().id === 'giant-wave-brawl') {
-                                    setRaceMode('competitive');
-                                }
                                 this.setupTurtleBusDebugRace();
                                 this.applyAiDebugHud();
                                 this.startGame();
@@ -754,7 +756,10 @@ export class GameManager extends Component {
         this._aiDifficultyPanel.update(dt);
         const timingGuide = this._aiDebugMode ? this._playerSwimmer.strokeTimingGuide : null;
         const raceActive = this._state === GameState.RACING;
-        this._butterflyDebugHud?.update(dt, raceActive, this._playerSwimmer.butterflyState);
+        this._butterflyDebugHud?.update(dt, raceActive, this._playerSwimmer, this._inputRouter);
+        if (this._butterflyEnabled) this._uiController?.raceHudStatus?.updateButterflyStatus(
+            dt, raceActive && this._playerSwimmer.node.active && !this._playerAutopilotEnabled,
+            this._playerSwimmer, this._inputRouter);
         const raceDistance = getRaceDistance();
         const playerAlive = this._playerSwimmer.node.active;
         const playerBeforeFinish = playerAlive && this._playerSwimmer.distance < raceDistance;
@@ -1177,11 +1182,15 @@ export class GameManager extends Component {
         this._roomMode = consumeRoomMode();
         const roomRaceDistance = consumeRoomRaceDistance();
         this._netSession = consumeNetRaceSession();
-        this._butterflyTestMode = this._aiDebugMode && !this._netSession && !this._roomMode
-            && getAiDebugSetup().butterflyTest === true;
-        if ((this._roomMode || this._netSession) && getRaceDifficultyConfig().id === 'giant-wave-brawl') {
+        // 先处理旧单项入口的正式回退，再解析能力，避免场景和泳姿读取不同模式。
+        if ((this._launchMode === 'race' || this._roomMode || this._netSession)
+            && getRaceDifficultyConfig().id === 'giant-wave-brawl') {
             setRaceMode('competitive');
         }
+        this._butterflyTestMode = this._aiDebugMode && !this._netSession && !this._roomMode
+            && getAiDebugSetup().butterflyTest === true;
+        // 所有本地比赛共用泳姿；调试页标记只决定测试人数、读数及镜头，网络和房间不启用。
+        this._butterflyEnabled = resolveButterflyAvailability(this._launchMode, !!this._netSession, this._roomMode);
         if (this._roomMode || this._netSession || this._aiDebugMode) {
             setSoloRaceTicket(null);
             setSoloRaceDistance(this._netSession?.distance ?? (this._roomMode ? roomRaceDistance
@@ -1511,7 +1520,7 @@ export class GameManager extends Component {
 
     private createInputRouter(): InputRouter {
         return new InputRouter(this.node, {
-            butterfly: this._butterflyTestMode ? {
+            butterfly: this._butterflyEnabled ? {
                 admission: () => this._state === GameState.RACING && !this._playerAutopilotEnabled
                     ? this._playerSwimmer?.butterflyAdmission ?? 'fallback' : 'fallback',
                 interruptionVersion: () => this._playerSwimmer?.butterflyInterruptionVersion ?? 0,
@@ -4292,7 +4301,7 @@ export class GameManager extends Component {
         const competitors = this.createCompetitorManager().buildPlayer(root);
         this._swimmersRoot = competitors.group;
         this._playerSwimmer = competitors.playerSwimmer;
-        this._playerSwimmer.enableButterflyTest(this._butterflyTestMode);
+        this._playerSwimmer.enableButterfly(this._butterflyEnabled);
         this.bindDolphinEnergyCost(this._playerSwimmer, this._playerCondition);
         this._aiController = null;
         this._aiControllers = [];
@@ -5297,7 +5306,7 @@ export class GameManager extends Component {
             },
             onStroke: (type) => this._inputRouter?.handleScreenStroke(type),
             onStrokeEnd: (type) => this._inputRouter?.handleScreenStrokeEnd(type),
-            onStrokeCancel: this._butterflyTestMode ? () => this._inputRouter?.resetStrokeInput() : undefined,
+            onStrokeCancel: this._butterflyEnabled ? () => this._inputRouter?.resetStrokeInput() : undefined,
             onDiveHoldStart: () => {
                 if (!this._playerAutopilotEnabled) this._gameFlow?.handleDiveChargeStart();
             },
@@ -5355,6 +5364,7 @@ export class GameManager extends Component {
             }
             this._cameraSpeedLines.bind(this._raceHud);
             this._uiController = refs.uiController;
+            if (this._butterflyEnabled) this._uiController.raceHudStatus?.enableButterflyStatus();
             this._uiController.settlementView?.setRoomMode(this._roomMode);
             this._timingGuideFillNode = refs.timingGuideFillNode;
             this._timingGuideMarker = refs.timingGuideMarker;

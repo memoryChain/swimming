@@ -2,6 +2,7 @@ import { giantWaveCode, giantWaveSpeedFromCode, giantWaveFlagsFromCode } from '.
 import { abilityValue } from '../core/CharacterAbilityConfig';
 import type { CharacterAbilitySnapshot } from '../swimmer/CharacterAbilityState';
 import { CONDITION_BALANCE } from '../core/ConditionBalance';
+import { butterflyPoseAllowsStroke } from '../core/ButterflyTuning';
 import { DOLPHIN_JUMP } from '../core/DolphinJumpConfig';
 import { GEYSER_TUNING, GeyserHitLedger, type GeyserTuning } from '../core/GeyserBrawlRules';
 import type { GeyserLaneState } from '../net/NetGeyserSnapshot';
@@ -1185,10 +1186,7 @@ export class Swimmer extends Component {
         }
         // 用步前状态覆盖落水交界帧，避免阶段 tick 结束后提前恢复整帧心率。
         const freezeJumpHeartRate = this._phases.isDolphinJumpActive;
-        if (this._motor.butterfly?.active && (this._phases.isUnderwater || this._phases.isFlipTurnActive
-            || this._phases.isDolphinJumpActive || Math.cos(this._motor.axialRollRadians) < 0.2)) {
-            this._motor.cancelButterfly();
-        }
+        this.interruptButterflyIfNeeded();
         if (this._phases.tick(dt)) {
             if (this.giantWaveState) this.clearGiantWave();
             this._motor.ability.suspend();
@@ -1310,20 +1308,42 @@ export class Swimmer extends Component {
             && this._phases.canUseArmStroke;
     }
 
-    enableButterflyTest(enabled: boolean) { this._motor.enableButterflyTest(enabled); }
+    enableButterfly(enabled: boolean) { this._motor.enableButterfly(enabled); }
+    enableButterflyTest(enabled: boolean) { this.enableButterfly(enabled); }
     get butterflyState() { return this._motor.butterfly; }
     setButterflyPreview(enabled: boolean) { this._motor.setButterflyPreview(enabled); }
     get butterflyInterruptionVersion(): number { return this._motor.butterflyInterruptionVersion; }
+    get isButterflyRecoveryLocked(): boolean { return this._motor.isButterflyRecoveryLocked; }
+    private get butterflyPhaseReady(): boolean {
+        return this._motor.isRacing && this._forcedLaunch === null && !this._phases.isUnderwater
+            && !this._phases.isFlipTurnActive && !this._phases.isDolphinJumpActive && this._phases.canUseArmStroke;
+    }
+    private butterflyPoseAllowed(continuing = false): boolean {
+        return butterflyPoseAllowsStroke(
+            this._motor.collisionPitchRadians + this._phases.diveRecoveryLean() * Math.PI / 180,
+            this._motor.axialRollRadians + this._phases.dolphinRollResidualRadians(),
+            continuing,
+        );
+    }
+    get canContinueButterfly(): boolean {
+        return this.butterflyPhaseReady && this._motor.butterflyEnvironmentReady && this.butterflyPoseAllowed(true);
+    }
+    private interruptButterflyIfNeeded() {
+        if (this._motor.butterfly?.active && !this.canContinueButterfly) this._motor.cancelButterfly();
+    }
     get butterflyAdmission(): 'ready' | 'wait' | 'fallback' {
-        if (!this._motor.isRacing || this._forcedLaunch !== null || this._phases.isUnderwater
-            || this._phases.isFlipTurnActive || this._phases.isDolphinJumpActive || !this._phases.canUseArmStroke) return 'fallback';
+        if (!this.butterflyPhaseReady || !this.butterflyPoseAllowed()) return 'fallback';
         return this._motor.butterflyAdmission;
     }
     beginButterfly(): boolean {
-        if (!this.canUseArmStroke || this._phases.isUnderwater) return false;
+        if (this.butterflyAdmission !== 'ready') return false;
         return this._motor.beginButterfly();
     }
-    releaseButterfly() { this._motor.releaseButterfly(); }
+    releaseButterfly() {
+        // 松手可能先于本帧模拟，不能在不合格姿态下抢先结算成功推进。
+        this.interruptButterflyIfNeeded();
+        this._motor.releaseButterfly();
+    }
     cancelButterfly() { this._motor.cancelButterfly(); }
 
     handleKickStroke(type: StrokeType, confirmed = true): void {

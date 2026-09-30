@@ -4,7 +4,7 @@ import { INPUT_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
 import { BUTTERFLY_TUNING } from './ButterflyTuning';
 
 export type InputRouterCallbacks = {
-    /** 仅本地蝶泳测试注入，普通比赛使用原输入时序。 */
+    /** 仅启用蝶泳能力的本地入口注入；联机和未开放的入口保持原输入时序。 */
     butterfly?: {
         begin: () => boolean; release: () => void; cancel: () => void;
         admission?: () => 'ready' | 'wait' | 'fallback';
@@ -49,8 +49,8 @@ export class InputRouter {
     // then held longer than the minimum hold threshold it is promoted to an arm
     // stroke (which the leg then follows). Tracked per side so A and D can be held
     // independently in the editor.
-    private readonly _leftPress = { active: false, startedMs: 0, promoted: false, kickSent: false, pairEligible: false };
-    private readonly _rightPress = { active: false, startedMs: 0, promoted: false, kickSent: false, pairEligible: false };
+    private readonly _leftPress = { active: false, startedMs: 0, promoted: false, kickSent: false, pairEligible: false, butterflyConsumed: false };
+    private readonly _rightPress = { active: false, startedMs: 0, promoted: false, kickSent: false, pairEligible: false, butterflyConsumed: false };
     private _butterflyClaimed = false;
     private _butterflyStarted = false;
     private _butterflyReleased = false;
@@ -141,10 +141,18 @@ export class InputRouter {
 
     isStrokePressed(type: StrokeType): boolean { return this.pressState(type).active; }
 
+    /** 左手为1、右手为2：仍属于上一拍的按压须松开重按，HUD只在采样时读取。 */
+    get butterflyRepressMask(): number {
+        const owned = this._butterflyClaimed && this._butterflyStarted;
+        return (this._leftPress.active && (owned || this._leftPress.butterflyConsumed) ? 1 : 0)
+            | (this._rightPress.active && (owned || this._rightPress.butterflyConsumed) ? 2 : 0);
+    }
+
     // Begin classifying a press. The leg kick fires right away so the legs react
     // to the player's tap rhythm instantly. If the press is held past
     // STROKE_QUALITY_TUNING.minHoldSeconds, tick() promotes it to an arm stroke.
     private beginPress(type: StrokeType) {
+        if (this._callbacks.butterfly) this.syncButterflyInterruption();
         const press = this.pressState(type);
         if (press.active) return;
         press.active = true;
@@ -152,6 +160,7 @@ export class InputRouter {
         press.promoted = false;
         press.kickSent = false;
         press.pairEligible = true;
+        press.butterflyConsumed = false;
         this._callbacks.onStrokePressChanged?.(type, true);
         if (this._callbacks.butterfly) {
             const other = this.pressState(type === StrokeType.LEFT ? StrokeType.RIGHT : StrokeType.LEFT);
@@ -173,6 +182,10 @@ export class InputRouter {
         const now = Date.now();
         const thresholdMs = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds) * 1000;
         if (this._callbacks.butterfly) this.syncButterflyInterruption();
+        if (press.butterflyConsumed) {
+            this.endConsumedButterflyPress(type);
+            return;
+        }
         if (this._callbacks.butterfly && this._butterflyClaimed) {
             this.tryBeginButterfly(now, thresholdMs);
             // 未成功接管的配对在松手时退回原分类，短按或长按都不能被吞掉。
@@ -180,15 +193,18 @@ export class InputRouter {
             if (!this._butterflyStarted) {
                 this.fallbackToFreestyle();
             } else {
-                if (this._butterflyStarted && !this._butterflyReleased) this._callbacks.butterfly.release();
-                this._butterflyReleased = true;
-                press.active = press.promoted = false;
-                this._callbacks.onStrokePressChanged?.(type, false);
-                if (!this._leftPress.active && !this._rightPress.active) {
-                    this._butterflyClaimed = this._butterflyStarted = false;
-                    this._butterflyReleased = false;
+                if (!this._butterflyReleased) this._callbacks.butterfly.release();
+                // 松手回调可能因当前姿态失效而中断；同次输入仍走自由泳回退。
+                this.syncButterflyInterruption();
+                if (this._butterflyStarted) {
+                    this._butterflyReleased = true;
+                    this._butterflyClaimed = false;
+                    this._leftPress.butterflyConsumed = this._leftPress.active;
+                    this._rightPress.butterflyConsumed = this._rightPress.active;
+                    this._leftPress.pairEligible = this._rightPress.pairEligible = false;
+                    this.endConsumedButterflyPress(type);
+                    return;
                 }
-                return;
             }
         }
         if (this._callbacks.butterfly) this.sendKick(type);
@@ -208,6 +224,16 @@ export class InputRouter {
 
     private pressState(type: StrokeType) {
         return type === StrokeType.LEFT ? this._leftPress : this._rightPress;
+    }
+
+    private endConsumedButterflyPress(type: StrokeType) {
+        const press = this.pressState(type);
+        press.active = press.promoted = press.butterflyConsumed = false;
+        this._callbacks.onStrokePressChanged?.(type, false);
+        // 另一侧可能已经重新按下；只看旧按压是否全部结束，不要求两手同时离屏。
+        if (!this._leftPress.butterflyConsumed && !this._rightPress.butterflyConsumed) {
+            this._butterflyStarted = this._butterflyReleased = false;
+        }
     }
 
     // Per-frame: promote a still-held press to an arm stroke once it has been
@@ -230,7 +256,7 @@ export class InputRouter {
 
     private sendKick(type: StrokeType) {
         const press = this.pressState(type);
-        if (press.kickSent) return;
+        if (press.kickSent || press.butterflyConsumed) return;
         press.kickSent = true;
         this._callbacks.onKickStroke(type);
     }
@@ -259,6 +285,7 @@ export class InputRouter {
         this.setButterflyPreview(false);
         this._butterflyClaimed = this._butterflyStarted = this._butterflyReleased = false;
         this._leftPress.pairEligible = this._rightPress.pairEligible = false;
+        this._leftPress.butterflyConsumed = this._rightPress.butterflyConsumed = false;
     }
 
     private syncButterflyInterruption() {
@@ -276,7 +303,7 @@ export class InputRouter {
 
     private promoteIfDue(type: StrokeType, now: number, thresholdMs: number) {
         const press = this.pressState(type);
-        if (!press.active || press.promoted) {
+        if (!press.active || press.promoted || press.butterflyConsumed) {
             return;
         }
         if (now - press.startedMs >= thresholdMs) {
@@ -315,6 +342,8 @@ export class InputRouter {
         this._leftPress.promoted = false;
         this._rightPress.active = false;
         this._rightPress.promoted = false;
+        this._leftPress.butterflyConsumed = this._rightPress.butterflyConsumed = false;
+        this._leftPress.pairEligible = this._rightPress.pairEligible = false;
     }
 
     // Keyboard A/D go through the same press classifier as touch, driven by the

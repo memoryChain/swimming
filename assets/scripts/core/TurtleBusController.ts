@@ -531,6 +531,8 @@ export class TurtleBusController {
 
     private onStroke(i: number, side: StrokeType, sequence: number): void {
         if (!this.started || (!this.authoritative && i !== 0)) return;
+        // 双臂泳姿不属于逐手松圈指令；抓圈输入由运动层回退到左右独立起划。
+        if (side !== StrokeType.LEFT && side !== StrokeType.RIGHT) return;
         this.clearCatch(i);
         const hand = side === StrokeType.LEFT ? TURTLE_BUS_LEFT_HAND : TURTLE_BUS_RIGHT_HAND;
         const held = this.seats.strokeStarted(i, hand, sequence, this.seats.age);

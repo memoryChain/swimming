@@ -51,6 +51,29 @@ function heldStrokeFixture(ratio = 0.6, fixedSpeed = true) {
     return { ...h, motor, StrokeType, inputs, start };
 }
 
+test('蝶泳起划与受撞姿态阈值可保存重载，旧配置使用默认宽容度', () => {
+    const h = setup(); h.tuning.loadSavedTuningAsync(() => {});
+    const entry = h.controls.get('butterfly.entryPoseProjection');
+    const sustain = h.controls.get('butterfly.sustainPoseProjection');
+    assert.equal(entry.get(), .5); assert.equal(sustain.get(), .2);
+    entry.set(.65); sustain.set(.15); assert.equal(h.tuning.saveCurrentTuning().ok, true);
+    entry.set(.4); sustain.set(.25); h.tuning.loadSavedTuningAsync(() => {});
+    assert.equal(entry.get(), .65); assert.equal(sustain.get(), .15);
+    h.saved.clear(); delete h.project.values['butterfly.entryPoseProjection']; delete h.project.values['butterfly.sustainPoseProjection'];
+    h.tuning.resetTuningToDefaults(); h.tuning.loadSavedTuningAsync(() => {});
+    assert.equal(entry.get(), .5); assert.equal(sustain.get(), .2);
+});
+
+test('蝶泳水面深度阈值可保存重载，旧配置沿用五厘米默认值', () => {
+    const h = setup(); h.tuning.loadSavedTuningAsync(() => {});
+    const item = h.controls.get('butterfly.surfaceDepthMeters');
+    assert.ok(item); assert.equal(item.get(), .05);
+    item.set(.08); assert.equal(h.tuning.saveCurrentTuning().ok, true);
+    item.set(.01); h.tuning.loadSavedTuningAsync(() => {}); assert.equal(item.get(), .08);
+    h.saved.clear(); delete h.project.values['butterfly.surfaceDepthMeters'];
+    h.tuning.resetTuningToDefaults(); h.tuning.loadSavedTuningAsync(() => {}); assert.equal(item.get(), .05);
+});
+
 test('蝶泳甜区收束进度可保存重载，旧配置缺字段时使用默认值', () => {
     const h = setup(); h.tuning.loadSavedTuningAsync(() => {});
     const item = h.controls.get('butterfly.windowTransitionEndProgress');

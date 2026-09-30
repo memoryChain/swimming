@@ -30,13 +30,48 @@ function fixture(reservedRatio=0){
  const constants={StrokeType:{LEFT:'left',RIGHT:'right'},Rating:{PERFECT:'perfect',GOOD:'good',BAD:'bad'}};
  const entrance=load('assets/scripts/ui/RaceHudEntrance.ts',{'cc':cc,'./RuntimeUiFactory':{makeUiNode:node}});
  const stroke=load('assets/scripts/ui/RaceStrokeView.ts',{'./HeartRatePresentation':heartPresentation,'cc':cc,'../core/GameConstants':constants,'./RuntimeUiFactory':{makeUiNode:node},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}}});
- const mod=load('assets/scripts/ui/RaceHudStatusView.ts',{'./RaceHudEntrance':entrance,'./HeartRatePresentation':heartPresentation,'../platform/PlatformManager':{platform:()=>({getTopRightReservedBottomRatio:()=>reservedRatio})},'./RaceStrokeView':stroke,'../core/GameConstants':constants,'cc':cc,'../core/ResourcePaths':{RESOURCE_PATHS:{raceHudUi:art}},'../core/RaceBundleLoader':{loadRaceAsset:(p,t,cb)=>cb(null,new Font())},'./AvatarUiAssets':{avatarTexturePath:id=>id,loadAvatarUiSpriteFrame:(p,cb)=>{if(p.startsWith('ui/race-hud')||p.startsWith('ui/race-stroke'))cb({path:p});else pending.push({p,cb});}},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}},'./RuntimeUiFactory':{makeUiNode:node}});
+ const butterflyStatus=load('assets/scripts/ui/ButterflyStatusView.ts',{
+  cc,'../core/ButterflyTuning':require('../scripts/analyze-stroke-efficiency.cjs').load('core/ButterflyTuning'),
+  './RuntimeUiFactory':{makeLabel:(name,p,text)=>{const n=node(name,p);n.addComponent(Label).string=text;return n;},uiColor:(...v)=>new Color(...v)},
+  './ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}}});
+ const mod=load('assets/scripts/ui/RaceHudStatusView.ts',{'./ButterflyStatusView':butterflyStatus,'./RaceHudEntrance':entrance,'./HeartRatePresentation':heartPresentation,'../platform/PlatformManager':{platform:()=>({getTopRightReservedBottomRatio:()=>reservedRatio})},'./RaceStrokeView':stroke,'../core/GameConstants':constants,'cc':cc,'../core/ResourcePaths':{RESOURCE_PATHS:{raceHudUi:art}},'../core/RaceBundleLoader':{loadRaceAsset:(p,t,cb)=>cb(null,new Font())},'./AvatarUiAssets':{avatarTexturePath:id=>id,loadAvatarUiSpriteFrame:(p,cb)=>{if(p.startsWith('ui/race-hud')||p.startsWith('ui/race-stroke'))cb({path:p});else pending.push({p,cb});}},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}},'./RuntimeUiFactory':{makeUiNode:node}});
  mod.preloadRaceHudStatus(e=>assert.equal(e,null));const parent=new Node('root');const hud=new mod.RaceHudStatusView(parent,()=>jumps++);
  return {hud,parent,pending,listeners,animations,finish(){for(const t of animations){if(t.stopped||t.finished)continue;for(const step of t.steps){if(t.stopped)break;if(step.props)Object.assign(t.target,step.props);step.fn?.();}t.finished=true;}},get jumps(){return jumps;},resize(w,h,l=0,r=0,top=0){size={width:w,height:h};safe={x:l,y:0,width:w-l-r,height:h-top};listeners.get('canvas-resize')();}};
 }
 function find(n,name){if(n.name===name)return n;for(const c of n.children){const f=find(c,name);if(f)return f;}}
 function count(n){return 1+n.children.reduce((s,c)=>s+count(c),0);}
 function update(h,charge=1,can=true){h.updateValues(2.37,182,true,.72,20,200,charge,can);}
+
+test('蝶泳提示按需创建，状态更新不重建，隐藏和观察AI时零读取，稳定文字零重写',()=>{
+ const f=fixture(),{hud}=f;assert.equal(find(hud.root,'ButterflyStatus'),undefined);
+ hud.enableButterflyStatus();const nodes=count(hud.root);hud.enableButterflyStatus();assert.equal(count(hud.root),nodes);
+ let reads=0;const beat={active:false,held:false},motor={isTurtleTowActive:false,ability:{depth:0}};
+ const swimmer={get butterflyState(){reads++;return beat;},motor,isButterflyRecoveryLocked:false,butterflyAdmission:'ready'};
+ const input={butterflyRepressMask:0};
+ hud.updateButterflyStatus(1,true,swimmer,input);assert.equal(reads,0);
+ hud.setVisible(true);f.finish();hud.updateButterflyStatus(.1,true,swimmer,input);
+ const n=find(hud.root,'ButterflyStatus'),label=n.getComponent(Label);assert.equal(label.string,'双手同按进入蝶泳 · 短按打腿');
+ const before=writes;for(let i=0;i<120;i++)hud.updateButterflyStatus(1/60,true,swimmer,input);
+ assert.equal(writes,before);assert.ok(reads<=22);assert.equal(count(hud.root),nodes);
+ beat.active=beat.held=true;hud.updateButterflyStatus(.1,true,swimmer,input);assert.equal(label.string,'蝶泳抱水 · 松手发力');
+ beat.held=false;hud.updateButterflyStatus(.1,true,swimmer,input);assert.equal(label.string,'回臂中 · 短按打腿，划臂等待');
+ beat.active=false;input.butterflyRepressMask=2;hud.updateButterflyStatus(.1,true,swimmer,input);assert.equal(label.string,'右手松开重按 · 再次双手起划');
+ swimmer.butterflyAdmission='fallback';hud.updateButterflyStatus(.1,true,swimmer,input);assert.equal(label.string,'当前按自由泳处理');
+ motor.ability.depth=.5;hud.updateButterflyStatus(.1,true,swimmer,input);assert.equal(label.string,'水下 · 当前按自由泳处理');
+ motor.isTurtleTowActive=true;hud.updateButterflyStatus(.1,true,swimmer,input);assert.equal(label.string,'抓圈中 · 左右划水下车');
+ hud.setObservedSwimmer({});const observedReads=reads;hud.updateButterflyStatus(.1,true,swimmer,input);assert.equal(reads,observedReads);assert.equal(n.active,false);
+ hud.setObservedSwimmer(null);hud.setVisible(false);const hiddenReads=reads;
+ for(let i=0;i<120;i++)hud.updateButterflyStatus(1/60,true,swimmer,input);assert.equal(reads,hiddenReads);
+ hud.setVisible(true);hud.updateButterflyStatus(.01,true,swimmer,input);assert.equal(n.active,true);
+ assert.equal(count(hud.root),nodes);
+ for(const [w,h,l,r,t] of [[1280,720,0,0,0],[1600,720,70,40,20],[960,540,30,20,15]]){
+  f.resize(w,h,l,r,t);const scale=hud.root.scale.x,top=find(hud.root,'CourseProgress');
+  const x=(top.position.x+n.position.x)*scale,y=(top.position.y+n.position.y)*scale;
+  assert.ok(x-300*scale>=-w/2+l&&x+300*scale<=w/2-r,'横向位于安全区内');
+  assert.ok(y-18*scale>=-h/2&&y+18*scale<h/2-t,'位于屏幕下部且不出界');
+ }
+ hud.root.destroy();assert.equal(f.listeners.size,0);
+});
 
 test('跟游提示只变更显隐，耗尽优先，隐藏和重新打开不残留，反复切换不重建',()=>{
  const {hud}=fixture();hud.setVisible(true);update(hud);
@@ -61,7 +96,7 @@ function progressSpeedFixture() {
  const source=ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
  const swimmerClass=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='Swimmer');
  // 执行真实泳者的模拟步和读数接口，仅替代场景、动画与特殊动作调度。
- const names=['stepSimulation','updateMovementSpeed','movementSpeed','currentSpeed','netSpeed'];
+ const names=['stepSimulation','interruptButterflyIfNeeded','updateMovementSpeed','movementSpeed','currentSpeed','netSpeed'];
  const methods=swimmerClass.members.filter(n=>names.includes(n.name?.getText(source)));
  assert.equal(methods.length,names.length);
  const js=ts.transpileModule(`class SpeedHarness { ${methods.map(n=>n.getText(source)).join('\n')} }`,

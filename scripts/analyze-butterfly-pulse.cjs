@@ -38,8 +38,9 @@ function sample({characterId,level=1,fps=120,quality='perfect',exhausted=false,k
         const target=quality==='perfect'?(b.perfectStart+b.perfectEnd)/2:quality==='good'?.2:quality==='timeout'?2:.05;
         if(b.held&&b.progress>=target)m.releaseButterfly();
         if(kickHz>0&&t>=kickAt){
-            // 只在已松手时提交短按腿，模拟回臂期间独立的补腿输入。
-            if(!b.held)m.recordKickTap(StrokeType.LEFT);
+            // 纯蝶泳对照只在本拍回臂期间补腿。拍尾之后的短按是独立自由泳腿输入，
+            // 会触发潜水哥真实下潜，必须在水下回退专项中验证，不能混入固定周期采样。
+            if(b.active&&!b.held)m.recordKickTap(StrokeType.LEFT);
             kickAt=t+1/kickHz;
         }
         const active=b.active;
@@ -51,7 +52,7 @@ function sample({characterId,level=1,fps=120,quality='perfect',exhausted=false,k
     }
     const duration=periods.reduce((s,p)=>s+p.seconds,0),distance=periods.reduce((s,p)=>s+p.distance,0);
     const speed=distance/duration,amplitude=periods.reduce((s,p)=>s+p.max-p.min,0)/periods.length;
-    return {characterId:characterId??'neutral',level,fps,quality,exhausted,kickHz,pulse:enabled,meanSpeed:speed,
+    return {characterId:characterId??'neutral',level,fps,quality,exhausted,kickHz,kickDuringRecoveryOnly:true,pulse:enabled,meanSpeed:speed,
         impulse:m._butterflyPulse?.impulseBudget??0,
         amplitude,relativeAmplitude:amplitude/speed,peakAt:periods.reduce((s,p)=>s+p.peakAt,0)/periods.length,
         min:Math.min(...periods.map(p=>p.min)),max:Math.max(...periods.map(p=>p.max)),periods,...(trace?{trace:points}:{})};
