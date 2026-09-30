@@ -21,6 +21,7 @@ export interface AiRaceObservation {
     minDolphinSpace: number;
     kickDive: boolean;
     nearbyThreat: boolean;
+    collisionRecoveryNeeded: boolean;
     closeRace: boolean;
     strokeCostPerMeter: number;
 }
@@ -67,7 +68,9 @@ export class AiRacePlanner {
         const block = Math.max(0.3, style.kickBlock * AI_PLANNER_TUNING.kickBlockScale);
         let next: AiActionPlan = 'swim';
         let reason: AiDecisionReason = 'pace';
-        if (!s.infiniteStamina && s.energy <= 0) {
+        if (s.collisionRecoveryNeeded) {
+            next = 'evade'; reason = 'contact';
+        } else if (!s.infiniteStamina && s.energy <= 0) {
             next = 'save'; reason = 'exhausted';
         } else if (s.kickDive && s.nearbyThreat && !sprint) {
             next = 'evade'; reason = 'contact';
@@ -98,7 +101,7 @@ export class AiRacePlanner {
             s.dolphinRange + AI_PLANNER_TUNING.jumpSpaceMargin);
         const heartSafe = skill.id === 'extreme' || s.heartRate + s.dolphinStrain <= heartTarget + 15
             || this.action === 'recover';
-        this.wantsJump = s.supportsDolphin && s.dolphinReady && fits && affordable && heartSafe
+        this.wantsJump = !s.collisionRecoveryNeeded && s.supportsDolphin && s.dolphinReady && fits && affordable && heartSafe
             && this._readySeconds >= skill.jumpDelay;
     }
 }

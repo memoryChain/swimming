@@ -55,6 +55,7 @@ export interface CharacterProgress {
 
 export interface PlayerProfile {
     schema: number;
+    tutorialCompleted: boolean;
     career: CareerState;
     // In-game identity (player-chosen, NOT the real WeChat profile).
     nickName: string;
@@ -101,6 +102,7 @@ export function createDefaultCharacterProgress(): Record<string, CharacterProgre
 export function createDefaultProfile(): PlayerProfile {
     return {
         schema: PLAYER_PROFILE_SCHEMA,
+        tutorialCompleted: false,
         career: createCareer(),
         nickName: generateRandomNickName(),
         avatarId: defaultAvatarId(),
@@ -151,6 +153,7 @@ export function normalizeProfile(raw: unknown): PlayerProfile {
         : coinFromLegacy;
     const profile: PlayerProfile = {
         schema: PLAYER_PROFILE_SCHEMA,
+        tutorialCompleted: src.tutorialCompleted !== false,
         career: normalizeCareer(src.career),
         nickName: typeof src.nickName === 'string' && src.nickName.length > 0 ? src.nickName : base.nickName,
         avatarId: typeof src.avatarId === 'string' && src.avatarId.length > 0 ? src.avatarId : base.avatarId,
@@ -205,6 +208,11 @@ function normalizeCareer(raw: Partial<CareerState> | undefined): CareerState {
 /** 云端定向迁移：不规范化金币、生涯、赛事凭据或已有角色等级。 */
 export function migrateProfileAppearances(profile: PlayerProfile): boolean {
     let changed = false;
+    // 旧账号免教学；新建账号显式保存 false，完成后只允许变为 true。
+    if (typeof profile.tutorialCompleted !== 'boolean') {
+        profile.tutorialCompleted = true;
+        changed = true;
+    }
     if (profile.schema === 6) {
         profile.characterAppearances = normalizePlayerCharacterAppearances(undefined, profile.characterSelection);
         const selected = normalizePlayerCharacterSelection(profile.characterSelection).characterId;

@@ -20,7 +20,11 @@ class Vec3 {
 }
 class UIOpacity { opacity=255; }
 class BlockInputEvents {}
-class Button { static Transition={NONE:0}; interactable=true; get isValid(){return this.node.isValid;} }
+class Button { static Transition={NONE:0}; static EventType={CLICK:'click'}; interactable=true; get isValid(){return this.node.isValid;} }
+class Label {
+    static HorizontalAlign={CENTER:1};static VerticalAlign={CENTER:1};static Overflow={CLAMP:1};
+    string='';get isValid(){return this.node.isValid;}
+}
 class UITransform { setContentSize(width,height){this.contentSize={width,height};} }
 class Sprite { static SizeMode={CUSTOM:1}; }
 class SpriteFrame { isValid=true; destroy(){this.isValid=false;} }
@@ -70,25 +74,39 @@ function setup() {
         }
     }
     const viewport={width:1280,height:720};
-    const cc={Node,Button,BlockInputEvents,UITransform,Sprite,SpriteFrame,UIOpacity,Vec3,view:{on(){},off(){},getVisibleSize:()=>viewport},tween:target=>new Animation(target)};
+    const cc={Node,Button,Label,BlockInputEvents,UITransform,Sprite,SpriteFrame,UIOpacity,Vec3,view:{on(){},off(){},getVisibleSize:()=>viewport},tween:target=>new Animation(target)};
     const factory={makeUiNode:(name,parent)=>{const n=new Node(name);n.setParent(parent);n.addComponent(UITransform);return n;},uiColor:()=>({}),fitFullScreenBackgroundCover(){}};
     factory.makeRect=factory.makeUiNode;
+    factory.makeLabel=(name,parent,text)=>{const n=factory.makeUiNode(name,parent);n.addComponent(Label).string=text;return n;};
     const imageRequests=[],selection={characterId:'coach'};
     function load(file,imports){const m={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{module:m,exports:m.exports,require:key=>imports[key]??{},console});return m.exports;}
     const {LobbyUiMotion}=load('assets/scripts/ui/LobbyUiMotion.ts',{'cc':cc,'./RuntimeUiFactory':factory});
     const sceneLayout=load('assets/scripts/ui/PrepareSceneLayout.ts',{'../core/ResourcePaths':load('assets/scripts/core/ResourcePaths.ts',{'../../startup/StartupResources':load('assets/startup/StartupResources.ts',{})})});
     const {computePrepareSceneLayout}=sceneLayout;
+    const tutorialViews=[],playerData={loaded:true,profile:{tutorialCompleted:true},offChange(){}};
+    let tutorialRequests=0;
+    class TutorialOverlay {
+        constructor(){tutorialViews.push(this);}
+        show(...args){this.args=args;this.hidden=false;}
+        hide(){this.hidden=true;}
+        dispose(){this.disposed=true;}
+    }
     const {PrepareRaceFlow}=load('assets/scripts/ui/PrepareRaceFlow.ts',{
+        '../tutorial/TutorialOverlay':{TutorialOverlay},
+        '../tutorial/TutorialSession':{requestTutorial:()=>tutorialRequests++},
+        '../progression/SoloRaceSession':{setSoloRaceTicket(){}},
+        '../core/GameBalance':{setSoloRaceDistance(){}},
         './PrepareSceneLayout':sceneLayout,
         cc,'./RuntimeUiFactory':factory,'./LobbyUiMotion':{LobbyUiMotion},'./UIStyle':{UI_STYLE:{white:{}}},
-        '../backend/PlayerData':{PlayerData:{offChange(){}}},
+        './ProjectUiFonts':{styleProjectUiLabel(){}},
+        '../backend/PlayerData':{PlayerData:playerData},
         '../app/PlayerCharacterConfig':{getPlayerCharacterSelection:()=>selection},
         './UILayers':{getUILayer:canvas=>canvas,UILayer:{Popup:1}},
-        '../core/ResourcePaths':{...load('assets/scripts/core/ResourcePaths.ts',{'../../startup/StartupResources':load('assets/startup/StartupResources.ts',{})}),RESOURCE_PATHS:{lobbyB:{background:'大厅背景'},careerUi:{badges:[]}}},
+        '../core/ResourcePaths':{...load('assets/scripts/core/ResourcePaths.ts',{'../../startup/StartupResources':load('assets/startup/StartupResources.ts',{})}),RESOURCE_PATHS:{lobbyB:{background:'大厅背景'},lobbyUi:{},careerUi:{badges:[]}}},
         '../core/RaceBundleLoader':{loadRaceAsset:(path,type,done)=>imageRequests.push({path,done})},
     });
     const parent=new Node('页面'),flow=new PrepareRaceFlow(parent,parent,1280,720,{});
-    return {flow,parent,LobbyUiMotion,cc,factory,imageRequests,selection,viewport,computePrepareSceneLayout,advance(seconds){now+=seconds;for(const t of [...running])t.tick();},get running(){return running.size;},get created(){return created;}};
+    return {flow,parent,LobbyUiMotion,cc,factory,imageRequests,selection,viewport,computePrepareSceneLayout,playerData,tutorialViews,get tutorialRequests(){return tutorialRequests;},advance(seconds){now+=seconds;for(const t of [...running])t.tick();},get running(){return running.size;},get created(){return created;}};
 }
 function near(a,b){assert.ok(Math.abs(a-b)<1e-7,`${a} != ${b}`);}
 function size(n){return 1+n.components.length+n.children.reduce((sum,c)=>sum+size(c),0);}
@@ -376,4 +394,27 @@ test('大厅AI开赛前暂停预览与动效，加载失败复用大厅，重复
         assert.equal(runs,1);assert.equal(mode,'ai-debug');
         assert.doesNotThrow(()=>owner.onDestroy());
     }
+});
+
+
+test('新账号大厅只开放教学，重入复用面板，完成后恢复快速比赛且不重建角色',()=>{
+ const f=setup(),flow=f.flow;let starts=0;
+ flow._content=f.parent;flow.buildReadyActions(f.parent);
+ const start=flow._tutorialButton,label=flow._tutorialLabel,count=size(f.parent);
+ assert.equal(start.getComponent(Button).target,start);assert.equal(start.events.get('click').size,1);
+ flow._callbacks={onStartRace:()=>starts++};
+ f.playerData.profile.tutorialCompleted=false;
+ flow.syncTutorial();assert.equal(flow._tutorialLabel.string,'开始教学');assert.equal(f.tutorialViews.length,1);
+ const overlay=f.tutorialViews[0];assert.equal(overlay.args[0],'欢迎来到划水高手');assert.equal(overlay.args[2],true);
+ flow.syncTutorial();assert.equal(f.tutorialViews.length,1);
+ assert.equal(overlay.args[3],'','大厅不能盖上另一个开始按钮');assert.equal(overlay.args[4],null);
+ assert.equal(overlay.args[5],start,'遮罩高亮的就是原快速比赛按钮');
+ start.emit('click');start.emit('click');f.advance(.3);assert.equal(starts,1);assert.equal(f.tutorialRequests,1);
+ flow._leaving=false;f.playerData.profile.tutorialCompleted=true;flow.syncTutorial();
+ assert.equal(flow._tutorialLabel.string,'快速比赛');assert.equal(overlay.disposed,true);
+ let quick=0;flow._careerPanel={openQuick:()=>quick++};start.emit('click');assert.equal(quick,1);
+ flow.syncTutorial();assert.equal(f.tutorialViews.length,1);
+ assert.equal(flow._tutorialButton,start);assert.equal(flow._tutorialLabel,label);assert.equal(size(f.parent),count);
+ assert.equal(start.events.get('click').size,1,'状态改变不能叠加原按钮点击监听');
+ flow._motion.dispose();
 });

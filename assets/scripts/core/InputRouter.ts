@@ -3,6 +3,8 @@ import { StrokeType } from './GameConstants';
 import { INPUT_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
 
 export type InputRouterCallbacks = {
+    allowStroke?: (type: StrokeType) => boolean;
+    allowAuxiliary?: () => boolean;
     onStroke: (type: StrokeType) => void;
     onStrokePressChanged?: (type: StrokeType, pressed: boolean) => void;
     onStrokeHeld: (type: StrokeType, held: boolean, preHeldSeconds?: number) => boolean;
@@ -132,6 +134,7 @@ export class InputRouter {
     // to the player's tap rhythm instantly. If the press is held past
     // STROKE_QUALITY_TUNING.minHoldSeconds, tick() promotes it to an arm stroke.
     private beginPress(type: StrokeType) {
+        if (this._callbacks.allowStroke?.(type) === false) return;
         const press = this.pressState(type);
         if (press.active) return;
         press.active = true;
@@ -246,34 +249,42 @@ export class InputRouter {
     }
 
     private onSpaceAction() {
+        if (this._callbacks.allowAuxiliary?.() === false) return;
         this._callbacks.onPrimaryAction('space');
     }
 
     private onPrimaryAction() {
+        if (this._callbacks.allowAuxiliary?.() === false) return;
         this._callbacks.onPrimaryAction();
     }
 
     private onToggleDebug() {
+        if (this._callbacks.allowAuxiliary?.() === false) return;
         this._callbacks.onToggleDebug();
     }
 
     private onCycleRaceCamera() {
+        if (this._callbacks.allowAuxiliary?.() === false) return;
         this._callbacks.onCycleRaceCamera();
     }
 
     private onToggleCameraFollowAi() {
+        if (this._callbacks.allowAuxiliary?.() === false) return;
         this._callbacks.onToggleCameraFollowAi();
     }
 
     private onToggleSplashCulling() {
+        if (this._callbacks.allowAuxiliary?.() === false) return;
         this._callbacks.onToggleSplashCulling();
     }
 
     private onToggleSplashParticles() {
+        if (this._callbacks.allowAuxiliary?.() === false) return;
         this._callbacks.onToggleSplashParticles();
     }
 
     private onCycleBulletTime() {
+        if (this._callbacks.allowAuxiliary?.() === false) return;
         this._callbacks.onCycleBulletTime();
     }
 

@@ -268,7 +268,9 @@ function client(h, storage = new Map(), options = {}) {
         return module.exports;
     }
     const { WechatCloudBackend } = load(path.resolve(__dirname, '../assets/scripts/backend/WechatCloudBackend.ts'));
-    activeBackend = new WechatCloudBackend();
+    activeBackend = options.local
+        ? new (load(path.resolve(__dirname, '../assets/scripts/backend/MockBackend.ts')).MockBackend)()
+        : new WechatCloudBackend();
     return { backend: activeBackend, data: () => load(path.resolve(__dirname, '../assets/scripts/backend/PlayerData.ts')).PlayerData, storage, options, calls: () => calls, drop: n => { drop = n; }, offline: v => { offline = v; },
         config: () => load(path.resolve(__dirname, '../assets/scripts/app/PlayerCharacterConfig.ts')),
         mock: () => new (load(path.resolve(__dirname, '../assets/scripts/backend/MockBackend.ts')).MockBackend)(),
@@ -645,4 +647,62 @@ test('两台设备同时重新开赛仍由版本与事务保护，只创建一�
     assert.equal(results.filter(r => r.ok).length, 1);
     assert.equal(results.filter(r => r.code === 'CONFLICT').length, 1);
     assert.equal((await h.load()).profile.career.pending.id, results.find(r => r.ok).result.ticket.id);
+});
+
+test('教学完成按账号永久保存、跨设备读取、重复提交不发奖励', async () => {
+    const h = harness(); const fresh = await h.load();
+    assert.equal(fresh.profile.tutorialCompleted, false);
+    const request = h.request('tutorialComplete', {}, fresh.revision);
+    const done = await h.player(request);
+    assert.equal(done.ok, true); assert.equal(done.profile.tutorialCompleted, true);
+    assert.deepEqual(done.profile.career, fresh.profile.career);
+    assert.equal(done.profile.coins, fresh.profile.coins);
+    const retry = await h.player(request);
+    assert.equal(retry.revision, done.revision);
+    const device = await h.player(h.request('load', {}, 0, { writerId: 'device-00002' }));
+    assert.equal(device.profile.tutorialCompleted, true);
+    h.context.OPENID = 'user-b';
+    assert.equal((await h.load()).profile.tutorialCompleted, false);
+    h.context.OPENID = 'user-a';
+    assert.equal((await h.load()).profile.tutorialCompleted, true);
+    const reset = await h.player(h.request('tutorialComplete', { tutorialCompleted: false }, done.revision));
+    assert.equal(reset.ok, false);
+    assert.equal((await h.load()).profile.tutorialCompleted, true);
+});
+
+test('旧账号免教学定向迁移，保留资产与赛事状态；数据库失败不标记完成', async () => {
+    const h = harness(); const fresh = await h.load();
+    const doc = h.db.data.get(`players/${fresh.playerId}`);
+    delete doc.profile.tutorialCompleted;
+    const before = copy(doc.profile);
+    const migrated = await h.load();
+    assert.equal(migrated.profile.tutorialCompleted, true);
+    assert.deepEqual(migrated.profile.career, before.career);
+    assert.equal(migrated.profile.coins, before.coins);
+    assert.equal((await h.load()).revision, migrated.revision);
+    h.context.OPENID = 'user-new'; const newAccount = await h.load();
+    h.db.fail = true;
+    assert.equal((await h.player(h.request('tutorialComplete', {}, newAccount.revision))).ok, false);
+    h.db.fail = false;
+    assert.equal((await h.load()).profile.tutorialCompleted, false);
+});
+
+
+test('本地教学重置保留其余存档并可反复完成重置；云端入口直接拒绝', async () => {
+    const c = client(harness(), new Map(), { local: true });
+    const profile = await c.backend.loadProfile();
+    profile.coins = 1357;
+    profile.tutorialCompleted = true;
+    await c.backend.saveProfile(profile);
+    const data = c.data(); await data.load();
+    const expected = copy(data.profile); expected.tutorialCompleted = false;
+    for (let i = 0; i < 3; i++) {
+        await data.resetTutorialForLocalTesting();
+        assert.deepEqual(copy(data.profile), expected);
+        assert.deepEqual(JSON.parse(c.storage.get('swimming.player-profile')), expected);
+        await data.completeTutorial();
+    }
+    const cloud = client(harness());
+    await assert.rejects(cloud.data().resetTutorialForLocalTesting(), /仅本地预览/);
+    assert.equal(cloud.calls(), 0);
 });

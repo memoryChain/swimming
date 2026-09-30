@@ -162,7 +162,7 @@ test('退出和下一次进场取消旧任务，旧资源只完成自身回调',
     assert.equal(h.hooks.size, 1); next.cancel(); assert.equal(h.hooks.size, 0);
 });
 
-function raceFixture(mode = 'race') {
+function raceFixture(mode = 'race', tutorial = false) {
     const h = harness(), calls = [], assets = new Map();
     const Subject = methods('assets/scripts/core/GameManager.ts', 'GameManager', ['loadRace', 'update'], {
         RaceLoading: h.RaceLoading, DEBUG_UI_ENABLED: mode !== 'race', consumeMainGameLaunchMode: () => mode,
@@ -170,13 +170,20 @@ function raceFixture(mode = 'race') {
         loadSampledActionsForRace: done => assets.set('actions', done),
         prepareVenueResources(progress, done) { assets.set('venue', () => { progress(1); done(null); }); },
         LoadingOverlay: { setProgress() {}, hide: () => calls.push('hide') }, logTextureFormatDiagnostics() {},
+        TutorialRaceController: class { constructor() { calls.push('tutorial'); } },
+        findTutorialNode: () => null,
     });
     const manager = new Subject();
     const swimmer = () => ({ node: { isValid: true }, cartoonRig: { raceReady: true, raceLoadError: null } });
-    Object.assign(manager, { node: { isValid: true }, _aiSwimmers: [], _playerSwimmer: swimmer(),
+    Object.assign(manager, { node: { isValid: true }, _aiSwimmers: [], _playerSwimmer: swimmer(), _tutorialMode: tutorial,
+        _gameFlow: { bindRaceManagerCallbacks() { calls.push('bind'); } },
+        createRuntimeSceneBuilder: () => ({ findCanvasNode: () => ({}) }),
         _preRaceIntroPanel: { loadError: null }, initializeRaceContext() { calls.push('context'); },
         buildScene(done) { calls.push('scene'); done(); },
-        buildDeferredAiSwimmers() { manager._aiSwimmers = [swimmer(), swimmer()]; manager._aiSwimmers[1].cartoonRig.raceReady = false; calls.push('ai'); },
+        buildDeferredAiSwimmers() {
+            if (tutorial) return;
+            manager._aiSwimmers = [swimmer(), swimmer()]; manager._aiSwimmers[1].cartoonRig.raceReady = false; calls.push('ai');
+        },
         applyAiDebugHud() {}, buildSpectatorCrowd() { calls.push('crowd'); }, setupScoreboardFeed() {},
         startGame() { calls.push('start'); }, registerEvents() { calls.push('input'); }, scheduleOnce() {},
         enterModelDebug() { calls.push('debug'); manager._playerSwimmer.cartoonRig.raceReady = false; },
@@ -205,6 +212,19 @@ test('真实进场流程：最后一名 AI 和嵌套资源就绪前不能隐藏 
     for (let i = 0; i < 4; i++) await s.frame(); await s.promise;
     assert.equal(s.calls.filter(c => c === 'hide').length, 1);
     assert.equal(s.calls.filter(c => c === 'start').length, 1);
+    assert.equal(s.manager._raceSceneReady, true); assert.equal(s.hooks.size, 0);
+});
+
+test('教学进场先绑定即时起跳回调，再开始赛事，说明挂载后才隐藏Loading', async () => {
+    const s = raceFixture('race', true); await s.start();
+    for (let i = 0; i < 5; i++) await s.frame();
+    assert.equal(s.manager._raceLoading, null, '选手就绪、三帧呈现和附属资源检查全部结束');
+    await s.promise;
+    assert.equal(s.manager._aiSwimmers.length, 0);
+    assert.ok(s.calls.indexOf('bind') < s.calls.indexOf('start'), '首个DIVING事件必须被接收');
+    assert.ok(s.calls.indexOf('start') < s.calls.indexOf('input'));
+    assert.ok(s.calls.indexOf('tutorial') > s.calls.indexOf('input'));
+    assert.ok(s.calls.indexOf('tutorial') < s.calls.indexOf('hide'));
     assert.equal(s.manager._raceSceneReady, true); assert.equal(s.hooks.size, 0);
 });
 
@@ -240,6 +260,7 @@ test('角色就绪必须包含模型、专属动作、换色资源与两帧渲�
     const variant = { id: 'a', dynamicColor: { mode: 'mask' } };
     const Subject = methods('assets/scripts/entity/CartoonSwimmerRig.ts', 'CartoonSwimmerRig', ['raceReady', 'raceLoadError', 'lateUpdate', 'setModelVariant'], {
         findSwimmerModelVariant: () => variant,
+        TUTORIAL_RUNTIME: { paused: false },
     });
     const rig = new Subject();
     Object.assign(rig, { node: { isValid: true }, _model: { isValid: true }, _loaded: true,

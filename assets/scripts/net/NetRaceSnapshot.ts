@@ -28,6 +28,7 @@ import { encodeCollisionSoftness, decodeCollisionSoftness } from './NetCollision
 // The leading "S|" tag distinguishes snapshots from other broadcast messages.
 
 export interface NetSnapshotEntry {
+    kickRecoveryRemaining?: number;
     abilityState?: Readonly<import('../swimmer/CharacterAbilityState').CharacterAbilitySnapshot>;
     lane: number;
     distance: number;
@@ -82,7 +83,7 @@ const TAG = 'S|';
 
 export function encodeRaceSnapshot(hostPos: number, entries: NetSnapshotEntry[]): string {
     const body = entries
-        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)}`)
+        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)},${encodeKickRecovery(e.kickRecoveryRemaining)}`)
         .join(';');
     return `${TAG}${hostPos}#${body}`;
 }
@@ -143,6 +144,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
                 conditionDepletionCooldown: decodeConditionCooldown(conditionCooldownMs),
                 collisionSoftness: decodeCollisionSoftness(parts[15]),
                 abilityState: decodeCharacterAbility(parts[16]),
+                kickRecoveryRemaining: decodeKickRecovery(parts[17]),
             });
         }
     }
@@ -165,7 +167,7 @@ export function encodeSelfSnapshot(
     ownerStateSeq = entry.ownerStateSeq ?? -1,
     ownerPos = entry.ownerPos ?? -1,
 ): string {
-    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeOwnerStateSeq(ownerPos)},${encodeCollisionSoftness(entry.collisionSoftness)},${encodeCharacterAbility(entry.abilityState)}`;
+    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeOwnerStateSeq(ownerPos)},${encodeCollisionSoftness(entry.collisionSoftness)},${encodeCharacterAbility(entry.abilityState)},${encodeKickRecovery(entry.kickRecoveryRemaining)}`;
 }
 
 // Returns null if the payload is not a self-position report.
@@ -215,6 +217,7 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
         ownerPos: decodeOwnerStateSeq(ownerPos),
         collisionSoftness: decodeCollisionSoftness(parts[16]),
         abilityState: decodeCharacterAbility(parts[17]),
+        kickRecoveryRemaining: decodeKickRecovery(parts[18]),
     };
 }
 
@@ -261,4 +264,14 @@ export function encodeOwnerStateSeq(value: number): number {
 
 export function decodeOwnerStateSeq(value: number): number {
     return Number.isFinite(value) && value >= 0 ? Math.floor(value) : -1;
+}
+
+// 尾部追加毫秒数，旧包按零处理；有限上限避免坏包造成永久保护。
+export function encodeKickRecovery(seconds: number | undefined): number {
+    return Number.isFinite(seconds) ? Math.round(Math.max(0, Math.min(2, seconds!)) * 1000) : 0;
+}
+
+export function decodeKickRecovery(token: string | undefined): number {
+    const milliseconds = Number(token);
+    return Number.isFinite(milliseconds) ? Math.max(0, Math.min(2000, milliseconds)) / 1000 : 0;
 }

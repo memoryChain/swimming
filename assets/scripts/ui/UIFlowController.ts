@@ -106,8 +106,8 @@ export class UIFlowController {
         this._refs.uiController?.showFinishCountdown(value);
     }
 
-    showDivePrompt() {
-        this._refs.uiController?.showDivePrompt();
+    showDivePrompt(tutorial = false) {
+        this._refs.uiController?.showDivePrompt(tutorial);
     }
 
     showDiveCharging() {

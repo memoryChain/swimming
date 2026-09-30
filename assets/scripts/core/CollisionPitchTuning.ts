@@ -30,3 +30,11 @@ export const COLLISION_PITCH_TUNING = {
     tumblePenaltyFullAngularSpeed: 220,
     minForwardScale: 0.3,
 };
+
+// 全角色共用的短按踢水脱困；只延长持续时间，不按点按次数叠加强度。
+export const KICK_RECOVERY_TUNING = {
+    holdSeconds: 0.45,
+    poseRecoveryRate: 2,
+    headOnPenaltyScale: 0.4,
+    escapeSpeed: 0.9,
+};

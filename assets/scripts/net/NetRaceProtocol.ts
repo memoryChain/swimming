@@ -35,7 +35,9 @@
 // 版本46：角色、等级、肤色和配色作为完整开赛快照，身份初始化后才能进房。
 // 版本47：完整阵容先于赛前展示建立；加载门控改变共享随机数的消费顺序。
 // 版本48：新增赛博少女，角色名册及AI抽样必须在各端一致。
-export const NET_RACE_PROTOCOL_VERSION = 48;
+// 版本49：确认踢水加速姿态恢复、减轻正撞并持续侧滑；AI同规则，余时随权威状态同步。
+// 版本50：放缓踢水回正、保留更多撞击与松软反馈，AI撞后才主动脱困。
+export const NET_RACE_PROTOCOL_VERSION = 50;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

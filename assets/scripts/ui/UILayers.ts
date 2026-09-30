@@ -12,8 +12,8 @@
 // Layer containers sit at canvas center (0,0) at design size, so children keep the
 // same coordinates they'd have directly under the Canvas.
 //
-// Popup/Toast live on a SEPARATE overlay canvas with its own camera (priority 2,
-// dedicated layer bit 1<<14). The prepare-race 3D character preview renders on a
+// 弹窗使用各自所属 Canvas 的独立覆盖相机，位于所属 UI 之上，图层为 1<<14。
+// The prepare-race 3D character preview renders on a
 // priority-1 camera, so without this overlay any modal would be hidden behind the
 // character. The overlay camera (DEPTH_ONLY) draws popups above the character but
 // below the cross-scene LoadingOverlay (priority 100). makeUiNode inherits its
@@ -46,10 +46,11 @@ export enum UILayer {
 // 20+; the project uses bits 10-13 (swimmer/scoreboard/water/loading), so bit 14
 // is free. No other camera renders this bit, and this camera renders nothing else.
 const POPUP_LAYER_BIT = 1 << 14;
-// Rendered after the UI camera (priority 0) and the prepare-race preview camera
-// (priority 1), before the LoadingOverlay (priority 100).
+// 最低优先级覆盖大厅角色相机（1）；实际值还须高于所属 UI，低于加载遮罩（100）。
 const POPUP_CAMERA_PRIORITY = 2;
 const POPUP_CANVAS_NAME = 'UILayerPopupCanvas';
+// 大厅画布会以隐藏的常驻节点进入比赛，不能按场景内同名节点查找弹窗归属。
+const POPUP_CANVASES = new WeakMap<Node, Node>();
 const MAIN_LAYERS: UILayer[] = [UILayer.Background, UILayer.Screen, UILayer.Hud];
 const POPUP_LAYERS: UILayer[] = [UILayer.Popup, UILayer.Toast];
 
@@ -59,14 +60,13 @@ function layerNodeName(layer: UILayer): string {
 
 // Get (lazily creating) the container node for a UI layer. Background/Screen/Hud
 // sit under `canvas` (rendered by the main UI camera); Popup/Toast sit under the
-// popup overlay canvas (rendered by the priority-2 overlay camera) so dialogs
+// popup overlay canvas (rendered after the owning UI camera) so dialogs
 // appear above the 3D character preview. Also re-asserts the fixed layer order so
 // the containers stay contiguous and correctly ordered even if other children
 // were added later.
 export function getUILayer(canvas: Node, layer: UILayer): Node {
-    ensureLayers(canvas);
+    const overlay = ensureLayers(canvas);
     if (POPUP_LAYERS.indexOf(layer) >= 0) {
-        const overlay = popupHost(canvas).getChildByName(POPUP_CANVAS_NAME)!;
         return overlay.getChildByName(layerNodeName(layer))!;
     }
     return canvas.getChildByName(layerNodeName(layer))!;
@@ -79,7 +79,7 @@ function popupHost(canvas: Node): Node {
     return canvas.parent ?? canvas;
 }
 
-function ensureLayers(canvas: Node): void {
+function ensureLayers(canvas: Node): Node {
     const design = view.getDesignResolutionSize();
     const width = design.width || 1280;
     const height = design.height || 720;
@@ -98,9 +98,15 @@ function ensureLayers(canvas: Node): void {
     }
 
     const host = popupHost(canvas);
-    let overlay = host.getChildByName(POPUP_CANVAS_NAME);
-    if (!overlay) {
+    let overlay = POPUP_CANVASES.get(canvas);
+    if (!overlay?.isValid) {
         overlay = new Node(POPUP_CANVAS_NAME);
+        POPUP_CANVASES.set(canvas, overlay);
+        const ownedOverlay = overlay;
+        canvas.once(Node.EventType.NODE_DESTROYED, () => {
+            if (ownedOverlay.isValid) ownedOverlay.destroy();
+            if (POPUP_CANVASES.get(canvas) === ownedOverlay) POPUP_CANVASES.delete(canvas);
+        });
         overlay.setParent(host);
         overlay.setPosition(0, 0, 0);
         overlay.layer = POPUP_LAYER_BIT;
@@ -121,6 +127,11 @@ function ensureLayers(canvas: Node): void {
         overlayCanvas.cameraComponent = camera;
     }
 
+    // 大厅主相机优先级为 0，比赛为 10；弹窗在所属 UI 之后绘制。
+    const popupCamera = overlay.getComponent(Canvas)!.cameraComponent;
+    const priority = Math.max(POPUP_CAMERA_PRIORITY, (canvas.getComponent(Canvas)?.cameraComponent?.priority ?? 0) + 1);
+    if (popupCamera.priority !== priority) popupCamera.priority = priority;
+
     for (const layer of POPUP_LAYERS) {
         const name = layerNodeName(layer);
         let node = overlay!.getChildByName(name);
@@ -140,10 +151,11 @@ function ensureLayers(canvas: Node): void {
     });
     // Overlay sits last under the host; its own camera ordering is by priority, so
     // this is mostly for scene-graph tidiness.
-    host.getChildByName(POPUP_CANVAS_NAME)?.setSiblingIndex(host.children.length - 1);
-    const overlayNode = host.getChildByName(POPUP_CANVAS_NAME)!;
+    overlay.setSiblingIndex(host.children.length - 1);
+    const overlayNode = overlay;
     const overlayTotal = overlayNode.children.length;
     POPUP_LAYERS.forEach((layer, i) => {
         overlayNode.getChildByName(layerNodeName(layer))?.setSiblingIndex(overlayTotal - POPUP_LAYERS.length + i);
     });
+    return overlay;
 }

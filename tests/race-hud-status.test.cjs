@@ -550,3 +550,19 @@ test('AI观战真实HUD切换数值、左右操作、排名和技能只读，反
  roster[0].swimmer.node.active=true;owner._netSession={};owner.toggleCameraFollowAi();
  assert.equal(owner._aiCameraIndex,-1,'联机不启用本地 AI 观战切换');
 });
+
+test('教学输入门控同时阻止触屏和键盘越步，恢复后一次短按只确认一次',()=>{
+ let now=0,allowed=false,side=0;const events=[];
+ const callbacks=new Proxy({allowStroke:type=>allowed&&type===side,allowAuxiliary:()=>false,
+  onKickStroke:type=>events.push(['kick',type]),onKickConfirmed:type=>events.push(['confirm',type]),
+  onPrimaryAction:()=>events.push(['primary']),onStrokeHeld:()=>true},{get:(o,k)=>o[k]??(()=>{})});
+ const mod=load('assets/scripts/core/InputRouter.ts',{'cc':{Node,Vec2},'./GameConstants':{StrokeType:{LEFT:0,RIGHT:1}},'./InputTuning':{INPUT_TUNING:{padStrokeDedupeMs:0},STROKE_QUALITY_TUNING:{minHoldSeconds:.1}}},{Date:{now:()=>now}});
+ const router=new mod.InputRouter(new Node('input'),callbacks);
+ router.handleScreenStroke(0);router.onLeftStrokeHeld(true);router.onPrimaryAction();router.onSpaceAction();
+ assert.deepEqual(events,[]);
+ allowed=true;router.handleScreenStroke(1);assert.deepEqual(events,[]);
+ router.handleScreenStroke(0);now=50;router.handleScreenStrokeEnd(0);router.handleScreenStrokeEnd(0);
+ assert.deepEqual(events,[['kick',0],['confirm',0]]);
+ router.resetStrokeInput();side=1;router.onRightStrokeHeld(true);now=80;router.onRightStrokeHeld(false);
+ assert.deepEqual(events.slice(-2),[['kick',1],['confirm',1]]);
+});

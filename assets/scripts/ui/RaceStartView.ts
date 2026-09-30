@@ -162,6 +162,16 @@ export class RaceStartView {
         this.showCue('go');
     }
 
+    /** 教学自由练习起跳，只显示蓄力槽，不提示等发令。 */
+    showPracticeReady(): void {
+        Tween.stopAllByTarget(this.opacity);
+        this.current = null;
+        this.pending = null;
+        active(this.cueRoot, false);
+        active(this.hint, false);
+        this.setCharge(0, true);
+    }
+
     showRelease(power: number, late: boolean): void {
         if (this.releaseTime < 0) this.releaseTime = 0;
         const result: Cue = late ? 'late' : power >= 0.85 ? 'perfect' : power >= 0.55 ? 'great' : 'good';

@@ -77,6 +77,11 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
     }
     function applyPlayer(doc, event, time) {
         const p = doc.profile, data = event.data;
+        if (event.action === 'tutorialComplete') {
+            requireValue(Object.keys(data).length === 0, 'INPUT', '教学参数无效');
+            p.tutorialCompleted = true;
+            return {};
+        }
         if (event.action === 'identity') {
             requireValue(Object.keys(data).length > 0 && Object.keys(data).every(k => ['nickName', 'avatarId'].includes(k)),
                 'INPUT', '身份参数无效');
@@ -162,7 +167,7 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
         let playerId;
         try {
             playerId = authenticate(context); protocol(event);
-            requireValue(['load', 'identity', 'selection', 'appearance', 'level', 'career'].includes(event.action), 'FORBIDDEN', '不支持此存档操作');
+            requireValue(['load', 'identity', 'selection', 'appearance', 'level', 'career', 'tutorialComplete'].includes(event.action), 'FORBIDDEN', '不支持此存档操作');
             if (event.action !== 'load') validateMutation(event);
             const time = now();
             return await db.runTransaction(async tx => {

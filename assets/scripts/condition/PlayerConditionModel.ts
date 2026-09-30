@@ -1,3 +1,4 @@
+import { TUTORIAL_RUNTIME } from '../tutorial/TutorialSession';
 // 玩家体力按结算计数；心率只同步 Motor 的实际划频模型。
 
 import {
@@ -23,6 +24,28 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 export class PlayerConditionModel {
+    private _tutorialEnergyEnd: number | null = null;
+    // 教学以实际泳程分配固定体力预算，保证不同养成、失误次数、踢水玩法都在末段耗尽。
+    setTutorialEnergyCourse(endDistance: number | null) {
+        if (endDistance !== null && !TUTORIAL_RUNTIME.active) return;
+        this._tutorialEnergyEnd = endDistance;
+        this._tutorialDistance = 0;
+    }
+    private _tutorialDistance = 0;
+    advanceTutorialEnergyCourse(distance: number) {
+        if (!TUTORIAL_RUNTIME.active || this._tutorialEnergyEnd === null) return;
+        this._tutorialDistance = Math.max(this._tutorialDistance, distance);
+    }
+    private consumeTutorialEnergy(): boolean {
+        if (!this.tutorialEnergyCourse) return false;
+        // 预算只在真实划水/技能扣费时兑现，踢水、停手和滑行不会自己扣体力。
+        const ratio = Math.max(0, 1 - this._tutorialDistance / this._tutorialEnergyEnd!);
+        if (ratio < this.energyRatio) this.setTutorialEnergyRatio(ratio);
+        return true;
+    }
+    private get tutorialEnergyCourse(): boolean {
+        return TUTORIAL_RUNTIME.active && this._tutorialEnergyEnd !== null;
+    }
     private _infiniteStamina = false;
     setInfiniteStamina(value: boolean) { this._infiniteStamina = value; }
     private _phase: RacePhase = RacePhase.START;
@@ -36,6 +59,8 @@ export class PlayerConditionModel {
     private _energyTotalOverride: number | null = null;
 
     reset() {
+        this._tutorialDistance = 0;
+        // 起跳也会 reset；教学预算和角色能力一样由场景生命周期配置，离场再清除。
         this._phase = RacePhase.START;
         this._heartRate = HEART_RATE_BOUNDS.min;
         this._heartRateZone = HeartRateZone.LOW;
@@ -65,7 +90,7 @@ export class PlayerConditionModel {
 
     // 成功技能一次性扣费，与划水计数独立；立即刷新耗尽倍率供同帧输入/快照使用。
     consumeEnergy(cost: number) {
-        if (this._infiniteStamina) return;
+        if (this._infiniteStamina || (cost > 0 && this.consumeTutorialEnergy())) return;
         this._energy = energyAfterCost(this._energy, cost);
         this._energyDepleted = this._energy <= 0;
         this.refreshModifiers();
@@ -87,7 +112,7 @@ export class PlayerConditionModel {
     tick(_dt: number) { this.refreshModifiers(); }
 
     private drainEnergyForStroke() {
-        if (this._infiniteStamina) return;
+        if (this._infiniteStamina || this.consumeTutorialEnergy()) return;
         this._energy = energyAfterStrokes(this._energy, 1);
         this._energyDepleted = this._energy <= 0;
     }
@@ -100,6 +125,14 @@ export class PlayerConditionModel {
         const ratio = clamp(this._energy / this._effectiveEnergyTotal, 0, 1);
         this._efficiencyModifier = conditionEfficiencyScale(ratio);
         this._cadenceModifier = energyDepletionCadenceScale(ratio);
+    }
+
+    // 教学状态对照只修改本场真实体力，不写账号养成或正式比赛参数。
+    setTutorialEnergyRatio(ratio: number) {
+        if (!TUTORIAL_RUNTIME.active || !Number.isFinite(ratio)) return;
+        this._energy = this._effectiveEnergyTotal * clamp(ratio, 0, 1);
+        this._energyDepleted = this._energy <= 0;
+        this.refreshModifiers();
     }
 
     // --- Query getters (doc 27.4) ---

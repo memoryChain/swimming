@@ -9,11 +9,11 @@ export const RACE_BUNDLE_NAME = 'race';
 type AssetConstructor<T extends Asset> = new (...args: any[]) => T;
 type BundleLoadCallback = (error: Error | null, bundle?: AssetManager.Bundle) => void;
 
-export function loadRaceBundle(done: BundleLoadCallback) {
-    loadAssetBundle(RACE_BUNDLE_NAME, done);
+export function loadRaceBundle(done: BundleLoadCallback, progress?: (fraction: number) => void) {
+    loadAssetBundle(RACE_BUNDLE_NAME, done, progress);
 }
 
-function loadAssetBundle(name: string, done: BundleLoadCallback) {
+function loadAssetBundle(name: string, done: BundleLoadCallback, progress?: (fraction: number) => void) {
     const loaded = assetManager.getBundle(name);
     if (loaded) {
         done(null, loaded);
@@ -23,13 +23,27 @@ function loadAssetBundle(name: string, done: BundleLoadCallback) {
     // Cocos handles WeChat native subpackages here when the bundle compression
     // type is `subpackage`; calling wx.loadSubpackage manually bypasses its
     // bundle registry and can use a root that disagrees with game.json.
-    assetManager.loadBundle(name, (error, bundle) => {
+    let settled = false;
+    const complete: BundleLoadCallback = (error, bundle) => {
+        settled = true;
         if (error || !bundle) {
             done(error ?? new Error(`Failed to load Asset Bundle: ${name}`));
             return;
         }
         done(null, bundle);
-    });
+    };
+    if (!progress) { assetManager.loadBundle(name, complete); return; }
+    // 微信传下载事件，浏览器传字节数；没有可用总量时保留不定进度。
+    assetManager.loadBundle(name, { onFileProgress: (event: number | {
+        progress?: number; totalBytesWritten?: number; totalBytesExpectedToWrite?: number;
+    }, total?: number) => {
+        if (settled) return;
+        let fraction: number;
+        if (typeof event === 'number') fraction = total > 0 ? event / total : NaN;
+        else if (event?.totalBytesExpectedToWrite > 0) fraction = event.totalBytesWritten / event.totalBytesExpectedToWrite;
+        else fraction = typeof event?.progress === 'number' ? event.progress / 100 : NaN;
+        if (Number.isFinite(fraction) && fraction >= 0 && fraction <= 1) progress(fraction);
+    } }, complete);
 }
 
 // 保持界面调用处的逻辑路径；嵌套 UI Bundle 内部路径不带 ui/ 前缀。

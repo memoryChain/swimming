@@ -1,3 +1,5 @@
+import { consumeTutorialRequest, TUTORIAL_RUNTIME, TUTORIAL_AI } from '../tutorial/TutorialSession';
+import { TutorialRaceController, findTutorialNode } from '../tutorial/TutorialRaceController';
 import { prepareVenueResources } from './RaceBundleLoader';
 import { findPlayerCharacter } from '../app/PlayerCharacterConfig';
 import { PlayerData } from '../backend/PlayerData';
@@ -312,6 +314,8 @@ export class GameManager extends Component {
     // 场景预览相机独立于人物运动。
     private _scenePreviewCamera: ScenePreviewCamera | null = null;
     private _uwCameraDragging = false;
+    private _tutorialMode = false;
+    private _tutorial: TutorialRaceController | null = null;
     private _inputRouter: InputRouter = null;
     private readonly _debugLog = new DebugLogController();
     private readonly _aiDifficultyPanel = new AiDifficultyPanel();
@@ -350,7 +354,7 @@ export class GameManager extends Component {
             const underwaterDebug = DEBUG_UI_ENABLED && launchMode === 'underwater-debug';
             this._aiDebugMode = DEBUG_UI_ENABLED && launchMode === 'ai-debug';
             if (this._aiDebugMode) this._aiDebugDifficulty = getAiDebugDifficulty();
-            this.initializeRaceContext();
+            this.initializeRaceContext(launchMode === 'race');
             await loading.frames();
             LoadingOverlay.setProgress(0.1);
             await Promise.all([
@@ -381,7 +385,9 @@ export class GameManager extends Component {
                 LoadingOverlay.setProgress(0.7 + 0.2 * ready / swimmers.length);
                 return loading.assetsPending === 0 && ready === swimmers.length;
             });
-            // 所有人物就绪后才初始化展示姿态；此时镜头计时与输入仍被门控。
+            // 选手就绪后才初始化开场状态；此时镜头计时与输入仍被门控。
+            // 教学直接进入起跳状态，需先绑定状态回调，避免首屏漏掉蓄力 HUD。
+            if (this._tutorialMode) this._gameFlow?.bindRaceManagerCallbacks();
             if (!modelDebug && !underwaterDebug) this.startGame();
             await loading.frames(3);
             await loading.waitFor('首屏附属资源', () => loading.assetsPending === 0);
@@ -392,6 +398,17 @@ export class GameManager extends Component {
             if (modelDebug) this.enterModelDebug('freestyle');
             else if (underwaterDebug) this.enterUnderwaterDebug();
             this._raceSceneReady = true;
+            if (this._tutorialMode) {
+                this._tutorial = new TutorialRaceController(this.createRuntimeSceneBuilder().findCanvasNode(),
+                    this._playerSwimmer, this._raceManager, () => {
+                        this._inputManager?.resetInputState();
+                        this._raceUiBuilder?.resetInputState();
+                        this._inputRouter?.resetStrokeInput();
+                    }, () => { setReturnToLobby(true); this.returnToLogin(); }, this._playerCondition,
+                    () => { this.updatePlayerCondition(0); this.updateRaceStatusHud(0.1); });
+                const ranking = findTutorialNode(this._raceHud, 'Ranking');
+                if (ranking) ranking.active = false;
+            }
             this._raceLoading = null;
             LoadingOverlay.hide();
             this.scheduleOnce(logTextureFormatDiagnostics, 3);
@@ -401,6 +418,8 @@ export class GameManager extends Component {
     }
 
     onDestroy() {
+        this._tutorial?.dispose(); this._tutorial = null;
+        if (this._tutorialMode) { TUTORIAL_RUNTIME.active = false; TUTORIAL_RUNTIME.paused = false; }
         this._raceLoading?.cancel();
         this._raceLoading = null;
         this.detachObservedAiHud();
@@ -444,6 +463,11 @@ export class GameManager extends Component {
             this.updateUnderwaterDebug(dt);
             this._waterRefraction?.update();
             return;
+        }
+        this._tutorial?.update(dt, this._state);
+        if (this._tutorial?.paused) {
+            if (this._tutorial.awaitingStrokeInput) this._inputRouter?.tick();
+            if (this._tutorial.paused) return;
         }
         const netDt = dt;
         // Deterministic AI: in a net race step the AI on a fixed 33ms clock (raw dt),
@@ -752,10 +776,12 @@ export class GameManager extends Component {
     startGame() {
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.resetStrokeInput();
+        if (this._tutorialMode) MusicManager.playRace();
         this._gameFlow?.startGame();
     }
 
     restartGame() {
+        if (this._tutorialMode) return;
         if (!this._roomMode && !this._aiDebugMode && getSoloRaceTicket()) {
             this.returnToLogin();
             return;
@@ -829,6 +855,7 @@ export class GameManager extends Component {
         director.loadScene('Login', error => {
             if (error) {
                 this._isReturningToLogin = false;
+                if (this._tutorial) { this.registerEvents(); this._tutorial.returnFailed(); }
                 console.warn('[大厅] 返回失败，可重试', error);
                 return;
             }
@@ -836,13 +863,22 @@ export class GameManager extends Component {
         });
     }
 
-    private initializeRaceContext() {
+    private initializeRaceContext(allowTutorial = true) {
         this._roomMode = consumeRoomMode();
         this._netSession = consumeNetRaceSession();
+        const tutorialRequested = consumeTutorialRequest();
+        this._tutorialMode = allowTutorial && tutorialRequested && !this._netSession && !this._roomMode && !this._aiDebugMode;
+        TUTORIAL_RUNTIME.active = this._tutorialMode;
+        TUTORIAL_RUNTIME.paused = false;
+        TUTORIAL_RUNTIME.finishDistance = 0;
+        TUTORIAL_RUNTIME.progressLimit = 200;
         if (this._roomMode || this._netSession || this._aiDebugMode) {
             setSoloRaceTicket(null);
             setSoloRaceDistance(null);
             setSoloAiEvent(null);
+        } else if (this._tutorialMode) {
+            setSoloRaceTicket(null); setSoloRaceDistance(null); setSoloAiEvent(TUTORIAL_AI);
+            reseedSharedRandom(20260928);
         } else {
             const ticket = getSoloRaceTicket();
             setSoloRaceDistance(ticket?.distance ?? null);
@@ -881,6 +917,7 @@ export class GameManager extends Component {
                         return;
                     }
                     this._raceManager = this.node.getComponent(RaceManager) || this.node.addComponent(RaceManager);
+                    this._raceManager.tutorialMode = this._tutorialMode;
                     this._raceManager.playerSwimmer = this._playerSwimmer;
                     this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
                     this._raceManager.aiSwimmers = this._aiSwimmers;
@@ -1079,17 +1116,24 @@ export class GameManager extends Component {
 
     private createInputRouter(): InputRouter {
         return new InputRouter(this.node, {
+            allowStroke: type => !this._tutorialMode || !!this._tutorial?.requestStroke(type),
+            allowAuxiliary: () => !this._tutorialMode,
             onStroke: (type) => this.handlePlayerStroke(type),
             onStrokePressChanged: (type, pressed) => {
+                this._tutorial?.pressChanged(type, pressed);
                 if (!this.observedAiForHud() && (!pressed || this._state === GameState.RACING)) {
                     this._uiController?.raceHudStatus?.stroke.setPressed(type, pressed);
                 }
             },
             onStrokeHeld: (type, held, preHeldSeconds) => this.handlePlayerStrokeHeld(type, held, preHeldSeconds),
             onKickStroke: (type) => this.handlePlayerKickStroke(type),
-            onKickConfirmed: () => this._gameFlow?.handlePlayerKickConfirmed(),
-            onDiveChargeStart: () => this._gameFlow?.handleDiveChargeStart(),
-            onDiveRelease: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
+            onKickConfirmed: (type) => {
+                if (this._tutorial?.paused) return;
+                this._gameFlow?.handlePlayerKickConfirmed();
+                this._tutorial?.kick(type);
+            },
+            onDiveChargeStart: () => this.handleTutorialDiveStart(),
+            onDiveRelease: (holdSeconds) => this.handleTutorialDiveEnd(holdSeconds),
             onPrimaryAction: (source) => {
                 if (source === 'space' && this._state === GameState.RACING) {
                     this._gameFlow?.handleDolphinJump();
@@ -1189,7 +1233,7 @@ export class GameManager extends Component {
     private setupLaneLockdownVisualPreview() {
         this._laneLockdownVisuals?.dispose();
         this._laneLockdownVisuals = null;
-        if (!getRaceDifficultyConfig().laneLockdownEnabled || !this._waterRefraction) {
+        if (this._tutorialMode || !getRaceDifficultyConfig().laneLockdownEnabled || !this._waterRefraction) {
             return;
         }
         this._laneLockdownVisuals = new LaneLockdownVisuals(this._waterRefraction, COURSE_LAYOUT);
@@ -1198,7 +1242,7 @@ export class GameManager extends Component {
 
     private setupLaneLockdownRace() {
         this._laneLockdownRace = null;
-        if (!getRaceDifficultyConfig().laneLockdownEnabled || !this._raceManager) {
+        if (this._tutorialMode || !getRaceDifficultyConfig().laneLockdownEnabled || !this._raceManager) {
             return;
         }
         this._laneLockdownRace = new LaneLockdownRaceController(
@@ -1885,6 +1929,7 @@ export class GameManager extends Component {
                         collisionPitchVelocity: swimmer.netCollisionPitchVelocity,
                         collisionSoftness: swimmer.netCollisionSoftness,
                         abilityState: swimmer.netAbilityState,
+                        kickRecoveryRemaining: swimmer.motor.kickRecoveryRemaining,
                         conditionEnergyRatio: aiCondition?.energyRatio ?? -1,
                         conditionHeartRate: swimmer.heartRate,
                         conditionDepletionCooldown: aiCondition?.depletionCooldownRemaining ?? -1,
@@ -1928,6 +1973,7 @@ export class GameManager extends Component {
             const self = isHuman ? this._netRaceController.selfSnapshot(lane) : null;
             // Resolve a correction target from the best available source: the human's own
             // self-report on the reliable frame channel first, else the host snapshot (S|).
+            let targetState: NetSnapshotEntry;
             let targetDist: number;
             let targetLat: number;
             let targetHead: number;
@@ -1944,6 +1990,7 @@ export class GameManager extends Component {
             let latBlend: number;
             let headBlend: number;
             if (self) {
+                targetState = self;
                 targetDist = self.distance;
                 targetLat = self.lateral;
                 targetHead = self.heading;
@@ -1964,6 +2011,7 @@ export class GameManager extends Component {
                 if (!target) {
                     continue;
                 }
+                targetState = target;
                 targetDist = target.distance;
                 targetLat = target.lateral;
                 targetHead = target.heading;
@@ -2003,6 +2051,7 @@ export class GameManager extends Component {
             if (isHuman || !this._netRaceController.isHost) {
                 swimmer.applyNetCollisionSoftness(targetSoftness);
                 swimmer.applyNetAbilityState(targetAbility, isHuman);
+                swimmer.applyNetKickRecovery(targetState);
             }
             // Drive the tread-water<->freestyle pose from the owner's authoritative speed
             // so a corrected-forward copy can't be stuck in the vertical tread pose.
@@ -2101,6 +2150,7 @@ export class GameManager extends Component {
             collisionPitchVelocity: player.netCollisionPitchVelocity,
             collisionSoftness: player.netCollisionSoftness,
             abilityState: player.netAbilityState,
+            kickRecoveryRemaining: player.motor.kickRecoveryRemaining,
             conditionEnergyRatio: this._playerCondition.energyRatio,
             conditionHeartRate: player.heartRate,
         };
@@ -2184,7 +2234,7 @@ export class GameManager extends Component {
             hudRoster.push({ swimmer, avatarId });
         }
         this._uiController?.raceHudStatus?.setRoster(hudRoster);
-        this._preRaceIntroPanel.setRaceInfo({
+        this._preRaceIntroPanel.setRaceInfo(this._tutorialMode ? { event: '新手教学', format: '200 米教学', details: '单人标准模式 · 无时间限制', rule: '学会操作即可完成，不计生涯成绩' } : {
             event: `${getRaceDistance()}米自由泳`,
             format: getRaceModeTitle(),
             details: `${entries.length}人竞速  ·  ${this._netSession ? '联机对战' : `${getRaceModeTitle()} · 角色AI`}`,
@@ -2203,11 +2253,11 @@ export class GameManager extends Component {
         this._inputManager = input;
 
         const raceUiBuilder = new SpeedStarsUiPrefabBuilder({
-            onDolphinJump: () => this._gameFlow?.handleDolphinJump(),
+            onDolphinJump: () => { if (!this._tutorialMode || this._tutorial?.allowsDolphin) this._gameFlow?.handleDolphinJump(); },
             onStroke: (type) => this._inputRouter?.handleScreenStroke(type),
             onStrokeEnd: (type) => this._inputRouter?.handleScreenStrokeEnd(type),
-            onDiveHoldStart: () => this._gameFlow?.handleDiveChargeStart(),
-            onDiveHoldEnd: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
+            onDiveHoldStart: () => this.handleTutorialDiveStart(),
+            onDiveHoldEnd: (holdSeconds) => this.handleTutorialDiveEnd(holdSeconds),
             onRestart: () => this.restartGame(),
             onMenu: () => {
                 if (!this._roomMode) setReturnToLobby(true);
@@ -2432,15 +2482,27 @@ export class GameManager extends Component {
         this._gameFlow?.bindRaceManagerCallbacks();
     }
 
+    private handleTutorialDiveStart(): void {
+        if (!this._tutorialMode || this._tutorial?.allowsDive) this._gameFlow?.handleDiveChargeStart();
+    }
+
+    private handleTutorialDiveEnd(holdSeconds: number): void {
+        if (!this._tutorialMode || this._tutorial?.allowsDive) this._gameFlow?.handleDiveRelease(holdSeconds);
+    }
+
     private handlePlayerStroke(type: StrokeType) {
         this._gameFlow?.handlePlayerStroke(type);
     }
 
     private handlePlayerStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0): boolean {
-        return this._gameFlow?.handlePlayerStrokeHeld(type, held, preHeldSeconds) ?? false;
+        if (this._tutorialMode && held && !this._tutorial?.allowsArmStroke(type)) return false;
+        const accepted = this._gameFlow?.handlePlayerStrokeHeld(type, held, preHeldSeconds) ?? false;
+        if (accepted && held) this._tutorial?.armStrokeStarted();
+        return accepted;
     }
 
     private handlePlayerKickStroke(type: StrokeType) {
+        if (this._tutorial?.paused) return;
         this._gameFlow?.handlePlayerKickStroke(type);
     }
 

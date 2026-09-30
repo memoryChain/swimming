@@ -1,3 +1,5 @@
+import { scaledDelta } from '../core/TimeScale';
+import { TUTORIAL_RUNTIME } from '../tutorial/TutorialSession';
 import { _decorator, Camera, Color, Component, EffectAsset, instantiate, JsonAsset, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3, Vec4 } from 'cc';
 import { CharacterHeadBounds } from '../character/CharacterHeadBounds';
 import { CharacterHandContact } from '../character/CharacterHandContact';
@@ -1530,6 +1532,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     update(dt: number) {
+        if (TUTORIAL_RUNTIME.paused) return;
+        if (TUTORIAL_RUNTIME.active) dt = scaledDelta(dt);
         if (!this._loaded || !this.root) {
             return;
         }
@@ -1569,6 +1573,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     lateUpdate() {
+        if (TUTORIAL_RUNTIME.paused) return;
         if (this._rendererRevealFramesRemaining <= 0 || !this._loaded || !this._model?.isValid) {
             return;
         }

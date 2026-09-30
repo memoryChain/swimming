@@ -1,5 +1,5 @@
 {
-  "version": 48,
+  "version": 50,
   "updatedAt": "2026-09-12T17:11:22.582Z",
   "values": {
     "camera.kickDiveBackDistance": 2.8,
@@ -15,6 +15,10 @@
     "collision.knockbackSpeedFactor": 0.8,
     "collision.knockbackMaxImpulse": 4,
     "collision.knockbackDecaySeconds": 0.5,
+    "collision.kickRecoveryHoldSeconds": 0.45,
+    "collision.kickRecoveryRate": 2,
+    "collision.kickHeadOnPenaltyScale": 0.4,
+    "collision.kickEscapeSpeed": 0.9,
     "collision.headOnEscapeLateralFactor": 0.9,
     "collision.headOnEscapeMaxImpulse": 2.2,
     "collision.axialRollEnabled": 1,

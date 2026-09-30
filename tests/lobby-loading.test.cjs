@@ -50,18 +50,21 @@ function loginHarness({ deferResources = false } = {}) {
     let resolveProfile, resolveResources;
     const resources = new Promise(resolve => resolveResources = resolve);
     const profile = new Promise(resolve => resolveProfile = resolve);
-    const PlayerData = { loaded: true, load: () => profile };
+    const PlayerData = { loaded: true, profile: { tutorialCompleted: true }, load: () => profile };
     class Cover {
         disposed = false; loading = false;
+        updates = [];
         constructor(login, presentation) { this.login = login; this.presentation = presentation; }
-        setLoading() { this.loading = true; }
-        setProgress(value) { this.progress = value; }
+        setLoading(message) { this.loading = true; this.message = message; this.updates.push(['loading', message]); }
+        setProgress(value, message) { this.progress = value; this.message = message; this.updates.push(['download', value]); }
+        setResourceProgress(completed, total) { this.completed = completed; this.total = total; this.updates.push(['resources', completed, total]); }
         setRetry(callback) { this.retry = callback; this.loading = false; }
         dispose() { this.disposed = true; }
     }
     const Login = methods('assets/scripts/app/LoginManager.ts', ['openPrepareRace', 'prepareLobby', 'cancelLobbyLoading'], {
         UiAssetBarrier: h.UiAssetBarrier, StartupLoadingCover: Cover, PlayerData,
-        loadRaceBundle(done) { if (deferResources) resources.then(() => done(null)); else done(null); },
+        STARTUP_COPY: { loadingProfile: '存档', loadingBundle: '分包', downloadingBundle: '下载', loadingUi: '界面', preparingView: '画面' },
+        loadRaceBundle(done, progress) { h.downloadProgress = progress; if (deferResources) resources.then(() => done(null)); else done(null); },
         prepareProjectUiFonts() { requests.push(h.trackUiCallback(() => {}, error => error)); }, console: { warn() {} },
     });
     const manager = new Login();
@@ -75,7 +78,7 @@ function loginHarness({ deferResources = false } = {}) {
             requests.push(h.trackUiCallback(() => {}, error => error));
         },
     });
-    return { ...h, manager, calls, requests, resolveProfile, resolveResources, PlayerData };
+    return { ...h, manager, calls, requests, resolveProfile, resolveResources, PlayerData, downloadProgress: value => h.downloadProgress(value) };
 }
 
 test('真实登录交接保留首屏并防连点，存档、图片、角色全部完成后才揭开并播放入场', async () => {
@@ -170,9 +173,58 @@ test('登录只等微信分包、当前页面和选中角色，后续界面不�
     h.resolveResources(); await flush(); assert.deepEqual(h.calls, ['head', 'lobby']);
     h.requests.forEach(done => done()); m._prepareRaceFlow.presentationReady = true;
     h.frame(); h.frame(); await flush();
-    assert.equal(cover.progress, 1); assert.equal(cover.disposed, true);
+    assert.equal(cover.message, '画面'); assert.equal(cover.disposed, true);
     const source = read('assets/scripts/app/LoginManager.ts');
     assert.doesNotMatch(source, /prepareLobbyResources|prepareForEntry|loadSampledActionsForRace/);
+});
+
+test('进度只来自下载事件和资源回调，空等不会自行前进，图片完成仍等待角色', async () => {
+    const h = loginHarness({ deferResources: true }), m = h.manager;
+    m.openPrepareRace(); const cover = m._lobbyCover;
+    assert.equal(cover.message, '存档');
+    h.resolveProfile(); await flush(); assert.equal(cover.message, '分包');
+    h.downloadProgress(0.27); assert.equal(cover.progress, 0.27);
+    h.frame(); h.frame(); assert.equal(cover.progress, 0.27);
+    h.downloadProgress(0.73); assert.equal(cover.progress, 0.73);
+    h.resolveResources(); await flush();
+    assert.deepEqual(cover.updates.at(-1), ['resources', 0, 2]);
+    h.frame(); const updates = cover.updates.length;
+    h.frame(); h.frame(); assert.equal(cover.updates.length, updates);
+    h.requests[0](); h.frame(); assert.deepEqual(cover.updates.at(-1), ['resources', 1, 2]);
+    h.requests[1](); h.frame(); assert.equal(cover.message, '画面');
+    h.frame(); await flush(); assert.equal(cover.disposed, false);
+    m._prepareRaceFlow.presentationReady = true; h.frame(); h.frame(); await flush();
+    assert.equal(cover.disposed, true); assert.equal(h.hooks.size, 0);
+});
+
+test('资源计数包含嵌套与缓存回调，同帧合并，重复回调及取消后不再报告', async () => {
+    const h = barrierHarness(), scope = new h.UiAssetBarrier(), reports = [];
+    let parent, child, other;
+    scope.run(() => {
+        parent = h.trackUiCallback(() => { child = h.trackUiCallback(() => {}); });
+        other = h.trackUiCallback(() => {});
+        h.trackUiCallback(() => {})();
+    });
+    const waiting = scope.waitFor(() => true, 60000, (done, total) => reports.push([done, total]));
+    h.frame(); assert.deepEqual(reports, [[1, 3]]);
+    parent(); parent(); other(); h.frame(); assert.deepEqual(reports.at(-1), [3, 4]);
+    child(); h.frame(); h.frame(); await waiting;
+    assert.deepEqual(reports, [[1, 3], [3, 4], [4, 4]]);
+    child(); h.frame(); assert.equal(reports.length, 3); assert.equal(h.hooks.size, 0);
+    const cancelled = new h.UiAssetBarrier(); let late;
+    cancelled.run(() => { late = h.trackUiCallback(() => {}); });
+    const rejected = assert.rejects(cancelled.waitFor(() => false, 60000, () => assert.fail('取消后不能更新')), /取消/);
+    cancelled.cancel(); late(); h.frame(); await rejected;
+});
+
+test('分包下载被取消后，迟到进度与完成都不能修改旧遮罩或创建大厅', async () => {
+    const h = loginHarness({ deferResources: true }), m = h.manager;
+    m.openPrepareRace(); const cover = m._lobbyCover;
+    h.resolveProfile(); await flush(); h.downloadProgress(0.25);
+    m.cancelLobbyLoading(); const updates = cover.updates.length;
+    h.downloadProgress(0.9); h.resolveResources(); await flush();
+    assert.equal(cover.updates.length, updates); assert.deepEqual(h.calls, []);
+    assert.equal(h.hooks.size, 0);
 });
 
 test('角色切换复用按需创建的实例，隐藏节点停用，反复选择不再构建模型', () => {
@@ -227,14 +279,23 @@ test('预热后的图片、模型同步绑定；缓存失效或类型不匹配�
 });
 
 test('进度条按整数百分比更新且只改变填充缩放，不逐帧重画', () => {
-    let labels = 0, scales = 0; const label = {};
-    Object.defineProperty(label, 'string', { set(value) { labels++; assert.match(value, /资源准备中 \d+%/); } });
-    const Cover = methods('assets/startup/StartupLoadingCover.ts', ['setProgress'], { STARTUP_COPY: { preparing: '资源准备中' } });
-    const cover = Object.assign(new Cover(), { disposed: false, progressPercent: -1, animation: null,
+    let labels = 0, scales = 0, text = ''; const label = { node: { active: true } };
+    Object.defineProperty(label, 'string', { get() { return text; }, set(value) { text = value; labels++; } });
+    const Cover = methods('assets/startup/StartupLoadingCover.ts', ['setProgress', 'setResourceProgress', 'showProgress'], {
+        STARTUP_COPY: { preparing: '资源准备中', loadingUi: '准备界面资源' },
+    });
+    const cover = Object.assign(new Cover(), { disposed: false, progressPixels: -1, animation: null,
         spinner: { active: true }, progressRoot: { active: false }, progressFill: { setScale() { scales++; } }, label });
     cover.setProgress(0); cover.setProgress(0.009); cover.setProgress(0.011); cover.setProgress(1);
-    assert.equal(labels, 3); assert.equal(scales, 3); assert.equal(cover.progressPercent, 100);
+    assert.equal(labels, 3); assert.equal(scales, 3); assert.equal(cover.progressPixels, 360);
+    assert.equal(text, '资源准备中 100%');
     assert.equal(cover.spinner.active, false); assert.equal(cover.progressRoot.active, true);
+    cover.setProgress(NaN); cover.setResourceProgress(1, 0); assert.equal(labels, 3);
+    cover.setResourceProgress(1, 10); cover.setResourceProgress(2, 20);
+    assert.equal(text, '准备界面资源 2/20'); assert.equal(labels, 5); assert.equal(scales, 4);
+    cover.setResourceProgress(2, 20); assert.equal(labels, 5);
+    cover.setProgress(0.1, '下载资源包'); assert.equal(text, '下载资源包 10%');
+    cover.disposed = true; cover.setResourceProgress(20, 20); assert.equal(labels, 6);
 });
 
 
@@ -252,7 +313,7 @@ test('首次邀请保留最新目标，初始化完成前不进房，完成后�
 });
 
 test('未初始化的新用户进房先排队登录，不建房、不隐藏登录页；加载中的新邀请替换目标', () => {
-    const Login = methods('assets/scripts/app/LoginManager.ts', ['openRoom'], {});
+    const Login = methods('assets/scripts/app/LoginManager.ts', ['openRoom'], { PlayerData: { loaded: false } });
     let prepare = 0; const m = Object.assign(new Login(), { _entryResourcesReady: false, _roomFlow: null,
         openPrepareRace() { prepare++; }, _loginUiRoot: { isValid: true, active: true } });
     m.openRoom('first', false); assert.equal(m._pendingJoinRoomId, 'first'); assert.equal(m._pendingOpenRoom, true);
@@ -335,7 +396,7 @@ test('暂停大厅会停止页面动效、隐藏预览；从角色页恢复只�
         _pages: new Map([['ready', ready], ['characters', characters]]), _leaveDisabledButtons: [{ interactable: false }],
         _presentation: { detail: 1 }, _callbacks: {},
         _careerPanel: { setSuspended: v => calls.push(v), restoreNavigation: v => calls.push(['navigation', v]) },
-        saveAppearanceChangesInBackground() {}, refreshReadyCharacterInfo() { calls.push('stats'); },
+        saveAppearanceChangesInBackground() {}, syncTutorial() {}, refreshReadyCharacterInfo() { calls.push('stats'); },
         presentCharacter(id) { assert.equal(id, 'same'); this._previewRoot.active = true; }, layoutPresentation() {},
     });
     f.suspend(); assert.equal(f._root.active, false); assert.equal(f._previewRoot.active, false);

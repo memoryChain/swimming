@@ -94,6 +94,7 @@ export type AiRosterEntry = {
 // and their lane positions.
 export function buildRandomizedAiRoster(count: number): AiRosterEntry[] {
     const event = soloEvent ?? AI_EVENTS[AI_EVENT_BY_MODE[getRaceDifficulty()]] ?? AI_EVENTS.club;
+    if (event.opponentCount === 0 && count === 0) return [];
     validateAiEvent(event);
     if (event.opponentCount !== undefined && count !== event.opponentCount) throw new Error("实际AI人数与赛事配置不一致");
     const weights = event.characterWeights?.filter(entry => entry.weight > 0);

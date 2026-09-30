@@ -294,7 +294,7 @@ export class RaceHudStatusView {
         for (const slot of this.ranks) { slot.identity = null; slot.path = ''; this.active(slot.root, false); }
     }
     updateRanks(results: readonly RaceFinishResult[]) {
-        if (!this.root.activeInHierarchy) return;
+        if (!this.root.activeInHierarchy || !this.ranking.activeInHierarchy) return;
         let y = 84;
         for (let i = 0; i < this.ranks.length; i++) {
             const slot = this.ranks[i], result = results[i];

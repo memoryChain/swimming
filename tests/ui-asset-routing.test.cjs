@@ -15,7 +15,7 @@ function harness() {
     }).outputText;
     const cc = { Asset, Texture2D, Prefab, JsonAsset, assetManager: {
         assets: cache, getBundle: name => bundles.get(name),
-        loadBundle: (name, done) => bundleRequests.push({ name, done }),
+        loadBundle: (name, options, done) => bundleRequests.push({ name, options: done ? options : null, done: done || options }),
     } };
     new Function('require', 'exports', code)(id => id === 'cc' ? cc : {
         RESOURCE_PATHS: { uiBundle: { name: 'ui', root: 'ui' } },
@@ -44,6 +44,25 @@ test('未打开界面不发请求，首次 UI 请求只加载 UI Bundle 和目�
     assert.equal(h.requests.length, 1); assert.equal(h.requests[0].path, 'character-v1/card');
     const texture = new h.Texture2D(); h.requests[0].done(null, texture); assert.equal(value, texture);
     assert.equal(h.tracked.length, 1);
+});
+
+test('分包通过 Cocos 传递微信和浏览器真实下载进度，无总量、缓存和迟到事件不造数', () => {
+    const h = harness(), progress = []; let result;
+    h.loadRaceBundle((error, bundle) => { assert.equal(error, null); result = bundle; }, value => progress.push(value));
+    const request = h.bundleRequests[0], report = request.options.onFileProgress;
+    report({ totalBytesWritten: 25, totalBytesExpectedToWrite: 100, progress: 24 });
+    report({ progress: 60 }); report(75, 100);
+    report(80, 0); report({}); report({ progress: NaN }); report({ progress: 150 }); report(-1, 100);
+    assert.deepEqual(progress, [0.25, 0.6, 0.75]);
+    request.done(null, h.mount('race')); report({ progress: 100 });
+    assert.equal(result.name, 'race'); assert.equal(progress.length, 3);
+    h.loadRaceBundle(() => {}, () => assert.fail('缓存无需模拟下载'));
+    assert.equal(h.bundleRequests.length, 1);
+    const broken = harness(), events = [];
+    broken.loadRaceBundle(error => assert.match(error.message, /断网/), value => events.push(value));
+    broken.bundleRequests[0].done(new Error('断网'));
+    broken.bundleRequests[0].options.onFileProgress({ progress: 99 });
+    assert.deepEqual(events, []);
 });
 
 test('角色、动作、场馆和字体留在 race，UI 目录去前缀且不影响其他路径', () => {

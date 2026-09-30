@@ -94,6 +94,23 @@ class PlayerDataStore {
         }, command.type !== 'settle');
     }
 
+    completeTutorial(): Promise<void> {
+        return this.enqueue(async () => {
+            this._profile = await backend().completeTutorial();
+            if (this._profile.tutorialCompleted !== true) throw new Error('教学进度未保存');
+            this._emit();
+        });
+    }
+
+    resetTutorialForLocalTesting(): Promise<void> {
+        if (backend().name !== 'mock') return Promise.reject(new Error('仅本地预览可重置教学'));
+        return this.enqueue(async () => {
+            const current = await backend().loadProfile();
+            this._profile = await backend().saveProfile({ ...current, tutorialCompleted: false });
+            this._emit();
+        }, false);
+    }
+
     get profile(): PlayerProfile {
         return this._profile;
     }

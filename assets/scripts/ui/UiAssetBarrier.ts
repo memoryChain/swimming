@@ -5,6 +5,8 @@ let current: UiAssetBarrier | null = null;
 /** 只收集本次页面构建及其异步回调发起的资源，不阻塞无关页面或比赛。 */
 export class UiAssetBarrier {
     pending = 0;
+    total = 0;
+    completed = 0;
     private closed = false;
     private error: Error | null = null;
     private stop: ((error?: Error) => void) | null = null;
@@ -19,10 +21,11 @@ export class UiAssetBarrier {
         if (!this.closed && !this.error) this.error = error instanceof Error ? error : new Error(String(error));
     }
 
-    waitFor(ready: () => boolean, timeoutMs = 60000): Promise<void> {
+    waitFor(ready: () => boolean, timeoutMs = 60000, progress?: (completed: number, total: number) => void): Promise<void> {
         return new Promise((resolve, reject) => {
             if (this.closed) { reject(new Error('界面加载已取消')); return; }
             let stableFrames = 0;
+            let reportedCompleted = -1, reportedTotal = -1;
             const finish = (error?: Error) => {
                 clearTimeout(timer);
                 director.off(Director.EVENT_AFTER_DRAW, check);
@@ -33,6 +36,11 @@ export class UiAssetBarrier {
             const check = () => {
                 try {
                     if (this.error) { finish(this.error); return; }
+                    // 合并同帧回调；嵌套请求会增加总数，不把当前列表当成已知全集。
+                    if (progress && (reportedCompleted !== this.completed || reportedTotal !== this.total)) {
+                        reportedCompleted = this.completed; reportedTotal = this.total;
+                        progress(this.completed, this.total);
+                    }
                     if (this.pending === 0 && ready()) {
                         // 资源回调完成后仍让布局、姿态和渲染提交至少走过两帧。
                         if (++stableFrames >= 2) finish();
@@ -59,6 +67,7 @@ export function trackUiCallback<T extends (...args: any[]) => void>(
     const scope = current;
     if (!scope) return callback;
     scope.pending++;
+    scope.total++;
     let settled = false;
     return ((...args: Parameters<T>) => {
         if (settled) return;
@@ -68,6 +77,6 @@ export function trackUiCallback<T extends (...args: any[]) => void>(
             const error = failure?.(...args);
             if (error) scope.fail(error);
         } catch (error) { scope.fail(error); }
-        finally { scope.pending--; }
+        finally { scope.pending--; scope.completed++; }
     }) as T;
 }

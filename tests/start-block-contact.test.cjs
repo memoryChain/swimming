@@ -2,11 +2,35 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 const { load, Node, Vec3, Quat, root, createRig } = require('./helpers/character-contact-harness.cjs');
+const { createAiHarness } = require('./helpers/ai-race-harness.cjs');
 const { readStartBlockSurface } = load(path.join(root, 'assets/scripts/venue/StartBlockSurface.ts'));
 const { CharacterPoseStateController } = load(path.join(root, 'assets/scripts/character/CharacterPoseStateController.ts'));
 const prep = JSON.parse(fs.readFileSync(path.join(root, 'assets/race/model-actions/tPose/Tpose_divePrep.json')));
 const waving = JSON.parse(fs.readFileSync(path.join(root, 'assets/race/model-actions/tPose/Tpose_waving.json')));
+
+function runtimeRigMethods(globals) {
+    const ts = process.env.TYPESCRIPT_PATH ? require(process.env.TYPESCRIPT_PATH) : (() => {
+        try { return require('typescript'); } catch {}
+        return require(process.env.PATH.split(path.delimiter).map(dir => path.resolve(dir, '../typescript/lib/typescript.js')).find(file => fs.existsSync(file)));
+    })();
+    const source = ts.createSourceFile('CartoonSwimmerRig.ts', fs.readFileSync(path.join(root, 'assets/scripts/entity/CartoonSwimmerRig.ts'), 'utf8'), ts.ScriptTarget.Latest, true);
+    const owner = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text === 'CartoonSwimmerRig');
+    const names = ['setDiveReady', 'setActiveSwimming', 'setStandingSurface', 'setDiveSupportPlane', 'resetPose', 'update'];
+    const methods = owner.members.filter(n => names.includes(n.name?.getText(source)));
+    assert.equal(methods.length, names.length);
+    return vm.runInNewContext(ts.transpileModule(`class Rig { ${methods.map(n => n.getText(source)).join('\n')} }`,
+        { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText + '; Rig', globals);
+}
+
+function assertPoseMatches(pose, expected) {
+    assert.ok(Vec3.distance(pose.root.position, expected.rootPosition) < 1e-6, '骨架根节点必须处于完整准备姿势');
+    assert.ok(Vec3.distance(pose._hips.position, expected.hipPosition) < 1e-6, '骨盆不能冻结在过渡途中');
+    for (const [bone, rotation] of expected.boneRotations) {
+        assert.ok(1 - Math.abs(Quat.dot(bone.rotation, rotation)) < 1e-6, `${bone.name} 必须处于完整准备姿势`);
+    }
+}
 
 function blockSurface(yaw = 0, scale = 0.8) {
     const data = fs.readFileSync(path.join(root, 'assets/race/pool/StartBlock.glb'));
@@ -35,6 +59,69 @@ function armClearance(exactHandBounds, side, surface, yaw) {
     }
     return nearest;
 }
+
+test('教学直接进场：真实赛事、泳者和骨骼在暂停前摆好准备姿势，恢复后不变形', () => {
+    const h = createAiHarness();
+    const { Swimmer } = h.load('entity/Swimmer');
+    const { RaceManager } = h.load('core/RaceManager');
+    const { TUTORIAL_RUNTIME } = h.load('tutorial/TutorialSession');
+    const { scaledDelta } = h.load('core/TimeScale');
+    const { CHARACTER_POSE_TUNING } = h.load('character/CharacterMotionTuning');
+    const Rig = runtimeRigMethods({ TUTORIAL_RUNTIME, scaledDelta, CHARACTER_POSE_TUNING });
+    const noop = () => {};
+    TUTORIAL_RUNTIME.active = true;
+    try {
+        for (const file of fs.readdirSync(path.join(root, 'assets/race/models')).filter(f => f.endsWith('.glb'))) {
+            const { pose, soles, wrapper, exactY } = createRig(file);
+            const body = new Swimmer(); body.node = new Node(); body.node.active = true;
+            wrapper.parent = body.node; body.node.children.push(wrapper);
+            pose.setDivePrepPoseOverride(prep);
+            const rig = new Rig();
+            const scale = wrapper.scale.x;
+            const controller = new CharacterPoseStateController({ pose, getModel: () => wrapper, getRoot: () => pose.root,
+                getSelfTime: () => rig._selfTime, updateSplashSurface: noop, setSplashVisible: noop,
+                modelScale: () => scale, raceModelYOffset: () => 0, raceModelEulerDegrees: () => [90, 90, 0] });
+            Object.assign(rig, { _loaded: true, root: pose.root, _model: wrapper, _pose: pose, _poseState: controller,
+                _standingSoles: soles, _selfTime: 0, _animationPlayer: { stop: noop, hasAnimation: false },
+                clearCollisionPitchPivotCompensation: noop, resetDebugFlipTurnState: noop,
+                invalidateTreadBlendModelPlacement: noop, updateSplashSurface: noop,
+                setPerfectGlowActive: noop, finishDiveChargeEffect: noop, setLegSplashSuppressed: noop, finishRaceFlipTurn: noop });
+            body.cartoonRig = rig;
+            for (const yaw of [0, 180]) {
+                const surface = blockSurface(yaw);
+                const platform = new Vec3(yaw ? -0.22 : 0.22, 0.1, 0);
+                body._courseLayout = { direction: yaw ? -1 : 1, startBlockSurface: () => surface,
+                    swimPosition: (_distance, z) => new Vec3(0, 0, z), platformStandingPosition: () => platform.clone() };
+                body.node.setPosition(platform); body.node.setRotationFromEuler(0, yaw, 0);
+                rig.setDiveSupportPlane(surface); controller.enterDiveReady(0);
+                const ready = pose.capturePoseSnapshot(), modelRotation = Quat.clone(wrapper.rotation);
+                // 模拟角色资源加载后的游泳朝向，直接赛事入口没有展示阶段供过渡完成。
+                controller.enterFreestyle();
+                const race = new RaceManager(); race.playerSwimmer = body; race.tutorialMode = true;
+                race.unscheduleAllCallbacks = noop;
+                TUTORIAL_RUNTIME.paused = false;
+                race.resetRace(); race.startRace();
+                for (let frame = 0; frame < 3; frame++) rig.update(1 / 60);
+                TUTORIAL_RUNTIME.paused = true;
+                rig.update(10);
+                assert.equal(controller._poseTransition === null, true, `${file} 朝向 ${yaw}：说明暂停前必须完成准备姿势`);
+                assert.ok(1 - Math.abs(Quat.dot(wrapper.rotation, modelRotation)) < 1e-6, '模型不能冻结在水平游泳到直立准备的旋转途中');
+                assertPoseMatches(pose, ready);
+                for (let side = 0; side < 2; side++) assert.ok(Math.abs(exactY(side, surface) - .002) < .008, `${file} 脚 ${side} 必须贴台`);
+                TUTORIAL_RUNTIME.paused = false;
+                for (let frame = 0; frame < 30; frame++) rig.update(1 / 60);
+                assertPoseMatches(pose, ready);
+                assert.ok(Vec3.distance(body.node.position, platform) < 1e-6, '修复姿势不能改变比赛根节点站位');
+                controller.enterShowcaseStanding();
+                race.tutorialMode = false; race.startRace();
+                assert.equal(race.state, h.load('core/GameConstants').GameState.COUNTDOWN);
+                race.stepSimulation(race.countdownSeconds);
+                assert.equal(controller._poseTransition?.duration, CHARACTER_POSE_TUNING.defaultPoseTransitionSeconds,
+                    '普通比赛仍使用原有展示到准备的姿势过渡');
+            }
+        }
+    } finally { TUTORIAL_RUNTIME.active = false; TUTORIAL_RUNTIME.paused = false; }
+});
 
 test('真实起跳台识别约 11.2° 主踏面，排除更高的小边条，缩放和反向摆放生效', () => {
     const plane = blockSurface(), reverse = blockSurface(180), larger = blockSurface(0, 1);

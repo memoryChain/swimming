@@ -487,8 +487,9 @@ export class UIController extends Component {
         this.raceStartView?.reset();
     }
 
-    showDivePrompt() {
-        this.raceStartView?.showReady();
+    showDivePrompt(tutorial = false) {
+        if (tutorial) this.raceStartView?.showPracticeReady();
+        else this.raceStartView?.showReady();
         this.updateDiveCharge(0, true);
     }
 

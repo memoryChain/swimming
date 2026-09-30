@@ -1,3 +1,4 @@
+import { TUTORIAL_RUNTIME } from '../tutorial/TutorialSession';
 import { CharacterAbilityState } from './CharacterAbilityState';
 import { abilityValue, CharacterAbilityId } from '../core/CharacterAbilityConfig';
 import { StrokeHeartRateModel } from '../condition/StrokeHeartRateModel';
@@ -12,7 +13,7 @@ import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrid
 import { AxialRollModel } from './AxialRollModel';
 import { CollisionPitchModel } from './CollisionPitchModel';
 import { CollisionSoftnessModel } from './CollisionSoftnessModel';
-import { COLLISION_PITCH_TUNING } from '../core/CollisionPitchTuning';
+import { COLLISION_PITCH_TUNING, KICK_RECOVERY_TUNING } from '../core/CollisionPitchTuning';
 
 const CYCLE_AMOUNT = Math.PI * 2;
 const MAX_QUEUED_MOTION = CYCLE_AMOUNT * 2;
@@ -100,6 +101,7 @@ export class SwimmerMotor {
     private readonly _previewRanges: ReleaseRanges = { good: { start: 0, end: 1 }, perfect: { start: 0, end: 1 } };
     private readonly _heartRate = new StrokeHeartRateModel();
     private _authoritativeHeartRate = -1;
+    private _tutorialHeartRate: number | null = null;
     private readonly _physics = new SwimPhysicsModel();
     private readonly _axialRoll = new AxialRollModel();
     private readonly _collisionPitch = new CollisionPitchModel();
@@ -146,6 +148,7 @@ export class SwimmerMotor {
     // tapping accelerates slowly, and legs alone can't exceed the kick ceiling.
     private _kickCadenceHz = 0;
     private _lastKickTapClock = -1;
+    private _kickRecoveryRemaining = 0;
     // Steering (蛇形转向): heading is the yaw offset from straight-ahead, in
     // radians. A stroke injects yaw angular velocity, which survives release and
     // keeps bending the path until water drag or an opposite stroke removes it.
@@ -183,6 +186,7 @@ export class SwimmerMotor {
     stopRace() {
         this._isRacing = false;
         this.ability.reset();
+        this._kickRecoveryRemaining = 0;
         this._glidePhaseActive = false;
         this._glideDrag = SWIMMER_BALANCE.glideDrag;
         this._axialRoll.reset();
@@ -203,6 +207,7 @@ export class SwimmerMotor {
         }
         if (active) {
             this.ability.suspend();
+            this._kickRecoveryRemaining = 0;
             this._collisionPitch.reset();
             this.collisionSoftness.reset();
         }
@@ -240,6 +245,7 @@ export class SwimmerMotor {
         this._strokeAccelerationTotalSeconds = 0;
         this._kickCadenceHz = 0;
         this._lastKickTapClock = -1;
+        this._kickRecoveryRemaining = 0;
         this._currentAcceleration = 0;
         // Push off the wall straight ahead; the player steers again after the turn.
         this._heading = 0;
@@ -257,7 +263,7 @@ export class SwimmerMotor {
     }
 
     setFlipTurnDistance(distance: number) {
-        this._distance = Math.max(0, Math.min(getRaceDistance(), distance));
+        this._distance = Math.max(0, Math.min(this.tutorialMovementLimit(getRaceDistance()), distance));
     }
 
     completeFlipTurnPhase(distance: number, speed: number) {
@@ -306,6 +312,15 @@ export class SwimmerMotor {
         this._bodyPhase = 0;
         this._armAction = 0;
         this._kickAction = 0;
+    }
+
+    // 课程切页时丢弃尚未完成的输入，不能结算为下一课的划水，也不重置位置或速度。
+    cancelTutorialStrokeInput() {
+        if (!TUTORIAL_RUNTIME.active) return;
+        this._leftStrokeHeld = this._rightStrokeHeld = false;
+        this._leftPressStartedAt = this._rightPressStartedAt = -1;
+        this._leftActions.length = this._rightActions.length = 0;
+        this._pendingStrokeQualityResults.length = 0;
     }
 
     reset() {
@@ -396,7 +411,9 @@ export class SwimmerMotor {
 
     // 短按松手只确认能力，不重复注入踢腿推进、频率和动画预算。
     confirmKickAbility() {
-        if (this.isRacing && !this.isArmStrokeActive) this.ability.kick();
+        if (!this.isRacing || this.isArmStrokeActive || this._glidePhaseActive) return;
+        this.ability.kick();
+        this._kickRecoveryRemaining = clamp(finiteOr(KICK_RECOVERY_TUNING.holdSeconds, 0), 0, 2);
     }
 
     // Estimate the current kick frequency from the interval since the last tap.
@@ -520,6 +537,7 @@ export class SwimmerMotor {
         );
         this._collisionPitch.update(dt, !this._glidePhaseActive, this.ability.recoveryScale);
         this.collisionSoftness.update(dt);
+        this.updateKickRecovery(dt);
         const raceDistance = getRaceDistance();
         // Forward race progress uses only the along-lane component; veering with a
         // large heading is naturally slower (this is the whole steering cost).
@@ -530,7 +548,7 @@ export class SwimmerMotor {
             * Math.max(0, Math.cos(this._heading))
             * this._axialRoll.forwardScale
             * this._collisionPitch.forwardScale;
-        this._distance = Math.min(raceDistance, this._distance + forwardSpeed * dt);
+        this._distance = Math.min(this.tutorialMovementLimit(raceDistance), this._distance + forwardSpeed * dt);
         // Lateral drift accumulates the sideways component, clamped to the pool.
         const requestedLateralOffset = this._lateralOffset + this._currentSpeed * Math.sin(this._heading) * dt;
         this._lateralOffset = clamp(requestedLateralOffset, this._lateralOffsetMin, this._lateralOffsetMax);
@@ -538,13 +556,14 @@ export class SwimmerMotor {
         if (Math.abs(wallCorrection) > 1e-6) {
             this.returnToLaneFromPoolWall(wallCorrection);
         }
-        this.integrateKnockback(dt, raceDistance);
+        this.integrateKnockback(dt, this.tutorialMovementLimit(raceDistance));
         if (!options.isAI) {
             this.checkArmStrokeTimeout();
         }
 
         if (this._distance >= raceDistance) {
             this._isRacing = false;
+            this._kickRecoveryRemaining = 0;
             this.collisionSoftness.reset();
             this.clearKnockback();
             return true;
@@ -556,6 +575,7 @@ export class SwimmerMotor {
         this._heartRate.reset();
         this.ability.reset();
         this._authoritativeHeartRate = -1;
+        this._tutorialHeartRate = null;
         this.clearKnockback();
         this._distance = Math.max(0, initialDistance);
         this._bodyPhase = 0;
@@ -589,6 +609,7 @@ export class SwimmerMotor {
         this._currentAcceleration = 0;
         this._kickCadenceHz = 0;
         this._lastKickTapClock = -1;
+        this._kickRecoveryRemaining = 0;
         this._heading = 0;
         this._headingTurnRate = 0;
         this._poolWallRecoveryDirection = 0;
@@ -638,7 +659,15 @@ export class SwimmerMotor {
     setHeartRateTrait(trait: HeartRateTraitId) { this._heartRate.setTrait(trait); }
     get heartRateTrait(): HeartRateTraitId { return this._heartRate.heartRateTrait; }
 
-    get heartRate(): number { return this._authoritativeHeartRate >= 0 ? this._authoritativeHeartRate : this._heartRate.heartRate; }
+    get heartRate(): number { return TUTORIAL_RUNTIME.active && this._tutorialHeartRate !== null
+        ? this._tutorialHeartRate : this._authoritativeHeartRate >= 0 ? this._authoritativeHeartRate : this._heartRate.heartRate; }
+    // 教学分档固定真实判定输入；解除后从当前档位自然恢复，不使用联机覆盖标记。
+    setTutorialHeartRate(value: number | null) {
+        if (value !== null && (!TUTORIAL_RUNTIME.active || !Number.isFinite(value))) return;
+        if (value === null && this._tutorialHeartRate !== null) this._heartRate.applyAuthoritative(this._tutorialHeartRate);
+        this._tutorialHeartRate = value === null ? null : Math.max(80, Math.min(180, value));
+    }
+
     // 只供本地成功动作使用，远端真人心率由 owner 覆盖，不能重复叠加负担。
     addHeartRateBurden(amount: number) {
         if (this._isRacing && this._authoritativeHeartRate < 0) this._heartRate.addBurden(amount);
@@ -999,6 +1028,7 @@ export class SwimmerMotor {
     private startActionBaseAcceleration(action: StrokeAction) {
         action.baseAccelerationStarted = true;
         this.ability.armStart();
+        this._kickRecoveryRemaining = 0;
         action.heartRate = Math.round(this.heartRate * 100) / 100;
         const ranges = this._effectiveReleaseRanges;
         const center = perfectReleaseCenter(ranges);
@@ -1243,6 +1273,7 @@ export class SwimmerMotor {
     }
 
     restoreAxialBalance(angleRadians: number) {
+        this._kickRecoveryRemaining = 0;
         this._axialRoll.setState(angleRadians, 0);
     }
 
@@ -1255,6 +1286,7 @@ export class SwimmerMotor {
     }
 
     restoreCollisionPitch() {
+        this._kickRecoveryRemaining = 0;
         this._collisionPitch.reset();
         this.collisionSoftness.reset();
     }
@@ -1331,10 +1363,13 @@ export class SwimmerMotor {
         this._poolWallRecoveryDirection = inwardSign;
     }
 
-    // Shift race progress by a small amount (used by swimmer-vs-swimmer collision
-    // to push bodies apart along the swim axis). Clamped to the race bounds.
+    // 仅限制教学前进距离；动作、判定和速度继续模拟，练完即可继续游。
+    private tutorialMovementLimit(raceDistance: number): number {
+        return TUTORIAL_RUNTIME.active ? Math.min(raceDistance, TUTORIAL_RUNTIME.progressLimit) : raceDistance;
+    }
+    // 碰撞或空中阶段调整泳程时也必须保留后续课程的空间。
     nudgeDistance(delta: number) {
-        this._distance = Math.max(0, Math.min(getRaceDistance(), this._distance + delta));
+        this._distance = Math.max(0, Math.min(this.tutorialMovementLimit(getRaceDistance()), this._distance + delta));
     }
     get weight(): number {
         return this._weight;
@@ -1367,6 +1402,44 @@ export class SwimmerMotor {
             return;
         }
         this._collisionPitch.applyAngularImpulse(angularVelocityDeltaRadians);
+    }
+
+    get kickRecoveryRemaining(): number { return this._kickRecoveryRemaining; }
+
+    get kickRecoveryActive(): boolean {
+        return this._isRacing && !this._glidePhaseActive && this._kickRecoveryRemaining > 0;
+    }
+
+    // AI 只观察已有碰撞状态；普通侧滚划水不触发脱困策略。
+    get needsCollisionRecovery(): boolean {
+        return Math.abs(this._collisionPitch.angleRadians) > 0.35
+            || Math.abs(this._collisionPitch.angularVelocityRadians) > 1
+            || this._knockbackDistance < -0.15;
+    }
+
+    correctKickRecovery(seconds: number) {
+        this._kickRecoveryRemaining = this._isRacing && !this._glidePhaseActive
+            ? clamp(finiteOr(seconds, 0), 0, 2) : 0;
+    }
+
+    // 接触持续时保持横向脱困速度下限，不逐帧累加冲量或发放碰撞能量。
+    sustainKickEscape(side: number) {
+        if (!this.kickRecoveryActive || !SWIMMER_COLLISION.knockbackEnabled) return;
+        const speed = clamp(finiteOr(KICK_RECOVERY_TUNING.escapeSpeed, 0), 0, SWIMMER_COLLISION.knockbackMaxImpulse);
+        if (this._knockbackLateral * side < speed) this._knockbackLateral = side * speed;
+    }
+
+    private updateKickRecovery(dt: number) {
+        if (!this.kickRecoveryActive || !(dt > 0)) return;
+        const activeDt = Math.min(dt, this._kickRecoveryRemaining);
+        const blend = 1 - Math.exp(-Math.max(0, finiteOr(KICK_RECOVERY_TUNING.poseRecoveryRate, 0))
+            * this.ability.recoveryScale * activeDt);
+        // 沿最短圆周回正，前后翻的倒置姿态也能恢复；侧滚保留俯泳/仰泳两种稳定姿态。
+        this._collisionPitch.correct(0, 0, blend);
+        this._axialRoll.correct(this._axialRoll.stableAngleRadians, 0, blend);
+        // 四肢松软按自然速度消退，踢水不额外缩短碰撞表演。
+        if (this._knockbackDistance < 0) this._knockbackDistance *= 1 - blend;
+        this._kickRecoveryRemaining = Math.max(0, this._kickRecoveryRemaining - dt);
     }
 
     clearKnockback() {

@@ -3,6 +3,7 @@
 // 输入：每帧 tick（被动增长）、每次划水结算 addStrokeRating、被撞 addCollisionBonus。
 // 输出：energy（0..max）、canAffordDolphin、denied 闪烁标志。
 
+import { TUTORIAL_RUNTIME } from '../tutorial/TutorialSession';
 import { Rating } from '../core/GameConstants';
 import { ULTIMATE_ENERGY_BALANCE, energyGainMultiplier } from '../core/UltimateEnergyBalance';
 
@@ -74,6 +75,13 @@ export class UltimateEnergyModel {
         } else if (rating === Rating.GOOD) {
             this.add(b.goodGain);
         }
+    }
+
+    // 专属教学的真实能量补给，明确显示在 HUD；不修改正式比赛增长参数。
+    grantTutorialCharge() {
+        if (!TUTORIAL_RUNTIME.active) return;
+        this._energy = Math.min(ULTIMATE_ENERGY_BALANCE.maxEnergy,
+            this._energy + ULTIMATE_ENERGY_BALANCE.maxEnergy * 0.25);
     }
 
     // 被撞飞补偿：冲量足够大且距上次补偿超过冷却才给，避免贴身摩擦刷能量。

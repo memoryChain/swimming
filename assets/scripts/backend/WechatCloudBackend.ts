@@ -171,6 +171,8 @@ export class WechatCloudBackend implements IBackend {
         return this.sendPending(request);
     }
 
+    async completeTutorial(): Promise<PlayerProfile> { return (await this.mutate('tutorialComplete', {})).profile; }
+
     executeCareer(command: CareerCommand): Promise<CareerResult> { return this.mutate('career', command); }
     spendCoinsForLevel(characterId: string, requestedLevels: number): Promise<LevelSpendResult> {
         return this.mutate('level', { characterId, requestedLevels });

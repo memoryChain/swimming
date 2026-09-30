@@ -13,7 +13,7 @@ export class StartupLoadingCover {
     private readonly label: Label;
     private readonly progressRoot: Node;
     private readonly progressFill: Node;
-    private progressPercent = -1;
+    private progressPixels = -1;
     private animation: Tween<Node> | null = null;
     private retry: (() => void) | null = null;
     private disposed = false;
@@ -71,27 +71,43 @@ export class StartupLoadingCover {
         this.layout(); this.setLoading();
     }
 
-    setLoading(): void {
+    setLoading(message: string = STARTUP_COPY.loading): void {
         if (this.disposed) return;
         this.retry = null;
-        this.progressPercent = -1;
-        this.progressRoot.active = false;
-        this.label.node.active = this.presentation !== 'transparent';
-        this.label.string = STARTUP_COPY.loading;
-        this.spinner.active = true;
+        this.progressPixels = -1;
+        if (this.progressRoot.active) this.progressRoot.active = false;
+        const showText = this.presentation !== 'transparent' || message !== STARTUP_COPY.loading;
+        if (this.label.node.active !== showText) this.label.node.active = showText;
+        if (this.label.string !== message) this.label.string = message;
+        if (!this.spinner.active) this.spinner.active = true;
         if (!this.animation) this.animation = tween(this.spinner).by(1, { angle: -324 }).repeatForever().start();
     }
 
-    setProgress(fraction: number): void {
-        if (this.disposed) return;
+    setProgress(fraction: number, message: string = STARTUP_COPY.preparing): void {
+        if (this.disposed || !Number.isFinite(fraction)) return;
         const percent = Math.max(0, Math.min(100, Math.floor(fraction * 100)));
-        if (percent === this.progressPercent) return;
-        this.progressPercent = percent;
+        this.showProgress(percent / 100, `${message} ${percent}%`);
+    }
+
+    setResourceProgress(completed: number, total: number): void {
+        if (this.disposed || !Number.isFinite(completed) || !Number.isFinite(total) || total <= 0) return;
+        // 数量是本页已发现的资源准备项，包含后续发现的依赖，不代表下载字节或总耗时。
+        const count = Math.max(0, Math.min(total, completed));
+        this.showProgress(count / total, `${STARTUP_COPY.loadingUi} ${count}/${total}`);
+    }
+
+    private showProgress(fraction: number, message: string): void {
+        this.retry = null;
         this.animation?.stop(); this.animation = null;
         if (this.spinner.active) this.spinner.active = false;
         if (!this.progressRoot.active) this.progressRoot.active = true;
-        this.progressFill.setScale(percent / 100, 1, 1);
-        this.label.string = `${STARTUP_COPY.preparing} ${percent}%`;
+        if (!this.label.node.active) this.label.node.active = true;
+        const pixels = Math.round(fraction * 360);
+        if (pixels !== this.progressPixels) {
+            this.progressPixels = pixels;
+            this.progressFill.setScale(pixels / 360, 1, 1);
+        }
+        if (this.label.string !== message) this.label.string = message;
     }
 
     setRetry(retry: () => void): void {

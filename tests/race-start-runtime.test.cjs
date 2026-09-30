@@ -113,6 +113,16 @@ test('从READY或GO直接进入结算会清空提示、蓄力和待播评价，�
         a.showReady();assert.equal(a.cueRoot.active,true);assert.equal(a.hint.active,true);
     }
 });
+test('教学只显示真实蓄力条，清除READY和GO提示，松手直接呈现评价',()=>{
+    const s=setup(),a=s.art,total=count(s.parent);
+    a.showReady();a.showGo();a.showRelease(.9,true);
+    a.showPracticeReady();s.finish();
+    assert.equal(a.cueRoot.active,false);assert.equal(a.hint.active,false);
+    assert.equal(a.chargeRoot.active,true);assert.equal(a.pending,null);
+    a.setCharge(1,true);a.update(1/30);assert.equal(a.fill.fillRange,1);
+    a.showRelease(1,false);assert.equal(a.cue.spriteFrame.path,'perfect');
+    assert.equal(count(s.parent),total);
+});
 test('导出清单尺寸与运行时 PNG、资源路径一致；不包含未选标题',()=>{
     const manifest=JSON.parse(fs.readFileSync('docs/race-start-ui/runtime-export-layout.json','utf8'));
     const paths=fs.readFileSync('assets/scripts/core/ResourcePaths.ts','utf8');

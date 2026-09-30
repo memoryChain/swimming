@@ -91,3 +91,19 @@ test('完成信号一次触发，接回玩家蓄力；跳过开场可直接倒�
         assert.equal(JSON.stringify([camera.position, camera.target, lens.fov]), ready);
     }
 });
+
+test('教学直接进入玩家出发台特写，正反泳向均不触发开场完成信号', () => {
+    for (const direction of [1, -1]) for (const lane of [-10.5, 1.5, 10.5]) {
+        const { director, camera, snapshot, lens } = setup(direction, lane);
+        director.startPreRacePresentation();
+        director.prepareDiveView();
+        assert.equal(camera.target.z, lane);
+        assert.ok(camera.position.y < 4, '直接就位，不保留高位全场镜头');
+        assert.ok(lens.fov > 0);
+        const ready = JSON.stringify([camera.position, camera.target, lens.fov]);
+        snapshot.countdownActive = true;
+        director.update(20, snapshot);
+        assert.equal(JSON.stringify([camera.position, camera.target, lens.fov]), ready);
+        assert.equal(director.consumePreCountdownReady(), false);
+    }
+});

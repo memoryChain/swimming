@@ -42,6 +42,7 @@ export interface IBackend {
     readonly name: string;
     /** 云端分配的公开编号；本地模拟没有正式编号。 */
     readonly uid?: number;
+    completeTutorial(): Promise<PlayerProfile>;
     executeCareer(command: CareerCommand): Promise<CareerResult>;
 
     // Load (or first-time create) this account's profile.

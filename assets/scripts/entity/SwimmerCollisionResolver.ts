@@ -1,5 +1,5 @@
 import type { Swimmer } from './Swimmer';
-import { COLLISION_PITCH_TUNING } from '../core/CollisionPitchTuning';
+import { COLLISION_PITCH_TUNING, KICK_RECOVERY_TUNING } from '../core/CollisionPitchTuning';
 import { COLLISION_SOFTNESS_TUNING } from '../core/CollisionSoftnessTuning';
 
 const DEG2RAD = Math.PI / 180;
@@ -78,6 +78,8 @@ const _origZ: number[] = [];
 const _posX: number[] = [];
 const _posZ: number[] = [];
 const _weight: number[] = [];
+const _minZ: number[] = [];
+const _maxZ: number[] = [];
 const _velX: number[] = [];
 const _velZ: number[] = [];
 const _forwardX: number[] = [];
@@ -87,6 +89,7 @@ const _impDist: number[] = [];
 const _impLat: number[] = [];
 const _impRoll: number[] = [];
 const _impPitch: number[] = [];
+const _escapeVotes: number[] = [];
 const _newContact: boolean[] = [];
 const _contactA: Swimmer[] = [];
 const _contactB: Swimmer[] = [];
@@ -121,6 +124,8 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         const pos = s.node.position;
         _origX[i] = _posX[i] = pos.x;
         _origZ[i] = _posZ[i] = pos.z;
+        _minZ[i] = s.collisionMinZ ?? -Infinity;
+        _maxZ[i] = s.collisionMaxZ ?? Infinity;
         const weight = Number.isFinite(s.weight) ? Math.max(0.1, s.weight) : 1;
         _weight[i] = Math.pow(weight, weightExponent);
         _dir[i] = s.raceDirection;
@@ -138,6 +143,7 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         _impLat[i] = 0;
         _impRoll[i] = 0;
         _impPitch[i] = 0;
+        _escapeVotes[i] = 0;
     }
 
     const minDist = SWIMMER_COLLISION.radius * 2;
@@ -145,6 +151,25 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
     refreshContacts(count, minDistSq, (minDist + CONTACT_RELEASE_MARGIN) ** 2);
     if (count < 2) {
         return;
+    }
+
+    // 已经接触的正撞双方也能主动踢出，不能只依赖第一次撞击的横向冲量。
+    // 分离方向沿用实际位置与泳道，交换本地玩家/远端顺序不会交换脱困方向。
+    const escapeContactSq = (minDist + CONTACT_RELEASE_MARGIN) ** 2;
+    for (let i = 0; i < count; i++) {
+        for (let j = i + 1; j < count; j++) {
+            if (_dir[i] * _dir[j] >= 0 || (!_active[i].kickRecoveryActive && !_active[j].kickRecoveryActive)) continue;
+            const dx = _origX[i] - _origX[j], dz = _origZ[i] - _origZ[j];
+            if (dx * _dir[i] > 0 || dx * dx + dz * dz > escapeContactSq) continue;
+            const side = stableLateralSeparationSide(i, j, dx, dz);
+            if (_active[i].kickRecoveryActive) _escapeVotes[i] += side;
+            if (_active[j].kickRecoveryActive) _escapeVotes[j] -= side;
+        }
+    }
+
+    // 多人挤压先合并方向再写一次，避免各端本地玩家排列不同造成相反侧滑。
+    for (let i = 0; i < count; i++) {
+        if (_escapeVotes[i] !== 0) _active[i].sustainKickEscape(Math.sign(_escapeVotes[i]));
     }
 
     // Iteratively push overlapping pairs fully apart along the XZ centre line.
@@ -186,6 +211,22 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 _posX[j] -= nx * sepJ;
                 _posZ[i] += nz * sepI;
                 _posZ[j] -= nz * sepJ;
+                // 池壁吸收不了分离位移：把被夹掉的横移交给另一侧，避免实体落地后再重叠。
+                const zi = Math.max(_minZ[i], Math.min(_maxZ[i], _posZ[i]));
+                _posZ[j] -= _posZ[i] - zi;
+                _posZ[i] = zi;
+                const zj = Math.max(_minZ[j], Math.min(_maxZ[j], _posZ[j]));
+                _posZ[i] = Math.max(_minZ[i], Math.min(_maxZ[i], _posZ[i] - (_posZ[j] - zj)));
+                _posZ[j] = zj;
+                // 两侧都无横移空间时，剩余分离沿泳池长轴完成，身体仍不可穿过。
+                const actualZ = _posZ[i] - _posZ[j];
+                const actualX = _posX[i] - _posX[j];
+                const missingX = Math.sqrt(Math.max(0, minDistSq - actualZ * actualZ)) - Math.abs(actualX);
+                if (missingX > 1e-8) {
+                    const xSide = actualX !== 0 ? Math.sign(actualX) : -_dir[i];
+                    _posX[i] += xSide * missingX * (totalW > 0 ? wj / totalW : 0.5);
+                    _posX[j] -= xSide * missingX * (totalW > 0 ? wi / totalW : 0.5);
+                }
             }
         }
         if (!anyOverlap) {
@@ -239,6 +280,11 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 const totalW = wi + wj;
                 const impI = totalW > 0 ? mag * (wj / totalW) : mag * 0.5;
                 const impJ = totalW > 0 ? mag * (wi / totalW) : mag * 0.5;
+                const headOn = _dir[i] * _dir[j] < 0;
+                const penaltyScale = Number.isFinite(KICK_RECOVERY_TUNING.headOnPenaltyScale)
+                    ? Math.max(0, Math.min(1, KICK_RECOVERY_TUNING.headOnPenaltyScale)) : 1;
+                const penaltyI = headOn && _active[i].kickRecoveryActive ? penaltyScale : 1;
+                const penaltyJ = headOn && _active[j].kickRecoveryActive ? penaltyScale : 1;
                 // 浅接触的实际分离冲量可能接近零，直接用它驱动骨骼几乎不可见。
                 // 只提高视觉反馈的下限；保留实际击退、能量及转体用的 impI/impJ。
                 const softMag = Math.max(mag, COLLISION_SOFTNESS_TUNING.minimumImpact);
@@ -246,14 +292,13 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 const softJ = totalW > 0 ? softMag * (wi / totalW) : softMag * 0.5;
                 // 仅在接触开始注入柔性反馈，方向按各自前进轴投影；不改碰撞结算。
                 _active[i].applyCollisionSoftnessImpulse(
-                    (-nx * _forwardZ[i] + nz * _forwardX[i]) * softI,
-                    (nx * _forwardX[i] + nz * _forwardZ[i]) * softI,
+                    (-nx * _forwardZ[i] + nz * _forwardX[i]) * softI * penaltyI,
+                    (nx * _forwardX[i] + nz * _forwardZ[i]) * softI * penaltyI,
                 );
                 _active[j].applyCollisionSoftnessImpulse(
-                    (nx * _forwardZ[j] - nz * _forwardX[j]) * softJ,
-                    (-nx * _forwardX[j] - nz * _forwardZ[j]) * softJ,
+                    (nx * _forwardZ[j] - nz * _forwardX[j]) * softJ * penaltyJ,
+                    (-nx * _forwardX[j] - nz * _forwardZ[j]) * softJ * penaltyJ,
                 );
-                const headOn = _dir[i] * _dir[j] < 0;
                 if (SWIMMER_COLLISION.knockbackEnabled) {
                     // Preserve the real left/right relationship whenever one exists.
                     // A nearly centred head-on hit has no useful Z normal, so choose a
@@ -284,8 +329,8 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                     // while still approaching. Head-on geometry pushes each swimmer
                     // backward vs its own travel, so both lose a little progress.
                     if (headOn && impact > 0) {
-                        _impDist[i] += nx * impI * _dir[i];
-                        _impDist[j] -= nx * impJ * _dir[j];
+                        _impDist[i] += nx * impI * _dir[i] * penaltyI;
+                        _impDist[j] -= nx * impJ * _dir[j] * penaltyJ;
                     }
                 }
                 if (SWIMMER_COLLISION.axialRollEnabled >= 0.5) {
@@ -306,8 +351,8 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                         ? (nz > 0 ? 1 : -1)
                         : (nx >= 0 ? 1 : -1);
                     const rollLever = rollSide * Math.max(Math.abs(nz), minimumLever);
-                    _impRoll[i] += rollLever * impI * _dir[i] * rollScale;
-                    _impRoll[j] -= rollLever * impJ * _dir[j] * rollScale;
+                    _impRoll[i] += rollLever * impI * _dir[i] * rollScale * penaltyI;
+                    _impRoll[j] -= rollLever * impJ * _dir[j] * rollScale * penaltyJ;
                 }
                 if (COLLISION_PITCH_TUNING.enabled >= 0.5) {
                     // Project each body's separating shove onto its own forward axis.
@@ -318,8 +363,8 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                         * DEG2RAD;
                     const localForwardI = nx * _forwardX[i] + nz * _forwardZ[i];
                     const localForwardJ = -nx * _forwardX[j] - nz * _forwardZ[j];
-                    _impPitch[i] += localForwardI * impI * pitchScale;
-                    _impPitch[j] += localForwardJ * impJ * pitchScale;
+                    _impPitch[i] += localForwardI * impI * pitchScale * penaltyI;
+                    _impPitch[j] += localForwardJ * impJ * pitchScale * penaltyJ;
                 }
             }
         }

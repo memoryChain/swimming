@@ -1,3 +1,4 @@
+import { TUTORIAL_RUNTIME } from '../tutorial/TutorialSession';
 import { _decorator, Component } from 'cc';
 import { getRaceDistance, isRaceSteeringEnabled } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
@@ -71,7 +72,7 @@ export class AISwimmerController extends Component {
         heartRate: 80, speed: 0, infiniteStamina: false, supportsDolphin: true,
         dolphinReady: false, dolphinCost: 5, dolphinRange: 8, dolphinStrain: 25,
         minDolphinSpace: 3, kickDive: false, nearbyThreat: false, closeRace: false,
-        strokeCostPerMeter: 0.7,
+        strokeCostPerMeter: 0.7, collisionRecoveryNeeded: false,
     };
 
     get intelligence() { return intelligenceForDifficulty(this.difficulty); }
@@ -131,6 +132,7 @@ export class AISwimmerController extends Component {
     }
 
     update(dt: number) {
+        if (TUTORIAL_RUNTIME.paused) return;
         if (this.swimmer?.netFixedStep) return;
         this.stepSimulation(scaledDelta(dt));
     }
@@ -160,7 +162,19 @@ export class AISwimmerController extends Component {
         }
         // 已经开始的一划正常松手后再换策略，避免为了恢复心率反复制造早松失误。
         if (this._phase === 'stroke') { this.updateStroke(dt); return; }
-        if (this._phase === 'press') { this.promotePress(dt); return; }
+        if (this._phase === 'press') {
+            if (this.planner.action === 'evade' && this.planner.reason === 'contact'
+                && this._heldSeconds < STROKE_QUALITY_TUNING.minHoldSeconds) {
+                // 尚未成长按的起手可合法松开，确认现有踢腿，不再补一次推进。
+                this.clearObservedPress();
+                body.confirmKickStroke();
+                this._phase = 'gap';
+                this._kickSide = opposite(this._side);
+                this._kickClock = 1 / Math.max(1, this.intelligence.kickHz);
+                this._kickSeconds += dt;
+                return;
+            } else { this.promotePress(dt); return; }
+        }
         const kicking = this.planner.action === 'recover' || this.planner.action === 'save' || this.planner.action === 'evade';
         if (this.planner.wantsJump && AI_DOLPHIN_TUNING.enabled && !body.isUnderwater && body.tryDolphinJump()) {
             this._jumps++;
@@ -171,7 +185,8 @@ export class AISwimmerController extends Component {
         if (kicking) {
             this._kickSeconds += dt;
             // 严重偏航时允许正常付费划水回正；资源规划随后补偿这个开销。
-            if (isRaceSteeringEnabled() && Math.abs(body.steeringHeadingRatio) > 0.35
+            if (!(this.planner.action === 'evade' && this.planner.reason === 'contact')
+                && isRaceSteeringEnabled() && Math.abs(body.steeringHeadingRatio) > 0.35
                 && this.condition?.energy > 0 && this._clock - this._lastStrokeStart > 1.5) {
                 this._nextSide = body.correctiveStrokeSide();
                 this.beginPress();
@@ -204,8 +219,10 @@ export class AISwimmerController extends Component {
         s.dolphinStrain = DOLPHIN_JUMP.strainHr;
         s.minDolphinSpace = DOLPHIN_JUMP.minAvailableDistance;
         s.kickDive = ability.id === 'kickDive';
-        const nearby = isRaceSteeringEnabled() ? this.raceObserver?.nearestPhysicalOpponent(b, 4, 2.2) : null;
-        s.nearbyThreat = !!nearby && (nearby.weight >= b.weight || s.kickDive);
+        const nearby = this.raceObserver?.nearestPhysicalOpponent(b, 4, 2.2);
+        // 撞后失衡才主动踢水，保留首次迎面相撞的翻滚；不预先进入减罚窗口。
+        s.collisionRecoveryNeeded = b.isCollisionActive && b.motor.needsCollisionRecovery;
+        s.nearbyThreat = isRaceSteeringEnabled() && !!nearby && (nearby.weight >= b.weight || s.kickDive);
         s.closeRace = this.raceObserver?.hasCloseCompetitor(b, 3) ?? false;
         this._targetZ = null;
         if (nearby && this.intelligence.discipline >= 0.8) {

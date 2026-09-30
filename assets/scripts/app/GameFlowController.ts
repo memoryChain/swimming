@@ -102,8 +102,14 @@ export class GameFlowController {
         this._refs.uiFlow.showRaceHud();
         this._refs.raceManager?.resetRace();
         this.resetExtraAiSwimmers();
-        this.prepareShowcaseRoster();
         this._refs.raceCameraDirector.setPlayerLaneZ(this._refs.playerSwimmer?.node.position.z ?? 0);
+        if (this._refs.raceManager?.tutorialMode) {
+            this._preRaceDivePrepApplied = true;
+            this._refs.raceCameraDirector.prepareDiveView();
+            this._refs.raceManager.startRace();
+            return;
+        }
+        this.prepareShowcaseRoster();
         this._refs.raceCameraDirector.resetToBroadcast();
         this._refs.raceCameraDirector.startPreRacePresentation();
         this._refs.setState(GameState.PRECOUNTDOWN);
@@ -264,7 +270,7 @@ export class GameFlowController {
     }
 
     handleDiveRelease(holdSeconds: number) {
-        if (this._diveCommitted) {
+        if (this._diveCommitted || (this._refs.raceManager?.tutorialMode && !this._diveChargeStarted)) {
             return;
         }
         if (this._refs.getState() === GameState.COUNTDOWN) {
@@ -304,7 +310,8 @@ export class GameFlowController {
             }
             if (state === GameState.DIVING) {
                 this._divingElapsed = 0;
-                this._refs.uiFlow.showGo();
+                if (raceManager.tutorialMode) this._refs.uiFlow.showDivePrompt(true);
+                else this._refs.uiFlow.showGo();
                 this.startAiDivesAtGo();
             }
             if (state === GameState.GLIDING) {
@@ -404,7 +411,7 @@ export class GameFlowController {
             });
         };
         raceManager.onDiveReady = () => {
-            if (this._diveChargeStarted) {
+            if (!raceManager.tutorialMode && this._diveChargeStarted) {
                 this.commitDive(this._diveChargePower, 'countdown-end auto');
             }
         };
@@ -657,7 +664,7 @@ export class GameFlowController {
         // Swimmer.performDive switches it to the release burst on the exact
         // take-off frame, so there is no empty visual gap after input release.
         this._refs.debug(`dive commit reason=${reason} charge=${charge.toFixed(2)} power=${power.toFixed(2)}`);
-        this._refs.uiFlow.showDiveRelease(power, this._divingElapsed > LATE_DIVE_START_SECONDS);
+        this._refs.uiFlow.showDiveRelease(power, !this._refs.raceManager?.tutorialMode && this._divingElapsed > LATE_DIVE_START_SECONDS);
         this._refs.raceCameraDirector.startDiveShot();
         const diveResult = resolveDiveResult(power, this._refs.playerDiveSpeedScale());
         // Publish the final owner-authoritative result only after progression has

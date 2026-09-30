@@ -111,6 +111,8 @@ export class CompetitorManager {
         let primaryAiController: AISwimmerController | null = null;
         let aiLanes = this.aiLaneIndices(options?.soloLane);
         const configuredCount = getFixedSoloAiCount();
+        // 单人教学无需占位对手、模型加载或 AI 资源。
+        if (configuredCount === 0) return { primaryAiController, aiControllers, aiSwimmers };
         const fixedSolo = configuredCount !== undefined;
         if (fixedSolo) {
             if (!Number.isInteger(configuredCount) || configuredCount < 1 || configuredCount > aiLanes.length) {

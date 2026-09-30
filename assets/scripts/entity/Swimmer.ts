@@ -1,3 +1,5 @@
+import { TUTORIAL_RUNTIME } from '../tutorial/TutorialSession';
+import type { NetSnapshotEntry } from '../net/NetRaceSnapshot';
 import { abilityValue } from '../core/CharacterAbilityConfig';
 import type { CharacterAbilitySnapshot } from '../swimmer/CharacterAbilityState';
 import { DOLPHIN_JUMP } from '../core/DolphinJumpConfig';
@@ -89,6 +91,23 @@ export class Swimmer extends Component {
     // Internal accessors for the race-phase controller (SwimmerRacePhases).
     get motor(): SwimmerMotor {
         return this._motor;
+    }
+
+    get collisionMinZ(): number { return this._lateralMinWorld; }
+    get collisionMaxZ(): number { return this._lateralMaxWorld; }
+
+    get kickRecoveryActive(): boolean { return this._motor.kickRecoveryActive; }
+
+    sustainKickEscape(side: number) { this._motor.sustainKickEscape(side); }
+
+    private _lastKickRecoverySnapshot: Readonly<NetSnapshotEntry> | undefined;
+
+    applyNetKickRecovery(state: Readonly<NetSnapshotEntry>) {
+        // 缓存快照只消费一次；断流后自然到期，不反复续接保护。
+        if (state === this._lastKickRecoverySnapshot) return;
+        this._lastKickRecoverySnapshot = state;
+        const locked = this._phases.isUnderwater || this._phases.isFlipTurnActive || this._phases.isDolphinJumpActive;
+        this._motor.correctKickRecovery(locked ? 0 : state.kickRecoveryRemaining ?? 0);
     }
 
     get netAbilityState(): Readonly<CharacterAbilitySnapshot> { return this._motor.ability; }
@@ -471,7 +490,7 @@ export class Swimmer extends Component {
         }
     }
 
-    prepareDive() {
+    prepareDive(transitionSeconds?: number) {
         this.captureStartPosition();
         Tween.stopAllByTarget(this.node);
         this._motor.reset();
@@ -479,11 +498,10 @@ export class Swimmer extends Component {
         this._phases.clearDiveUnderwaterPhase();
         this.node.setPosition(this.divePlatformPosition());
         this.node.setRotationFromEuler(0, this._courseLayout.direction > 0 ? 0 : 180, 0);
-        // Preserve the currently displayed procedural pose so the rig can blend
-        // from showcase standing into dive-ready instead of snapping via base pose.
+        // 普通比赛保留展示姿势平滑衔接；直接进场可传 0，当场摆好准备姿势。
         this.resetPose(true);
         this.cartoonRig?.setDiveSupportPlane(this._courseLayout.startBlockSurface(this._startPosition.z));
-        this.cartoonRig?.setDiveReady(true);
+        this.cartoonRig?.setDiveReady(true, transitionSeconds);
     }
 
     setDiveChargeEffect(power: number, active: boolean) {
@@ -664,6 +682,7 @@ export class Swimmer extends Component {
     }
 
     update(dt: number) {
+        if (TUTORIAL_RUNTIME.paused) return;
         // Fixed-step (AI in a net race): stepped by the net driver instead of here.
         if (this.netFixedStep) {
             return;

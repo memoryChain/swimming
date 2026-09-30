@@ -1,3 +1,4 @@
+import { TUTORIAL_RUNTIME, TUTORIAL_DISTANCE } from '../tutorial/TutorialSession';
 import { Vec3 } from 'cc';
 
 export const RACE_DISTANCE = 200 as const;
@@ -30,12 +31,14 @@ export function setSoloRaceDistance(distance: 200 | 400 | null): void { soloDist
 
 // 入口共用赛程映射；传入模式供准备页/房间预览，省略时读取当前比赛。
 export function getRaceDistance(mode?: RaceDifficulty): number {
+    // 教学全程使用同一个 200 米终点；各课只限制练习进度，不改总赛程。
+    if (mode === undefined && TUTORIAL_RUNTIME.active) return TUTORIAL_DISTANCE;
     if (mode === undefined && soloDistance !== null) return soloDistance;
     return (mode ?? currentRaceDifficulty) === 'championship' ? 400 : RACE_DISTANCE;
 }
 
 export function getRaceDifficulty(): RaceDifficulty {
-    return currentRaceDifficulty;
+    return TUTORIAL_RUNTIME.active ? 'beginner' : currentRaceDifficulty;
 }
 
 export function setRaceDifficulty(difficulty: RaceDifficulty): RaceDifficulty {
@@ -45,16 +48,16 @@ export function setRaceDifficulty(difficulty: RaceDifficulty): RaceDifficulty {
     return currentRaceDifficulty;
 }
 
-export function getRaceDifficultyConfig(difficulty = currentRaceDifficulty): RaceDifficultyConfig {
+export function getRaceDifficultyConfig(difficulty = getRaceDifficulty()): RaceDifficultyConfig {
     return RACE_DIFFICULTY_OPTIONS.find((option) => option.id === difficulty)
         ?? RACE_DIFFICULTY_OPTIONS[1];
 }
 
 export function isRaceSteeringEnabled(): boolean {
-    return currentRaceDifficulty !== 'beginner';
+    return !TUTORIAL_RUNTIME.active && currentRaceDifficulty !== 'beginner';
 }
 
-export function getRaceModeTitle(mode = currentRaceDifficulty): string {
+export function getRaceModeTitle(mode = getRaceDifficulty()): string {
     return getRaceDifficultyConfig(mode).label;
 }
 

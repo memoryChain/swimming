@@ -1,3 +1,4 @@
+import { TUTORIAL_RUNTIME } from '../tutorial/TutorialSession';
 import { _decorator, Component } from 'cc';
 import { DEV } from 'cc/env';
 import { COUNTDOWN_SECONDS, FINISH_STRAGGLER_COUNTDOWN_SECONDS, GLIDE_SECONDS, getRaceDistance } from './GameBalance';
@@ -37,6 +38,7 @@ export class RaceManager extends Component {
     @property(Swimmer) public playerSwimmer: Swimmer = null;
     @property(Swimmer) public aiSwimmer: Swimmer = null;
     @property([Swimmer]) public aiSwimmers: Swimmer[] = [];
+    public tutorialMode = false;
     @property public countdownSeconds = COUNTDOWN_SECONDS;
 
     public onCountdownTick: (value: number) => void = null;
@@ -73,7 +75,7 @@ export class RaceManager extends Component {
 
     startRace() {
         this.unscheduleAllCallbacks();
-        this._countdownTimer = this.countdownSeconds;
+        this._countdownTimer = this.tutorialMode ? 0 : this.countdownSeconds;
         this._raceTimer = 0;
         this._playerFinished = false;
         this._playerFinishTime = 0;
@@ -88,11 +90,19 @@ export class RaceManager extends Component {
         this._finishCountdownActive = false;
         this._finishCountdownTimer = 0;
         this._lastFinishCountdownValue = -1;
+        if (this.tutorialMode) {
+            // 教学首屏马上暂停讲解，必须先摆好完整准备姿势，不能冻结在展示过渡中。
+            this.playerSwimmer?.prepareDive(0);
+            this.setState(GameState.DIVING);
+            this.onDiveReady?.();
+            return;
+        }
         this.setState(GameState.COUNTDOWN);
         this.onCountdownTick?.(this._lastCountdownValue);
     }
 
     update(dt: number) {
+        if (TUTORIAL_RUNTIME.paused) return;
         this.stepSimulation(scaledDelta(dt));
     }
 
@@ -197,6 +207,7 @@ export class RaceManager extends Component {
 
     // 跳水、滑行、游泳阶段都检测完赛并结算；AI 已在发令时独立启动，玩家未跳也能结束比赛。
     private trackFinishers(dt: number) {
+        if (this.tutorialMode) return;
         const aiSwimmers = this.activeAiSwimmers();
         const activeRacers = this.activeRacers();
 

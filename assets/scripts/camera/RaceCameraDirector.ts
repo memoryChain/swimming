@@ -397,6 +397,18 @@ export class RaceCameraDirector {
         this._flipTurnViewActive = false;
     }
 
+    /** 教学直接看出发台，镜头不播放全场展示或等待倒计时。 */
+    prepareDiveView() {
+        this.resetToBroadcast();
+        this.resetCountdownTimers();
+        const platform = this._courseLayout.platformStandingPosition(this._playerLaneZ);
+        this._cameraTarget.set(countdownAthleteTargetX(platform.x), countdownAthleteTargetY(platform.y), this._playerLaneZ);
+        this._cameraPos.set(countdownAthleteCameraPosition(this._cameraTarget, this._courseLayout.direction));
+        this._broadcastCameraFov = this._broadcastDesiredFov = COUNTDOWN_ATHLETE_FOV;
+        if (this._cameraNode) this.applyCameraTransform();
+        this.applyFov();
+    }
+
     startPreRacePresentation() {
         this._finishViewActive = false;
         this._mode = RaceCameraMode.Broadcast;

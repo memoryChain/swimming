@@ -28,6 +28,7 @@ import { MusicManager } from './MusicManager';
 import { PrepareRaceFlow } from '../ui/PrepareRaceFlow';
 import { takeStartupHandoff } from '../../startup/StartupHandoff';
 import { StartupLoadingCover } from '../../startup/StartupLoadingCover';
+import { STARTUP_COPY } from '../../startup/StartupCopy';
 import { UiAssetBarrier } from '../ui/UiAssetBarrier';
 import { prepareProjectUiFonts } from '../ui/ProjectUiFonts';
 import { retainLobbyForRace } from './LobbySceneSession';
@@ -234,8 +235,7 @@ export class LoginManager extends Component {
         }
         this._lobbyCover ??= new StartupLoadingCover(this._loginUiRoot,
             this._entryResourcesReady || !this._loginUiRoot ? 'transparent' : 'startup');
-        this._lobbyCover.setLoading();
-        this._lobbyCover.setProgress(0);
+        this._lobbyCover.setLoading(STARTUP_COPY.loadingProfile);
         const loading = this._lobbyLoading = new UiAssetBarrier();
         void this.prepareLobby(loading);
     }
@@ -247,30 +247,40 @@ export class LoginManager extends Component {
             const flow = this._prepareRaceFlow;
             if (flow?.presentationError) throw flow.presentationError;
             return !flow && this._pendingOpenRoom ? true : !!flow?.presentationReady;
-        }, 180000);
+        }, 180000, (completed, total) => {
+            if (this._lobbyLoading !== loading || this._destroyed || !mounted) return;
+            if (completed < total) this._lobbyCover?.setResourceProgress(completed, total);
+            else this._lobbyCover?.setLoading(STARTUP_COPY.preparingView);
+        });
         // 先还原存档，避免先建默认角色，存档返回后再销毁重建。
         void PlayerData.load().then(async () => {
             if (this._lobbyLoading !== loading || this._destroyed || !this._canvasNode?.isValid) return;
             if (!PlayerData.loaded) { loading.fail(new Error('存档加载失败')); return; }
             try {
-                this._lobbyCover?.setProgress(0.05);
-                await new Promise<void>((resolve, reject) => loadRaceBundle(error => error ? reject(error) : resolve()));
+                this._lobbyCover?.setLoading(STARTUP_COPY.loadingBundle);
+                await new Promise<void>((resolve, reject) => loadRaceBundle(error => error ? reject(error) : resolve(), fraction => {
+                    if (this._lobbyLoading !== loading || this._destroyed) return;
+                    this._lobbyCover?.setProgress(fraction, STARTUP_COPY.downloadingBundle);
+                }));
                 if (this._lobbyLoading !== loading || this._destroyed) return;
-                this._lobbyCover?.setProgress(0.6);
+                this._lobbyCover?.setLoading(STARTUP_COPY.loadingUi);
                 loading.run(() => {
                     prepareProjectUiFonts();
                     this.buildHeadBar();
+                    if (!PlayerData.profile.tutorialCompleted && !this._pendingReconnect) {
+                        this._pendingOpenRoom = false; this._pendingJoinRoomId = null; this._pendingReconnect = false;
+                    }
                     if (!this._pendingOpenRoom) this.buildPrepareRace();
                 });
-                this._lobbyCover?.setProgress(0.8);
                 mounted = true;
+                if (loading.pending > 0) this._lobbyCover?.setResourceProgress(loading.completed, loading.total);
+                else this._lobbyCover?.setLoading(STARTUP_COPY.preparingView);
             } catch (error) { loading.fail(error); }
         }, error => loading.fail(error));
         try {
             await ready;
             if (this._lobbyLoading !== loading || this._destroyed) return;
             this._entryResourcesReady = true;
-            this._lobbyCover?.setProgress(1);
             this._lobbyLoading = null;
             if (this._pendingOpenRoom) {
                 const room = this._pendingJoinRoomId;
@@ -383,6 +393,10 @@ export class LoginManager extends Component {
     }
 
     private openRoom(joinRoomId: string | null = null, reconnect = false) {
+        if (PlayerData.loaded && !PlayerData.profile.tutorialCompleted && !reconnect) {
+            this._pendingOpenRoom = false; this._pendingJoinRoomId = null;
+            this.openPrepareRace(); return;
+        }
         if (this._roomFlow) {
             return;
         }

@@ -15,7 +15,7 @@ import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from './SteeringTuning'
 import { applyWaterColorTuning, WATER_COLOR_TUNING } from '../venue/WaterColorTuning';
 import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
 import { AXIAL_ROLL_TUNING } from './AxialRollTuning';
-import { COLLISION_PITCH_TUNING } from './CollisionPitchTuning';
+import { COLLISION_PITCH_TUNING, KICK_RECOVERY_TUNING } from './CollisionPitchTuning';
 import { COLLISION_SOFTNESS_TUNING } from './CollisionSoftnessTuning';
 
 export type TuningControl = {
@@ -48,7 +48,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 48;
+const TUNING_FILE_VERSION = 50;
 
 type TuningFileData = {
     version: number;
@@ -127,6 +127,10 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('collision.knockbackSpeedFactor', '撞飞速度系数', '每 m/s 相对靠近速度产生的撞飞冲量。迎面靠近快、撞得更狠。', () => SWIMMER_COLLISION.knockbackSpeedFactor, (v) => SWIMMER_COLLISION.knockbackSpeedFactor = v, 0.05, 0, 2, 2),
             control('collision.knockbackMaxImpulse', '撞飞最大冲量', '单个泳者撞飞速度上限（m/s），也限制累积缓冲，防止堆叠爆炸。', () => SWIMMER_COLLISION.knockbackMaxImpulse, (v) => SWIMMER_COLLISION.knockbackMaxImpulse = v, 0.1, 0, 6, 2, 'm/s'),
             control('collision.knockbackDecaySeconds', '撞飞衰减时间', '撞飞冲量指数衰减的时间常数（秒）。越大滑行越久。', () => SWIMMER_COLLISION.knockbackDecaySeconds, (v) => SWIMMER_COLLISION.knockbackDecaySeconds = v, 0.05, 0.05, 1.5, 2, 's'),
+            control('collision.kickRecoveryHoldSeconds', '踢水脱困保持', '短按松手确认后保持恢复的秒数，连续踢水只续时；手臂起划结束恢复。联机各端需使用一致配置。', () => KICK_RECOVERY_TUNING.holdSeconds, v => KICK_RECOVERY_TUNING.holdSeconds = v, 0.05, 0, 2, 2, 's'),
+            control('collision.kickRecoveryRate', '踢水姿态恢复', '踢水时前后翻回正、侧滚停转及后退速度的额外衰减。保留仰泳姿态和横向滑行。', () => KICK_RECOVERY_TUNING.poseRecoveryRate, v => KICK_RECOVERY_TUNING.poseRecoveryRate = v, 0.5, 0, 20, 1, '/s'),
+            control('collision.kickHeadOnPenaltyScale', '踢水正撞惩罚', '踢水恢复期间正撞的后退与翻滚剩余倍率。身体仍然互相阻挡，不降低对方受到的冲量。', () => KICK_RECOVERY_TUNING.headOnPenaltyScale, v => KICK_RECOVERY_TUNING.headOnPenaltyScale = v, 0.05, 0, 1, 2),
+            control('collision.kickEscapeSpeed', '踢水侧滑速度', '正撞接触期间踢水者横向脱困速度下限，不累加冲量或发放能量，仍受池壁限制。', () => KICK_RECOVERY_TUNING.escapeSpeed, v => KICK_RECOVERY_TUNING.escapeSpeed = v, 0.1, 0, 4, 1, 'm/s'),
             control('collision.headOnEscapeLateralFactor', '正撞横向脱困倍率', '迎面碰撞横向分量过小时，按各自加权碰撞冲量补足的横向倍率。0=关闭补足；越大越容易一次撞开后从两侧错身。', () => SWIMMER_COLLISION.headOnEscapeLateralFactor, (v) => SWIMMER_COLLISION.headOnEscapeLateralFactor = v, 0.05, 0, 1.5, 2),
             control('collision.headOnEscapeMaxImpulse', '正撞横向脱困上限', '迎面碰撞额外补足的单人横向速度上限。只限制人工补足，真实侧撞产生的横向分量不受此项削弱。', () => SWIMMER_COLLISION.headOnEscapeMaxImpulse, (v) => SWIMMER_COLLISION.headOnEscapeMaxImpulse = v, 0.1, 0, 4, 2, 'm/s'),
             control('collision.axialRollEnabled', '启用碰撞转体', '1=侧撞会给双方施加轴向角冲量；0=碰撞只产生位移和撞飞。', () => SWIMMER_COLLISION.axialRollEnabled, (v) => SWIMMER_COLLISION.axialRollEnabled = v, 1, 0, 1, 0),
@@ -1002,7 +1006,14 @@ function normalizeRangeWithin(
 
 function applyTuningCandidate(candidate: TuningLoadCandidate) {
     warnTuningFileVersion(candidate);
-    applyTuningSnapshot(getValuesFromTuningData(candidate.data));
+    const values = { ...getValuesFromTuningData(candidate.data) };
+    // 旧本地备份可能比工程文件更新，只迁移 v49 原默认值，保留其他手动调参。
+    if (candidate.data.version === 49) {
+        if (values['collision.kickRecoveryRate'] === 8) values['collision.kickRecoveryRate'] = 2;
+        if (values['collision.kickHeadOnPenaltyScale'] === 0.25) values['collision.kickHeadOnPenaltyScale'] = 0.4;
+        if (values['collision.kickEscapeSpeed'] === 1.8) values['collision.kickEscapeSpeed'] = 0.9;
+    }
+    applyTuningSnapshot(values);
     logLoadedTuning(candidate);
 }
 

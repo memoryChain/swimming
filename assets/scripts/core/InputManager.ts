@@ -33,6 +33,17 @@ export class InputManager extends Component {
         [StrokeType.LEFT]: 0,
         [StrokeType.RIGHT]: 0,
     };
+    resetInputState(): void {
+        this._spaceHeld = false;
+        this._leftHeld = false;
+        this._rightHeld = false;
+        this._diveCharging = false;
+        this._leftMouseStrokeType = null;
+        this._touchStrokeTypes.clear();
+        this._touchStrokeCounts[StrokeType.LEFT] = 0;
+        this._touchStrokeCounts[StrokeType.RIGHT] = 0;
+    }
+
     onEnable() {
         input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this);
         input.on(Input.EventType.KEY_UP, this.onKeyUp, this);

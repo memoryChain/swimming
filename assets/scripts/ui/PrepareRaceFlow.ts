@@ -19,6 +19,8 @@ import {
     UITransform,
     view,
 } from 'cc';
+import { requestTutorial } from '../tutorial/TutorialSession';
+import { TutorialOverlay } from '../tutorial/TutorialOverlay';
 import { DEBUG_UI_ENABLED } from '../core/DebugUiPolicy';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { PREPARE_PANORAMA_HEIGHT, PREPARE_PANORAMA_WIDTH, RESOURCE_PATHS } from '../core/ResourcePaths';
@@ -104,6 +106,10 @@ const SWATCH_ART_SIZE = 46;
 const APPEARANCE_SAVE_DELAY_MS = 1200;
 
 export class PrepareRaceFlow {
+    private _tutorialOverlay: TutorialOverlay | null = null;
+    private _tutorialButton: Node | null = null;
+    private _tutorialLabel: Label | null = null;
+    private _tutorialResetPending = false;
     private _root: Node | null = null;
     private _content: Node | null = null;
     private _lobbyBackgroundImage: Node | null = null;
@@ -173,6 +179,7 @@ export class PrepareRaceFlow {
     private readonly _onProfileChange = (_profile: PlayerProfile): void => {
         if (this._suspended || !this._root?.isValid || !this._content?.isValid || this._leaving) return;
         if (this._view === 'ready') {
+            if (this._tutorialOverlay && PlayerData.profile.tutorialCompleted) this.syncTutorial();
             if (this._eventPageActive) return;
             this.presentCharacter(getPlayerCharacterSelection().characterId);
             this.refreshReadyCharacterInfo();
@@ -217,6 +224,30 @@ export class PrepareRaceFlow {
         }
         else this.presentPageTransition(animate ? previous : null, 0, this._hasShownReady);
         this._hasShownReady = true;
+        this.syncTutorial();
+    }
+
+    private syncTutorial(): void {
+        if (!this._tutorialButton?.isValid) return;
+        const required = PlayerData.loaded && !PlayerData.profile.tutorialCompleted;
+        setLabelString(this._tutorialLabel, required ? '开始教学' : '快速比赛');
+        if (!required) { this._tutorialOverlay?.dispose(); this._tutorialOverlay = null; return; }
+        this._motion.showImmediately();
+        this._tutorialOverlay ??= new TutorialOverlay(this._canvasNode);
+        this._tutorialOverlay.show('欢迎来到划水高手',
+            '准备好下水了吗？\n从起跳开始，我们一步步来。', true, '', null, this._tutorialButton, true);
+    }
+
+    private handleQuickRace(): void {
+        if (this._leaving) return;
+        if (PlayerData.loaded && !PlayerData.profile.tutorialCompleted) {
+            this.leaveCurrentScreen(() => {
+                setSoloRaceTicket(null); setSoloRaceDistance(null); requestTutorial();
+                this._callbacks.onStartRace();
+            });
+            return;
+        }
+        this._careerPanel?.openQuick();
     }
 
     get presentationError(): Error | null { return this._preview?.presentationError ?? null; }
@@ -226,6 +257,7 @@ export class PrepareRaceFlow {
     }
 
     playReadyEntrance(): void {
+        if (PlayerData.loaded && !PlayerData.profile.tutorialCompleted) { this.syncTutorial(); return; }
         if (this._content?.active && !this._leaving) this._motion.enter(false);
     }
 
@@ -263,6 +295,7 @@ export class PrepareRaceFlow {
     suspend(): void {
         if (this._suspended) return;
         this._suspended = true;
+        this._tutorialOverlay?.hide();
         this.saveAppearanceChangesInBackground();
         this._leaving = true;
         this._attributeTips?.hide(); this._skillTips?.hide();
@@ -292,9 +325,11 @@ export class PrepareRaceFlow {
         this._presentation.detail = 0;
         this.layoutPresentation();
         this._motion.showImmediately();
+        this.syncTutorial();
     }
 
     dispose(): void {
+        this._tutorialOverlay?.dispose(); this._tutorialOverlay = null;
         this.saveAppearanceChangesInBackground();
         this._leaving = true;
         this._presentationTween?.stop(); this._presentationTween = null;
@@ -624,11 +659,39 @@ export class PrepareRaceFlow {
         const start = makeRaceTextureButton('StartRaceButton', parent, RESOURCE_PATHS.lobbyB.quickButton, 352, 102, 438, -207, 3);
         makeRaceTextureSprite('QuickIcon', start, RESOURCE_PATHS.lobbyB.quickIcon, 38, 43, -112, 3.5, 1);
         const startLabel = makeBoundLabel('Label', start, '快速比赛', 38, DARK_TEXT, 188, 54, 25, 0);
+        this._tutorialButton = start; this._tutorialLabel = startLabel;
         stylePsdTitleLabel(startLabel, 48);
         this._motion.bindButton(start, true);
-        start.on(Button.EventType.CLICK, () => {
-            if (!this._leaving) this._careerPanel?.openQuick();
-        });
+        start.on(Button.EventType.CLICK, () => this.handleQuickRace());
+        if (DEBUG_UI_ENABLED && !PlayerData.usesCloud) {
+            const reset = makeRoundedRect('ResetTutorialButton', parent, 260, 44, uiColor(22, 65, 82, 235));
+            reset.setPosition(438, -292, 3);
+            const button = reset.addComponent(Button);
+            button.target = reset;
+            button.transition = Button.Transition.NONE;
+            const label = makeBoundLabel('Label', reset, '重置新手教学（临时）', 20, WHITE, 250, 38, 0, 0);
+            styleProjectUiLabel(label, 'semibold', 28);
+            this._motion.bindButton(reset);
+            reset.on(Button.EventType.CLICK, () => { void this.resetTutorialForLocalTesting(button); });
+        }
+    }
+
+    private async resetTutorialForLocalTesting(button: Button): Promise<void> {
+        if (!DEBUG_UI_ENABLED || PlayerData.usesCloud || this._tutorialResetPending
+            || this._leaving || this._suspended || !button.node.activeInHierarchy) return;
+        this._tutorialResetPending = true;
+        setButtonInteractable(button, false);
+        try {
+            await PlayerData.resetTutorialForLocalTesting();
+            if (this._content?.isValid && !this._leaving && !this._suspended && this._view === 'ready') {
+                this.syncTutorial();
+            }
+        } catch (error) {
+            if (!this._suspended && this._root?.isValid) showToast(this._canvasNode, '教学重置失败，请重试');
+        } finally {
+            this._tutorialResetPending = false;
+            if (button.isValid) setButtonInteractable(button, true);
+        }
     }
 
     private buildCharacterManagement(parent: Node): void {

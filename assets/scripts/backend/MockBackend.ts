@@ -30,6 +30,13 @@ export class MockBackend implements IBackend {
         return Promise.resolve(result);
     }
 
+    completeTutorial(): Promise<PlayerProfile> {
+        const profile = this.read();
+        profile.tutorialCompleted = true;
+        this.write(profile);
+        return Promise.resolve(profile);
+    }
+
     loadProfile(): Promise<PlayerProfile> {
         return Promise.resolve(this.read());
     }
