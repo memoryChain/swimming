@@ -15,7 +15,7 @@ export type SwimPhysicsInput = {
 };
 
 export class SwimPhysicsModel {
-    step(state: SwimPhysicsState, input: SwimPhysicsInput): SwimPhysicsState {
+    step(state: SwimPhysicsState, input: SwimPhysicsInput, out?: SwimPhysicsState): SwimPhysicsState {
         const maxSpeed = SWIMMER_BALANCE.maxSpeed + Math.max(0, input.speedCapBonus);
         const speedRatio = clamp01(state.currentSpeed / maxSpeed);
         const accelLimit = 0.16 + 0.84 * (1 - Math.pow(speedRatio, 1.6));
@@ -29,10 +29,11 @@ export class SwimPhysicsModel {
         );
         const currentSpeed = clamp(state.currentSpeed + (accel - drag) * input.dt, SWIMMER_BALANCE.minSpeed, maxSpeed);
 
-        return {
-            currentSpeed,
-            distance: state.distance,
-        };
+        // 未提供输出时仍返回独立快照；赛中调用者可复用实例缓冲。
+        const result = out ?? { currentSpeed: 0, distance: 0 };
+        result.currentSpeed = currentSpeed;
+        result.distance = state.distance;
+        return result;
     }
 }
 

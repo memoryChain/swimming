@@ -90,7 +90,7 @@ export class AiConditionModel {
     }
 
     // 实际划水心率由 Motor 驱动；阶段和难度不再额外增压。
-    tickAi(_input: AiConditionInput) { this.refreshModifiers(); }
+    tickAi(_input?: AiConditionInput) { this.refreshModifiers(); }
 
     private refreshModifiers() {
         // PERFECT 由 Motor 按每划心率快照处理，旧倍率保持中性。

@@ -12,10 +12,13 @@ export function decodeSampledMotion(value: unknown): unknown {
     const fields = $motion.fields as string[];
     const bones = $motion.bones as string[];
     const constants = $motion.constants as Record<string, number[]>;
+    const sharedConstants: Record<string, readonly number[]> = {};
     for (const bone of Object.keys(constants)) {
         if (bones.indexOf(bone) < 0 || !finiteTuple(constants[bone], 4)) {
             throw new Error('Invalid constant sampled rotation');
         }
+        // 曲线输入只读；每条曲线的恒定骨骼只保存一份，并冻结防止跨帧污染。
+        sharedConstants[bone] = Object.freeze(constants[bone].slice());
     }
     const rotationIndex = fields.indexOf('rotations');
     const rotationWidth = (bones.length - Object.keys(constants).length) * 4;
@@ -26,12 +29,12 @@ export function decodeSampledMotion(value: unknown): unknown {
         }
         const sample: Record<string, unknown> = {};
         for (let i = 0; i < fields.length; i++) sample[fields[i]] = row[i];
-        const rotations: Record<string, number[]> = {};
+        const rotations: Record<string, readonly number[]> = {};
         let offset = 0;
         for (const bone of bones) {
-            // 每帧保留独立四元数数组，避免共享常量引入跨帧修改。
+            // 变化旋转仍逐帧独立；恒定旋转共享不可变数组，不改变任何数值。
             if (Object.prototype.hasOwnProperty.call(constants, bone)) {
-                rotations[bone] = constants[bone].slice();
+                rotations[bone] = sharedConstants[bone];
             } else {
                 rotations[bone] = row[rotationIndex].slice(offset, offset + 4);
                 offset += 4;

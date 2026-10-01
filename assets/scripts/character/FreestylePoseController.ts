@@ -141,6 +141,7 @@ export class FreestylePoseController {
     private readonly _breaststrokeSampleBuffer = createBreaststrokeMotionSampleBuffer();
     private readonly _boneBaseRotation = new Map<Node, Quat>();
     private readonly _boneBasePosition = new Map<Node, Vec3>();
+    private readonly _basePoseBones: { bone: Node; rotation: Quat; position: Vec3 }[] = [];
     private readonly _tmpOffsetRotation = new Quat();
     private readonly _tmpResultRotation = new Quat();
     private readonly _tmpAxisRotation = new Quat();
@@ -270,6 +271,7 @@ export class FreestylePoseController {
         this._manualBones.length = 0;
         this._boneBaseRotation.clear();
         this._boneBasePosition.clear();
+        this._basePoseBones.length = 0;
         this._diveTakeoffPose = null;
         this._diveHands = null;
         this._collisionLimp.unbind();
@@ -325,6 +327,11 @@ export class FreestylePoseController {
                 this._boneBasePosition.set(bone, Vec3.clone(bone.position));
             }
         }
+        // 基姿采集阶段构建稳定列表，踩水／转身恢复时不创建 Map entry 数组。
+        this._basePoseBones.length = 0;
+        for (const [bone, rotation] of this._boneBaseRotation) {
+            this._basePoseBones.push({ bone, rotation, position: this._boneBasePosition.get(bone) });
+        }
         this.captureGroundFootRotationInRoot(this._leftFoot, this._leftGroundFootRotationInRoot);
         this.captureGroundFootRotationInRoot(this._rightFoot, this._rightGroundFootRotationInRoot);
         this.captureGroundFootRotationInRoot(this._leftToe, this._leftGroundToeRotationInRoot);
@@ -355,14 +362,16 @@ export class FreestylePoseController {
         this._collisionLimp.reset();
         this.root?.setPosition(this.rootBasePos);
         this.root?.setRotation(this.rootBaseRotation);
-        for (const [bone, rotation] of this._boneBaseRotation) {
-            if (bone?.isValid) {
-                bone.setRotation(rotation);
+        for (let i = 0; i < this._basePoseBones.length; i++) {
+            const pose = this._basePoseBones[i];
+            if (pose.bone?.isValid) {
+                pose.bone.setRotation(pose.rotation);
             }
         }
-        for (const [bone, position] of this._boneBasePosition) {
-            if (bone?.isValid) {
-                bone.setPosition(position);
+        for (let i = 0; i < this._basePoseBones.length; i++) {
+            const pose = this._basePoseBones[i];
+            if (pose.bone?.isValid) {
+                pose.bone.setPosition(pose.position);
             }
         }
     }
@@ -694,9 +703,10 @@ export class FreestylePoseController {
     }
 
     getFlipTurnFootContactWorldPositions(outputs: Vec3[]): number {
-        const bones = [this._leftFoot, this._leftToe, this._rightFoot, this._rightToe];
         let count = 0;
-        for (const bone of bones) {
+        for (let i = 0; i < 4; i++) {
+            const bone = i === 0 ? this._leftFoot : i === 1 ? this._leftToe
+                : i === 2 ? this._rightFoot : this._rightToe;
             if (!bone || count >= outputs.length) {
                 continue;
             }

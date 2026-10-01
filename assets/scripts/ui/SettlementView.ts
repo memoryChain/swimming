@@ -1,4 +1,4 @@
-import { Button, Color, Label, Node, Sprite, UITransform, view } from 'cc';
+import { Button, CacheMode, Color, Label, Node, Sprite, UITransform, view } from 'cc';
 import { getRaceModeTitle, getRaceDistance } from '../core/GameBalance';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { PlayerData } from '../backend/PlayerData';
@@ -6,6 +6,7 @@ import { getSoloRaceTicket } from '../progression/SoloRaceSession';
 import { AVATARS } from '../backend/IdentityConfig';
 import { avatarTexturePath, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
 import { PROJECT_UI_ENGLISH_BOLD_FAMILY, styleProjectUiLabel } from './ProjectUiFonts';
+import { RosterNameAtlas } from './RosterNameAtlas';
 import type { RaceLeaderboardRow, RaceResultStats } from './UIController';
 
 const WIDTH = 1672;
@@ -37,14 +38,17 @@ export function settlementTime(row: RaceLeaderboardRow): string {
 }
 
 type ResultRow = {
-    root: Node; back: Sprite; medal: Sprite; rank: Label;
-    avatar: Sprite; name: Label; time: Label; status: Label; self: Sprite; watermark: Label;
+    root: Node; artRoot: Node; back: Sprite; medal: Sprite; rank: Label;
+    avatarBase: Sprite; avatar: Sprite; name: Label; cachedName: Sprite;
+    time: Label; status: Label; self: Sprite; watermark: Label;
 };
 
 /** 纯事件驱动的结算层：只挂载一次，不参与比赛帧更新，也不覆盖真实领奖台背景。 */
 export class SettlementView {
     readonly root: Node;
     private readonly rows: ResultRow[] = [];
+    private nameAtlas: RosterNameAtlas | null = null;
+    private nameKey = '';
     private readonly paths = new WeakMap<Sprite, string>();
     private readonly shade: Sprite;
     private readonly honor: Sprite;
@@ -73,6 +77,9 @@ export class SettlementView {
     constructor(parent: Node, private readonly callbacks: SettlementCallbacks) {
         this.root = this.node(parent, 'Settlement', 0, 0, WIDTH, HEIGHT);
         this.root.active = false;
+        this.root.once(Node.EventType.NODE_DESTROYED, () => {
+            this.nameAtlas?.dispose(); this.nameAtlas = null;
+        });
         // 只有一张静态渐变贴图，位于全部 UI 下方，不拦截触摸，不逐帧绘制。
         this.shade = this.art(this.root, 'RightShade', 760, 0, 912, HEIGHT, ART.shade);
         this.honor = this.art(this.root, 'Honor', 104, 47, 638, 130);
@@ -98,20 +105,30 @@ export class SettlementView {
         this.text(this.root, 'RankHeader', '名次', 1013, 100, 72, 23, WHITE);
         this.text(this.root, 'PlayerHeader', '选手', 1106, 100, 170, 23, WHITE);
         this.text(this.root, 'TimeHeader', '用时 / 秒', 1443, 100, 140, 23, WHITE, false, false, true);
+        // 同列连续提交，静态图集下也不在每行反复切换图片、字符和昵称纹理。
+        const rowArt = this.node(this.root, 'ResultBackgrounds', 0, 0, WIDTH, HEIGHT);
+        const avatarBases = this.node(this.root, 'ResultAvatarBases', 0, 0, WIDTH, HEIGHT);
+        const avatars = this.node(this.root, 'ResultAvatars', 0, 0, WIDTH, HEIGHT);
+        const rowText = this.node(this.root, 'ResultText', 0, 0, WIDTH, HEIGHT);
+        const names = this.node(this.root, 'ResultNames', 0, 0, WIDTH, HEIGHT);
         for (let i = 0; i < 8; i++) {
             const y = 134 + i * 70;
-            const root = this.node(this.root, `ResultEntry${i}`, 0, 0, WIDTH, HEIGHT);
-            const back = this.art(root, 'RowBackground', 1000, y, 615, 68);
+            const root = this.node(rowText, `ResultEntry${i}`, 0, 0, WIDTH, HEIGHT);
+            const artRoot = this.node(rowArt, `ResultArt${i}`, 0, 0, WIDTH, HEIGHT);
+            const back = this.art(artRoot, 'RowBackground', 1000, y, 615, 68);
             const watermark = this.text(root, 'TopWatermark', '', 1332, y + 33, 135, 38, WATERMARK, false, false, false, true);
-            const medal = this.art(root, 'RankMedal', 1020, y - 2, 46, 69);
+            const medal = this.art(artRoot, 'RankMedal', 1020, y - 2, 46, 69);
             const rank = this.text(root, 'RankNumber', '', 1014, y + 33, 58, 29, NAVY, true, false, false, true);
-            this.art(root, 'AvatarBase', 1088, y + 5, 56, 56, RESOURCE_PATHS.avatarPickerUi.avatarBase);
-            const avatar = this.art(root, 'Avatar', 1092, y + 9, 48, 48);
+            const avatarBase = this.art(avatarBases, 'AvatarBase', 1088, y + 5, 56, 56, RESOURCE_PATHS.avatarPickerUi.avatarBase);
+            const avatar = this.art(avatars, 'Avatar', 1092, y + 9, 48, 48);
             // 昵称是无界动态文本，不能交给静态子集字库；独立保留系统全覆盖字体。
-            const name = this.text(root, 'PlayerName', '', 1162, y + 33, 280, 26, NAVY, false, true);
+            const name = this.text(names, 'PlayerName', '', 1162, y + 33, 280, 26, NAVY, false, true);
+            const nameSize = name.node.getComponent(UITransform)!.contentSize;
+            const cachedName = this.art(name.node, 'CachedName', 0, 0, nameSize.width, nameSize.height);
+            cachedName.node.active = false;
             const time = this.text(root, 'FinishTime', '', 1455, y + 33, 125, 27, NAVY, false, false, true, true);
             const status = this.text(root, 'FinishStatus', '', 1455, y + 33, 125, 25, NAVY, false, false, true);
-            this.rows.push({ root, back, medal, rank, avatar, name, time, status, self: null, watermark });
+            this.rows.push({ root, artRoot, back, medal, rank, avatarBase, avatar, name, cachedName, time, status, self: null, watermark });
         }
         // 本人描边置于整个排行列表上方，外扩柔光不能被相邻行底板截断。
         const highlights = this.node(this.root, 'SelfHighlights', 0, 0, WIDTH, HEIGHT);
@@ -197,6 +214,10 @@ export class SettlementView {
             const controls = this.rows[i];
             const row = list[i];
             active(controls.root, !!row);
+            active(controls.artRoot, !!row);
+            active(controls.avatarBase.node, !!row);
+            active(controls.avatar.node, !!row);
+            active(controls.name.node, !!row);
             active(controls.self.node, !!row && row.isPlayer);
             if (!row) continue;
             const complete = row.finished !== false && !row.quit && !row.eliminated && Number.isFinite(row.time) && row.time > 0;
@@ -219,6 +240,44 @@ export class SettlementView {
             const id = this.callbacks.resolveResultAvatar?.(row)
                 ?? (row.isPlayer ? PlayerData.avatarId : fallbackAvatar(row.name));
             this.setArt(controls.avatar, avatarTexturePath(id));
+        }
+        this.refreshNameAtlas();
+    }
+
+    private refreshNameAtlas(): void {
+        const rows = this.rows.filter(row => row.root.active && !!row.name.string);
+        const key = JSON.stringify(rows.map(row => {
+            const color = row.name.color;
+            return [this.rows.indexOf(row), row.name.string, color.r, color.g, color.b, color.a];
+        }));
+        if (key === this.nameKey) return;
+        this.nameKey = key;
+        // 用时、奖励和普通重复刷新复用页；昵称、本人颜色或人数变化才重打。
+        for (const row of this.rows) {
+            if (!row.name.enabled) row.name.enabled = true;
+            active(row.cachedName.node, false);
+            if (row.cachedName.spriteFrame) row.cachedName.spriteFrame = null;
+        }
+        this.nameAtlas?.dispose(); this.nameAtlas = null;
+        if (!rows.length) return;
+        try {
+            const atlas = this.nameAtlas = RosterNameAtlas.buildNames(rows.map(row => row.name));
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i], cell = atlas.names[i];
+                row.cachedName.node.getComponent(UITransform)!.setContentSize(cell.width, cell.height);
+                row.cachedName.node.setPosition(cell.x, cell.y, 0);
+                row.cachedName.spriteFrame = cell.frame;
+                row.name.enabled = false;
+                active(row.cachedName.node, true);
+            }
+        } catch (error) {
+            this.nameAtlas?.dispose(); this.nameAtlas = null;
+            for (const row of this.rows) {
+                row.name.enabled = true;
+                active(row.cachedName.node, false);
+                if (row.cachedName.spriteFrame) row.cachedName.spriteFrame = null;
+            }
+            console.warn('[结算界面] 昵称缓存不可用，保留完整文字', error);
         }
     }
 
@@ -291,6 +350,9 @@ export class SettlementView {
         label.enableWrapText = false;
         if (dynamic || latin) { label.fontFamily = PROJECT_UI_ENGLISH_BOLD_FAMILY; label.isBold = true; }
         else styleProjectUiLabel(label, 'semibold', size + 4);
+        // 只缓存排行榜的有限文字与数字，不扩大无界昵称/生涯消息的全局字符占用。
+        if (!dynamic && ['RankHeader', 'PlayerHeader', 'TimeHeader', 'RankNumber',
+            'FinishTime', 'FinishStatus', 'TopWatermark'].indexOf(name) >= 0) label.cacheMode = CacheMode.CHAR;
         setText(label, value);
         return label;
     }

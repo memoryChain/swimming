@@ -15,7 +15,7 @@ function compiler() {
     throw new Error('请通过 pnpm test:results 运行固定版本 TypeScript 测试');
 }
 const ts = compiler();
-class Component { get isValid() { return this.node?.isValid; } }
+class Component { enabled = true; get isValid() { return this.node?.isValid; } }
 class Color {
     constructor(r, g, b, a) { Object.assign(this, { r, g, b, a }); }
     equals(c) { return this.r === c.r && this.g === c.g && this.b === c.b && this.a === c.a; }
@@ -25,6 +25,7 @@ class UITransform extends Component {
     setContentSize(width, height) { this.contentSize = { width, height }; }
 }
 class Label extends Component {
+    static CacheMode = { NONE: 0, CHAR: 2 }; cacheMode = 0;
     static HorizontalAlign = { CENTER: 0, LEFT: 1, RIGHT: 2 };
     static VerticalAlign = { CENTER: 0 }; static Overflow = { SHRINK: 2 };
     writes = 0; _string = '';
@@ -54,8 +55,15 @@ let deferred = false;
 const pending = [];
 const frame = p => ({ path: p, isValid: true });
 const cache = {};
+const namePages = []; let failNames = false;
 const stubs = {
-    cc: { Node, UITransform, Color, Label, Sprite, SpriteFrame, Texture2D, Button, view: { getVisibleSize: () => size } },
+    cc: { Node, UITransform, Color, Label, Sprite, SpriteFrame, Texture2D, Button, CacheMode: Label.CacheMode, view: { getVisibleSize: () => size } },
+    'ui/RosterNameAtlas': { RosterNameAtlas: { buildNames(labels) {
+        if (failNames) throw new Error('模拟画布不可用');
+        const page = { names: labels.map(label => ({ frame: { text: label.string }, width: 180, height: 30, x: 0, y: 0 })),
+            disposed: 0, dispose() { this.disposed++; } };
+        namePages.push(page); return page;
+    } } },
     'core/RaceBundleLoader': {loadRaceAsset(p,type,done){done(null,{path:p,width:350,height:16});}},
     'core/GameBalance': require('./helpers/cocos-math-harness.cjs').createHarness().load(path.join(root, 'assets/scripts/core/GameBalance.ts')),
     'ui/AvatarUiAssets': {
@@ -136,8 +144,8 @@ if (require.main === module) {
             for (let i = 0; i < v.rows.length; i++) {
                 const row = v.rows[i];
                 assert.equal(row.self.node.parent.name, 'SelfHighlights');
-                assert.ok(v.root.children.indexOf(row.self.node.parent) > v.root.children.indexOf(v.rows[7].root));
-                const base = row.root.children.find(n => n.name === 'AvatarBase');
+                assert.ok(v.root.children.indexOf(row.self.node.parent) > v.root.children.indexOf(v.rows[7].root.parent));
+                const base = row.avatarBase.node;
                 assert.equal(row.avatar.node.position.x, base.position.x);
                 assert.equal(row.avatar.node.position.y, base.position.y);
                 assert.equal(row.self.node.active, i + 1 === place);
@@ -164,7 +172,7 @@ if (require.main === module) {
         const before = writes();
         for (let i = 0; i < 200; i++) v.show(99, d);
         assert.equal(nodes(v.root).length, count); assert.equal(listeners(), bound); assert.equal(writes(), before);
-        assert.equal(v.root.children.some(n => /background/i.test(n.name)), false);
+        assert.equal(v.root.children.some(n => /background/i.test(n.name) && n.getComponent(Sprite)), false);
         for (const n of nodes(v.root)) {
             const l = n.getComponent(Label), s = n.getComponent(Sprite);
             if (l) {
@@ -174,6 +182,64 @@ if (require.main === module) {
             }
             if (s) { assert.equal(s.trim, false); assert.equal(s.sizeMode, Sprite.SizeMode.CUSTOM); }
         }
+    });
+    test('结算分层保持绘制顺序、有限文字合批，名单与本人色变化才更新昵称页', () => {
+        const v = make(), d = data(); v.show(99, d);
+        const layers = ['ResultBackgrounds', 'ResultAvatarBases', 'ResultAvatars', 'ResultText', 'ResultNames', 'SelfHighlights'];
+        const indexes = layers.map(name => v.root.children.indexOf(find(v.root, name)));
+        assert.ok(indexes.every((value, i) => value >= 0 && (!i || value > indexes[i - 1])));
+        const page = v.nameAtlas, count = nodes(v.root).length;
+        for (const row of v.rows) {
+            assert.equal(row.name.enabled, false); assert.equal(row.cachedName.node.active, true);
+            assert.equal(row.name.cacheMode, Label.CacheMode.NONE);
+            for (const label of [row.rank, row.time, row.status, row.watermark]) assert.equal(label.cacheMode, Label.CacheMode.CHAR);
+            assert.equal(row.avatar.node.parent.name, 'ResultAvatars');
+            assert.equal(row.back.node.parent.parent.name, 'ResultBackgrounds');
+        }
+        for (let i = 0; i < 50; i++) {
+            v.show(99, { ...d, leaderboard: d.leaderboard.map(row => ({ ...row, time: row.time + i })) });
+            v.setReward(i); v.setCareerMessage('任意后台提示'); v.setRoomMode(i % 2 === 0);
+            assert.equal(v.nameAtlas, page);
+        }
+        assert.equal(nodes(v.root).length, count); assert.equal(page.disposed, 0);
+        d.leaderboard[0].name = '𠮷昕😀非常长的玩家昵称'; v.show(99, d);
+        assert.equal(page.disposed, 1); assert.notEqual(v.nameAtlas, page);
+        assert.equal(v.rows[0].name.string, d.leaderboard[0].name);
+        const renamed = v.nameAtlas;
+        d.leaderboard.forEach((row, i) => row.isPlayer = i === 7); v.show(99, d);
+        assert.equal(renamed.disposed, 1); assert.equal(v.rows[7].name.string, `${d.leaderboard[7].name}（我）`);
+        v.show(99, { ...d, leaderboard: d.leaderboard.slice(0, 1) });
+        for (const row of v.rows.slice(1)) {
+            for (const node of [row.root, row.artRoot, row.avatar.node, row.avatarBase.node, row.name.node, row.self.node]) assert.equal(node.active, false);
+            assert.equal(row.cachedName.spriteFrame, null);
+        }
+        const last = v.nameAtlas; v.root.destroy(); assert.equal(last.disposed, 1);
+    });
+    test('结算昵称缓存失败保留原文字，同名单不反复重试，下一份名单可恢复', () => {
+        const v = make(), d = data(); failNames = true;
+        try {
+            v.show(99, d); assert.equal(v.nameAtlas, null);
+            for (const row of v.rows) { assert.equal(row.name.enabled, true); assert.equal(row.cachedName.node.active, false); }
+            failNames = false;
+            v.show(99, d); assert.equal(v.nameAtlas, null);
+            d.leaderboard[0].name = '下一份名单'; v.show(99, d); assert.ok(v.nameAtlas);
+            const old = v.nameAtlas; failNames = true;
+            d.leaderboard[0].name = '再次失败'; v.show(99, d); assert.equal(old.disposed, 1);
+            assert.equal(v.nameAtlas, null);
+            for (const row of v.rows) { assert.equal(row.name.enabled, true); assert.equal(row.cachedName.spriteFrame, null); }
+        } finally { failNames = false; v.root.destroy(); }
+    });
+    test('空昵称跨行移动时更新缓存绑定，不显示上一行遗留名字', () => {
+        const v = make(), list = [
+            { name: '', placement: 1, time: 100, finished: true },
+            { name: '远端选手', placement: 2, time: 101, finished: true },
+        ];
+        v.show(100, { leaderboard: list }); const first = v.nameAtlas;
+        assert.equal(v.rows[0].cachedName.node.active, false); assert.equal(v.rows[1].cachedName.node.active, true);
+        v.show(100, { leaderboard: [list[1], list[0]] });
+        assert.equal(first.disposed, 1); assert.equal(v.rows[0].cachedName.node.active, true);
+        assert.equal(v.rows[1].cachedName.node.active, false); assert.equal(v.rows[1].cachedName.spriteFrame, null);
+        v.root.destroy();
     });
     test('异步旧头像回调不得覆盖新图；销毁后不写资源', () => {
         const v = make(); const s = v.rows[0].avatar;

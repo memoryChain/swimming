@@ -22,9 +22,8 @@ import {
 // (World-space simulation) so the swimmer leaves them BEHIND as a trail, with only
 // the faintest upward drift.
 //
-// WeChat budget: PLAYER ONLY (AI never build one), one tiny CPU particle system,
-// emission gated to the underwater phases so the normal above-water race pays
-// nothing.
+// 微信预算：仅玩家创建，九个小型发射点。水下阶段发射，停发后尾迹耗尽
+// 即禁用粒子组件，避免水面比赛仍承担空系统的引擎更新与渲染准备。
 
 export type UnderwaterBubbleOptions = {
     // A stable world-space node already tagged onto the swimmer overlay layer (the
@@ -98,6 +97,7 @@ export class UnderwaterBubbleEmitter {
     private readonly _tmp = new Vec3();
     private readonly _tmp2 = new Vec3();
     private _emitting = false;
+    private _draining = false;
     private _visible = true;
     private readonly _options: UnderwaterBubbleOptions;
 
@@ -168,6 +168,9 @@ export class UnderwaterBubbleEmitter {
         applyBubbleTexture(system);
         system.bursts = [];
         system.clear();
+        // 初始化完成后休眠，避免零粒子系统仍执行引擎更新与渲染前回调。
+        if (system.isPlaying) system.pause();
+        system.enabled = false;
         return system;
     }
 
@@ -178,12 +181,28 @@ export class UnderwaterBubbleEmitter {
             return;
         }
         this._emitting = active;
+        this._draining = !active;
         for (const point of this._points) {
             setConstant(point.system.rateOverTime, active ? point.rate : 0);
-            if (active && !point.system.isPlaying) {
-                point.system.play();
+            if (active) {
+                if (!point.system.enabled) point.system.enabled = true;
+                if (!point.system.isPlaying) point.system.play();
             }
         }
+    }
+
+    // 停发后保留真实尾迹，等各系统粒子归零才禁用；不按估计寿命提前截断。
+    updateIdle() {
+        if (this._emitting || !this._draining) return;
+        let draining = false;
+        for (const point of this._points) {
+            const system = point.system;
+            if (!system?.isValid || !system.enabled) continue;
+            if (system.getParticleCount() > 0) { draining = true; continue; }
+            if (system.isPlaying) system.pause();
+            system.enabled = false;
+        }
+        this._draining = draining;
     }
 
     // Move each limb emitter to its bone each frame (world position). World-space

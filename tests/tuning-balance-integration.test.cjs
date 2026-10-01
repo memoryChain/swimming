@@ -720,6 +720,7 @@ test('真实泳者结算分别投递玩家和 AI 消耗，远端真人不重复�
     const js=ts.transpileModule(`class Settlement { ${members.map(n=>n.getText(source)).join('\n')} }`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
     const C=require('node:vm').runInNewContext(js+';Settlement',{
         ...h.loadModule('core/StrokeQualityScoring'),...h.loadModule('core/GameConstants'),
+        EMPTY_CONDITION_INPUTS: Object.freeze([]),
     });
     for (const identity of ['player','ai','remote']) {
         const body=new C();Object.assign(body,{isAI:identity!=='player',collisionRemoteHuman:identity==='remote',

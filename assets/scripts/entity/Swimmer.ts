@@ -31,6 +31,11 @@ import { SwimmerRacePhases } from './SwimmerRacePhases';
 
 const { ccclass, property } = _decorator;
 const PERFECT_COMBO_IDLE_SECONDS = 1;
+const PLAYER_MOTOR_OPTIONS = { isAI: false };
+const AI_MOTOR_OPTIONS = { isAI: true };
+// 空队列只读共享，避免每名选手每步创建空数组。
+const EMPTY_CONDITION_INPUTS: StrokeConditionInput[] = Object.freeze([]) as unknown as StrokeConditionInput[];
+const EMPTY_RHYTHM_RESULTS: RhythmResult[] = Object.freeze([]) as unknown as RhythmResult[];
 // Scratch vector for net-race render interpolation (avoids per-frame allocation on
 // the WeChat Mini Game heap).
 const _tmpNetLerpPos = new Vec3();
@@ -722,9 +727,7 @@ export class Swimmer extends Component {
         }
         if (this._phases.isUnderwater) this._motor.ability.suspend();
         this.updatePerfectComboIdle(dt);
-        const finished = this._motor.update(dt, {
-            isAI: this.isAI,
-        });
+        const finished = this._motor.update(dt, this.isAI ? AI_MOTOR_OPTIONS : PLAYER_MOTOR_OPTIONS);
         this.updatePerfectZoneGlow();
         if (!this.isAI) {
             this._strokeMetrics.update(dt);
@@ -1444,14 +1447,14 @@ export class Swimmer extends Component {
 
     consumeConditionInputs(): StrokeConditionInput[] {
         if (this._pendingConditionInputs.length === 0) {
-            return [];
+            return EMPTY_CONDITION_INPUTS;
         }
         return this._pendingConditionInputs.splice(0);
     }
 
     consumeRhythmResults(): RhythmResult[] {
         if (this._pendingRhythmResults.length === 0) {
-            return [];
+            return EMPTY_RHYTHM_RESULTS;
         }
         return this._pendingRhythmResults.splice(0);
     }

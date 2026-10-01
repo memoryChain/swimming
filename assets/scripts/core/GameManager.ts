@@ -228,6 +228,7 @@ export class GameManager extends Component {
     private _raceLaneCount = LANE_LAYOUT.laneCount;
     private _primaryAiLaneIndex = PRIMARY_AI_LANE_INDEX;
     private _waterRefraction: WaterRefractionController | null = null;
+    private readonly _waterSwimmerNodes: Node[] = [];
     private _laneLockdownVisuals: LaneLockdownVisuals | null = null;
     private _laneLockdownRace: LaneLockdownRaceController | null = null;
     private _laneLockdownStatusLabel: Label | null = null;
@@ -441,6 +442,7 @@ export class GameManager extends Component {
         this._laneLockdownRace = null;
         this._waterRefraction?.dispose();
         this._waterRefraction = null;
+        this._waterSwimmerNodes.length = 0;
         this._scoreboardFeed?.dispose();
         this._scoreboardFeed = null;
         this._awardsPresentation.dispose();
@@ -1301,21 +1303,24 @@ export class GameManager extends Component {
     // transparent splashes render after the opaque character instead of being
     // covered by a later camera pass.
     private collectSwimmerNodes(): Node[] {
-        const nodes: Node[] = [];
+        // 水面控制器同步消费此借用列表；覆写槽位，阵容稳定时保留数组底层存储。
+        const nodes = this._waterSwimmerNodes;
+        let count = 0;
         if (this._playerSwimmer?.node?.isValid) {
-            nodes.push(this._playerSwimmer.node);
+            nodes[count++] = this._playerSwimmer.node;
             if (this._playerSwimmer.splashNode?.isValid) {
-                nodes.push(this._playerSwimmer.splashNode);
+                nodes[count++] = this._playerSwimmer.splashNode;
             }
         }
         for (const swimmer of this._aiSwimmers) {
             if (swimmer?.node?.isValid) {
-                nodes.push(swimmer.node);
+                nodes[count++] = swimmer.node;
                 if (swimmer.splashNode?.isValid) {
-                    nodes.push(swimmer.splashNode);
+                    nodes[count++] = swimmer.splashNode;
                 }
             }
         }
+        if (nodes.length !== count) nodes.length = count;
         return nodes;
     }
 
@@ -1819,13 +1824,8 @@ export class GameManager extends Component {
         if (!swimmer.isRacing) {
             return;
         }
-        const progress = raceDistance > 0 ? swimmer.distance / raceDistance : 0;
         condition.syncHeartRate(swimmer.heartRate);
-        condition.tickAi({
-            difficulty: controller.difficulty,
-            progress,
-            dt,
-        });
+        condition.tickAi();
         swimmer.applyConditionSpeedScale(condition.efficiencyModifier);
         swimmer.applyConditionQualityScale(condition.qualityModifier);
         swimmer.applyConditionCadenceScale(condition.strokeCadenceScale);
@@ -2538,22 +2538,16 @@ export class GameManager extends Component {
         if (this._netSession) {
             return;
         }
-        const raceDistance = getRaceDistance();
         for (let i = 0; i < this._aiConditions.length; i++) {
             const swimmer = this._aiSwimmers[i];
             const controller = this._aiControllers[i];
             if (!swimmer || !controller) {
                 continue;
             }
-            const progress = raceDistance > 0 ? swimmer.distance / raceDistance : 0;
             this._aiConditions[i].setInfiniteStamina(swimmer.motor.ability.infiniteStamina);
             this._aiConditions[i].consumeStrokes(swimmer.consumeAiConditionStrokes());
             this._aiConditions[i].syncHeartRate(swimmer.heartRate);
-            this._aiConditions[i].tickAi({
-                difficulty: controller.difficulty,
-                progress,
-                dt,
-            });
+            this._aiConditions[i].tickAi();
             swimmer.applyConditionSpeedScale(this._aiConditions[i].efficiencyModifier);
             swimmer.applyConditionQualityScale(this._aiConditions[i].qualityModifier);
             swimmer.applyConditionCadenceScale(this._aiConditions[i].strokeCadenceScale);

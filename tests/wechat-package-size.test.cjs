@@ -43,7 +43,15 @@ test('所有动作逐字段、逐帧还原为 Creator 原 JSON，且不修改源
         assert.equal(decodeSampledMotion(restored), restored);
         assert.equal(decodeSampledMotion(source), source);
         if (restored.samples.length > 1) {
-            assert.notEqual(restored.samples[0].rotations.Root, restored.samples[1].rotations.Root);
+            const constants = encodeSampledMotion(source).$motion.constants;
+            for (const bone of Object.keys(constants)) {
+                assert.equal(restored.samples[0].rotations[bone], restored.samples[1].rotations[bone]);
+                assert.ok(Object.isFrozen(restored.samples[0].rotations[bone]));
+                assert.notEqual(restored.samples[0].rotations[bone], constants[bone]);
+            }
+            for (const bone of Object.keys(source.samples[0].rotations)) {
+                if (!(bone in constants)) assert.notEqual(restored.samples[0].rotations[bone], restored.samples[1].rotations[bone]);
+            }
         }
         frames += source.samples.length;
         before += Buffer.byteLength(original);

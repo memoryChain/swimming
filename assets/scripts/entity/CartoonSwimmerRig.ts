@@ -1584,6 +1584,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     onDestroy() {
+        this._bubbleEmitter?.dispose();
+        this._bubbleEmitter = null;
         this._poseState.resetRuntime();
         this._pose.unbind();
         this._standingSoles.clear();
@@ -2334,6 +2336,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         const emit = active && !this._splashCulled;
         this._bubbleEmitter.setEmitting(emit);
+        this._bubbleEmitter.updateIdle();
         if (emit) {
             this._bubbleEmitter.updatePositions();
         }

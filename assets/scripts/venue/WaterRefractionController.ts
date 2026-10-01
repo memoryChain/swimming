@@ -132,6 +132,7 @@ export class WaterRefractionController {
     private readonly _poolsideWaterline = new PoolsideWaterline();
     private _boundMaterial: Material | null = null;
     private _getSwimmerNodes: (() => Node[]) | null = null;
+    private readonly _laneFloatNodes: Node[] = [];
     private _rtWidth = 0;
     private _rtHeight = 0;
     // Planar-reflection pass: mirrors the main camera across the water plane and
@@ -620,7 +621,8 @@ export class WaterRefractionController {
     // overlay camera draws them. Re-run periodically because character models,
     // splash particles and the roster can all be created asynchronously.
     private tagSwimmers() {
-        const nodes = this._getSwimmerNodes?.() ?? [];
+        const nodes = this._getSwimmerNodes?.();
+        if (!nodes) return;
         for (const node of nodes) {
             if (node?.isValid) {
                 setLayerRecursive(node, SWIMMER_LAYER);
@@ -641,8 +643,9 @@ export class WaterRefractionController {
             return;
         }
         const layer = this._underwaterViewActive ? Layers.Enum.DEFAULT : SWIMMER_LAYER;
-        const floats: Node[] = [];
-        collectNodesByNamePrefix(this._pool, LANE_FLOAT_NODE_PREFIX, floats);
+        const floats = this._laneFloatNodes;
+        const count = collectNodesByNamePrefix(this._pool, LANE_FLOAT_NODE_PREFIX, floats);
+        if (floats.length !== count) floats.length = count;
         for (const node of floats) {
             if (node?.isValid) {
                 setLayerRecursive(node, layer);
@@ -694,6 +697,7 @@ export class WaterRefractionController {
         this._poolEdgeNode = null;
         this._boundMaterial = null;
         this._getSwimmerNodes = null;
+        this._laneFloatNodes.length = 0;
         this._floorTints.length = 0;
         this._floorUnderwater = null;
         this._floorDepthEffect = null;
@@ -876,10 +880,10 @@ export class WaterRefractionController {
         if (!this._swimmerDisturbanceActive) {
             return;
         }
-        const nodes = this._getSwimmerNodes?.() ?? [];
+        const nodes = this._getSwimmerNodes?.();
         for (let i = 0; i < MAX_DISTURB; i++) {
             const slot = this._disturb[i];
-            const node = nodes[i];
+            const node = nodes?.[i];
             if (node?.isValid) {
                 node.getWorldPosition(this._tmpPos);
                 slot.set(this._tmpPos.x, this._tmpPos.z, 1.0, 0.0);
@@ -921,13 +925,14 @@ function findNodeByName(root: Node, name: string): Node | null {
     return null;
 }
 
-function collectNodesByNamePrefix(root: Node, prefix: string, out: Node[]) {
+function collectNodesByNamePrefix(root: Node, prefix: string, out: Node[], count = 0): number {
     if (root.name.startsWith(prefix)) {
-        out.push(root);
+        out[count++] = root;
     }
     for (const child of root.children) {
-        collectNodesByNamePrefix(child, prefix, out);
+        count = collectNodesByNamePrefix(child, prefix, out, count);
     }
+    return count;
 }
 
 function setLayerRecursive(node: Node, layer: number) {

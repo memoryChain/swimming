@@ -25,6 +25,7 @@ export type LaneLockdownAiTarget = {
 /** Owns the high-difficulty warning, elimination, and corridor-boundary loop. */
 export class LaneLockdownRaceController {
     private _nextLockIndex = 0;
+    private readonly _safeLaneRange = { first: 1, last: 0 };
     private _warningTimer = 0;
     private _pendingFirstSafeLane = 1;
     private _pendingLastSafeLane = 0;
@@ -82,7 +83,10 @@ export class LaneLockdownRaceController {
             this.clearAiTarget();
             return;
         }
-        const leader = racers.reduce((current, swimmer) => swimmer.distance > current.distance ? swimmer : current);
+        let leader = racers[0];
+        for (let i = 1; i < racers.length; i++) {
+            if (racers[i].distance > leader.distance) leader = racers[i];
+        }
         const predicted = this.safeLaneRangeForLeader(leader, SAFE_LANE_COUNTS[this._nextLockIndex]);
         this.publishAiTarget(predicted.first, predicted.last, false);
         if (leader.distance < LOCK_DISTANCES[this._nextLockIndex]) {
@@ -153,7 +157,10 @@ export class LaneLockdownRaceController {
         const maxFirst = this._activeLastSafeLane - safeLaneCount + 1;
         const centeredFirst = leaderLane - Math.floor((safeLaneCount - 1) * 0.5);
         const first = clampInt(centeredFirst, minFirst, maxFirst);
-        return { first, last: first + safeLaneCount - 1 };
+        // 仅在本控制器内同步消费；发出的状态事件仍为独立快照。
+        this._safeLaneRange.first = first;
+        this._safeLaneRange.last = first + safeLaneCount - 1;
+        return this._safeLaneRange;
     }
 
     private publishAiTarget(firstSafeLane: number, lastSafeLane: number, warning: boolean) {

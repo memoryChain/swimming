@@ -83,6 +83,14 @@ export class GameFlowController {
     private _aiDivesStarted = false;
     private readonly _playerUpperBodyWorldPosition = new Vec3();
 
+    // 镜头同步消费快照；每帧覆盖字段，不创建数组、名次对象或快照对象。
+    private readonly _cameraPlacement: RacePlacementSummary = { placement: 1, racerCount: 1 };
+    private readonly _cameraSnapshot: RaceCameraSnapshot = {
+        playerX: 0, playerY: 0, playerDistance: 0, playerUnderwater: false,
+        closestAiDistanceGap: 0, playerPlacement: 1, racerCount: 1,
+        raceActive: false, countdownActive: false, sprintActive: false,
+    };
+
     constructor(private readonly _refs: GameFlowRefs) {}
 
     startGame() {
@@ -480,29 +488,28 @@ export class GameFlowController {
         const focus = aiFocus?.node?.isValid && aiFocus.node.active
             ? aiFocus
             : playerSwimmer;
-        const cameraSnapshot: RaceCameraSnapshot = {
-            playerX: focus.node.position.x,
-            playerY: focus.node.position.y,
-            playerSpeed: focus.currentSpeed,
-            playerUpperBodyWorldPosition: focus.getCameraUpperBodyWorldPosition(this._playerUpperBodyWorldPosition),
-            playerDistance: focus.distance,
-            playerFinished: this._finishViewElapsed >= 0,
-            playerHeading: focus.cameraHeading,
-            playerFlightPitch: focus.flightPitch,
-            playerKickCadenceHz: focus.kickCadenceHz,
-            playerArmStrokeActive: focus.isArmStrokeActive,
-            playerUnderwater: focus.isUnderwater,
-            playerKickDiveDepth: focus.kickDiveDepth,
-            playerUnderwaterRiseProgress: focus.underwaterRiseProgress,
-            closestAiDistanceGap: this.closestAiDistanceGap(playerDistance),
-            playerPlacement: placement.placement,
-            racerCount: placement.racerCount,
-            raceActive: this._refs.getState() === GameState.RACING || this._refs.getState() === GameState.GLIDING,
-            countdownActive: this._refs.getState() === GameState.COUNTDOWN || this._refs.getState() === GameState.DIVING,
-            sprintActive: this._sprintTriggered,
-            playerFlipTurnCameraActive: focus.isFlipTurnCameraActive,
-            playerDolphinCameraActive: focus.isDolphinCameraActive,
-        };
+        const cameraSnapshot = this._cameraSnapshot;
+        cameraSnapshot.playerX = focus.node.position.x;
+        cameraSnapshot.playerY = focus.node.position.y;
+        cameraSnapshot.playerSpeed = focus.currentSpeed;
+        cameraSnapshot.playerUpperBodyWorldPosition = focus.getCameraUpperBodyWorldPosition(this._playerUpperBodyWorldPosition);
+        cameraSnapshot.playerDistance = focus.distance;
+        cameraSnapshot.playerFinished = this._finishViewElapsed >= 0;
+        cameraSnapshot.playerHeading = focus.cameraHeading;
+        cameraSnapshot.playerFlightPitch = focus.flightPitch;
+        cameraSnapshot.playerKickCadenceHz = focus.kickCadenceHz;
+        cameraSnapshot.playerArmStrokeActive = focus.isArmStrokeActive;
+        cameraSnapshot.playerUnderwater = focus.isUnderwater;
+        cameraSnapshot.playerKickDiveDepth = focus.kickDiveDepth;
+        cameraSnapshot.playerUnderwaterRiseProgress = focus.underwaterRiseProgress;
+        cameraSnapshot.closestAiDistanceGap = this.closestAiDistanceGap(playerDistance);
+        cameraSnapshot.playerPlacement = placement.placement;
+        cameraSnapshot.racerCount = placement.racerCount;
+        cameraSnapshot.raceActive = this._refs.getState() === GameState.RACING || this._refs.getState() === GameState.GLIDING;
+        cameraSnapshot.countdownActive = this._refs.getState() === GameState.COUNTDOWN || this._refs.getState() === GameState.DIVING;
+        cameraSnapshot.sprintActive = this._sprintTriggered;
+        cameraSnapshot.playerFlipTurnCameraActive = focus.isFlipTurnCameraActive;
+        cameraSnapshot.playerDolphinCameraActive = focus.isDolphinCameraActive;
         // Switch to the behind-the-swimmer sprint chase as the opening dive rises
         // close to the surface. Gameplay remains underwater until the rise really
         // completes; only the local presentation hands off early. Done once; the
@@ -685,18 +692,18 @@ export class GameFlowController {
 
     private calculatePlayerPlacement(): RacePlacementSummary {
         const player = this._refs.playerSwimmer;
-        const racers = [
-            { isPlayer: true, distance: player?.distance ?? 0 },
-            ...this._refs.aiSwimmers
-                .filter((swimmer) => swimmer.node.active)
-                .map((swimmer) => ({ isPlayer: false, distance: swimmer.distance })),
-        ];
-        racers.sort((a, b) => b.distance - a.distance);
-        const placement = racers.findIndex((racer) => racer.isPlayer) + 1;
-        return {
-            placement: placement > 0 ? placement : racers.length,
-            racerCount: racers.length,
-        };
+        const playerDistance = player?.distance ?? 0;
+        let placement = 1;
+        let racerCount = 1;
+        for (const swimmer of this._refs.aiSwimmers) {
+            if (!swimmer.node.active) continue;
+            racerCount++;
+            // 原排序把玩家放首位：同距离时玩家仍优先，不改变并列行为。
+            if (swimmer.distance > playerDistance) placement++;
+        }
+        this._cameraPlacement.placement = placement;
+        this._cameraPlacement.racerCount = racerCount;
+        return this._cameraPlacement;
     }
 }
 

@@ -7,7 +7,7 @@ import { getRaceDistance, isRaceSteeringEnabled, TECHNIQUE_BALANCE, SWIMMER_BALA
 import { Rating, StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from '../core/SteeringTuning';
-import { SwimPhysicsModel } from './SwimPhysicsModel';
+import { SwimPhysicsModel, SwimPhysicsState, SwimPhysicsInput } from './SwimPhysicsModel';
 import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
 import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
 import { AxialRollModel } from './AxialRollModel';
@@ -39,6 +39,8 @@ export type StrokeQualityResult = {
     // miss feedback and plays a kick instead of scoring this as a bad stroke.
     downgradedToKick?: boolean;
 };
+
+const EMPTY_STROKE_QUALITY_RESULTS: StrokeQualityResult[] = Object.freeze([]) as unknown as StrokeQualityResult[];
 
 type StrokeAction = {
     heartRate: number;
@@ -103,6 +105,11 @@ export class SwimmerMotor {
     private _authoritativeHeartRate = -1;
     private _tutorialHeartRate: number | null = null;
     private readonly _physics = new SwimPhysicsModel();
+    private readonly _physicsState: SwimPhysicsState = { currentSpeed: 0, distance: 0 };
+    private readonly _physicsInput: SwimPhysicsInput = {
+        dt: 0, strokeAcceleration: 0, kickAcceleration: 0, speedCapBonus: 0, glideDrag: 0,
+    };
+    private readonly _physicsResult: SwimPhysicsState = { currentSpeed: 0, distance: 0 };
     private readonly _axialRoll = new AxialRollModel();
     private readonly _collisionPitch = new CollisionPitchModel();
     readonly collisionSoftness = new CollisionSoftnessModel();
@@ -505,19 +512,16 @@ export class SwimmerMotor {
         // one-off pulse that cannot overcome glide drag.
         this.updateKickCadence();
         const kickAcceleration = this.computeKickAcceleration();
-        const next = this._physics.step(
-            {
-                currentSpeed: this._currentSpeed,
-                distance: this._distance,
-            },
-            {
-                dt,
-                strokeAcceleration,
-                kickAcceleration,
-                speedCapBonus: this._speedCapBonus,
-                glideDrag: this._glidePhaseActive ? this._glideDrag : 0,
-            },
-        );
+        const physicsState = this._physicsState;
+        physicsState.currentSpeed = this._currentSpeed;
+        physicsState.distance = this._distance;
+        const physicsInput = this._physicsInput;
+        physicsInput.dt = dt;
+        physicsInput.strokeAcceleration = strokeAcceleration;
+        physicsInput.kickAcceleration = kickAcceleration;
+        physicsInput.speedCapBonus = this._speedCapBonus;
+        physicsInput.glideDrag = this._glidePhaseActive ? this._glideDrag : 0;
+        const next = this._physics.step(physicsState, physicsInput, this._physicsResult);
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
         this._currentSpeed = next.currentSpeed;
         this.decaySpeedCapBonus(dt, options);
@@ -1948,7 +1952,7 @@ export class SwimmerMotor {
 
     consumeStrokeQualityResults(): StrokeQualityResult[] {
         if (this._pendingStrokeQualityResults.length === 0) {
-            return [];
+            return EMPTY_STROKE_QUALITY_RESULTS;
         }
         return this._pendingStrokeQualityResults.splice(0);
     }
