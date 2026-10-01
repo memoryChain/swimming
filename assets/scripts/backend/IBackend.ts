@@ -42,6 +42,8 @@ export interface IBackend {
     readonly name: string;
     /** 云端分配的公开编号；本地模拟没有正式编号。 */
     readonly uid?: number;
+    /** 未接入远程配置的后端沿用开启教学。 */
+    readonly tutorialEnabled?: boolean;
     completeTutorial(): Promise<PlayerProfile>;
     /** 云端教学补传在后台进行，调用方无需等待；本地模拟无需实现。 */
     syncTutorialCompletion?(): Promise<void>;

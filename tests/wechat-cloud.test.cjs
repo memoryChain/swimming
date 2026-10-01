@@ -5,9 +5,10 @@ const path = require('node:path');
 const os = require('node:os');
 const vm = require('node:vm');
 const { build } = require('../scripts/build-wechat-cloud.cjs');
-const output = fs.mkdtempSync(path.join(os.tmpdir(), 'swimming-cloud-'));
-build(output);
-test.after(() => fs.rmSync(output, { recursive: true, force: true }));
+const suppliedOutput = process.env.SWIMMING_CLOUD_TEST_OUTPUT;
+const output = suppliedOutput ? path.resolve(suppliedOutput) : fs.mkdtempSync(path.join(os.tmpdir(), 'swimming-cloud-'));
+if (!suppliedOutput) build(output);
+test.after(() => { if (!suppliedOutput) fs.rmSync(output, { recursive: true, force: true }); });
 const { createService } = require(path.join(output, 'swimming-player/service.cjs'));
 const { createDefaultProfile } = require(path.join(output, 'swimming-player/rules/backend/PlayerProfile.js'));
 const { CLOUD_PROTOCOL } = require(path.join(output, 'swimming-player/rules/backend/CloudProtocol.js'));
@@ -16,9 +17,19 @@ const copy = value => JSON.parse(JSON.stringify(value));
 
 class Database {
     data = new Map([['counters/playerUid', { lastUid: 9999 }]]); queue = Promise.resolve(); fail = false; retry = false;
+    configFailure = false; configHang = false; configReads = 0;
     collection(name) {
         let filter = {}, offset = 0, limit = 20; const orders = [];
         const query = {
+            doc: id => ({ get: async () => {
+                if (name === 'gameConfig') {
+                    this.configReads++;
+                    if (this.configFailure) throw Error('配置暂不可用');
+                    if (this.configHang) return new Promise(() => {});
+                }
+                const value = this.data.get(`${name}/${id}`);
+                return { data: value ? { ...copy(value), _id: id } : null };
+            } }),
             where(value) { filter = value; return query; },
             orderBy(key, direction) { orders.push([key, direction]); return query; },
             skip(value) { offset = value; return query; },
@@ -76,6 +87,51 @@ const beginData = { type: 'begin', characterId, source: 'quick', tier: 0, distan
 const settlement = ticket => ({ type: 'settle', ticketId: ticket.id, finished: true, placement: 1,
     racerCount: (ticket.ai.opponentCount ?? 7) + 1,
     perfectCount: 80, goodCount: 10, missCount: 10, maxCombo: 80, time: 82 });
+
+test('全局教学开关覆盖所有账号，切换不修改档案、版本或教学完成状态', async () => {
+    const h = harness(), a = await h.load();
+    const contextB = { ...h.context, OPENID: 'user-b' };
+    const b = await h.service.player(h.request(), contextB);
+    h.db.data.set('gameConfig/global', { tutorialEnabled: false, internalNote: '不下发管理字段' });
+    for (const context of [h.context, contextB]) {
+        const disabled = await h.service.player(h.request('load', { tutorialEnabled: true }), context);
+        assert.deepEqual(disabled.featureFlags, { tutorialEnabled: false });
+        const before = context === h.context ? a : b;
+        assert.equal(disabled.revision, before.revision); assert.deepEqual(disabled.profile, before.profile);
+    }
+    const reads = h.db.configReads;
+    const done = await h.player(h.request('tutorialComplete', {}, a.revision));
+    assert.equal(done.profile.tutorialCompleted, true, '关闭期间仍可补传真实完成记录');
+    assert.equal(h.db.configReads, reads, '写档不增加配置查询');
+    h.db.data.set('gameConfig/global', { tutorialEnabled: true });
+    assert.equal((await h.load()).featureFlags.tutorialEnabled, true);
+    assert.equal((await h.load()).profile.tutorialCompleted, true);
+    const untouched = await h.service.player(h.request(), contextB);
+    assert.equal(untouched.profile.tutorialCompleted, false);
+    assert.equal(untouched.revision, b.revision);
+});
+
+test('配置缺失或非法采用默认开启，配置查询失败与超时不阻塞存档', async () => {
+    const h = harness();
+    assert.equal((await h.load()).featureFlags.tutorialEnabled, true);
+    for (const value of [undefined, 'false', 0, null, {}, []]) {
+        h.db.data.set('gameConfig/global', value === undefined ? {} : { tutorialEnabled: value });
+        assert.equal((await h.load()).featureFlags.tutorialEnabled, true);
+    }
+    h.db.configFailure = true;
+    const failed = await h.load(); assert.equal(failed.ok, true); assert.equal(failed.featureFlags, undefined);
+    h.db.configFailure = false; h.db.configHang = true;
+    const slow = await h.load(); assert.equal(slow.ok, true); assert.equal(slow.featureFlags, undefined);
+    assert.deepEqual(slow.profile, failed.profile);
+    assert.equal(slow.revision, failed.revision);
+});
+
+test('未认证和不兼容的请求不读取全局配置', async () => {
+    const h = harness();
+    await h.service.player(h.request(), {});
+    await h.player(h.request('load', {}, 0, { protocol: -1 }));
+    assert.equal(h.db.configReads, 0);
+});
 
 test('可信账号建档隔离、并发首次建档、数据库失败不创建默认档', async () => {
     const h = harness();
@@ -243,7 +299,8 @@ function client(h, storage = new Map(), options = {}) {
     const requests = [];
     const localStorage = { getItem: k => storage.get(k) ?? null,
         setItem: (k, v) => {
-            if (options.failWrite && k.endsWith('.pending') || options.failTutorialWrite && /\.tutorial-/.test(k)) throw Error('本地空间不足');
+            if (options.failWrite && k.endsWith('.pending') || options.failTutorialWrite && /\.tutorial-/.test(k)
+                || options.failConfigWrite && k.endsWith('.tutorial-enabled')) throw Error('本地空间不足');
             storage.set(k, v);
         },
         removeItem: k => storage.delete(k) };
@@ -266,7 +323,7 @@ function client(h, storage = new Map(), options = {}) {
         const requireLocal = id => {
             if (id === 'cc') return { sys: { localStorage } };
             if (id === './BackendManager') return { backend: () => activeBackend };
-            if (id === './WechatCloudConfig') return { WECHAT_CLOUD_CONFIG: { environmentId: options.noEnv ? '' : 'test-env', functionName: 'swimming-player', timeoutMs: 1000 } };
+            if (id === './WechatCloudConfig') return { WECHAT_CLOUD_CONFIG: { environmentId: options.noEnv ? '' : options.environmentId || 'test-env', functionName: 'swimming-player', timeoutMs: 1000 } };
             return load(path.resolve(path.dirname(file), id + '.ts'));
         };
         vm.runInContext(`(function(require,module,exports){${code}\n})`, sandbox)(requireLocal, module, module.exports);
@@ -281,6 +338,67 @@ function client(h, storage = new Map(), options = {}) {
         mock: () => new (load(path.resolve(__dirname, '../assets/scripts/backend/MockBackend.ts')).MockBackend)(),
         account: value => { account = value; } };
 }
+
+test('客户端登录与回前台刷新应用总开关，恢复后仍按账号完成状态引导', async () => {
+    const h = harness(), c = client(h), data = c.data();
+    assert.equal(data.tutorialRequired, false, '尚未读档不触发教学');
+    await data.load(); assert.equal(data.tutorialRequired, true);
+    const before = copy(data.profile); let changes = 0;
+    data.onChange(() => changes++);
+    h.db.data.set('gameConfig/global', { tutorialEnabled: false });
+    await data.load(true);
+    assert.equal(data.loaded, true); assert.equal(data.tutorialEnabled, false); assert.equal(data.tutorialRequired, false);
+    assert.equal(changes, 1); assert.deepEqual(copy(data.profile), before);
+    const calls = c.calls();
+    for (let i = 0; i < 30; i++) { assert.equal(data.tutorialRequired, false); await data.loadForNavigation(); }
+    assert.equal(c.calls(), calls, '大厅读取状态不发网络轮询');
+    h.db.data.set('gameConfig/global', { tutorialEnabled: true });
+    await data.load(true); assert.equal(data.tutorialRequired, true);
+    await data.completeTutorial(); assert.equal(data.tutorialRequired, false);
+    await c.backend.syncTutorialCompletion();
+    for (const enabled of [false, true]) {
+        h.db.data.set('gameConfig/global', { tutorialEnabled: enabled });
+        await data.load(true); assert.equal(data.tutorialRequired, false); assert.equal(data.profile.tutorialCompleted, true);
+    }
+    const local = client(h, new Map(), { local: true }).data();
+    await local.load(); assert.equal(local.tutorialEnabled, true); assert.equal(local.tutorialRequired, true);
+});
+
+test('配置读取失败、旧响应或非法响应沿用环境缓存，正常缺失文档恢复默认开启', async () => {
+    const h = harness(), storage = new Map();
+    h.db.data.set('gameConfig/global', { tutorialEnabled: false });
+    await client(h, storage).data().load();
+    h.db.configFailure = true;
+    const restarted = client(h, storage); await restarted.data().load();
+    assert.equal(restarted.data().loaded, true); assert.equal(restarted.data().tutorialRequired, false);
+    h.db.configFailure = false;
+    for (const featureFlags of [undefined, { tutorialEnabled: 'false' }]) {
+        const older = client(h, storage, { respond: async (_request, run) => ({ ...await run(), featureFlags }) });
+        await older.data().load(); assert.equal(older.data().tutorialEnabled, false);
+    }
+    const otherEnvironment = client(h, storage, { environmentId: 'other-env' });
+    assert.equal(otherEnvironment.backend.tutorialEnabled, true, '不同云环境不共用配置缓存');
+    h.db.data.delete('gameConfig/global'); await restarted.data().load(true);
+    assert.equal(restarted.data().tutorialRequired, true);
+    assert.equal(restarted.data().profile.tutorialCompleted, false);
+});
+
+test('配置缓存写入失败仍立即应用开关；迟到的旧读档不覆盖较新开关', async () => {
+    const h = harness(), c = client(h, new Map(), { failConfigWrite: true });
+    h.db.data.set('gameConfig/global', { tutorialEnabled: false });
+    await c.data().load(); assert.equal(c.data().loaded, true); assert.equal(c.data().tutorialRequired, false);
+    let release, held = false;
+    c.options.respond = async (_request, run) => {
+        const response = await run();
+        if (!held) { held = true; return new Promise(resolve => { release = () => resolve(response); }); }
+        return response;
+    };
+    const previous = c.backend.loadProfile();
+    while (!release) await new Promise(resolve => setImmediate(resolve));
+    h.db.data.set('gameConfig/global', { tutorialEnabled: true });
+    await c.backend.loadProfile(); assert.equal(c.backend.tutorialEnabled, true);
+    release(); await previous; assert.equal(c.backend.tutorialEnabled, true);
+});
 
 test('两个角色外观独立入云，试穿保存不改变出场角色，重登与联机快照保持一致', async () => {
     const h = harness(), c = client(h), data = c.data(), config = c.config();

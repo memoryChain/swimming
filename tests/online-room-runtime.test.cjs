@@ -657,7 +657,8 @@ function navigationHarness() {
         compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
     }).outputText;
     let loaded, roomMode = true, opened = 0;
-    const context = { exports: {}, console, STARTUP_COPY:{loadingProfile:"资料"}, PlayerData:{loaded:true,profile:{tutorialCompleted:true}},
+    const context = { exports: {}, console, STARTUP_COPY:{loadingProfile:"资料"}, PlayerData:{loaded:true,tutorialEnabled:true,profile:{tutorialCompleted:true},
+        get tutorialRequired(){return this.loaded&&this.tutorialEnabled&&!this.profile.tutorialCompleted;}},
         cancelLobbyResourcePreparation() {}, UiPageLoadGate:class { open(prepare,mount,_ready,enter){prepare(error=>{if(!error){mount();enter?.();}});} run(work){work();} cancel(){} }, StartupLoadingCover: class { setLoading() {} setProgress() {} dispose() {} }, UiAssetBarrier: class { cancel() {} },
         getUILayer: n => n, UILayer: { Screen: 1 }, setRoomMode: value => { roomMode = value; },
         PrepareRaceFlow: class { showReadyScreen() { opened++; } },
@@ -675,7 +676,7 @@ function navigationHarness() {
     manager._entryResourcesReady = true;manager._identityLoadGate={cancel(){}};
     manager._canvasNode = new Node('Canvas'); manager._canvasNode.getChildByName = () => null;
     manager._designWidth = 1280; manager._designHeight = 720;
-    return { manager, loaded: root => loaded(null, { root }), opened: () => opened, roomMode: () => roomMode };
+    return { manager, playerData:context.PlayerData, loaded: root => loaded(null, { root }), opened: () => opened, roomMode: () => roomMode };
 }
 test('联机返回进入大厅，不回到登录开始页，并清理房间模式', () => {
     const h = navigationHarness(), m = h.manager; let disposed = 0;
@@ -684,6 +685,19 @@ test('联机返回进入大厅，不回到登录开始页，并清理房间模�
     m.exitRoom();
     assert.equal(disposed, 1); assert.equal(m._roomFlow, null);
     assert.equal(h.opened(), 1); assert.equal(m._loginUiRoot.active, false); assert.equal(h.roomMode(), false);
+});
+
+test('教学总开关关闭放行好友房，开启拦截未完成账号且保留重连', () => {
+    const h = navigationHarness(), m = h.manager;
+    h.playerData.profile.tutorialCompleted = false;
+    let prepares = 0; m.openPrepareRace = () => prepares++;
+    m.openRoom('friend-room'); assert.equal(prepares, 1); assert.equal(m._roomFlow, undefined);
+    h.playerData.tutorialEnabled = false;
+    m.openRoom('friend-room'); assert.ok(m._roomFlow); assert.equal(prepares, 1);
+    m._roomFlow = null; h.playerData.tutorialEnabled = true;
+    m.openRoom('friend-room', true); assert.ok(m._roomFlow); assert.equal(prepares, 1);
+    m._roomFlow = null; h.playerData.profile.tutorialCompleted = true;
+    m.openRoom('friend-room'); assert.ok(m._roomFlow); assert.equal(prepares, 1);
 });
 test('分享直达房间也能返回大厅，迟到的登录资源不能盖住大厅', () => {
     const h = navigationHarness(), m = h.manager;

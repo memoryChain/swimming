@@ -26,7 +26,26 @@ export class WechatCloudBackend implements IBackend {
     private tutorialCompletedLocally = false;
     private tutorialSync: Promise<void> | null = null;
     private tutorialRetryAt = 0;
+    private _tutorialEnabled: boolean | null = null;
+    private loadSequence = 0;
     private readonly prefix = `swimming.cloud.${WECHAT_CLOUD_CONFIG.environmentId}`;
+
+    get tutorialEnabled(): boolean {
+        if (this._tutorialEnabled === null) {
+            try { this._tutorialEnabled = sys.localStorage.getItem(`${this.prefix}.tutorial-enabled`) !== '0'; }
+            catch { this._tutorialEnabled = true; }
+        }
+        return this._tutorialEnabled;
+    }
+
+    private acceptFeatureFlags(response: CloudResponse): void {
+        const enabled = response.featureFlags?.tutorialEnabled;
+        // 旧云函数或配置读取失败沿用上次有效值，不覆盖已关闭的开关。
+        if (typeof enabled !== 'boolean') return;
+        this._tutorialEnabled = enabled;
+        try { sys.localStorage.setItem(`${this.prefix}.tutorial-enabled`, enabled ? '1' : '0'); }
+        catch { /* 配置缓存失败不影响本次读档。 */ }
+    }
 
     private initialize(): void {
         if (this.initialized) return;
@@ -169,10 +188,12 @@ export class WechatCloudBackend implements IBackend {
 
     async loadProfile(): Promise<PlayerProfile> {
         this.initialize();
+        const sequence = ++this.loadSequence;
         const response = await this.call(this.request('load', {}));
         this.accept(response);
         if (!response.ok) throw new CloudBackendError(response.code || 'LOAD', response.message || '存档加载失败', true);
         if (!this.lastProfile) throw new CloudBackendError('BAD_PROFILE', '存档响应异常，请重试');
+        if (sequence === this.loadSequence) this.acceptFeatureFlags(response);
         const pending = this.pending();
         if (pending?.action === 'tutorialComplete') {
             // 升级前已完成教学但保存失败的记录，移出经济 outbox，避免继续卡住登录/开赛。

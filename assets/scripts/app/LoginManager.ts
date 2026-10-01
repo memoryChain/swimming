@@ -274,7 +274,7 @@ export class LoginManager extends Component {
                 loading.run(() => {
                     prepareProjectUiFonts();
                     this.buildHeadBar();
-                    if (!PlayerData.profile.tutorialCompleted && !this._pendingReconnect) {
+                    if (PlayerData.tutorialRequired && !this._pendingReconnect) {
                         this._pendingOpenRoom = false; this._pendingJoinRoomId = null; this._pendingReconnect = false;
                     }
                     if (!this._pendingOpenRoom) this.buildPrepareRace();
@@ -400,7 +400,7 @@ export class LoginManager extends Component {
     }
 
     private openRoom(joinRoomId: string | null = null, reconnect = false) {
-        if (PlayerData.loaded && !PlayerData.profile.tutorialCompleted && !reconnect) {
+        if (PlayerData.tutorialRequired && !reconnect) {
             this._pendingOpenRoom = false; this._pendingJoinRoomId = null;
             this.openPrepareRace(); return;
         }

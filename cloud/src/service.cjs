@@ -46,6 +46,22 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
         return document;
     }
     const write = (tx, collection, id, data) => tx.collection(collection).doc(id).set({ data });
+    async function readFeatureFlags() {
+        let timer;
+        try {
+            // 配置独立于存档事务；集合缺失、权限异常或慢查询不能使读档失败。
+            const config = await Promise.race([
+                read(db, 'gameConfig', 'global'),
+                new Promise(resolve => { timer = setTimeout(() => resolve(undefined), 1000); }),
+            ]);
+            if (config === undefined) return undefined;
+            // 缺少文档或字段格式错误时采用默认开启；只认 JSON 布尔值。
+            return { tutorialEnabled: typeof config?.tutorialEnabled === 'boolean' ? config.tutorialEnabled : true };
+        } catch (error) {
+            console.warn('[cloud-config]', error.code || 'UNAVAILABLE');
+            return undefined;
+        } finally { clearTimeout(timer); }
+    }
     async function assignUid(tx, doc) {
         if (doc.uid !== undefined) {
             requireValue(integer(doc.uid, 10000, Number.MAX_SAFE_INTEGER), 'SCHEMA', '玩家编号异常，请联系管理员');
@@ -170,7 +186,8 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
             requireValue(['load', 'identity', 'selection', 'appearance', 'level', 'career', 'tutorialComplete'].includes(event.action), 'FORBIDDEN', '不支持此存档操作');
             if (event.action !== 'load') validateMutation(event);
             const time = now();
-            return await db.runTransaction(async tx => {
+            const featureFlags = event.action === 'load' ? readFeatureFlags() : null;
+            const response = await db.runTransaction(async tx => {
                 let doc = await read(tx, 'players', playerId);
                 if (!doc) {
                     requireValue(event.action === 'load', 'MISSING', '请先读取存档');
@@ -207,6 +224,8 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
                     throw error;
                 }
             });
+            const flags = featureFlags && await featureFlags;
+            return response.ok && flags ? { ...response, featureFlags: flags } : response;
         } catch (error) {
             if (error instanceof Rejected) return failed(error);
             // 不输出档案、令牌或 OPENID。

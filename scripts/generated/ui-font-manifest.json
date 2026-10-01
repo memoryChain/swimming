@@ -14,21 +14,21 @@
       "path": "assets/race/fonts/startup/ShuiMasterUI-Startup.ttf",
       "weight": 600,
       "bytes": 77696,
-      "sha256": "31a4fe557a1e5bfcd884a6debb508dedb127e6ea6465c7b081257c57be66a0e0",
+      "sha256": "d98403d0a3b312f89a3546980ec7ddae2e74c6788249794c036dd03dc202e705",
       "glyphHash": "917e1c18c620af8359da54839b29364bd21bba813d694d27b388701f542b4eed"
     },
     {
       "path": "assets/race/fonts/ShuiMasterUI-Regular.ttf",
       "weight": 400,
       "bytes": 454928,
-      "sha256": "6977861e3e5569891e5839c5a6f398748f3e78d1c0e65c5f8d9998a14f0ae9cd",
+      "sha256": "05f4a4843b296af2073e0b8876028ca17b021866685f4deaa63c4b78ead909e7",
       "glyphHash": "b5bcdbf5f3ab6b70dc4154975939453d070683e455f1c7cf57ad48f61e7ee520"
     },
     {
       "path": "assets/race/fonts/ShuiMasterUI-SemiBold.ttf",
       "weight": 600,
       "bytes": 454556,
-      "sha256": "a85a7b6b8eeb41fb39a907fda9e2ba48a6b92b15539a39b6f154a64c1af2d361",
+      "sha256": "8557f2336a4b91045ef43f80fda7436fe327a88c6afc4bb8293cbd4e4aceecc2",
       "glyphHash": "b5bcdbf5f3ab6b70dc4154975939453d070683e455f1c7cf57ad48f61e7ee520"
     }
   ]

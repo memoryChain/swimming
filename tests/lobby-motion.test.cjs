@@ -86,12 +86,14 @@ function setup() {
     const {LobbyUiMotion}=load('assets/scripts/ui/LobbyUiMotion.ts',{'cc':cc,'./RuntimeUiFactory':factory});
     const sceneLayout=load('assets/scripts/ui/PrepareSceneLayout.ts',{'../core/ResourcePaths':load('assets/scripts/core/ResourcePaths.ts',{'../../startup/StartupResources':load('assets/startup/StartupResources.ts',{})})});
     const {computePrepareSceneLayout}=sceneLayout;
-    const tutorialViews=[],playerData={loaded:true,profile:{tutorialCompleted:true,career:{league:0}},offChange(){}};
+    const tutorialViews=[],playerData={loaded:true,tutorialEnabled:true,profile:{tutorialCompleted:true,career:{league:0}},
+        get tutorialRequired(){return this.loaded&&this.tutorialEnabled&&!this.profile.tutorialCompleted;},offChange(){}};
     let tutorialRequests=0;
     class TutorialOverlay {
+        root={active:false}; shows=0;
         constructor(){tutorialViews.push(this);}
-        show(...args){this.args=args;this.hidden=false;}
-        hide(){this.hidden=true;}
+        show(...args){this.args=args;this.hidden=false;this.root.active=true;this.shows++;}
+        hide(){this.hidden=true;this.root.active=false;}
         dispose(){this.disposed=true;}
     }
     const {PrepareRaceFlow}=load('assets/scripts/ui/PrepareRaceFlow.ts',{
@@ -471,5 +473,33 @@ test('新账号大厅只开放教学，重入复用面板，完成后恢复快�
  flow.syncTutorial();assert.equal(f.tutorialViews.length,1);
  assert.equal(flow._tutorialButton,start);assert.equal(flow._tutorialLabel,label);assert.equal(size(f.parent),count);
  assert.equal(start.events.get('click').size,1,'状态改变不能叠加原按钮点击监听');
+ flow._motion.dispose();
+});
+
+test('全局开关切换更新原按钮和遮罩，不改账号状态、不重建角色或重复绑定',()=>{
+ const f=setup(),flow=f.flow;
+ flow._root=f.parent;flow._content=f.parent;flow.buildReadyActions(f.parent);flow._view='ready';
+ f.playerData.profile.tutorialCompleted=false;
+ let quick=0,previews=0;flow._careerPanel={openQuick:()=>quick++};
+ flow.presentCharacter=()=>previews++;flow.refreshReadyCharacterInfo=()=>{};
+ const start=flow._tutorialButton,label=flow._tutorialLabel,count=size(f.parent);
+ flow.syncTutorial();const overlay=f.tutorialViews[0];
+ flow._onProfileChange(f.playerData.profile);assert.equal(overlay.shows,1,'未变更状态不重复展示欢迎遮罩');
+ overlay.hide();flow.syncTutorial();assert.equal(overlay.shows,2,'加载失败返回可恢复原遮罩');
+ const before=previews;
+ for(let i=0;i<5;i++) {
+  f.playerData.tutorialEnabled=false;flow._onProfileChange(f.playerData.profile);
+  assert.equal(flow._tutorialOverlay,null);assert.equal(label.string,'快速比赛');start.emit('click');
+  assert.equal(f.tutorialRequests,0);assert.equal(f.playerData.profile.tutorialCompleted,false);
+  f.playerData.tutorialEnabled=true;flow._onProfileChange(f.playerData.profile);
+  assert.equal(label.string,'开始教学');assert.equal(flow._tutorialOverlay.args[5],start);
+ }
+ assert.equal(quick,5);assert.equal(previews,before+10,'沿用既有预览身份检查');
+ f.playerData.tutorialEnabled=false;flow.syncTutorial();flow.setEventPageVisible(true,true);
+ f.playerData.tutorialEnabled=true;flow._onProfileChange(f.playerData.profile);
+ assert.equal(flow._tutorialOverlay,null,'开关刷新不打断已打开的赛事弹窗');
+ flow.setEventPageVisible(false,false);assert.ok(flow._tutorialOverlay,'返回大厅主页面后应用开关');
+ assert.equal(flow._tutorialButton,start);assert.equal(flow._tutorialLabel,label);assert.equal(size(f.parent),count);
+ assert.equal(start.events.get('click').size,1);
  flow._motion.dispose();
 });

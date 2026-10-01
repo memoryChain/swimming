@@ -189,8 +189,8 @@ export class PrepareRaceFlow {
     private readonly _onProfileChange = (_profile: PlayerProfile): void => {
         if (this._suspended || !this._root?.isValid || !this._content?.isValid || this._leaving) return;
         if (this._view === 'ready') {
-            if (this._tutorialOverlay && PlayerData.profile.tutorialCompleted) this.syncTutorial();
             if (this._eventPageActive) return;
+            this.syncTutorial();
             this.presentCharacter(getPlayerCharacterSelection().characterId);
             this.refreshReadyCharacterInfo();
         } else {
@@ -239,9 +239,10 @@ export class PrepareRaceFlow {
 
     private syncTutorial(): void {
         if (!this._tutorialButton?.isValid) return;
-        const required = PlayerData.loaded && !PlayerData.profile.tutorialCompleted;
+        const required = PlayerData.tutorialRequired;
         setLabelString(this._tutorialLabel, required ? '开始教学' : '快速比赛');
         if (!required) { this._tutorialOverlay?.dispose(); this._tutorialOverlay = null; return; }
+        if (this._tutorialOverlay?.root.active) return;
         this._motion.showImmediately();
         this._tutorialOverlay ??= new TutorialOverlay(this._canvasNode);
         this._tutorialOverlay.show('欢迎来到划水高手',
@@ -250,7 +251,7 @@ export class PrepareRaceFlow {
 
     private handleQuickRace(): void {
         if (this._leaving) return;
-        if (PlayerData.loaded && !PlayerData.profile.tutorialCompleted) {
+        if (PlayerData.tutorialRequired) {
             this.leaveCurrentScreen(() => {
                 setSoloRaceTicket(null); setSoloRaceDistance(null); requestTutorial();
                 this._callbacks.onStartRace();
@@ -267,7 +268,7 @@ export class PrepareRaceFlow {
     }
 
     playReadyEntrance(): void {
-        if (PlayerData.loaded && !PlayerData.profile.tutorialCompleted) { this.syncTutorial(); return; }
+        if (PlayerData.tutorialRequired) { this.syncTutorial(); return; }
         if (this._content?.active && !this._leaving) this._motion.enter(false);
     }
 
@@ -599,6 +600,7 @@ export class PrepareRaceFlow {
             else this._motion.showImmediately();
         }
         this._callbacks.onCharacterManagementChanged?.(fullScreen);
+        if (!visible && this._view === 'ready' && !this._suspended && !this._leaving) this.syncTutorial();
     }
 
     private buildReadyCharacterPanel(parent: Node): void {

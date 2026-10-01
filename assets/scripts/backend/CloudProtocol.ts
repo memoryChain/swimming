@@ -19,5 +19,7 @@ export interface CloudResponse {
     uid?: number;
     revision?: number;
     profile?: import('./PlayerProfile').PlayerProfile;
+    /** 独立全局配置，只在读档时下发，不属于玩家存档。 */
+    featureFlags?: { tutorialEnabled: boolean };
     result?: any;
 }

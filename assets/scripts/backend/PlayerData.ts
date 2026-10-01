@@ -140,6 +140,13 @@ class PlayerDataStore {
         return this._loaded;
     }
 
+    get tutorialEnabled(): boolean { return backend().tutorialEnabled ?? true; }
+
+    /** 全局开关不修改账号完成状态，所有大厅入口共用此判断。 */
+    get tutorialRequired(): boolean {
+        return this._loaded && this.tutorialEnabled && !this._profile.tutorialCompleted;
+    }
+
     // Load the profile from the backend (idempotent: concurrent callers share one
     // request). Never rejects - keeps defaults on failure so the UI still works.
     get usesCloud(): boolean { return backend().name === 'wechat-cloud'; }
