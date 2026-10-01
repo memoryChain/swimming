@@ -1,7 +1,7 @@
 import { CONDITION_BALANCE } from '../core/ConditionBalance';
 import { BUTTERFLY_TUNING, butterflyDepthAllowsStroke, butterflyPoseAllowsStroke } from '../core/ButterflyTuning';
 import { ButterflyStroke } from './ButterflyStroke';
-import { ButterflyPropulsion } from './ButterflyPropulsion';
+import { ButterflyPhysicsIntegrator, ButterflyPropulsion } from './ButterflyPropulsion';
 import { CharacterAbilityState } from './CharacterAbilityState';
 import { abilityValue, CharacterAbilityId } from '../core/CharacterAbilityConfig';
 import { StrokeHeartRateModel } from '../condition/StrokeHeartRateModel';
@@ -118,6 +118,7 @@ export class SwimmerMotor {
     private _butterflyGoodReward = 1;
     private _butterflyGoodPropulsionScale = 0.95;
     private _butterflyPulse: ButterflyPropulsion | null = null;
+    private _butterflyPhysics: ButterflyPhysicsIntegrator | null = null;
     private _butterflyPulseEnabled = false;
     private _butterflyPulseSeconds = 0.2;
     private _butterflyPulseBudgetScale = 1;
@@ -130,6 +131,7 @@ export class SwimmerMotor {
         this._butterflyPreview = enabled ? this._butterflyPreview ?? new ButterflyStroke() : null;
         if (!enabled) this._butterflyPreviewRequested = false;
         this._butterflyPulse = enabled ? this._butterflyPulse ?? new ButterflyPropulsion() : null;
+        this._butterflyPhysics = enabled ? this._butterflyPhysics ?? new ButterflyPhysicsIntegrator() : null;
     }
 
     /** 兼容现有测试工具；运行时能力不依赖测试场配置。 */
@@ -713,12 +715,14 @@ export class SwimmerMotor {
         else this.ability.tick(dt, this.isActiveStrokeHeld(StrokeType.LEFT) || this.isActiveStrokeHeld(StrokeType.RIGHT));
         // 能力推进后复核真实深度，不能在跨入水下的同一步继续结算蝶泳。
         if (this.butterfly?.active && !this.butterflyEnvironmentReady) this.cancelButterfly();
+        const butterflyStep = !!this._butterflyPhysics && (!!this.butterfly?.active || !!this._butterflyPulse?.active);
+        const timeoutDelay = this.butterfly?.active && this.butterfly.held
+            ? Math.max(0, this.butterfly.timeout * this.butterfly.duration - this.butterfly.elapsed) : 0;
         this._motionClock += dt;
         if (this.butterfly?.active && this.butterfly.advance(dt)) this.settleButterfly();
         this._armAction = Math.max(0, this._armAction - dt * 4.6);
         this._kickAction = Math.max(0, this._kickAction - dt * 6.8);
         let strokeAcceleration = this.consumeStrokeAcceleration(dt)
-            + (this._butterflyPulse?.consume(dt) ?? 0)
             + this.consumeHeldBaseAcceleration(this._leftActions[0], dt)
             + this.consumeHeldBaseAcceleration(this._rightActions[0], dt);
         // Normal-dive player and AI inputs both register discrete kick taps. AI
@@ -726,12 +730,16 @@ export class SwimmerMotor {
         // one-off pulse that cannot overcome glide drag.
         this.updateKickCadence();
         let kickAcceleration = this.computeKickAcceleration();
+        const propulsionScale = this._calmSlushTimer > 0
+            ? clamp(STIMULANT_BRAWL_TUNING.calmSlushPropulsionScale, 0, 1) : 1;
         if (this._calmSlushTimer > 0) {
-            const propulsionScale = clamp(STIMULANT_BRAWL_TUNING.calmSlushPropulsionScale, 0, 1);
             strokeAcceleration *= propulsionScale;
             kickAcceleration *= propulsionScale;
         }
-        const next = this._physics.step(
+        const next = butterflyStep ? this._butterflyPhysics!.step(this._physics, this._butterflyPulse!,
+            this._currentSpeed, dt, strokeAcceleration, kickAcceleration, this._speedCapBonus,
+            this._glidePhaseActive ? this._glideDrag : 0, this._environmentDrag, propulsionScale, timeoutDelay)
+            : this._physics.step(
             {
                 currentSpeed: this._currentSpeed,
                 distance: this._distance,
@@ -747,6 +755,7 @@ export class SwimmerMotor {
         );
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
         this._currentSpeed = next.currentSpeed;
+        let movementSpeed = butterflyStep ? this._butterflyPhysics!.stepAverageSpeed : this._currentSpeed;
         if (Number.isFinite(this._turtleTowTargetDistance)) {
             // Riding replaces stroke propulsion with a slow, bounded tow pace.
             // Small catch-up corrections stay below normal active swimming speed.
@@ -756,6 +765,7 @@ export class SwimmerMotor {
             this._turtleTowActualSpeed += clamp(desired - this._turtleTowActualSpeed,
                 -18 * dt, 18 * dt);
             this._currentSpeed = this._turtleTowActualSpeed;
+            movementSpeed = this._currentSpeed;
         }
         this.decaySpeedCapBonus(dt, options);
         this.updateKickSteeringCorrection(dt, options);
@@ -781,7 +791,7 @@ export class SwimmerMotor {
         // Race distance is monotonic by contract. The steering hard cap keeps
         // cos(heading) positive; max(0, ...) is a second line of defence so even
         // corrupted runtime state can never make the swimmer turn back.
-        const forwardSpeed = this._currentSpeed
+        const forwardSpeed = movementSpeed
             * Math.max(0, Math.cos(this._heading))
             * this._axialRoll.forwardScale
             * this._collisionPitch.forwardScale;
@@ -795,7 +805,7 @@ export class SwimmerMotor {
         // 迎浪只按比例削弱自身前进，不倒退、不改写原游速，也不吞掉碰撞反冲。
         this._distance = Math.min(raceDistance, this._distance + (forwardSpeed * (1 - waveSlowdown) + waveSpeed) * dt);
         // Lateral drift accumulates the sideways component, clamped to the pool.
-        const requestedLateralOffset = this._lateralOffset + this._currentSpeed * Math.sin(this._heading) * dt;
+        const requestedLateralOffset = this._lateralOffset + movementSpeed * Math.sin(this._heading) * dt;
         this._lateralOffset = clamp(requestedLateralOffset, this._lateralOffsetMin, this._lateralOffsetMax);
         if (Number.isFinite(this._turtleTowTargetLateral)) {
             const sideError = this._turtleTowTargetLateral - this._lateralOffset;
@@ -2320,10 +2330,14 @@ export class SwimmerMotor {
     }
 
     get strokeTimingGuide(): StrokeTimingGuide {
-        if (this.butterfly?.active) return this.butterflyTimingGuide();
-        const preview = this.pendingButterflyTimingGuide();
+        return this.fillStrokeTimingGuide();
+    }
+
+    fillStrokeTimingGuide(target?: StrokeTimingGuide): StrokeTimingGuide {
+        if (this.butterfly?.active) return this.butterflyTimingGuide(target);
+        const preview = this.pendingButterflyTimingGuide(target);
         if (preview) return preview;
-        return this.buildGuideFromAction(this.currentGuideAction());
+        return this.buildGuideFromAction(this.currentGuideAction(), target);
     }
 
     // Per-side timing guide: left and right arms are independent stroke queues,

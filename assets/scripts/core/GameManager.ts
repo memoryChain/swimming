@@ -203,7 +203,7 @@ import { AwardsPresentation } from '../venue/AwardsPresentation';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { LaneLockdownVisuals } from '../venue/LaneLockdownVisuals';
 import { TopViewCeilingController } from '../venue/TopViewCeilingController';
-import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
+import { StrokeTimingDebugView } from '../ui/StrokeTimingDebugView';
 import { loadSampledActionsForRace } from '../character/SampledActionLoader';
 import { loadSwimmerPrefab, setLayerRecursive } from '../character/CharacterModelLoader';
 import { SHARK_MODEL_PRESENTATION, RESOURCE_PATHS } from './ResourcePaths';
@@ -520,8 +520,7 @@ export class GameManager extends Component {
     private _modelDebugFlipTurnButton: Node = null;
     private _modelDebugSkyboxLabel: Label = null;
     private _skyboxApplier: StandardSkyboxApplier = null;
-    private _timingGuideFillNode: Node = null;
-    private _timingGuideMarker: Node = null;
+    private _timingGuideDebugView: StrokeTimingDebugView | null = null;
     // Left and right arms are independent stroke queues, so each hand gets its own
     // sweet-zone dial (left dial shows the swimmer's speed; right dial omits it).
     // AI 测试辅助：主 AI 完美区与镜头跟随切换。
@@ -754,10 +753,9 @@ export class GameManager extends Component {
         this.consumePlayerRhythmResults();
         this.updatePlayerCondition(dt);
         this._aiDifficultyPanel.update(dt);
-        const timingGuide = this._aiDebugMode ? this._playerSwimmer.strokeTimingGuide : null;
         const raceActive = this._state === GameState.RACING;
         this._butterflyDebugHud?.update(dt, raceActive, this._playerSwimmer, this._inputRouter);
-        if (this._butterflyEnabled) this._uiController?.raceHudStatus?.updateButterflyStatus(
+        if (this._aiDebugMode && this._butterflyEnabled) this._uiController?.raceHudStatus?.updateButterflyStatus(
             dt, raceActive && this._playerSwimmer.node.active && !this._playerAutopilotEnabled,
             this._playerSwimmer, this._inputRouter);
         const raceDistance = getRaceDistance();
@@ -807,7 +805,7 @@ export class GameManager extends Component {
         // Sweet-zone timing feedback is a tuning aid. Keep it out of normal
         // races and only expose it in the dedicated AI-difficulty debug race.
         const playerFeedbackVisible = this._aiDebugMode && raceActive && playerBeforeFinish;
-        this.drawStrokeTimingGuide(timingGuide, playerFeedbackVisible);
+        this._timingGuideDebugView?.update(dt, playerFeedbackVisible, this._playerSwimmer);
         if (this._overheadReadout && this._overheadReadout.active !== playerSpeedVisible) {
             this._overheadReadout.active = playerSpeedVisible;
         }
@@ -5364,10 +5362,12 @@ export class GameManager extends Component {
             }
             this._cameraSpeedLines.bind(this._raceHud);
             this._uiController = refs.uiController;
-            if (this._butterflyEnabled) this._uiController.raceHudStatus?.enableButterflyStatus();
+            // 操作诊断文字仅供比赛调试，正式比赛不创建提示节点或执行采样。
+            if (this._aiDebugMode && this._butterflyEnabled) this._uiController.raceHudStatus?.enableButterflyStatus();
             this._uiController.settlementView?.setRoomMode(this._roomMode);
-            this._timingGuideFillNode = refs.timingGuideFillNode;
-            this._timingGuideMarker = refs.timingGuideMarker;
+            if (this._aiDebugMode && refs.timingGuideFillNode) {
+                this._timingGuideDebugView = new StrokeTimingDebugView(refs.timingGuideFillNode, refs.timingGuideMarker);
+            }
             // 玩家与被观察 AI 的完美区统一由 HUD 手掌显示。
             const visibleSize = view.getVisibleSize();
             this.buildOverheadReadout();
@@ -6668,7 +6668,7 @@ export class GameManager extends Component {
     }
 
     private drawSpeedBar(_ratio: number) {
-        this.drawStrokeTimingGuide(null, false);
+        this._timingGuideDebugView?.update(0, false, this._playerSwimmer);
     }
 
     private setUnderwaterOverlayVisible(visible: boolean) {
@@ -6713,54 +6713,6 @@ export class GameManager extends Component {
         const aspect = height > 0 ? width / height : 16 / 9;
         const planeHeight = Math.tan(fov * Math.PI / 360) * UNDERWATER_TINT_DISTANCE * 2 * UNDERWATER_TINT_MARGIN;
         return new Vec3(planeHeight * aspect, planeHeight, UNDERWATER_TINT_DEPTH);
-    }
-
-    private drawStrokeTimingGuide(guide: StrokeTimingGuide | null, active: boolean) {
-        const fillNode = this._timingGuideFillNode;
-        if (!fillNode) {
-            return;
-        }
-        // The timing guide is an AI-tuning aid. Production races still pass through
-        // this method every frame, so return before touching transforms/colors when
-        // the debug presentation is disabled.
-        if (!active) {
-            if (this._timingGuideMarker?.active) {
-                this._timingGuideMarker.active = false;
-            }
-            return;
-        }
-        const h = 216;
-        const intervals = guide?.intervals ?? [];
-        const sprite = fillNode.getComponent(Sprite);
-        const transform = fillNode.getComponent(UITransform);
-        if (transform) {
-            transform.setContentSize(transform.contentSize.width, h);
-            fillNode.setPosition(fillNode.position.x, -3, fillNode.position.z);
-        }
-        if (intervals.length <= 0) {
-            if (sprite) {
-                sprite.color = color(255, 82, 91, 180);
-            }
-        } else {
-            const best = intervals.find((interval) => interval.rating === Rating.PERFECT)
-                ?? intervals.find((interval) => interval.rating === Rating.GOOD)
-                ?? intervals[0];
-            if (sprite) {
-                sprite.color = best.rating === Rating.PERFECT
-                    ? color(255, 214, 64, 245)
-                    : best.rating === Rating.GOOD
-                        ? color(76, 216, 235, 225)
-                        : color(255, 82, 91, 190);
-            }
-        }
-        if (this._timingGuideMarker) {
-            const markerVisible = active && !!guide?.active;
-            this._timingGuideMarker.active = markerVisible;
-            if (markerVisible) {
-                const y = -h / 2 + Math.max(0, Math.min(1, guide.currentRatio)) * h;
-                this._timingGuideMarker.setPosition(this._timingGuideMarker.position.x, y, 0);
-            }
-        }
     }
 
     private paintError(error: unknown) {

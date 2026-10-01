@@ -7,6 +7,49 @@ const direction = (a,b) => Vec3.subtract(new Vec3(), position(b), position(a)).n
 const snapshot = r => JSON.stringify([r.pose.root.position, r.pose.root.rotation, ...r.pose._manualBones.map(n => n.rotation)]);
 const freestyle = r => r.pose.applyFreestylePose(.5, 2, 1, 3, .4, 1, 1, 1);
 
+test('真实外观更新入口仅在进入／退出蝶泳时计算基础姿态，水花仍更新', () => {
+    const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
+    const compiler = process.env.PATH.split(path.delimiter).map(dir => path.resolve(dir, '../typescript/lib/typescript.js')).find(p => fs.existsSync(p));
+    const ts = require(compiler), file = path.resolve(__dirname, '../assets/scripts/entity/CartoonSwimmerRig.ts');
+    const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
+    const owner = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text === 'CartoonSwimmerRig');
+    const method = owner.members.find(n => n.name?.getText(source) === 'updateFreestyle');
+    const js = ts.transpileModule(`class Rig {${method.getText(source)}}`, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
+    const Rig = vm.runInNewContext(js + ';Rig'), rig = new Rig();
+    let base = 0, butterfly = 0, splash = 0;
+    Object.assign(rig, { _loaded: true, root: {}, _poseState: { isFreestyleActive: true },
+        _butterflyPoseWeight: 0, _armAction: 0, _kickAction: 0,
+        _pose: { setMovementDirection() {}, applyFreestyleTreadBlendPose() { base++; }, applyButterflyPose() { butterfly++; } },
+        updateArmCycleMotion() {}, updateKickCycleMotion() {}, updateTreadWaterBlend() { return 0; },
+        applyTreadBlendModelPlacement() {}, updateSplashSurface() { splash++; }, visualHandWaterEntry() { return 0; },
+    });
+    const tick = p => rig.updateFreestyle(1 / 60, 0, 0, 0, 0, 0, 2, 1, true, p);
+    for (let i = 0; i < 10; i++) tick(.3);
+    assert.ok(base > 0 && base < 10); assert.equal(rig._butterflyPoseWeight, 1);
+    const before = base;
+    for (let i = 0; i < 60; i++) tick(.4);
+    assert.equal(base, before); assert.equal(butterfly, 70); assert.equal(splash, 70);
+    tick(-1); assert.equal(base, before + 1); assert.equal(butterfly, 71);
+});
+
+for (const file of SWIMMER_MODEL_FILES) {
+    test(`${file}：满权重跳过自由泳与原叠加路径相同，退出仍恢复`, () => {
+        const a = createRig(file), b = createRig(file);
+        a.wrapper.setRotationFromEuler(90, 90, 0); b.wrapper.setRotationFromEuler(90, 90, 0);
+        for (let i = 0; i <= 120; i++) {
+            freestyle(a); a.pose.applyButterflyPose(i / 120);
+            b.pose.applyButterflyPose(i / 120);
+            assert.equal(snapshot(a), snapshot(b));
+        }
+        for (const blend of [.8, .4, .1]) {
+            freestyle(a); freestyle(b);
+            a.pose.applyButterflyPose(1, blend); b.pose.applyButterflyPose(1, blend);
+            assert.equal(snapshot(a), snapshot(b));
+        }
+        freestyle(a); freestyle(b); assert.equal(snapshot(a), snapshot(b));
+    });
+}
+
 for (const file of SWIMMER_MODEL_FILES) {
     test(`${file}：蝶泳整拍有限、肩腕不交叉、回摆伸臂且退出完全恢复`, () => {
         const r = createRig(file); r.wrapper.setRotationFromEuler(90,90,0);

@@ -572,12 +572,14 @@ export class FreestylePoseController {
         const p = clamp(progress, 0, 1), blend = clamp(weight, 0, 1);
         for (let i = 0; i < this._manualBones.length; i++) {
             const bone = this._manualBones[i];
-            Quat.copy(this._butterflyBlendRotations[i], bone.rotation);
+            if (blend < 1) Quat.copy(this._butterflyBlendRotations[i], bone.rotation);
             const base = this._boneBaseRotation.get(bone);
             if (base) bone.setRotation(base);
         }
-        Vec3.copy(this._butterflyRootPosition, this.root.position);
-        Quat.copy(this._butterflyRootRotation, this.root.rotation);
+        if (blend < 1) {
+            Vec3.copy(this._butterflyRootPosition, this.root.position);
+            Quat.copy(this._butterflyRootRotation, this.root.rotation);
+        }
         const cycle = p * Math.PI * 2;
         const wave = Math.cos((p - 0.50) * Math.PI * 2);
         const wavePower = BUTTERFLY_TUNING.bodyWaveDegrees * (buoyancy?.waveScale ?? 1);

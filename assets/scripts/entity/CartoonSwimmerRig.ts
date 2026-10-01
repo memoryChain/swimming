@@ -1404,7 +1404,14 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         const treadWeight = this.updateTreadWaterBlend(dt, treadSpeed, suppressTreadWater);
         this.applyTreadBlendModelPlacement(treadWeight);
         const drive = Math.max(0.85, Math.min(1.45, 0.9 + speed * 0.16));
-        this._pose.applyFreestyleTreadBlendPose(
+        const butterflyActive = butterflyProgress >= 0;
+        const butterflyVisible = butterflyActive || this._butterflyPoseWeight > 0;
+        if (butterflyVisible) {
+            this._butterflyPoseWeight = butterflyActive ? Math.min(1, this._butterflyPoseWeight + dt / 0.10)
+                : Math.max(0, this._butterflyPoseWeight - dt / 0.18);
+        }
+        // 满权重蝶泳完全覆盖基础游姿；只在进入和退出混合时计算自由泳骨骼。
+        if (!butterflyActive || this._butterflyPoseWeight < 1) this._pose.applyFreestyleTreadBlendPose(
             leftArmCycle,
             rightArmCycle,
             leftKickCycle,
@@ -1418,11 +1425,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         );
 
         // 接触与水花在最终骨骼姿态之后采样，不能使用被蝶泳覆盖前的自由泳手掌。
-        if (butterflyProgress >= 0 || this._butterflyPoseWeight > 0) {
-            const active = butterflyProgress >= 0;
-            this._butterflyPoseWeight = active ? Math.min(1, this._butterflyPoseWeight + dt / 0.10)
-                : Math.max(0, this._butterflyPoseWeight - dt / 0.18);
-            const p = active ? butterflyProgress : 1;
+        if (butterflyVisible) {
+            const p = butterflyActive ? butterflyProgress : 1;
             const weight = this._butterflyPoseWeight;
             this._pose.applyButterflyPose(p, weight * weight * (3 - 2 * weight), butterflyKickCycle, buoyancy);
             this._leftHandWaterContact = this._rightHandWaterContact = p < 0.52 || p > 0.9 ? 1 : 0;

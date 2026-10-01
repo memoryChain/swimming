@@ -1812,6 +1812,10 @@ export class Swimmer extends Component {
         return this._motor.strokeTimingGuide;
     }
 
+    fillStrokeTimingGuide(target: StrokeTimingGuide): StrokeTimingGuide {
+        return this._motor.fillStrokeTimingGuide(target);
+    }
+
     strokeTimingGuideForSide(type: StrokeType, target?: StrokeTimingGuide): StrokeTimingGuide {
         return this._motor.strokeTimingGuideForSide(type, target);
     }

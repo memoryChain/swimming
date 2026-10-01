@@ -5,7 +5,7 @@ import { butterflyDepthAllowsStroke } from '../core/ButterflyTuning';
 import { makeLabel, uiColor } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 
-/** 启用蝶泳后才创建；正式操作提示与测试数值分开，10Hz 消费状态。 */
+/** 仅在启用蝶泳的本地比赛调试中创建；操作提示与专用数值面板分开，10Hz 消费状态。 */
 export class ButterflyStatusView {
     private readonly label: Label;
     private elapsed = 0.1;
