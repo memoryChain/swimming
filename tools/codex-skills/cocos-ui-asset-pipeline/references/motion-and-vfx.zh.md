@@ -6,10 +6,10 @@
 
 | 场景 | 当前说明 | 代码入口 |
 | --- | --- | --- |
-| 大厅入退场、模式选择、按钮反馈 | [大厅动效](../../../../docs/大厅动效接入说明.zh.md) | `assets/scripts/ui/LobbyUiMotion.ts` |
-| 弹窗开关、遮罩和输入锁 | [弹窗动效](../../../../docs/弹窗动效接入说明.zh.md) | `assets/scripts/ui/PopupUiMotion.ts` |
-| 比赛 HUD 入场 | [HUD 入场](../../../../docs/比赛HUD入场动效.zh.md) | `assets/scripts/ui/RaceHudEntrance.ts` |
-| 手掌拍水、水片、细滴、路径尾流 | [泳道水花与当前参数](../../../../docs/泳道水花第二版.zh.md) | `assets/scripts/character/SplashEmitter.ts`、`SplashEmitterTuning.ts` |
+| 大厅入退场、模式选择、按钮反馈 | [大厅动效](../../../../docs/开发记录/动效与特效/大厅动效接入说明.zh.md) | `assets/scripts/ui/LobbyUiMotion.ts` |
+| 弹窗开关、遮罩和输入锁 | [弹窗动效](../../../../docs/开发记录/动效与特效/弹窗动效接入说明.zh.md) | `assets/scripts/ui/PopupUiMotion.ts` |
+| 比赛 HUD 入场 | [HUD 入场](../../../../docs/开发记录/动效与特效/比赛HUD入场动效.zh.md) | `assets/scripts/ui/RaceHudEntrance.ts` |
+| 手掌拍水、水片、细滴、路径尾流 | [泳道水花与当前参数](../../../../docs/开发记录/动效与特效/泳道水花第二版.zh.md) | `assets/scripts/character/SplashEmitter.ts`、`SplashEmitterTuning.ts` |
 
 ## 制作顺序：先核准事件，再调整外观
 

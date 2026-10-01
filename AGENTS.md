@@ -62,7 +62,7 @@ Prefab-authored UI and code-generated UI (`Node` + `UITransform` + `Button` + `L
 
 ## Avatar And Character Card Artwork
 
-- 头像与角色卡遵循已确认的美术方向；成组头像需有可辨认的脸型、性格、角度和表情差异。具体设计经验读仓库 UI 技能，当前头像参数见 `docs/头像设计与裁切接入说明.zh.md`。
+- 头像与角色卡遵循已确认的美术方向；成组头像需有可辨认的脸型、性格、角度和表情差异。具体设计经验读仓库 UI 技能，当前头像参数见 `docs/开发记录/界面接入/头像设计与裁切接入说明.zh.md`。
 - 接入前测量外框的实际内径、圆心和透明边距。圆形头像必须有正确的圆外透明裁切；圆角卡片的画面必须受圆角边界约束，不用叠框掩盖漏角。检查实际小尺寸下的内缘缝隙、描边、人物与手势安全区。
 - 头像替换必须核查所有共用展示入口，保留已有 avatarId、UUID 和资源路径对应关系，不因换画风改变已保存选择、联机身份或比赛外观映射。
 - 「本地预览」与「接入游戏」按用户当前授权区分；预览成果不得自动写入运行时资源。允许接入后仍保留源稿与可复现的导出方式。
@@ -105,7 +105,7 @@ Prefab-authored UI and code-generated UI (`Node` + `UITransform` + `Button` + `L
 
 The game has a WeChat networked race mode (host-authoritative "predict + correct" hybrid, keep-alive session). **Any new gameplay/UI/economy feature must be evaluated for its multiplayer impact.** Before finishing a feature, ask: "what happens to this in a networked race, and does it stay in sync across devices?"
 
-- **Read `docs/平台能力/realtime-multiplayer-notes.zh.md` section 8 (「实战：当前实现的架构与踩坑」) before touching anything sync-related.** It has the real architecture, the WeChat hard-facts list, and every pitfall we hit on device.
+- **Read `docs/技术说明/联机同步/realtime-multiplayer-notes.zh.md` section 8 (「实战：当前实现的架构与踩坑」) before touching anything sync-related.** It has the real architecture, the WeChat hard-facts list, and every pitfall we hit on device.
 - **Single-player must stay unchanged.** All net logic is gated on the net session (`GameManager._netSession` / `consumeNetRaceSession()` non-null). Put multiplayer branches behind that gate; single-player takes the original path with zero behaviour change and no extra per-frame cost.
 - **Anything that affects race OUTCOME must be deterministic across devices**: route it through `SharedRNG` (never `Math.random()` for outcome-affecting randomness), and reseed from the host seed. Pure-visual randomness (splash, confetti) may stay `Math.random()`.
 - **Cross-engine floats diverge** (iOS JavaScriptCore vs Android V8), so strict lockstep is impossible. New per-swimmer visible state (position, lateral, heading, pose, speed-gated poses, etc.) that can drift must be either host-authoritative-corrected or derived from synced authoritative values — not from the remote copy's local sim alone. See the tread-water pose fix (`NetSnapshotEntry.speed` → `applyNetPoseSpeed`) as the pattern.

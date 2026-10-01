@@ -4,7 +4,7 @@
 // Service (room + matchmaking + frame forwarding + reconnect); other platforms get
 // their own implementation, and the editor/web build gets a no-op stub.
 //
-// Design + flow: see docs/平台能力/realtime-multiplayer-notes.zh.md (section 7).
+// 设计与流程见 docs/技术说明/联机同步/realtime-multiplayer-notes.zh.md 第 7 节。
 // Determinism (identical inputs -> identical world) is provided by SharedRNG.
 //
 // This is a SKELETON: the WeChat payload shapes are best-effort from the docs and

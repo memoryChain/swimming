@@ -331,7 +331,7 @@ python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.b
 
 省略 `--apply` 为内存试算，不保存；创作步骤可重复执行。同步后仍必须执行本文标准 atlas 合批、dry-run 和 GLB 导出步骤。源板局部 X/Y 保留原长度/厚度及原对象旋转；入口半板最长边可能是斜向三角化边，禁止据此重定向盒体。所有方块局部支承平面和对象变换保持，去倒角新增的角点会使旋转道具世界包围盒最多扩约 2mm；角挡板的批次世界包围盒最多扩约 2.5cm。
 
-`python scripts/check-venue-first-pass.py <优化前GLB路径>` 对比节点变换、批次数、其余 32 个网格的逐属性/索引字节及 7 张内嵌图片。`scripts/render-venue-first-pass-preview.py -- --before <优化前GLB路径>` 通过 `scripts/run-blender.py` 执行，输出 GLB 材质下的正反低机位、道具正反面、广告、入口和转角离线对照。完整结果见 `docs/场馆几何优化审计.zh.md`；不以离线预览代替游戏/真机验收。
+`python scripts/check-venue-first-pass.py <优化前GLB路径>` 对比节点变换、批次数、其余 32 个网格的逐属性/索引字节及 7 张内嵌图片。`scripts/render-venue-first-pass-preview.py -- --before <优化前GLB路径>` 通过 `scripts/run-blender.py` 执行，输出 GLB 材质下的正反低机位、道具正反面、广告、入口和转角离线对照。完整结果见 `docs/技术说明/渲染与性能/场馆几何优化审计.zh.md`；不以离线预览代替游戏/真机验收。
 
 
 ## 观众空间分区剔除（2026-09-09）
@@ -342,7 +342,7 @@ python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.b
 
 水下视角不显示观众：观众与拍照闪光使用独立 bit 13，主相机入水时移除该可见位、出水恢复；水面折射和水下反射相机始终不包含此层。不改变预览手动开关或其他相机。水下闪光跳过位置筛选和发射，观众的两个轻量动作组件维持原节流。不要把新观众重新放回 DEFAULT，否则水下会继续提交这些网格。
 
-1,171 人、15,280 triangles、29,974 vertices、原始几何缓冲 930,952 bytes 不变。`scripts/preview-spectator-crowd.cjs` 调用 `spectator-culling-audit.cjs` 比较旧颜色桶、4/6/8 区方案，并调用 `spectator-runtime-audit.cjs` 执行实际 build 生命周期检查。当前六区在代表性正向镜头的保守 AABB 预测为 9 次提交、7,666 triangles；中段反向为 9 次、7,614 triangles。全馆俯视最坏为 18 次，相对旧版 15 次多 3 次；不是所有镜头都能同时减少提交和面数。详细相机参数、结果及验证范围见 `docs/观众空间合批与剔除.zh.md`。真机 FPS 和耗时尚未测量。
+1,171 人、15,280 triangles、29,974 vertices、原始几何缓冲 930,952 bytes 不变。`scripts/preview-spectator-crowd.cjs` 调用 `spectator-culling-audit.cjs` 比较旧颜色桶、4/6/8 区方案，并调用 `spectator-runtime-audit.cjs` 执行实际 build 生命周期检查。当前六区在代表性正向镜头的保守 AABB 预测为 9 次提交、7,666 triangles；中段反向为 9 次、7,614 triangles。全馆俯视最坏为 18 次，相对旧版 15 次多 3 次；不是所有镜头都能同时减少提交和面数。详细相机参数、结果及验证范围见 `docs/技术说明/渲染与性能/观众空间合批与剔除.zh.md`。真机 FPS 和耗时尚未测量。
 
 
 ## 移除仰泳旗（2026-09-10）

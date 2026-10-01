@@ -3,7 +3,7 @@
 // 从当前已打开的最终主稿导出固定美术提示与蓄力部件；中文提示在运行时使用 Label。
 var project = File($.fileName).parent.parent;
 
-var notes = new Folder(project.fsName + '/docs/race-start-ui'); notes.create();
+var notes = new Folder(project.fsName + '/docs/开发记录/界面接入/race-start-ui'); notes.create();
 var source = app.documents.getByName('划水大师-比赛HUD-起跑提示与蓄力.psd');
 if (source.width.as('px') !== 1290 || source.height.as('px') !== 720) throw Error('起跳主稿尺寸必须为 1290×720');
 var c=charIDToTypeID,s=stringIDToTypeID,manifest=[];

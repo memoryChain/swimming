@@ -44,7 +44,7 @@ export type PlayerColorScheme = {
 
 // Add a definition here to introduce a selectable character. The management
 // 慢节奏平衡：按技巧、起跳、续航与固有能力共同取舍；狂野碰撞与潜航收益纳入预算。
-// 2026-10-01 的输入与赛程回放见 docs/慢节奏角色平衡与AI验证.zh.md。
+// 2026-10-01 的输入与赛程回放见 docs/开发记录/数值与功能/慢节奏角色平衡与AI验证.zh.md。
 // roster derives its scrollable slot count from this catalog, and the formal
 // race hand-off uses the same definitions directly.
 export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] = [

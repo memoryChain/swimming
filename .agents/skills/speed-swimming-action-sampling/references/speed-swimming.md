@@ -292,7 +292,7 @@ Only after the numeric gate and this visual gate pass should the action be prese
 
 - 高肘不等于把手腕收到肩和脸旁。必须结合俯视与侧视检查前臂是在肘外侧随动，还是横向反折进身体；单看侧视抬肘高度会漏掉这个错误。
 - 写清角度约定：肩→肘与肘→腕的方向夹角在伸直时为 0°，与肘内角互补。不要混用“屈肘角”和“肘内角”，更不能把二维投影夹角当成精确三维角度。
-- 验证必须同时包含屈肘上下界、肩腕距离、肘腕横向关系、实际蒙皮外形和整周期插值。只检查“屈肘足够大”会把过度折叠误判为通过。当前页面参数和修正缘由见 `docs/自由泳姿态参考调整.zh.md`。
+- 验证必须同时包含屈肘上下界、肩腕距离、肘腕横向关系、实际蒙皮外形和整周期插值。只检查“屈肘足够大”会把过度折叠误判为通过。当前页面参数和修正缘由见 `docs/开发记录/角色与动作/自由泳姿态参考调整.zh.md`。
 
 ## 前伸直臂要检查蒙皮，不只检查骨点
 
@@ -307,7 +307,7 @@ Only after the numeric gate and this visual gate pass should the action be prese
 
 ## Common Failure Modes
 
-- 同一动作倍率不保证局部观感同速。比较俯泳和仰泳时，先区分整圈计时与手臂局部路径速度，再用真实肩腕轨迹测量回臂完成时刻、停留段和峰值。过早进入直臂保持会压缩回臂；修正视觉曲线的时间分布并同步胸肩／换气，不能直接改共享松手倍率或玩法相位来掩盖。数值与当前阶段时间记录在 `docs/自由泳姿态参考调整.zh.md`。
+- 同一动作倍率不保证局部观感同速。比较俯泳和仰泳时，先区分整圈计时与手臂局部路径速度，再用真实肩腕轨迹测量回臂完成时刻、停留段和峰值。过早进入直臂保持会压缩回臂；修正视觉曲线的时间分布并同步胸肩／换气，不能直接改共享松手倍率或玩法相位来掩盖。数值与当前阶段时间记录在 `docs/开发记录/角色与动作/自由泳姿态参考调整.zh.md`。
 
 - **Every action has the same number of frames**: fixed-count resampling is still active. Sample inclusive source frames.
 - **The public sampled-action file becomes huge**: the generator has regressed to concatenating every clip. Keep only the public API/index there and restore one generated data file per action.

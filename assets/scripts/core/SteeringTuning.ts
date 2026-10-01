@@ -1,5 +1,5 @@
 // Steering / "蛇形转向" comedy system tuning.
-// 蛇形转向搞笑系统的手感数值。设计见 docs/imbalance-comedy-design.zh.md。
+// 蛇形转向搞笑系统的手感数值。设计见 docs/历史归档/早期方案/imbalance-comedy-design.zh.md。
 //
 // Core idea: a stroke no longer only accelerates — it also injects heading angular
 // velocity. That velocity survives release and decays through water drag, so the

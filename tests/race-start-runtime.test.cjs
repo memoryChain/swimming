@@ -124,7 +124,7 @@ test('教学只显示真实蓄力条，清除READY和GO提示，松手直接呈�
     assert.equal(count(s.parent),total);
 });
 test('导出清单尺寸与运行时 PNG、资源路径一致；不包含未选标题',()=>{
-    const manifest=JSON.parse(fs.readFileSync('docs/race-start-ui/runtime-export-layout.json','utf8'));
+    const manifest=JSON.parse(fs.readFileSync('docs/开发记录/界面接入/race-start-ui/runtime-export-layout.json','utf8'));
     const paths=fs.readFileSync('assets/scripts/core/ResourcePaths.ts','utf8');
     assert.equal(manifest.assets.length,11);
     for(const asset of manifest.assets) {

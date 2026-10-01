@@ -4,7 +4,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const source = path.resolve(root, process.argv[2] || 'art/shared-lobby-scene/panorama-source.png');
 const target = path.join(root, 'assets/race/ui/lobby/background/background.png');
-if (!fs.existsSync(source)) throw new Error('缺少全景源图，请按 docs/大厅角色共享场景.zh.md 恢复源图后导出');
+if (!fs.existsSync(source)) throw new Error('缺少全景源图，请按 docs/技术说明/运行架构/大厅角色共享场景.zh.md 恢复源图后导出');
 const png = fs.readFileSync(source);
 if (png.length < 33 || png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a'
     || png.readUInt32BE(16) !== 2115 || png.readUInt32BE(20) !== 743 || png[25] !== 2) {
