@@ -1,6 +1,7 @@
 import {
     BlockInputEvents,
     Button,
+    CacheMode,
     Color,
     EventTouch,
     Graphics,
@@ -23,6 +24,8 @@ import { requestTutorial } from '../tutorial/TutorialSession';
 import { TutorialOverlay } from '../tutorial/TutorialOverlay';
 import { DEBUG_UI_ENABLED } from '../core/DebugUiPolicy';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
+import { loadAvatarUiSpriteFrame, preloadUiArt } from './AvatarUiAssets';
+import { UiPageLoadGate } from './UiAssetBarrier';
 import { PREPARE_PANORAMA_HEIGHT, PREPARE_PANORAMA_WIDTH, RESOURCE_PATHS } from '../core/ResourcePaths';
 import {
     findPlayerCharacter,
@@ -70,6 +73,7 @@ type CachedPreparePage = { content: Node; motion: LobbyUiMotion; rotateArea: Nod
 type PreparePageTransition = { outgoing: Node; oldOpacity: UIOpacity; newOpacity: UIOpacity; from: number; to: number };
 
 type CharacterCardView = {
+    root: Node;
     characterId: PlayerCharacterId | null;
     selectedFrame: Node;
     activeStatus: Node;
@@ -101,11 +105,15 @@ const CHARACTER_CARD_X_PITCH = 170;
 const CHARACTER_CARD_Y_PITCH = 200;
 const CHARACTER_LIST_VIEW_WIDTH = 342;
 const CHARACTER_LIST_VIEW_HEIGHT = 562;
+// 包含选中外框及按压缩放的余量，避免边缘提前消失。
+const CHARACTER_CARD_VISIBLE_HALF_HEIGHT = 104;
 const SWATCH_SIZE = 56;
 const SWATCH_ART_SIZE = 46;
 const APPEARANCE_SAVE_DELAY_MS = 1200;
 
 export class PrepareRaceFlow {
+    private readonly _characterLoadGate = new UiPageLoadGate();
+    private _characterArtReady = false;
     private _tutorialOverlay: TutorialOverlay | null = null;
     private _tutorialButton: Node | null = null;
     private _tutorialLabel: Label | null = null;
@@ -143,6 +151,8 @@ export class PrepareRaceFlow {
     private _hasShownReady = false;
 
     private readonly _characterCards: CharacterCardView[] = [];
+    private _characterRosterContent: Node | null = null;
+    private readonly _onCharacterRosterScroll = (): void => this.updateCharacterCardVisibility();
     private readonly _tabs: TabView[] = [];
     private readonly _swatches: SwatchView[] = [];
 
@@ -263,6 +273,16 @@ export class PrepareRaceFlow {
 
     showCharacterManagement(deferEntrance = false): void {
         if (this._pageTransition || (this._content?.isValid && this._view === 'characters')) return;
+        if (!deferEntrance && !this._characterArtReady && !this._pages.has('characters')) {
+            this._characterLoadGate.open(done => preloadUiArt([
+                RESOURCE_PATHS.characterUi, RESOURCE_PATHS.characterSkillIcons,
+                RESOURCE_PATHS.lobbyB.skillBase, RESOURCE_PATHS.careerUi.badges[PlayerData.profile.career.league],
+            ], done), () => {
+                this._characterArtReady = true;
+                this.showCharacterManagement(false);
+            }, () => this.presentationReady);
+            return;
+        }
         this.ensureRoot();
         const previous = this._content;
         const animate = !!previous?.isValid && !this._eventPageActive;
@@ -281,6 +301,7 @@ export class PrepareRaceFlow {
             this.refreshCharacterConfirmState();
             this.selectInspectorTab('attributes', true);
         }
+        this.updateCharacterCardVisibility();
         this.presentCharacter(this._draftCharacterId);
         this._callbacks.onCharacterManagementChanged?.(true);
         this.layoutPresentation();
@@ -293,6 +314,7 @@ export class PrepareRaceFlow {
     get previewRoot(): Node | null { return this._previewRoot; }
 
     suspend(): void {
+        this._characterLoadGate.cancel();
         if (this._suspended) return;
         this._suspended = true;
         this._tutorialOverlay?.hide();
@@ -329,6 +351,7 @@ export class PrepareRaceFlow {
     }
 
     dispose(): void {
+        this._characterLoadGate.cancel();
         this._tutorialOverlay?.dispose(); this._tutorialOverlay = null;
         this.saveAppearanceChangesInBackground();
         this._leaving = true;
@@ -463,6 +486,7 @@ export class PrepareRaceFlow {
         this._previewRotateArea = null;
         this._previewRotateTouchId = null;
         this._characterCards.length = 0;
+        this._characterRosterContent = null;
         this._tabs.length = 0;
         this._swatches.length = 0;
         this._readyName = null;
@@ -705,6 +729,9 @@ export class PrepareRaceFlow {
         this.refreshCharacterCards();
         this.refreshCharacterInspector();
         this.selectInspectorTab('attributes', true);
+        // 仅此状态驱动的页面使用整段文本缓存，不占共享 CHAR 字符图集。
+        // 动态合图关闭或满时由引擎保留独立纹理，文字仍完整可见。
+        for (const label of parent.getComponentsInChildren(Label)) label.cacheMode = CacheMode.BITMAP;
     }
 
     private buildCharacterHeader(parent: Node): void {
@@ -758,9 +785,24 @@ export class PrepareRaceFlow {
         // 内容顶边与视口顶边对齐，新增角色时同步扩大滚动范围。
         content.setPosition(0, (CHARACTER_LIST_VIEW_HEIGHT - contentHeight) / 2, 0);
         scrollView.content = content;
+        this._characterRosterContent = content;
+        viewport.on(ScrollView.EventType.SCROLLING, this._onCharacterRosterScroll);
 
         for (let index = 0; index < slotCount; index++) {
             this.buildCharacterCard(content, PLAYER_CHARACTER_DEFINITIONS[index], index);
+        }
+        this.updateCharacterCardVisibility();
+    }
+
+    /** stencil 只裁像素；离屏卡片必须停止提交绘制，节点及数据继续复用。 */
+    private updateCharacterCardVisibility(): void {
+        const content = this._characterRosterContent;
+        if (this._suspended || this._view !== 'characters' || !this._content?.active || !content?.isValid) return;
+        const edge = CHARACTER_LIST_VIEW_HEIGHT / 2 + CHARACTER_CARD_VISIBLE_HALF_HEIGHT;
+        const scrollY = content.position.y;
+        for (const card of this._characterCards) {
+            const y = scrollY + card.root.position.y;
+            setNodeActive(card.root, y >= -edge && y <= edge);
         }
     }
 
@@ -802,6 +844,7 @@ export class PrepareRaceFlow {
         const selectedFrame = makeRaceTextureSprite('SelectedFrame', card, RESOURCE_PATHS.characterUi.cardSelected, 172, 203, 0.5, 0, 7);
         selectedFrame.active = false;
         const view: CharacterCardView = {
+            root: card,
             characterId: character.id,
             selectedFrame,
             activeStatus,
@@ -1355,17 +1398,8 @@ function makeRaceTextureSprite(
     const sprite = node.addComponent(Sprite);
     sprite.sizeMode = Sprite.SizeMode.CUSTOM;
     sprite.trim = false;
-    let ownedFrame: SpriteFrame | null = null;
-    node.once(Node.EventType.NODE_DESTROYED, () => { ownedFrame?.destroy(); ownedFrame = null; });
-    loadRaceAsset(path, Texture2D, (error, texture) => {
-        if (error || !texture || !node.isValid || !sprite.isValid) {
-            if (error) console.warn(`[SpeedSwimming] lobby texture failed to load: ${path}`, error);
-            return;
-        }
-        const frame = new SpriteFrame();
-        frame.texture = texture;
-        ownedFrame = frame;
-        sprite.spriteFrame = frame;
+    loadAvatarUiSpriteFrame(path, frame => {
+        if (frame && node.isValid && sprite.isValid) sprite.spriteFrame = frame;
     });
     return node;
 }
@@ -1387,17 +1421,19 @@ function makeRaceTextureRegionSprite(
     const sprite = node.addComponent(Sprite);
     sprite.sizeMode = Sprite.SizeMode.CUSTOM;
     sprite.trim = false;
-    loadRaceAsset(path, Texture2D, (error, texture) => {
-        if (error || !texture || !node.isValid || !sprite.isValid) {
-            if (error) console.warn(`[SpeedSwimming] lobby texture region failed to load: ${path}`, error);
-            return;
+    let ownedFrame: SpriteFrame | null = null;
+    node.once(Node.EventType.NODE_DESTROYED, () => { ownedFrame?.destroy(); ownedFrame = null; });
+    loadAvatarUiSpriteFrame(path, source => {
+        if (!source || !node.isValid || !sprite.isValid) return;
+        const frame = source.clone();
+        frame.rect = new Rect(source.rect.x + region.x, source.rect.y + region.y, region.width, region.height);
+        // 热缓存可能已动态合图；引擎恢复原纹理时也要保留局部裁切原点。
+        if (frame.original) {
+            frame.original._x += region.x;
+            frame.original._y += region.y;
         }
-        const frame = new SpriteFrame();
-        frame.reset({
-            texture,
-            rect: region,
-            originalSize: new Size(region.width, region.height),
-        });
+        frame.originalSize = new Size(region.width, region.height);
+        ownedFrame = frame;
         sprite.spriteFrame = frame;
     });
     return node;

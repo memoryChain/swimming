@@ -1,4 +1,4 @@
-import { TUTORIAL_DISTANCE } from './TutorialSession';
+import { TUTORIAL_DISTANCE, TUTORIAL_STAMINA_NOTICE_DISTANCE } from './TutorialSession';
 import { GameState, Rating, StrokeType } from '../core/GameConstants';
 
 export type LessonStep = 'diveInfo' | 'dive' | 'flight'
@@ -70,6 +70,11 @@ export class TutorialLesson {
         // 延续玩家刚才的左右节奏，耗尽后不用重新从左边开始。
         this.lastSide = lastStrokeSide;
     }
+    explainStamina(): void {
+        if (this.step !== 'finalApproach' && this.step !== 'staminaRun' && this.step !== 'staminaEmpty') return;
+        this.pending = false; this.feedbackSeconds = 0;
+        this.begin('staminaEmptyInfo');
+    }
     advance(): void {
         const next = NEXT[this.step];
         if (next) this.begin(next);
@@ -118,10 +123,7 @@ export class TutorialLesson {
     }
     tick(dt: number, state: GameState, underwater: boolean, heartRate = 80, strokeSettled = true, distance = 0): void {
         // 常规等待两划收手；接近终点时用整场暂停兜底，不锁住位移继续播放动作。
-        if (this.step === 'staminaEmpty' && distance >= TUTORIAL_DISTANCE - 5) {
-            this.pending = false; this.feedbackSeconds = 0;
-            this.begin('staminaEmptyInfo');
-        }
+        if (this.step === 'staminaEmpty' && distance >= TUTORIAL_STAMINA_NOTICE_DISTANCE) this.explainStamina();
         if (this.step === 'finishTouch') {
             this.finishSeconds += Math.max(0, dt);
             if (this.finishSeconds >= 1.2) this.step = 'complete';

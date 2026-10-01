@@ -126,12 +126,12 @@ test('构建覆盖旧任务的 Bundle 设置，UI 嵌套包独立导出且角色
             return {
                 readRemoteConfig: () => ({ enabled: true, autoUpload: false }), readClientVersion: () => '1.0.0',
                 applyWechatProjectConfig() {}, assertStartupSceneEntry() {},
-                assertTextureCompressionPolicy: () => ({}), assertUiFontPolicy: () => ({}),
+                assertTextureCompressionPolicy: () => ({}), assertUiFontPolicy: () => ({}), assertUiAtlasPolicy: () => ({groups:[]}),
             };
         },
     };
     vm.runInNewContext(fs.readFileSync('extensions/wechat-race-subpackage/hooks.js', 'utf8'), sandbox);
-    const options = { platform: 'wechatgame', md5Cache: true, bundleConfigs: [
+    const options = { platform: 'wechatgame', md5Cache: true, packAutoAtlas:true, bundleConfigs: [
         { root: 'db://assets/race', isRemote: true }, { root: 'db://assets/race/ui', isRemote: true },
     ] };
     await sandbox.exports.onBeforeBuild(options);

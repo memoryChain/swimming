@@ -51,3 +51,48 @@ test('标准周期补偿的单划单位时间预算在整个完美区一致，�
     assert.equal(motor.strokeActionTimeScale(.4, .375), motor.strokeActionTimeScale(100, .375));
     assert.equal(motor.strokeActionTimeScale(.4, .5), motor.strokeActionTimeScale(100, .58));
 });
+
+
+test('0.8倍率低心率实际完美窗至少156ms，白点/手臂/松手判定共用放慢后的进度', () => {
+    const { SwimmerMotor } = analysis.load('swimmer/SwimmerMotor');
+    const { StrokeType, Rating } = analysis.load('core/GameConstants');
+    const { MOTION_TUNING } = analysis.load('core/InputTuning');
+    const { perfectWidthScale } = analysis.load('core/ConditionBalance');
+    for (const speed of [1, 3]) for (const heartRate of [80, 120, 180]) for (const side of [StrokeType.LEFT, StrokeType.RIGHT]) {
+        const motor = new SwimmerMotor(); motor.startRace(0, speed);
+        motor._physics.step = state => state;
+        motor.update(.3, { isAI: false }); motor.applyAuthoritativeHeartRate(heartRate, true);
+        motor.setStrokeHeld(side, true, .2); motor.recordStroke(side);
+        const action = (side === StrokeType.LEFT ? motor._leftActions : motor._rightActions)[0];
+        const rate = motor.currentActionCycleSpeed() * MOTION_TUNING.heldMotionSpeedScale;
+        const ranges = action.ranges.perfect;
+        const window = (ranges.end - ranges.start) * Math.PI * 2 / rate;
+        if (heartRate === 80) assert.ok(window >= .156 && window <= .174);
+        assert.ok(Math.abs(window - .25 * perfectWidthScale(heartRate) * Math.PI * 2 / rate) < 1e-9);
+        motor.update(.375 * Math.PI * 2 / rate, { isAI: false });
+        const guide = motor.buildGuideFromAction(action);
+        assert.ok(Math.abs(guide.currentRatio - .375) < 1e-9);
+        const band = guide.intervals.find(i => i.rating === Rating.PERFECT);
+        assert.equal(band.startRatio, ranges.start); assert.equal(band.endRatio, ranges.end);
+        assert.equal(motor.isActiveStrokeInPerfectZone(side), true);
+        assert.equal(motor.setStrokeHeld(side, false).strokeQuality, 1);
+    }
+});
+
+test('放慢输入后按标准周期补偿，连续PERFECT基准游速与原来相差不到3%', () => {
+    const { MOTION_TUNING } = analysis.load('core/InputTuning');
+    const saved = MOTION_TUNING.heldMotionSpeedScale;
+    try {
+        for (const fps of [30, 60, 120]) {
+            MOTION_TUNING.heldMotionSpeedScale = 1;
+            const before = analysis.replay(.375, true, true, { fps });
+            MOTION_TUNING.heldMotionSpeedScale = saved;
+            const after = analysis.replay(.375, true, true, { fps });
+            assert.equal(after.good + after.bad + after.rejected, 0);
+            // 按住总时间包含不随动作倍率变化的200ms输入分类；只比较起划后的活动段。
+            const activeRatio = (after.holdSeconds - .2) / (before.holdSeconds - .2);
+            assert.ok(activeRatio > 1.23 && activeRatio < 1.27);
+            assert.ok(Math.abs(after.meanSpeed / before.meanSpeed - 1) < .03);
+        }
+    } finally { MOTION_TUNING.heldMotionSpeedScale = saved; }
+});

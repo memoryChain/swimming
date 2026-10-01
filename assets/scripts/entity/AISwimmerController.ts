@@ -15,6 +15,7 @@ import { AiConditionModel } from '../condition/AiConditionModel';
 import { randomFloat, randomGaussian, randomRange } from '../core/SharedRNG';
 import { scaledDelta } from '../core/TimeScale';
 import { Swimmer } from './Swimmer';
+import { SWIMMER_COLLISION } from './SwimmerCollisionResolver';
 
 const { ccclass, property } = _decorator;
 type AiStrokePhase = 'gap' | 'press' | 'stroke';
@@ -222,7 +223,9 @@ export class AISwimmerController extends Component {
         const nearby = this.raceObserver?.nearestPhysicalOpponent(b, 4, 2.2);
         // 撞后失衡才主动踢水，保留首次迎面相撞的翻滚；不预先进入减罚窗口。
         s.collisionRecoveryNeeded = b.isCollisionActive && b.motor.needsCollisionRecovery;
-        s.nearbyThreat = isRaceSteeringEnabled() && !!nearby && (nearby.weight >= b.weight || s.kickDive);
+        // 潜航只应对即将发生的接触；并排但不相交的邻道不能让潜水哥长期停手。
+        s.nearbyThreat = isRaceSteeringEnabled() && !!nearby
+            && (s.kickDive ? this.isDiveContactThreat(nearby) : nearby.weight >= b.weight);
         s.closeRace = this.raceObserver?.hasCloseCompetitor(b, 3) ?? false;
         this._targetZ = null;
         if (nearby && this.intelligence.discipline >= 0.8) {
@@ -236,6 +239,18 @@ export class AISwimmerController extends Component {
                 this._targetZ = clamp(otherZ + direction * 1.5, -halfWidth + 0.8, halfWidth - 0.8);
             }
         }
+    }
+
+    private isDiveContactThreat(other: Swimmer): boolean {
+        const b = this.swimmer;
+        const dx = Math.abs(other.node.position.x - b.node.position.x);
+        const dz = Math.abs(other.node.position.z - b.node.position.z);
+        const contact = SWIMMER_COLLISION.radius * 2;
+        if (dz >= contact + 0.15) return false;
+        // 对向来人要给下潜留时间；同向只有贴身或正在追上前人时才潜航。
+        if (b.raceDirection !== other.raceDirection) return dx < contact + 1.2;
+        const ahead = (other.node.position.x - b.node.position.x) * b.raceDirection;
+        return dx < contact || (ahead > 0 && dx < contact + 0.6 && b.currentSpeed > other.currentSpeed + 0.15);
     }
 
     private kick(dt: number) {
@@ -302,7 +317,12 @@ export class AISwimmerController extends Component {
                 this._primed = true; this._primedSeconds = 0;
             }
         }
-        if (progress >= 0 && progress < this._target && this._heldSeconds < maxHold) return;
+        // 极限档看见本划真实完美区，下一固定步将越过目标时在当前合法区松手。
+        // 不改进度或判定；避免0.8倍率下30Hz窄窗从中点前一帧跳至窗外。
+        const releaseBeforeNextStep = this.intelligence.id === 'extreme'
+            && b.motor.isActiveStrokeInPerfectZone(this._side)
+            && progress + dt * MOTION_TUNING.heldMotionSpeedScale / b.actionCycleSeconds >= this._target;
+        if (progress >= 0 && progress < this._target && !releaseBeforeNextStep && this._heldSeconds < maxHold) return;
         this.onObservedPressChanged?.(this._side, false);
         if (progress >= 0) b.handleStrokeHeld(this._side, false);
         const distance = b.distance - this._strokeDistance;

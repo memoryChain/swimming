@@ -1,4 +1,4 @@
-import { Button, Color, Label, Node, Sprite, UITransform, view } from 'cc';
+import { Button, CacheMode, Color, Label, Node, Sprite, UITransform, view } from 'cc';
 import { PREPARE_PANORAMA_HEIGHT, PREPARE_PANORAMA_WIDTH, RESOURCE_PATHS } from '../core/ResourcePaths';
 import { RaceDifficulty, getRaceDistance, getRaceModeTitle } from '../core/GameBalance';
 import { avatarTexturePath, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
@@ -6,6 +6,7 @@ import { makeLabel, makeRoundedRect, makeScreenEdgeGroup, makeTouchArea, makeUiN
 import { computePrepareSceneLayout, PrepareSceneLayout } from './PrepareSceneLayout';
 import { LobbyUiMotion } from './LobbyUiMotion';
 import { PROJECT_UI_ENGLISH_BOLD_FAMILY, styleProjectUiLabel } from './ProjectUiFonts';
+import { RosterNameAtlas } from './RosterNameAtlas';
 
 const ART = RESOURCE_PATHS.onlineRoomUi;
 // 与 PSD 文字图层一致，不把辅助文字、等级、人数都套成主文字色。
@@ -69,12 +70,19 @@ export class OnlineRoomView {
     private state: OnlineRoomState | null = null;
     private popupPos = -1;
     private confirmingKick = false;
+    private nameAtlas: RosterNameAtlas | null = null;
+    private nameKey = '';
+    private readonly cachedNames = new Map<Label, Sprite>();
 
     constructor(parent: Node, private readonly actions: {
         exit(): void; primary(): void; invite(): void; mode(value: RaceDifficulty): void; kick(member: OnlineMember): void;
-    }) {
+    }, deferEntrance = false) {
         this.root = makeUiNode('OnlineRoom', parent);
-        this.root.once(Node.EventType.NODE_DESTROYED, () => this.motion.dispose());
+        this.root.once(Node.EventType.NODE_DESTROYED, () => {
+            this.motion.dispose();
+            this.nameAtlas?.dispose(); this.nameAtlas = null;
+            this.cachedNames.clear();
+        });
         const bg = this.picture(this.root, 'Background', RESOURCE_PATHS.lobbyB.background,
             0, 0, PREPARE_PANORAMA_WIDTH, PREPARE_PANORAMA_HEIGHT);
         const backgroundLayout: PrepareSceneLayout = { x: 0, backgroundX: 0, backgroundY: 0, scale: 1, hallX: 0 };
@@ -182,8 +190,33 @@ export class OnlineRoomView {
             } else { this.closePopup(); actions.kick(m); }
         });
         this.popup.active = false;
-        this.motion.enter(false);
+        // 所有卡片共用原入场容器，固定坐标只在构造时按纹理类别排序。
+        // 各层保留节点和点击热区，不为合批重建成员或改变座位身份。
+        const order = ['HostPanel', 'ModeBackground', 'HostCareerBadge', 'HostAvatar'];
+        for (let i = 0; i < order.length; i++) hostPanel.getChildByName(order[i])!.setSiblingIndex(i);
+        this.hostName.node.setSiblingIndex(hostPanel.children.length - 1);
+        const layers: Node[][] = [[], [], [], [], [], []];
+        for (const child of membersPanel.children) {
+            const name = child.name;
+            const layer = /^MembersPanel$|^SeatBackground|^AvatarRing|^StatusBackground/.test(name) ? 0
+                : /^Avatar\d/.test(name) ? 1 : /^CareerBadge/.test(name) ? 2
+                : /^Nickname/.test(name) ? 4 : /^Primary/.test(name) || name === 'RoomHint' ? 5 : 3;
+            layers[layer].push(child);
+        }
+        let index = 0;
+        for (const layer of layers) for (const child of layer) child.setSiblingIndex(index++);
+        this.popupName.node.setSiblingIndex(this.popup.children.length - 1);
+        for (const label of [this.hostName, ...this.cards.map(card => card.nickname)]) {
+            const node = makeUiNode('CachedName', label.node);
+            const sprite = node.addComponent(Sprite);
+            sprite.sizeMode = Sprite.SizeMode.CUSTOM; sprite.trim = false;
+            node.active = false; this.cachedNames.set(label, sprite);
+        }
+        if (deferEntrance) this.motion.showImmediately();
+        else this.motion.enter(false);
     }
+
+    playEntrance(): void { if (this.root.isValid) this.motion.enter(false); }
 
     update(state: OnlineRoomState): void {
         this.state = state;
@@ -227,6 +260,36 @@ export class OnlineRoomView {
                 assign(this.popupCharacter, m.character);
                 visible(this.kick, state.isHost && !m.self && !m.owner);
             }
+        }
+        this.refreshNameAtlas();
+    }
+
+    private refreshNameAtlas(): void {
+        const labels = [this.hostName, ...this.cards.filter(card => !!card.member).map(card => card.nickname)]
+            .filter(label => !!label.string);
+        const key = JSON.stringify(labels.map(label => [label.node.name, label.string]));
+        if (this.nameKey === key) return;
+        this.nameKey = key;
+        // 仅名单显示文字改变才生成；准备、人数读数和赛制变化复用纹理。
+        for (const [label, sprite] of this.cachedNames) {
+            if (!label.enabled) label.enabled = true;
+            if (sprite.node.active) sprite.node.active = false;
+        }
+        this.nameAtlas?.dispose(); this.nameAtlas = null;
+        if (labels.length === 0) return;
+        try {
+            const atlas = this.nameAtlas = RosterNameAtlas.buildNames(labels);
+            for (let i = 0; i < labels.length; i++) {
+                const label = labels[i], sprite = this.cachedNames.get(label)!, frame = atlas.names[i];
+                sprite.node.getComponent(UITransform)!.setContentSize(frame.width, frame.height);
+                sprite.node.setPosition(frame.x, frame.y, 0);
+                sprite.spriteFrame = frame.frame;
+                label.enabled = false; sprite.node.active = true;
+            }
+        } catch (error) {
+            this.nameAtlas?.dispose(); this.nameAtlas = null;
+            for (const [label, sprite] of this.cachedNames) { label.enabled = true; sprite.node.active = false; }
+            console.warn('[联机界面] 昵称缓存不可用，保留完整文字', error);
         }
     }
 
@@ -305,6 +368,8 @@ export class OnlineRoomView {
         label.lineHeight = size + 4;
         if (face === 'dynamic' || face === 'latin') { label.isBold = true; label.fontFamily = PROJECT_UI_ENGLISH_BOLD_FAMILY; }
         else styleProjectUiLabel(label, face === 'regular' ? 'regular' : 'semibold', size + 4);
+        // 昵称、连接提示和外部错误保持全覆盖／独立纹理；只缓存有限的房间文案和数字。
+        if (face !== 'dynamic' && name !== 'RoomHint' && name !== 'Notice') label.cacheMode = CacheMode.CHAR;
         return label;
     }
     private picture(p: Node, name: string, path: string, x: number, y: number, w: number, h: number): Sprite {

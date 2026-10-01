@@ -84,7 +84,7 @@ test('各档完整PERFECT的连续游速仍优于提前GOOD，动态心率下可
         }
     }
     const r=analysis.replay(.375,true,false,{heartRate:null});
-    assert.equal(r.good+r.bad+r.rejected,0);assert.ok(r.heartRate>=160);assert.ok(r.meanSpeed>2.4);
+    assert.equal(r.good+r.bad+r.rejected,0);assert.ok(r.heartRate>155&&r.heartRate<175);assert.ok(r.meanSpeed>2.4);
 });
 
 test('踢腿维持约80～85%的PERFECT游速，心率恢复与不操作一致', () => {

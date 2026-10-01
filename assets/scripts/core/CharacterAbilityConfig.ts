@@ -5,16 +5,16 @@ export type CharacterAbilityId = 'none' | 'frogSense' | 'frogHop' | 'powerKick'
 
 export const CHARACTER_ABILITY_TUNING = {
     frogPerfectWidth: 1.4,
-    frogPerfectReward: 0.8,
+    frogPerfectReward: 0.9,
     frogEnergyGain: 1.5,
     frogDolphinSpeed: 0.8,
     frogDolphinCost: 0.4,
-    legKickAcceleration: 1.4,
-    legKickSpeed: 1.15,
-    legStrokePower: 0.85,
+    legKickAcceleration: 1.15,
+    legKickSpeed: 1.03,
+    legStrokePower: 0.9,
     catRecovery: 1.8,
     ninjaPerfectWidth: 0.7,
-    ninjaPerfectReward: 1.35,
+    ninjaPerfectReward: 1.25,
     ninjaOtherReward: 0.75,
     coachMaxStrokeHz: 2,
     coachHeartLoad: 0.65,
@@ -26,7 +26,7 @@ export const CHARACTER_ABILITY_TUNING = {
     diverAscentSpeed: 1.6,
     diverKickHoldSeconds: 0.65,
     chainMaxStacks: 5,
-    chainSpeedPerStack: 0.02,
+    chainSpeedPerStack: 0.017,
     chainIdleCycles: 2,
 };
 

@@ -3,7 +3,8 @@ import { RaceStrokeView } from './RaceStrokeView';
 import { RaceHudEntrance } from './RaceHudEntrance';
 import { StrokeType } from '../core/GameConstants';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
-import { BlockInputEvents, Button, Color, Font, Label, Node, Sprite, SpriteFrame, UIOpacity, UITransform, Vec2, view, sys } from 'cc';
+import { BlockInputEvents, Button, CacheMode, Color, Font, Label, Node, Sprite, SpriteFrame, UIOpacity, UITransform, view, sys } from 'cc';
+import { configureUiFillGeometry, setUiLinearFill, UiLinearFillGeometry } from './UiFilledSpriteGeometry';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import type { RaceFinishResult } from '../core/RaceManager';
@@ -52,7 +53,7 @@ export function preloadRaceHudStatus(done: (error: Error | null) => void): void 
     });
 }
 
-type RankSlot = { root: Node; normal: Node; self: Node; portrait: Sprite; number: Label; identity: Swimmer | null; path: string; emphasized: boolean | null };
+type RankSlot = { root: Node; portraitRoot: Node; numberRoot: Node; normal: Node; self: Node; portrait: Sprite; number: Label; identity: Swimmer | null; path: string; emphasized: boolean | null };
 export type HudRosterEntry = { swimmer: Swimmer; avatarId: string };
 
 /** 按原 1280×720 PSD 制作。美术圆环为纹理，动态部分只更新 Sprite 填充参数。 */
@@ -84,6 +85,7 @@ export class RaceHudStatusView {
     private readonly heartRing: Sprite;
     private readonly energyRing: Sprite;
     private readonly progress: Sprite;
+    private readonly progressGeometry: UiLinearFillGeometry;
     private readonly heartIcon: Sprite;
     private readonly warning: Node;
     private readonly jump: Node;
@@ -106,16 +108,18 @@ export class RaceHudStatusView {
         this.ranking = makeUiNode('Ranking', this.right);
         this.top = makeUiNode('CourseProgress', this.root);
         const readouts = makeUiNode('StatusReadouts', this.left);
+        // 同一图集的状态美术连续绘制，文字统一位于其上方。
+        const readoutArt = makeUiNode('StatusArtwork', readouts);
         this.label(readouts, 'SpeedTitle', '速度', 28, 19, 70, 25, 18, true, 'left');
         this.speed = this.label(readouts, 'SpeedValue', '0.00', 27, 41, 126, 65, 72, true, 'left');
         this.speed.font = speedFont;
         const unit = this.label(readouts, 'SpeedUnit', 'm/s', 149, 73, 48, 31, 30.6, true, 'left');
         unit.font = speedFont;
         // 专用字体回调由预加载完成；不要再让通用字库异步覆盖它。
-        this.sprite(readouts, 'HeartBase', 'base', 22, 114, 76, 76);
-        this.sprite(readouts, 'HeartTrack', 'ring', 22, 114, 76, 76, TRACK);
-        this.heartRing = this.ring(readouts, 'HeartFill', 22, 114, 76, RED);
-        this.heartIcon = this.sprite(readouts, 'Heart', 'heart', 48, 130, 26, 22, RED);
+        this.sprite(readoutArt, 'HeartBase', 'base', 22, 114, 76, 76);
+        this.sprite(readoutArt, 'HeartTrack', 'ring', 22, 114, 76, 76, TRACK);
+        this.heartRing = this.ring(readoutArt, 'HeartFill', 22, 114, 76, RED);
+        this.heartIcon = this.sprite(readoutArt, 'Heart', 'heart', 48, 130, 26, 22, RED);
         this.heartValue = this.label(readouts, 'HeartValue', '80', 30, 152, 60, 25, 18.4);
         this.label(readouts, 'HeartCaption', '心率', 30, 180, 60, 24, 15.3);
         this.heartTierLabel = this.label(readouts, 'HeartTier', '轻松', 30, 203, 60, 22, 15.3);
@@ -123,35 +127,43 @@ export class RaceHudStatusView {
         this.sprite(this.warning, 'WarningBase', 'warning', 75, 110, 18, 18);
         this.label(this.warning, 'WarningMark', '!', 75, 109, 18, 20, 14);
         this.warning.active = false;
-        this.sprite(readouts, 'EnergyBase', 'base', 122, 114, 76, 76);
-        this.energyTrack = this.sprite(readouts, 'EnergyTrack', 'ring', 122, 114, 76, 76, TRACK);
-        this.energyRing = this.ring(readouts, 'EnergyFill', 122, 114, 76, CYAN);
-        this.energyIcon = this.sprite(readouts, 'Lightning', 'lightning', 151, 126, 21, 28, CYAN);
+        this.sprite(readoutArt, 'EnergyBase', 'base', 122, 114, 76, 76);
+        this.energyTrack = this.sprite(readoutArt, 'EnergyTrack', 'ring', 122, 114, 76, 76, TRACK);
+        this.energyRing = this.ring(readoutArt, 'EnergyFill', 122, 114, 76, CYAN);
+        this.energyIcon = this.sprite(readoutArt, 'Lightning', 'lightning', 151, 126, 21, 28, CYAN);
         this.energyIconOpacity = this.energyIcon.node.addComponent(UIOpacity);
         this.energyValue = this.label(readouts, 'EnergyValue', '100%', 128, 152, 64, 25, 18.4);
         this.label(readouts, 'EnergyCaption', '体力', 128, 180, 64, 24, 15.3);
         this.energyState = this.label(readouts, 'EnergyState', '体力耗尽', 118, 203, 84, 22, 15.3);
         this.energyState.color = RED;
         this.energyState.node.active = false;
-        this.distance = this.label(this.top, 'Distance', '200 m', -232, 32, 53, 25, 14.5, true, 'right');
         this.sprite(this.top, 'ProgressTrack', 'progress', -173, 39, 399, 12, COURSE_TRACK);
         this.progress = this.sprite(this.top, 'ProgressFill', 'progress', -173, 39, 399, 12, CYAN);
-        this.progress.type = Sprite.Type.FILLED;
-        this.progress.fillType = Sprite.FillType.HORIZONTAL;
+        this.progressGeometry = configureUiFillGeometry(this.progress, Sprite.FillType.HORIZONTAL);
         this.progress.fillStart = 0;
         this.progress.fillRange = 0;
+        this.distance = this.label(this.top, 'Distance', '200 m', -232, 32, 53, 25, 14.5, true, 'right');
         this.percent = this.label(this.top, 'Percent', '0%', 235, 32, 54, 25, 14.5, true, 'left');
         this.label(this.ranking, 'RankingTitle', '排名', -53, 62, 40, 24, 13.8);
+        const portraits = makeUiNode('PortraitArtwork', this.ranking);
+        const numbers = makeUiNode('PlacementText', this.ranking);
         for (let i = 0; i < 8; i++) {
             const root = makeUiNode(`Rank${i + 1}`, this.ranking);
+            const portraitRoot = makeUiNode(`Portrait${i + 1}`, portraits);
+            const numberRoot = makeUiNode(`Placement${i + 1}`, numbers);
             const normal = this.sprite(root, 'NormalRing', 'rankRing', -47, -15, 30, 30).node;
             const self = this.sprite(root, 'SelfRing', 'rankSelfRing', -60, -28, 56, 56).node;
             self.active = false;
-            const portrait = this.sprite(root, 'Avatar', null, -45, -13, 26, 26);
-            const number = this.label(root, 'RankNumber', String(i + 1), -76, -16, 27, 32, 18.4, true, 'right');
+            const portrait = this.sprite(portraitRoot, 'Avatar', null, -45, -13, 26, 26);
+            const number = this.label(numberRoot, 'RankNumber', String(i + 1), -76, -16, 27, 32, 18.4, true, 'right');
             root.active = false;
-            this.ranks.push({ root, normal, self, portrait, number, identity: null, path: '', emphasized: null });
+            portraitRoot.active = false;
+            numberRoot.active = false;
+            this.ranks.push({ root, portraitRoot, numberRoot, normal, self, portrait, number, identity: null, path: '', emphasized: null });
         }
+        // 整列底圈 → 整列头像 → 整列数字；构建图集的头像与底圈也不逐行交错。
+        portraits.setSiblingIndex(this.ranking.children.length - 1);
+        numbers.setSiblingIndex(this.ranking.children.length - 1);
         this.jump = makeUiNode('DolphinJumpButton', this.right);
         // 源稿圆心为(1149,449)，三个状态共用同一锚点。
         this.place(this.jump, -181, 399, 100, 100);
@@ -274,7 +286,7 @@ export class RaceHudStatusView {
         this.text(this.distance, `${total} m`);
         const progress = clamp(distance / Math.max(1, total));
         this.text(this.percent, `${Math.round(progress * 100)}%`);
-        this.fill(this.progress, Math.round(progress * 399) / 399);
+        setUiLinearFill(this.progress, this.progressGeometry, 0, Math.round(progress * 399) / 399);
         this.fill(this.heartRing, -0.75 * Math.round(clamp(this.displayedHeart / 180) * 100) / 100);
         this.fill(this.energyRing, -0.75 * Math.round(clamp(energyRatio) * 100) / 100);
         if (this.jump.active) {
@@ -291,19 +303,21 @@ export class RaceHudStatusView {
     setRoster(entries: readonly HudRosterEntry[]) {
         this.identities.clear();
         for (const entry of entries) this.identities.set(entry.swimmer, avatarTexturePath(entry.avatarId));
-        for (const slot of this.ranks) { slot.identity = null; slot.path = ''; this.active(slot.root, false); }
+        for (const slot of this.ranks) { slot.identity = null; slot.path = ''; this.rankVisible(slot, false); }
     }
     updateRanks(results: readonly RaceFinishResult[]) {
         if (!this.root.activeInHierarchy || !this.ranking.activeInHierarchy) return;
         let y = 84;
         for (let i = 0; i < this.ranks.length; i++) {
             const slot = this.ranks[i], result = results[i];
-            this.active(slot.root, Boolean(result));
+            this.rankVisible(slot, Boolean(result));
             if (!result) { slot.identity = null; slot.path = ''; continue; }
             const self = this.observedSwimmer ? result.swimmer === this.observedSwimmer : result.isPlayer;
             const height = self ? 62 : 32;
             const center = -(y + height / 2);
             if (slot.root.position.y !== center) slot.root.setPosition(0, center, 0);
+            if (slot.portraitRoot.position.y !== center) slot.portraitRoot.setPosition(0, center, 0);
+            if (slot.numberRoot.position.y !== center) slot.numberRoot.setPosition(0, center, 0);
             y += height;
             if (slot.emphasized !== self) {
                 slot.emphasized = self;
@@ -322,6 +336,11 @@ export class RaceHudStatusView {
                 if (slot.portrait.isValid && slot.path === path && slot.identity === result.swimmer) slot.portrait.spriteFrame = frame;
             });
         }
+    }
+    private rankVisible(slot: RankSlot, visible: boolean) {
+        this.active(slot.root, visible);
+        this.active(slot.portraitRoot, visible);
+        this.active(slot.numberRoot, visible);
     }
     private setEnergyDepleted(depleted: boolean) {
         if (this.energyDepleted === depleted) return;
@@ -362,9 +381,7 @@ export class RaceHudStatusView {
     }
     private ring(parent: Node, name: string, x: number, y: number, size: number, color: Color): Sprite {
         const sprite = this.sprite(parent, name, 'ring', x, y, size, size, color);
-        sprite.type = Sprite.Type.FILLED;
-        sprite.fillType = Sprite.FillType.RADIAL;
-        sprite.fillCenter = new Vec2(0.5, 0.5);
+        configureUiFillGeometry(sprite, Sprite.FillType.RADIAL);
         sprite.fillStart = 0.625;
         sprite.fillRange = 0;
         return sprite;
@@ -385,6 +402,9 @@ export class RaceHudStatusView {
         label.verticalAlign = Label.VerticalAlign.CENTER;
         if (name !== 'SpeedValue' && name !== 'SpeedUnit') styleProjectUiLabel(label, bold ? 'semibold' : 'regular', size + 7);
         else label.lineHeight = size;
+        // 仅 HUD 的固定文案、数字和四档心率：字符/字号/颜色集合有界。
+        // 不用于昵称，不让每 0.1 秒变化的数字反复占用 BITMAP 整段图集槽。
+        label.cacheMode = CacheMode.CHAR;
         this.place(node, x, y, w, h);
         return label;
     }

@@ -1,7 +1,8 @@
 #target photoshop
+#include "ui-atlas-export-paths.jsx"
 // 只读源稿；每张切图在工作副本上隐藏所有文字后导出。
 var root=File($.fileName).parent.parent.fsName;
-var dest=new Folder(root+'/assets/race/ui/online-room-v1');dest.create();
+
 var source=app.documents.getByName('划水大师-联机-1280x720-v6-成员已准备.psd');
 function find(parent,name){for(var i=0;i<parent.layers.length;i++){var l=parent.layers[i];if(l.name===name)return l;if(l.typename==='LayerSet'){var f=find(l,name);if(f)return f;}}return null;}
 function clean(group,hide){for(var i=0;i<group.layers.length;i++){var l=group.layers[i];if((l.typename==='ArtLayer'&&l.kind===LayerKind.TEXT)||l.name==='当前生涯徽章／运行时替换')l.visible=false;for(var j=0;j<hide.length;j++)if(hide[j]===l.name)l.visible=false;if(l.typename==='LayerSet')clean(l,hide);}}
@@ -13,7 +14,7 @@ function out(name,target,hide,box){
     p=g;while(p.parent.typename!=='Document'){var par=p.parent;for(var k=0;k<par.layers.length;k++)if(par.layers[k]!==p)par.layers[k].visible=false;p=par;}
     if(g.typename==='LayerSet')clean(g,hide);
     d.crop([box[0],box[1],box[2],box[3]]);
-    d.saveAs(new File(dest.fsName+'/'+name+'.png'),new PNGSaveOptions(),true,Extension.LOWERCASE);
+    var outputFile=uiAtlasExportFile(root,'online-room-v1',name);if(outputFile)d.saveAs(outputFile,new PNGSaveOptions(),true,Extension.LOWERCASE);
     d.close(SaveOptions.DONOTSAVECHANGES);
 }
 out('host-panel','03 房主信息卡',['赛制选择／收起态','房主头像／高清智能对象','头像金色外环'],[64,84,468,606]);

@@ -43,6 +43,11 @@ function harness({ loaded = true, supported = true } = {}) {
     const timer = (fn, ms) => { const id = ++nextTimer; timers.set(id, { fn, ms }); return id; };
     const mocks = {
         cc: { Node, Color }, 'cc/env': { WECHAT: false },
+        './UiAssetBarrier': { UiPageLoadGate: class {
+            open(prepare, mount, ready, enter) { prepare(error => { if (!error) { mount(); enter?.(); } }); }
+            run(work) { work(); } cancel() {}
+        } },
+        './AvatarUiAssets': { preloadUiArt: (_sources, done) => done(null) },
         '../progression/CareerRules': { LEAGUES: Array(8) },
         '../core/GameBalance': { setRaceDifficulty() {} },
         '../backend/PlayerData': { PlayerData: player },
@@ -55,6 +60,7 @@ function harness({ loaded = true, supported = true } = {}) {
                 constructor(parent, callbacks) { this.callbacks = callbacks; views.push(this); }
                 update(state) { this.states.push(state); this.state = state; }
                 showUnavailable(message) { this.unavailable = message; }
+                playEntrance() {}
             } },
         './DefaultNetRoom': { DefaultNetRoom: class {} }, './WechatGameRoom': { WechatGameRoom: class {} },
     };

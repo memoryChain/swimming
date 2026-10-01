@@ -10,9 +10,9 @@ const esc = s => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').repl
 function resource(p) {
     if (p.startsWith('avatar/')) {
         const names = { aqua: 'avatar-01-female-diver', coral: 'avatar-02-future-girl', lime: 'avatar-03-courier-boy' };
-        p = 'ui/avatar-picker-v1/' + names[p.slice(7)] + '/texture';
+        p = 'ui/avatars/' + names[p.slice(7)] + '/texture';
     }
-    return pathToFileURL(path.join(root, 'assets/race', p.replace('/texture', '.png'))).href;
+    return pathToFileURL(path.join(root, 'assets/race', p.replace(/\/(texture|spriteFrame)$/, '.png'))).href;
 }
 function render(node, x = 836, y = 470.5) {
     if (!node.active) return '';
@@ -44,7 +44,7 @@ for (const [name, rank, finished, room] of [
     const html = `<!doctype html><meta charset="utf-8"><style>@font-face{font-family:Shui;src:url('${font}')}body{margin:0;background:#12395b}.screen{position:relative;width:1672px;height:941px;overflow:hidden;background:linear-gradient(140deg,#0564b9,#134977)}</style><div class="screen">${render(v.root)}<div style="position:absolute;left:100px;top:480px;color:#ffffff88;font:24px sans-serif">UI 离线排版校验<br>此处保留游戏内实时领奖台与角色</div></div><script>document.fonts.ready.then(()=>{for(const e of document.querySelectorAll('[data-fit]')){const s=e.firstElementChild;if(s.scrollWidth>e.clientWidth)s.style.fontSize=parseFloat(getComputedStyle(e).fontSize)*e.clientWidth/s.scrollWidth+'px'}window.ready=true})</script>`;
     fs.writeFileSync(path.join(output, name + '.html'), html);
     const serial=n=>{const label=n.getComponent(Label),sprite=n.getComponent(Sprite);let asset=sprite?.spriteFrame?.path;
-        if(asset?.startsWith('avatar/')){const names={aqua:'avatar-01-female-diver',coral:'avatar-02-future-girl',lime:'avatar-03-courier-boy'};asset='ui/avatar-picker-v1/'+names[asset.slice(7)]+'/texture';}
+        if(asset?.startsWith('avatar/')){const names={aqua:'avatar-01-female-diver',coral:'avatar-02-future-girl',lime:'avatar-03-courier-boy'};asset='ui/avatars/'+names[asset.slice(7)]+'/texture';}
         return {name:n.name,active:n.active,position:n.position,scale:n.scale,size:n.getComponent(UITransform)?.contentSize,asset,
             sliced:sprite?.type===Sprite.Type.SLICED,inset:8,text:label?.string,font:label?.fontSize,weight:label?.weight,
             numberFont:!!label&&!label.weight&&/^[\x00-\x7F]*$/.test(label.string),lineHeight:label?.lineHeight,

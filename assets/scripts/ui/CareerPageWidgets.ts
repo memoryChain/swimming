@@ -1,6 +1,5 @@
-import { Button, Color, Label, Node, Sprite, SpriteFrame, Texture2D, UITransform } from 'cc';
+import { Button, Color, Label, Node, Sprite, SpriteFrame, UITransform } from 'cc';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
-import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 import { loadAvatarUiSpriteFrame as loadUiSpriteFrame } from './AvatarUiAssets';
@@ -35,13 +34,12 @@ export class CareerImage {
         if (this.path === path) return;
         this.path = path;
         if (this.sliced) {
-            // 缓存SpriteFrame可能已被动态合图，frame.texture此时是整张图集。
-            // 从资源缓存取得原始Texture2D创建独立帧，保持引擎正常合批能力。
-            loadRaceAsset(path, Texture2D, (error, texture) => {
-                if (error || !texture || !this.node.isValid || this.path !== path) return;
-                const display = new SpriteFrame(); display.texture = texture;
-                display.insetLeft = display.insetRight = Math.min(this.sliceInset, texture.width / 2);
-                display.insetTop = display.insetBottom = Math.min(this.sliceInset, texture.height / 2);
+            // 克隆完整子图信息，不修改共享帧，也不丢弃图集裁切坐标。
+            loadUiSpriteFrame(path, source => {
+                if (!source || !this.node.isValid || this.path !== path) return;
+                const display = source.clone();
+                display.insetLeft = display.insetRight = Math.min(this.sliceInset, source.rect.width / 2);
+                display.insetTop = display.insetBottom = Math.min(this.sliceInset, source.rect.height / 2);
                 const previous = this.ownedFrame;
                 this.ownedFrame = display; this.sprite.spriteFrame = display;
                 previous?.destroy();
@@ -97,6 +95,8 @@ export class CareerControl {
         this.arrow = primary ? new CareerImage(this.root, 'Arrow', RESOURCE_PATHS.careerUi.arrow, 27, 24, 105, 0) : null;
         this.lock = primary ? new CareerImage(this.root, 'Lock', RESOURCE_PATHS.careerUi.lock, 23, 32, -116, 0) : null;
         if (this.lock) this.lock.node.active = false;
+        // 同图集的按钮底图和图标连续绘制，文字最后提交；整组仍由原 Button 缩放。
+        this.label.node.setSiblingIndex(this.root.children.length - 1);
         this.root.on(Button.EventType.CLICK, () => { if (this.button.interactable && this.root.activeInHierarchy) action(); });
     }
     update(value: string, enabled: boolean, locked = false): void {

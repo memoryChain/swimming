@@ -1,7 +1,8 @@
 #target photoshop
+#include "ui-atlas-export-paths.jsx"
 // 从当前定稿导出透明切图；不保存或改写源 PSD，不导出概念场景背景。
 var project = File($.fileName).parent.parent.fsName;
-var dest = new Folder(project + '/assets/race/ui/settlement-v1'); dest.create();
+
 var source = app.activeDocument;
 if (source.width.as('px') !== 1672 || !source.layerSets.getByName('01_个人成绩与荣誉')) throw Error('请先激活结算最终 PSD');
 function find(p,n){for(var i=0;i<p.layers.length;i++){var l=p.layers[i];if(l.name===n)return l;if(l.typename==='LayerSet'){var f=find(l,n);if(f)return f;}}return null;}
@@ -14,7 +15,7 @@ function out(name,branch,hide,box){
  if(g.typename==='LayerSet')clean(g,hide);
  // 保留源形状的填充不透明度，否则矢量实色描边会一并消失，只剩外发光。
  if(name==='row-self'){d.activeLayer=g;g.rasterize(RasterizeType.ENTIRELAYER);}
- d.crop(box);d.saveAs(new File(dest.fsName+'/'+name+'.png'),new PNGSaveOptions(),true,Extension.LOWERCASE);
+ d.crop(box);var outputFile=uiAtlasExportFile(project,'settlement-v1',name);if(outputFile)d.saveAs(outputFile,new PNGSaveOptions(),true,Extension.LOWERCASE);
  }finally{d.close(SaveOptions.DONOTSAVECHANGES);app.activeDocument=source;}
 }
 var titles=['冠军','亚军','季军','其他名次'], ids=['gold','silver','bronze','normal'];

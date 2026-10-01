@@ -1,4 +1,4 @@
-import { Color, Graphics, Label, Mask, Node, Sprite, Tween, tween, UIOpacity, UITransform, Vec3, sys, view } from 'cc';
+import { CacheMode, Color, Graphics, Label, Mask, Node, Sprite, Tween, tween, UIOpacity, UITransform, Vec3, sys, view } from 'cc';
 import { PLAYER_CHARACTER_DEFINITIONS } from '../app/PlayerCharacterConfig';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { loadAvatarUiSpriteFrame } from './AvatarUiAssets';
@@ -17,6 +17,8 @@ export type PreRaceIntroPhase = 'hidden' | 'raceInfo' | 'roster';
 type IntroCard = {
     group: Node;
     opacity: UIOpacity;
+    layers: { node: Node; opacity: UIOpacity }[];
+    syncMotion: () => void;
     baseX: number;
     normal: Node;
     self: Node;
@@ -108,22 +110,31 @@ export class PreRaceIntroPanel {
         this._cardsOpacity = cards.addComponent(UIOpacity);
         this._cardsOpacity.opacity = 0;
         cards.active = false;
-        for (let i = 0; i < MAX_CARDS; i++) this._cards.push(this.buildCard(cards, i));
+        // 分层连续绘制；每张肖像仍保留自己的圆角遮罩。
+        const layers = ['CardBases', 'Portraits', 'CardDecorations', 'CardReadouts', 'Nicknames']
+            .map(name => makeUiNode(name, cards));
+        for (let i = 0; i < MAX_CARDS; i++) this._cards.push(this.buildCard(layers, i));
         return root;
     }
 
-    private buildCard(parent: Node, index: number): IntroCard {
-        const group = makeUiNode(`LaneCard${index + 1}`, parent);
+    private buildCard(parents: Node[], index: number): IntroCard {
+        const layers = parents.map((parent, layer) => {
+            const node = makeUiNode(layer === 0 ? `LaneCard${index + 1}` : `Lane${index + 1}`, parent);
+            node.setPosition(152 * index, 0, 0);
+            node.active = false;
+            return { node, opacity: node.addComponent(UIOpacity) };
+        });
+        const group = layers[0].node;
         // 各卡使用同一套局部坐标；总排列顺序只由泳道号决定。
         const baseX = 152 * index;
         group.setPosition(baseX, 0, 0);
-        const opacity = group.addComponent(UIOpacity);
+        const opacity = layers[0].opacity;
         group.active = false;
         const normal = this.art('CardNormal', group, ART.cardNormal, 43, 435, 140, 237).node;
         const self = this.art('CardSelf', group, ART.cardSelf, 41, 433, 144, 241).node;
         self.active = false;
 
-        const clip = makeUiNode('PortraitClip', group);
+        const clip = makeUiNode('PortraitClip', layers[1].node);
         this.place(clip, 43, 435, 140, 166);
         clip.addComponent(Mask).type = Mask.Type.GRAPHICS_STENCIL;
         const graphics = clip.getComponent(Graphics)!;
@@ -137,19 +148,25 @@ export class PreRaceIntroPanel {
         portrait.trim = false;
         portraitNode.active = false;
 
-        const laneNormal = this.art('LaneNormal', group, ART.laneNormal, 49, 431, 43, 53).node;
-        const laneSelf = this.art('LaneSelf', group, ART.laneSelf, 49, 431, 43, 53).node;
+        const decoration = layers[2].node;
+        const readouts = layers[3].node;
+        const laneNormal = this.art('LaneNormal', decoration, ART.laneNormal, 49, 431, 43, 53).node;
+        const laneSelf = this.art('LaneSelf', decoration, ART.laneSelf, 49, 431, 43, 53).node;
         laneSelf.active = false;
-        const laneCaption = this.label('LaneCaption', group, '泳道', 10, CAPTION, 49, 435, 43, 16);
-        const laneLabel = this.label('LaneNumber', group, '', 28, WHITE, 49, 449, 43, 34);
-        const nameLabel = this.label('Nickname', group, '', 17, NAVY, 51, 611, 124, 30);
+        const laneCaption = this.label('LaneCaption', readouts, '泳道', 10, CAPTION, 49, 435, 43, 16);
+        const laneLabel = this.label('LaneNumber', readouts, '', 28, WHITE, 49, 449, 43, 34);
+        const nameLabel = this.label('Nickname', layers[4].node, '', 17, NAVY, 51, 611, 124, 30);
         styleDynamicUiLabel(nameLabel, 24);
-        const characterLabel = this.label('CharacterName', group, '', 12, MUTED, 51, 639, 124, 22, 'center', false);
-        const selfTag = makeUiNode('SelfTag', group);
+        // 昵称按整段缓存，保留系统字体的完整字形覆盖。
+        nameLabel.cacheMode = CacheMode.BITMAP;
+        const characterLabel = this.label('CharacterName', readouts, '', 12, MUTED, 51, 639, 124, 22, 'center', false);
+        const selfTag = makeUiNode('SelfTag', decoration);
         this.art('Background', selfTag, ART.selfTag, 48, 615, 25, 22);
         this.label('Text', selfTag, '我', 12, NAVY, 48, 615, 25, 22);
         selfTag.active = false;
-        return { group, opacity, baseX, normal, self, laneNormal, laneSelf, laneLabel, laneCaption, portrait, nameLabel, characterLabel, selfTag, selfState: null };
+        const card: IntroCard = { group, opacity, layers, syncMotion: () => this.syncCardMotion(card),
+            baseX, normal, self, laneNormal, laneSelf, laneLabel, laneCaption, portrait, nameLabel, characterLabel, selfTag, selfState: null };
+        return card;
     }
 
     populate(entries: PreRaceIntroEntry[]) {
@@ -157,7 +174,7 @@ export class PreRaceIntroPanel {
             const card = this._cards[i];
             // 缺少某条泳道时留空，不把后面的选手挪到错误的泳道号。
             const entry = entries.find(candidate => candidate.lane === i + 1);
-            this.active(card.group, Boolean(entry));
+            for (const layer of card.layers) this.active(layer.node, Boolean(entry));
             if (!entry) {
                 this._paths.delete(card.portrait);
                 this.active(card.portrait.node, false);
@@ -214,6 +231,18 @@ export class PreRaceIntroPanel {
             if (card.selfTag.position.y !== 0) card.selfTag.setPosition(0, 0, 0);
         }
     }
+    /** 只在原入场 Tween 更新时同步分层；赛中没有额外逐帧工作。 */
+    private syncCardMotion(card: IntroCard) {
+        const position = card.group.position;
+        for (let i = 1; i < card.layers.length; i++) {
+            const layer = card.layers[i];
+            const current = layer.node.position;
+            if (current.x !== position.x || current.y !== position.y || current.z !== position.z) {
+                layer.node.setPosition(position.x, position.y, position.z);
+            }
+            if (layer.opacity.opacity !== card.opacity.opacity) layer.opacity.opacity = card.opacity.opacity;
+        }
+    }
     private stopMotion() {
         this.stopCardMotion();
         if (this._cardsPanel) Tween.stopAllByTarget(this._cardsPanel);
@@ -257,14 +286,16 @@ export class PreRaceIntroPanel {
                 if (!card.group.active) {
                     card.group.setPosition(card.baseX, 0, 0);
                     card.opacity.opacity = 255;
+                    card.syncMotion();
                     continue;
                 }
                 const delay = order++ * CARD_STAGGER_SECONDS;
                 card.group.setPosition(card.baseX, -28, 0);
                 card.opacity.opacity = 0;
+                card.syncMotion();
                 tween(card.group).delay(delay)
-                    .to(CARD_ENTER_SECONDS, { position: new Vec3(card.baseX, 0, 0) }, { easing: 'cubicOut' }).start();
-                tween(card.opacity).delay(delay).to(CARD_ENTER_SECONDS, { opacity: 255 }).start();
+                    .to(CARD_ENTER_SECONDS, { position: new Vec3(card.baseX, 0, 0) }, { easing: 'cubicOut', onUpdate: card.syncMotion }).start();
+                tween(card.opacity).delay(delay).to(CARD_ENTER_SECONDS, { opacity: 255 }, { onUpdate: card.syncMotion }).start();
                 if (card.selfState) {
                     // 标签只上跳四像素后落定，保持整卡及文字比例稳定。
                     tween(card.selfTag).delay(delay + CARD_ENTER_SECONDS)
@@ -295,6 +326,8 @@ export class PreRaceIntroPanel {
         label.enableWrapText = false;
         label.horizontalAlign = align === 'left' ? Label.HorizontalAlign.LEFT : Label.HorizontalAlign.CENTER;
         styleProjectUiLabel(label, bold ? 'semibold' : 'regular', size + 7);
+        // 项目维护的赛制、角色名、泳道和本人文案；昵称随后单独覆盖缓存策略。
+        label.cacheMode = CacheMode.CHAR;
         this.place(node, x, y, w, h);
         return label;
     }

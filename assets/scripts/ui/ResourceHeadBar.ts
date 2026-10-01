@@ -6,13 +6,12 @@
 // It subscribes to PlayerData and refreshes automatically whenever the balance
 // changes. Do NOT add it to the race HUD.
 
-import { Button, Label, Node, Sprite, SpriteFrame, Texture2D, UITransform, view } from 'cc';
+import { Button, Label, Node, Sprite, SpriteFrame, UITransform, view } from 'cc';
 import { makeButton, makeLabel, makeScreenEdgeGroup, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { PlayerProfile } from '../backend/PlayerProfile';
 import { PlayerData } from '../backend/PlayerData';
 import { UI_STYLE } from './UIStyle';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
-import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { platform } from '../platform/PlatformManager';
 import { loadAvatarSpriteFrame, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
 import { styleCurrencyNumberLabel, styleProjectUiLabel } from './ProjectUiFonts';
@@ -252,10 +251,8 @@ function makeLoginSprite(name: string, parent: Node, path: string, width: number
     const sprite = node.addComponent(Sprite);
     sprite.sizeMode = Sprite.SizeMode.CUSTOM;
     sprite.trim = false;
-    loadRaceAsset(path, Texture2D, (error, texture) => {
-        if (!error && texture && node.isValid && sprite.isValid) {
-            const frame = new SpriteFrame();
-            frame.texture = texture;
+    loadAvatarUiSpriteFrame(path, frame => {
+        if (frame && node.isValid && sprite.isValid) {
             sprite.spriteFrame = frame;
         }
     });

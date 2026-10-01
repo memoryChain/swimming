@@ -1,5 +1,5 @@
-import { Button, Graphics, Node, Sprite, SpriteFrame, Texture2D, UITransform } from 'cc';
-import { loadRaceAsset } from '../core/RaceBundleLoader';
+import { Button, Graphics, Node, Sprite, SpriteFrame, UITransform } from 'cc';
+import { loadAvatarUiSpriteFrame } from './AvatarUiAssets';
 import { makeUiNode } from './RuntimeUiFactory';
 
 /** 复用分包内美术；只创建本页持有的SpriteFrame，销毁时释放，不复制纹理。 */
@@ -10,12 +10,12 @@ export function careerArt(parent: Node, name: string, path: string, width: numbe
     const sprite = node.addComponent(Sprite); sprite.sizeMode = Sprite.SizeMode.CUSTOM; sprite.trim = false;
     let owned: SpriteFrame | null = null;
     node.once(Node.EventType.NODE_DESTROYED, () => { owned?.destroy(); owned = null; });
-    loadRaceAsset(path, Texture2D, (error, texture) => {
-        if (error || !texture || !node.isValid) return;
-        const frame = new SpriteFrame(); frame.texture = texture;
+    loadAvatarUiSpriteFrame(path, source => {
+        if (!source || !node.isValid) return;
+        const frame = source.clone();
         if (sliced) {
-            frame.insetLeft = frame.insetRight = Math.min(40, texture.width / 4);
-            frame.insetTop = frame.insetBottom = Math.min(40, texture.height / 4);
+            frame.insetLeft = frame.insetRight = Math.min(40, source.rect.width / 4);
+            frame.insetTop = frame.insetBottom = Math.min(40, source.rect.height / 4);
             sprite.type = Sprite.Type.SLICED;
         }
         owned = frame; sprite.spriteFrame = frame;

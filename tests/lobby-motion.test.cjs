@@ -28,6 +28,8 @@ class Label {
 class UITransform { setContentSize(width,height){this.contentSize={width,height};} }
 class Sprite { static SizeMode={CUSTOM:1}; }
 class SpriteFrame { isValid=true; destroy(){this.isValid=false;} }
+class ScrollView { static EventType={SCROLLING:'scrolling'}; }
+class Mask { static Type={GRAPHICS_RECT:1}; }
 class Node {
     static EventType={TOUCH_START:'start',TOUCH_END:'end',TOUCH_CANCEL:'cancel',NODE_DESTROYED:'destroy'};
     children=[]; components=[]; events=new Map(); position=new Vec3(); scale=new Vec3(1,1,1); active=true; isValid=true;
@@ -74,16 +76,17 @@ function setup() {
         }
     }
     const viewport={width:1280,height:720};
-    const cc={Node,Button,Label,BlockInputEvents,UITransform,Sprite,SpriteFrame,UIOpacity,Vec3,view:{on(){},off(){},getVisibleSize:()=>viewport},tween:target=>new Animation(target)};
+    const cc={Node,Button,Label,CacheMode:{NONE:0,BITMAP:1,CHAR:2},ScrollView,Mask,BlockInputEvents,UITransform,Sprite,SpriteFrame,UIOpacity,Vec3,view:{on(){},off(){},getVisibleSize:()=>viewport},tween:target=>new Animation(target)};
     const factory={makeUiNode:(name,parent)=>{const n=new Node(name);n.setParent(parent);n.addComponent(UITransform);return n;},uiColor:()=>({}),fitFullScreenBackgroundCover(){}};
     factory.makeRect=factory.makeUiNode;
+    factory.makeScreenEdgeGroup=factory.makeUiNode;
     factory.makeLabel=(name,parent,text)=>{const n=factory.makeUiNode(name,parent);n.addComponent(Label).string=text;return n;};
     const imageRequests=[],selection={characterId:'coach'};
     function load(file,imports){const m={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{module:m,exports:m.exports,require:key=>imports[key]??{},console});return m.exports;}
     const {LobbyUiMotion}=load('assets/scripts/ui/LobbyUiMotion.ts',{'cc':cc,'./RuntimeUiFactory':factory});
     const sceneLayout=load('assets/scripts/ui/PrepareSceneLayout.ts',{'../core/ResourcePaths':load('assets/scripts/core/ResourcePaths.ts',{'../../startup/StartupResources':load('assets/startup/StartupResources.ts',{})})});
     const {computePrepareSceneLayout}=sceneLayout;
-    const tutorialViews=[],playerData={loaded:true,profile:{tutorialCompleted:true},offChange(){}};
+    const tutorialViews=[],playerData={loaded:true,profile:{tutorialCompleted:true,career:{league:0}},offChange(){}};
     let tutorialRequests=0;
     class TutorialOverlay {
         constructor(){tutorialViews.push(this);}
@@ -100,9 +103,10 @@ function setup() {
         cc,'./RuntimeUiFactory':factory,'./LobbyUiMotion':{LobbyUiMotion},'./UIStyle':{UI_STYLE:{white:{}}},
         './ProjectUiFonts':{styleProjectUiLabel(){}},
         '../backend/PlayerData':{PlayerData:playerData},
-        '../app/PlayerCharacterConfig':{getPlayerCharacterSelection:()=>selection},
+        '../app/PlayerCharacterConfig':{getPlayerCharacterSelection:()=>selection,PLAYER_CHARACTER_DEFINITIONS:Array.from({length:12},(_,id)=>({id}))},
         './UILayers':{getUILayer:canvas=>canvas,UILayer:{Popup:1}},
         '../core/ResourcePaths':{...load('assets/scripts/core/ResourcePaths.ts',{'../../startup/StartupResources':load('assets/startup/StartupResources.ts',{})}),RESOURCE_PATHS:{lobbyB:{background:'大厅背景'},lobbyUi:{},careerUi:{badges:[]}}},
+        './UiAssetBarrier':{UiPageLoadGate:class { open(prepare,mount,_ready,enter){prepare(error=>{if(!error){mount();enter?.();}});} run(work){work();} cancel(){} }}, './AvatarUiAssets':{preloadUiArt(_sources,done){done(null);},loadAvatarUiSpriteFrame(path,done){imageRequests.push({path,done:(_error,frame)=>done(frame??null)});}},
         '../core/RaceBundleLoader':{loadRaceAsset:(path,type,done)=>imageRequests.push({path,done})},
     });
     const parent=new Node('页面'),flow=new PrepareRaceFlow(parent,parent,1280,720,{});
@@ -110,6 +114,57 @@ function setup() {
 }
 function near(a,b){assert.ok(Math.abs(a-b)<1e-7,`${a} != ${b}`);}
 function size(n){return 1+n.components.length+n.children.reduce((sum,c)=>sum+size(c),0);}
+
+test('角色列表按滚动事件停用离屏卡片，边缘及弹性滚动正确且节点监听保持稳定',()=>{
+    const s=setup(),f=s.flow;
+    f._view='characters';f._content=s.parent;
+    let writes=0;
+    f.buildCharacterCard=(parent,_character,index)=>{
+        const root=s.factory.makeUiNode(`卡片${index}`,parent);
+        root.setPosition(index%2?85.5:-84.5,500-Math.floor(index/2)*200,1);
+        let active=true;
+        Object.defineProperty(root,'active',{get:()=>active,set:v=>{active=v;writes++;}});
+        f._characterCards.push({root});
+    };
+    f.buildCharacterRoster(s.parent);
+    const content=f._characterRosterContent,viewport=content.parent;
+    const visible=()=>f._characterCards.filter(c=>c.root.active).length;
+    assert.equal(content.position.y,-320);assert.equal(visible(),6);
+    assert.equal(viewport.events.get('scrolling').size,1);
+    const total=size(s.parent),before=writes;
+    for(let i=0;i<100;i++)viewport.emit('scrolling');
+    assert.equal(writes,before);
+    content.setPosition(0,0,0);viewport.emit('scrolling');assert.equal(visible(),8);
+    content.setPosition(0,320,0);viewport.emit('scrolling');assert.equal(visible(),6);
+    content.setPosition(0,500,0);viewport.emit('scrolling');assert.equal(visible(),4);
+    content.setPosition(0,-115,0);viewport.emit('scrolling');
+    assert.equal(f._characterCards[0].root.active,true,'选中外框刚到视口边缘仍保留');
+    content.setPosition(0,-114,0);viewport.emit('scrolling');
+    assert.equal(f._characterCards[0].root.active,false);
+    const hiddenWrites=writes;f._view='ready';content.setPosition(0,-320,0);viewport.emit('scrolling');
+    assert.equal(writes,hiddenWrites,'隐藏页无滚动处理');
+    f._view='characters';f.updateCharacterCardVisibility();assert.equal(visible(),6);
+    f._suspended=true;content.setPosition(0,320,0);viewport.emit('scrolling');assert.equal(visible(),6);
+    f._suspended=false;f.updateCharacterCardVisibility();
+    assert.equal(f._characterCards[0].root.active,false);assert.equal(visible(),6);
+    assert.equal(size(s.parent),total);assert.equal(viewport.events.get('scrolling').size,1);
+});
+
+test('整段文本缓存仅应用角色页，隐藏页签也预先准备且状态刷新不重建',()=>{
+    const s=setup(),f=s.flow,labels=[];
+    for(const method of ['buildCharacterHeader','buildCharacterRoster','buildPreviewPresentation','buildCharacterInspector']){
+        f[method]=parent=>{
+            const node=s.factory.makeUiNode(method,parent),label=node.addComponent(Label);
+            label.cacheMode=s.cc.CacheMode.NONE;labels.push(label);
+        };
+    }
+    f.refreshCharacterCards=f.refreshCharacterInspector=f.selectInspectorTab=()=>{};
+    const hall=s.factory.makeUiNode('大厅文字',s.parent).addComponent(Label);hall.cacheMode=s.cc.CacheMode.NONE;
+    const page=s.factory.makeUiNode('角色页',s.parent);
+    f.buildCharacterManagement(page);
+    assert.equal(labels.length,4);assert.ok(labels.every(label=>label.cacheMode===s.cc.CacheMode.BITMAP));
+    assert.equal(hall.cacheMode,s.cc.CacheMode.NONE);
+});
 
 test('大厅与角色页连续往返复用节点和动效，保留滚动位置并恢复正确按钮权限',()=>{
     const s=setup(),f=s.flow,builds={ready:0,characters:0},suspensions=[];
@@ -373,7 +428,7 @@ test('大厅AI开赛前暂停预览与动效，加载失败复用大厅，重复
                 runs++;
             }},
         });
-        owner=new Login();owner.cancelLobbyLoading=()=>{};owner._prepareRaceFlow=f;
+        owner=new Login();owner._identityLoadGate={cancel(){}};owner.cancelLobbyLoading=()=>{};owner._prepareRaceFlow=f;
         owner.toast=()=>{};
         owner.suspendForRace=()=>f.suspend();
         owner.openPrepareRace=()=>{ f._leaving=false; f._motion.showImmediately(); };

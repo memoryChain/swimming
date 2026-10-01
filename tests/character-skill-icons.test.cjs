@@ -23,10 +23,10 @@ function load(file, imports = {}) {
     vm.runInNewContext(source, { module, exports: module.exports, require: key => imports[key] ?? {}, console: { warn() {} } });
     return module.exports;
 }
-const { RESOURCE_PATHS } = load('assets/scripts/core/ResourcePaths.ts');
+const { RESOURCE_PATHS } = load('assets/scripts/core/ResourcePaths.ts', {'../../startup/StartupResources': load('assets/startup/StartupResources.ts')});
 
 function setup() {
-    const pending = [], frames = [];
+    const pending = [], frames = [], shared = new Map();
     class Node {
         static EventType = { NODE_DESTROYED: 'destroy' };
         children = []; components = []; handlers = []; isValid = true;
@@ -59,29 +59,29 @@ function setup() {
     const { CharacterSkillIcon } = load('assets/scripts/ui/CharacterSkillIcon.ts', {
         cc: { Node, UITransform, Sprite, SpriteFrame, Texture2D: class {} },
         '../core/ResourcePaths': { RESOURCE_PATHS },
-        '../core/RaceBundleLoader': { loadRaceAsset(asset, type, done) { pending.push({ asset, done }); } },
+        './AvatarUiAssets': { loadAvatarUiSpriteFrame(asset, done) { pending.push({ asset, done }); } },
         './RuntimeUiFactory': { makeUiNode },
     });
     const parent = new Node('Parent'), fallback = new Node('Fallback');
     const icon = new CharacterSkillIcon(parent, 74, fallback);
-    const finish = (index, error = null) => pending[index].done(error, error ? undefined : { path: pending[index].asset });
+    const finish = (index, error = null) => pending[index].done(error ? null : (shared.get(pending[index].asset) ?? (()=>{const frame=Object.assign(new SpriteFrame(),{texture:{path:pending[index].asset}});shared.set(pending[index].asset,frame);return frame;})()));
     return { parent, fallback, icon, pending, frames, finish, sprite: icon.node.getComponent(Sprite), transform: icon.node.getComponent(UITransform) };
 }
 
 test('十一种现有角色能力均有独立图标资源与 Creator 元数据，教练复用正式素材', () => {
     const source = fs.readFileSync(path.join(root, 'assets/scripts/app/PlayerCharacterConfig.ts'), 'utf8');
-    const abilities = [...source.matchAll(/abilityId: '([^']+)'/g)].map(m => m[1]);
+    const abilities = [...source.matchAll(/abilityId: '([^']+)'/g)].map(m => m[1]).filter(id => id !== 'none');
     assert.equal(abilities.length, 11);
     assert.equal(new Set(abilities.map(id => RESOURCE_PATHS.characterSkillIcons[id])).size, 11);
     for (const id of abilities) {
         const asset = RESOURCE_PATHS.characterSkillIcons[id];
         assert.ok(asset, id);
-        const file = path.join(root, 'assets/race', asset.replace(/\/texture$/, '.png'));
+        const file = path.join(root, 'assets/race', asset.replace(/\/(texture|spriteFrame)$/, '.png'));
         assert.ok(fs.existsSync(file), file);
         const meta = JSON.parse(fs.readFileSync(file + '.meta', 'utf8'));
         assert.ok(Object.values(meta.subMetas).some(m => m.importer === 'texture' && m.name === 'texture'));
     }
-    assert.equal(RESOURCE_PATHS.characterSkillIcons.breathControl, 'ui/lobby-b/skill-breath/texture');
+    assert.equal(RESOURCE_PATHS.characterSkillIcons.breathControl, 'ui/character-skills/skill-breath/spriteFrame');
 });
 
 test('快速换角色的乱序回调不覆盖当前技能，重复刷新不加载或改写', () => {
@@ -89,22 +89,22 @@ test('快速换角色的乱序回调不覆盖当前技能，重复刷新不加�
     s.icon.setAbility('frogHop'); s.icon.setAbility('kickDive');
     s.finish(1); s.finish(0);
     assert.equal(s.sprite.spriteFrame.texture.path, RESOURCE_PATHS.characterSkillIcons.kickDive);
-    assert.equal(s.frames.length, 1);
+    assert.equal(s.frames.length, 2);
     assert.equal(s.fallback.active, false);
     const writes = s.transform.writes;
     for (let i = 0; i < 30; ++i) s.icon.setAbility('kickDive');
     assert.equal(s.pending.length, 2); assert.equal(s.sprite.writes, 1); assert.equal(s.transform.writes, writes);
 });
 
-test('反复切换只保留一张自有帧，节点监听稳定，教练保留原排版', () => {
+test('反复切换复用共享图集帧，销毁控件不释放共用资源，教练保留原排版', () => {
     const s = setup();
     for (let i = 0; i < 22; ++i) { s.icon.setAbility(i % 2 ? 'breathControl' : 'frogSense'); s.finish(i); }
     assert.equal(s.parent.children.length, 1); assert.equal(s.icon.node.handlers.length, 1);
-    assert.equal(s.frames.filter(f => f.isValid).length, 1);
+    assert.equal(s.frames.filter(f => f.isValid).length, 2);
     assert.equal(s.transform.contentSize.width, 46); assert.equal(s.transform.contentSize.height, 44);
     assert.equal(s.icon.node.position.y, 1);
     s.icon.setAbility('precision'); s.parent.destroy(); s.finish(22);
-    assert.equal(s.frames.length, 22); assert.equal(s.frames.filter(f => f.isValid).length, 0);
+    assert.equal(s.frames.length, 3); assert.equal(s.frames.filter(f => f.isValid).length, 3);
 });
 
 test('加载失败可重试，空能力阻止旧回调并显示后备文字', () => {

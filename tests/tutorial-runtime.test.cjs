@@ -145,9 +145,10 @@ function controllerFixture() {
     const source = fs.readFileSync(path.join(__dirname, '../assets/scripts/tutorial/TutorialRaceController.ts'), 'utf8');
     const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
     const module = { exports: {} };
+    const profile = { tutorialCompleted: false };
     const imports = {
         cc: { director: { getScheduler: () => ({ setTimeScale: value => scale = value }), getScene: () => null } },
-        '../backend/PlayerData': { PlayerData: { completeTutorial: () => { writes++; return new Promise((resolve, reject) => { resolveSave = resolve; rejectSave = reject; }); } } },
+        '../backend/PlayerData': { PlayerData: { profile, completeTutorial: () => { writes++; return new Promise((resolve, reject) => { resolveSave = resolve; rejectSave = reject; }); } } },
         './TutorialLesson': { TutorialLesson }, './TutorialContent': h.load('tutorial/TutorialContent'), './TutorialOverlay': { TutorialOverlay: Overlay },
         './TutorialSession': h.load('tutorial/TutorialSession'),
         '../core/TimeScale': time, '../core/GameConstants': {GameState,StrokeType,Rating},
@@ -162,12 +163,12 @@ function controllerFixture() {
         swimmer.applyConditionCadenceScale(condition.strokeCadenceScale);
     };
     const controller = new module.exports.TutorialRaceController({children:[]}, swimmer, race, () => resets++, () => leaves++, condition, refreshHud);
-    return { h, controller, swimmer, race, runtime, frames, GameState, StrokeType, Rating, time, condition, refreshHud,
+    return { h, controller, swimmer, race, runtime, frames, GameState, StrokeType, Rating, time, condition, refreshHud, profile,
         get scale() { return scale; }, get resets() { return resets; }, get leaves() { return leaves; }, get writes() { return writes; },
         resolve: () => resolveSave(), reject: () => rejectSave(Error('离线')) };
 }
 
-test('教学面板无逐帧文案更新，保存防重入、失败重试与销毁释放暂停', async () => {
+test('教学面板无逐帧文案更新，完成防重入、意外保存失败仍返回及销毁释放暂停', async () => {
     const f = controllerFixture();
     assert.equal(f.scale, 0); assert.equal(f.race.tutorialMode, true);
     const initialFrames = f.frames.length;
@@ -176,9 +177,9 @@ test('教学面板无逐帧文案更新，保存防重入、失败重试与销�
     f.controller.lesson.step = 'complete'; f.controller.update(0, f.GameState.RACING);
     const save = f.frames.at(-1)[4]; save(); save(); assert.equal(f.writes, 1);
     f.reject(); await new Promise(resolve => setImmediate(resolve));
-    assert.equal(f.leaves, 0); assert.equal(f.frames.at(-1)[3], '重试保存');
-    f.frames.at(-1)[4](); assert.equal(f.writes, 2); f.resolve();
-    await new Promise(resolve => setImmediate(resolve)); assert.equal(f.leaves, 1);
+    assert.equal(f.leaves, 1); assert.equal(f.profile.tutorialCompleted, true);
+    assert.equal(f.frames.at(-1)[3], '回大厅，开游！');
+    assert.ok(!f.frames.some(frame => /保存|正在记下/.test(frame[1])),'教学完成不出现阻塞保存界面');
     f.controller.dispose(); f.controller.dispose();
     assert.equal(f.scale, 1); assert.equal(f.runtime.paused, false);
     assert.equal(f.runtime.active, false); assert.equal(f.swimmer.onObservedRhythmResult, null);
@@ -793,4 +794,95 @@ test('耗尽后未完成交替体验也在195米真正暂停说明，不原地�
     c.continueLesson();assert.equal(c.lesson.step,'finish');
     simulateFrame(f);assert.ok(b.distance>distance);assert.equal(f.condition.energy,0);
     c.dispose();
+});
+
+test('体力已耗尽但一直按住划水，最后五米也必须显示说明并触壁完成',()=>{
+    const f=controllerFixture(),c=f.controller,b=f.swimmer,T=f.StrokeType;
+    enterLesson(f,'staminaRun');for(let i=0;i<20;i++)simulateFrame(f);
+    b.motor.setFlipTurnDistance(194.9);b.motor.setFlipTurnSpeed(2);
+    f.condition.setTutorialEnergyRatio(0);f.refreshHud();
+    c.pressChanged(T.LEFT,true);
+    b.handleStrokeHeld(T.LEFT,true,f.h.load('core/InputTuning').STROKE_QUALITY_TUNING.minHoldSeconds);
+    b.handleStroke(T.LEFT);
+    assert.equal(b.motor.isArmStrokeActive,true);
+    for(let i=0;i<1200&&!c.paused;i++) {
+        if(i%8===0)b.handleKickStroke(i%16?T.RIGHT:T.LEFT);
+        simulateFrame(f);
+    }
+    assert.equal(c.lesson.step,'staminaEmptyInfo',JSON.stringify({step:c.lesson.step,distance:b.distance,active:b.motor.isArmStrokeActive}));
+    assert.ok(b.distance<200,'提示必须在触壁前暂停，给最后冲线留出距离');
+    assert.equal(f.frames.at(-1)[3],'游到终点');assert.equal(f.scale,0);
+    c.continueLesson();
+    for(let i=0;i<30000&&c.lesson.step!=='complete';i++) {
+        if(i%8===0)b.handleKickStroke(i%16?T.RIGHT:T.LEFT);
+        simulateFrame(f);
+    }
+    assert.equal(c.lesson.step,'complete');assert.equal(b.distance,200);
+    assert.equal(f.frames.at(-1)[0],'200 米，完成！');assert.equal(f.frames.at(-1)[3],'回大厅，开游！');
+    assert.equal(f.condition.energy,0);assert.equal(f.writes,0);c.dispose();
+});
+
+test('真实耗尽时下一只手已经按住，耗尽体验不能清掉当前手势或动作',()=>{
+    const f=controllerFixture(),c=f.controller,b=f.swimmer,T=f.StrokeType;
+    enterLesson(f,'staminaRun');for(let i=0;i<20;i++)simulateFrame(f);
+    b.motor.setFlipTurnDistance(185.1);b.motor.setFlipTurnSpeed(1);
+    performStroke(f,T.LEFT);f.refreshHud();
+    assert.equal(f.condition.energyDepleted,true);assert.equal(c.lesson.step,'staminaRun');
+    assert.equal(b.motor.isArmStrokeActive,true,'左手松开后仍在收手');
+    c.pressChanged(T.RIGHT,true);
+    b.handleStrokeHeld(T.RIGHT,true,f.h.load('core/InputTuning').STROKE_QUALITY_TUNING.minHoldSeconds);
+    b.handleStroke(T.RIGHT);
+    const action=b.motor._rightActions[0],resets=f.resets;
+    assert.ok(action);simulateFrame(f,0);
+    assert.equal(c.lesson.step,'staminaEmpty');assert.equal(c.paused,false);
+    assert.equal(f.resets,resets);assert.equal(c.pressed,T.RIGHT);
+    assert.equal(b.motor._rightStrokeHeld,true);assert.equal(b.motor._rightActions[0],action);
+    assert.equal(c.lesson.expectedSide,T.RIGHT,'衔接应沿用已完成的左划，当前右划仍可计入体验');
+    for(let i=0;i<900&&!b.motor.isActiveStrokeInPerfectZone(T.RIGHT);i++)simulateFrame(f);
+    c.pressChanged(T.RIGHT,false);const result=b.handleStrokeHeld(T.RIGHT,false);simulateFrame(f);
+    assert.ok(result);assert.equal(c.lesson.count,1);assert.equal(c.lesson.expectedSide,T.LEFT);
+    assert.equal(f.scale,1);assert.equal(f.condition.energy,0);c.dispose();
+});
+
+test('尚未耗尽但一直划水越过195米时，整场暂停等待真实划水，不漏掉体力课',()=>{
+    const f=controllerFixture(),c=f.controller,b=f.swimmer,T=f.StrokeType;
+    enterLesson(f,'staminaRun');for(let i=0;i<20;i++)simulateFrame(f);
+    b.motor.setFlipTurnDistance(194.9);b.motor.setFlipTurnSpeed(2);
+    c.pressChanged(T.LEFT,true);
+    b.handleStrokeHeld(T.LEFT,true,f.h.load('core/InputTuning').STROKE_QUALITY_TUNING.minHoldSeconds);
+    b.handleStroke(T.LEFT);
+    for(let i=0;i<120&&!c.paused;i++)simulateFrame(f);
+    assert.equal(c.awaitingStrokeInput,true);assert.ok(b.distance>=195&&b.distance<196);
+    assert.equal(f.scale,0);assert.equal(f.condition.energyDepleted,false,'暂停或距离本身不能扣体力');
+    assert.equal(b.motor.isArmStrokeActive,false);assert.equal(c.pressed,null);
+    const distance=b.distance;for(let i=0;i<60;i++)simulateFrame(f);
+    assert.equal(b.distance,distance);
+    performStroke(f,T.RIGHT);f.refreshHud();simulateFrame(f);
+    assert.equal(f.condition.energyDepleted,true);assert.equal(c.lesson.step,'staminaEmptyInfo');
+    assert.equal(f.frames.at(-1)[3],'游到终点');assert.ok(b.distance<200);c.dispose();
+});
+
+test('触壁时体力课尚未切完也能显示一次说明，确认后完成、保存并返回大厅',async()=>{
+    for(const step of ['finalApproach','staminaRun','staminaEmpty'])for(const depleted of [false,true]) {
+        const f=controllerFixture(),c=f.controller,b=f.swimmer;
+        enterLesson(f,step);f.condition.setTutorialEnergyRatio(depleted?0:.25);f.refreshHud();
+        // 模拟一次长帧跨过检查点，Motor 已按真实终点规则停止，不再能完成收手。
+        b.motor.setFlipTurnDistance(200);b.motor.stopRace();
+        let touches=0;const touch=b.playFinishTouch.bind(b);b.playFinishTouch=()=>{touches++;touch();};
+        simulateFrame(f,0);
+        assert.equal(c.lesson.step,'staminaEmptyInfo',step);assert.equal(f.scale,0);
+        assert.equal(f.frames.at(-1)[3],'完成教学');assert.equal(f.writes,0);
+        const noticeFrames=f.frames.length;
+        for(let i=0;i<20;i++)simulateFrame(f,1);
+        assert.equal(f.frames.length,noticeFrames,'等待确认不能重复弹窗');assert.equal(touches,0);
+        if(!depleted)assert.doesNotMatch(f.frames.at(-1)[0],/用光|变慢/,'不能声称玩家已经实际耗尽');
+        c.continueLesson();simulateFrame(f,0);
+        assert.equal(c.lesson.step,'finishTouch');assert.equal(touches,1);
+        for(let i=0;i<100;i++)simulateFrame(f);
+        assert.equal(c.lesson.step,'complete');assert.equal(touches,1);assert.equal(f.scale,0);
+        assert.equal(f.frames.at(-1)[3],'回大厅，开游！');assert.equal(f.writes,0);
+        f.frames.at(-1)[4]();assert.equal(f.writes,1);f.resolve();
+        await new Promise(resolve=>setImmediate(resolve));assert.equal(f.leaves,1);
+        c.dispose();assert.equal(f.scale,1);assert.equal(f.runtime.active,false);
+    }
 });

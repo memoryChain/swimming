@@ -1,7 +1,8 @@
 #target photoshop
+#include "ui-atlas-export-paths.jsx"
 // 从当前大厅定稿的临时副本导出，不保存或修改源文档。
 var project = File($.fileName).parent.parent.fsName;
-var dest = new Folder(project + '/assets/race/ui/lobby-b'); dest.create();
+
 var source = app.activeDocument;
 if (source.width.as('px') !== 1280 || source.name.indexOf('大厅-B版') < 0) throw Error('请激活大厅 B 版 1280×720 PSD');
 function find(p,id){for(var i=0;i<p.layers.length;i++){var l=p.layers[i];if(l.id===id)return l;if(l.typename==='LayerSet'){var f=find(l,id);if(f)return f;}}return null;}
@@ -19,7 +20,7 @@ function out(name,id,hide,box){
   app.activeDocument=d;g.duplicate(isolated,ElementPlacement.PLACEATBEGINNING);
   d.close(SaveOptions.DONOTSAVECHANGES);d=isolated;app.activeDocument=d;
  }
- d.crop(box);d.saveAs(new File(dest.fsName+'/'+name+'.png'),new PNGSaveOptions(),true,Extension.LOWERCASE);
+ d.crop(box);var outputFile=uiAtlasExportFile(project,'lobby-b',name);if(outputFile)d.saveAs(outputFile,new PNGSaveOptions(),true,Extension.LOWERCASE);
  }finally{d.close(SaveOptions.DONOTSAVECHANGES);app.activeDocument=source;}
 }
 // 大厅与选角共用全景背景，改用 export-prepare-panorama.cjs 从独立源图导出。

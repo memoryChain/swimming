@@ -7,9 +7,9 @@ import { RaceManager } from '../core/RaceManager';
 import { setTimeScale } from '../core/TimeScale';
 import { Swimmer } from '../entity/Swimmer';
 import { TutorialLesson, LessonStep } from './TutorialLesson';
-import { LESSON_COPY, lessonChapter, lessonUsesHudHint, staminaExperienceHint, heartPracticeHint } from './TutorialContent';
+import { LESSON_COPY, STAMINA_REMAINING_COPY, lessonChapter, lessonUsesHudHint, staminaExperienceHint, heartPracticeHint } from './TutorialContent';
 import { TutorialOverlay } from './TutorialOverlay';
-import { TUTORIAL_RUNTIME, TUTORIAL_DISTANCE, TUTORIAL_EXHAUST_DISTANCE } from './TutorialSession';
+import { TUTORIAL_RUNTIME, TUTORIAL_DISTANCE, TUTORIAL_EXHAUST_DISTANCE, TUTORIAL_STAMINA_NOTICE_DISTANCE } from './TutorialSession';
 
 const HEART_PRESETS: Partial<Record<LessonStep, number>> = {
     heart: 90, heartWork: 120, heartHigh: 150, heartMax: 170,
@@ -32,6 +32,7 @@ export class TutorialRaceController {
     private shownExhaustReady = false;
     private shownAwaitingStroke = false;
     private waitingForStaminaStroke = false;
+    private requestedStaminaStrokeStarted = false;
     private shownCue = '';
     private scale = -1;
     private pressed: StrokeType | null = null;
@@ -83,6 +84,7 @@ export class TutorialRaceController {
     armStrokeStarted(): void {
         if (!this.awaitingStrokeInput) return;
         this.waitingForStaminaStroke = false;
+        this.requestedStaminaStrokeStarted = true;
         TUTORIAL_RUNTIME.paused = this.paused;
         this.updateCueAndTime();
     }
@@ -121,16 +123,19 @@ export class TutorialRaceController {
         if (state === GameState.RACING) this.lesson.observeCourse(this.swimmer.distance, this.swimmer.courseLayout.courseLength,
             this.swimmer.isFlipTurning, this.swimmer.isUnderwater);
         if (!this.paused && this.lesson.step !== 'rest') this.condition?.advanceTutorialEnergyCourse(this.swimmer.distance);
-        if (!this.waitingForStaminaStroke && this.lesson.step === 'staminaRun'
+        // 极端掉帧已经触壁时仍先讲体力，再进入触壁完成；不能等已停止的手臂收手。
+        if (this.swimmer.distance >= TUTORIAL_DISTANCE) this.lesson.explainStamina();
+        if (!this.waitingForStaminaStroke && !this.requestedStaminaStrokeStarted && this.lesson.step === 'staminaRun'
             && this.swimmer.distance >= TUTORIAL_EXHAUST_DISTANCE && this.condition && !this.condition.energyDepleted
-            && this.pressed === null && !this.swimmer.motor.isArmStrokeActive
-            && !this.swimmer.isFlipTurning && !this.swimmer.isUnderwater) {
-            this.resetInput();
+            && (this.swimmer.distance >= TUTORIAL_STAMINA_NOTICE_DISTANCE
+                || this.pressed === null && !this.swimmer.motor.isArmStrokeActive
+                    && !this.swimmer.isFlipTurning && !this.swimmer.isUnderwater)) {
+            this.clearStrokeInput();
             this.waitingForStaminaStroke = true;
         }
         if (this.lesson.step === 'staminaRun' && this.swimmer.distance >= TUTORIAL_EXHAUST_DISTANCE
-            && this.condition?.energyDepleted && this.pressed === null && !this.swimmer.motor.isArmStrokeActive
-            && !this.swimmer.isFlipTurning && !this.swimmer.isUnderwater) {
+            && this.condition?.energyDepleted && (this.swimmer.distance >= TUTORIAL_STAMINA_NOTICE_DISTANCE
+                || !this.swimmer.isFlipTurning && !this.swimmer.isUnderwater)) {
             this.lesson.beginStaminaExperience(this.lastStrokeSide);
         }
         const strokeSettled = this.lesson.step !== 'staminaEmpty' || this.pressed === null
@@ -171,13 +176,20 @@ export class TutorialRaceController {
         if (text !== this.shownCue) { this.shownCue = text; this.view.setCue(text); }
         this.applyTimeScale(value);
     }
-    private enterStep(step: LessonStep): void {
-        if (step !== 'staminaRun') this.waitingForStaminaStroke = false;
+    private clearStrokeInput(): void {
         this.resetInput();
         this.swimmer.motor.cancelTutorialStrokeInput();
         this.swimmer.cartoonRig?.setStrokeHeld(StrokeType.LEFT, false);
         this.swimmer.cartoonRig?.setStrokeHeld(StrokeType.RIGHT, false);
         this.pressed = null; this.crossedPerfect = false; this.cue = 'idle';
+    }
+    private enterStep(step: LessonStep): void {
+        if (step !== 'staminaRun') {
+            this.waitingForStaminaStroke = false;
+            this.requestedStaminaStrokeStarted = false;
+        }
+        // 耗尽体验沿用当前真实划水，不要求双手空闲，也不清掉正在按住的手势。
+        if (this.shown !== 'staminaRun' || step !== 'staminaEmpty') this.clearStrokeInput();
         const heart = HEART_PRESETS[step];
         if (heart !== undefined) this.swimmer.motor.setTutorialHeartRate(heart);
         TUTORIAL_RUNTIME.finishDistance = TUTORIAL_DISTANCE;
@@ -193,7 +205,8 @@ export class TutorialRaceController {
             && this.shownExhaustReady === exhaustReady && this.shownAwaitingStroke === this.waitingForStaminaStroke) return;
         const changedStep = this.shown !== step;
         if (changedStep) this.enterStep(step);
-        const copy = LESSON_COPY[step];
+        const copy = step === 'staminaEmptyInfo' && this.condition?.energyDepleted === false
+            ? STAMINA_REMAINING_COPY : LESSON_COPY[step];
         const hudHint = lessonUsesHudHint(step);
         this.view.setStage(hudHint ? '' : lessonChapter(step));
         const side = this.lesson.expectedSide;
@@ -219,7 +232,8 @@ export class TutorialRaceController {
             : exhaustReady ? '试一次划水，看看闪电' : copy[1] + progress;
         this.view.show(copy[0], body, this.lesson.paused,
             step === 'complete' ? '回大厅，开游！' : step === 'diveInfo' ? '我来试试'
-                : step === 'staminaEmptyInfo' ? '游到终点' : step === 'turnInfo' ? '出发' : this.lesson.paused ? '试试看' : '',
+                : step === 'staminaEmptyInfo' ? this.swimmer.distance >= TUTORIAL_DISTANCE ? '完成教学' : '游到终点'
+                    : step === 'turnInfo' ? '出发' : this.lesson.paused ? '试试看' : '',
             step === 'complete' ? () => { void this.save(); } : this.continueLesson, target, false, hudHint);
         // 确认界面可见后才暂停，不让不可见面板冻结比赛。
         TUTORIAL_RUNTIME.paused = this.paused;
@@ -231,14 +245,14 @@ export class TutorialRaceController {
     private async save(): Promise<void> {
         if (this.saving || this.disposed) return;
         this.saving = true;
-        this.view.show('马上就好', '正在记下你的进度……', true, '', null);
         try {
             await PlayerData.completeTutorial();
             if (!this.disposed) this.leave();
         } catch (error) {
-            if (!this.disposed) this.view.show('还差最后一步',
-                '刚才没能保存进度，点一下再试试。', true,
-                '重试保存', () => { void this.save(); });
+            // 云端完成状态已由后端先记本地；这里只兜底本地存储或意外异常。
+            console.warn('[Tutorial] 教学已完成，保存暂未成功');
+            PlayerData.profile.tutorialCompleted = true;
+            if (!this.disposed) this.leave();
         } finally { this.saving = false; }
     }
     returnFailed(): void {
@@ -252,6 +266,7 @@ export class TutorialRaceController {
         if (this.disposed) return;
         this.disposed = true;
         this.waitingForStaminaStroke = false;
+        this.requestedStaminaStrokeStarted = false;
         this.swimmer.onObservedRhythmResult = null;
         this.swimmer.motor.setTutorialHeartRate(null);
         this.view.dispose();

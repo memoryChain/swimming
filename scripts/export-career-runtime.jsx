@@ -1,8 +1,9 @@
 #target photoshop
+#include "ui-atlas-export-paths.jsx"
 // 在1280×720生涯主稿中运行。只向临时文档复制待导出分支，不修改主稿。
 // 可先设置 CAREER_EXPORT_START / CAREER_EXPORT_END 分批执行。
 var project=File($.fileName).parent.parent;
-var dest=new Folder(project+'/assets/race/ui/career-v1');dest.create();
+
 var source=app.activeDocument;
 if(source.name!=='生涯之路.psd'||source.width.as('px')!==1280)throw Error('请激活生涯主稿');
 var entries=[
@@ -35,6 +36,6 @@ for(var i=begin;i<end;i++){
   d.crop(e[3]);app.refresh();
   // 大徽章需支持约2倍显示，其余按设计尺寸输出。
   if(e[0]==='honor-1')d.resizeImage(458,478,72,ResampleMethod.BICUBIC);
-  d.saveAs(new File(dest+'/'+e[0]+'.png'),new PNGSaveOptions(),true,Extension.LOWERCASE);
+  var outputFile=uiAtlasExportFile(project,'career-v1',e[0]);if(outputFile)d.saveAs(outputFile,new PNGSaveOptions(),true,Extension.LOWERCASE);
  }finally{d.close(SaveOptions.DONOTSAVECHANGES);app.activeDocument=source;}
 }

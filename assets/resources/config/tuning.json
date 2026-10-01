@@ -1,6 +1,6 @@
 {
-  "version": 50,
-  "updatedAt": "2026-09-12T17:11:22.582Z",
+  "version": 52,
+  "updatedAt": "2026-10-01T00:00:00.000Z",
   "values": {
     "camera.kickDiveBackDistance": 2.8,
     "camera.kickDiveBelowDistance": 0.35,
@@ -146,7 +146,7 @@
     "strokeQuality.armCycleHighSpeedPerSecond": 2,
     "strokeQuality.armCycleSpeedStart": 1,
     "strokeQuality.armCycleSpeedFull": 3,
-    "motion.heldMotionSpeedScale": 1,
+    "motion.heldMotionSpeedScale": 0.8,
     "motion.releasedMotionSpeedScale": 1.3,
     "motion.kickFlutterMaxCyclesPerSecond": 3.2,
     "motion.kickFlutterIdleFraction": 0.08,
@@ -264,16 +264,16 @@
     "dolphin.staminaCost": 5,
     "technique.speedGainPerPoint": 0.003,
     "ability.frogPerfectWidth": 1.4,
-    "ability.frogPerfectReward": 0.8,
+    "ability.frogPerfectReward": 0.9,
     "ability.frogEnergyGain": 1.5,
     "ability.frogDolphinSpeed": 0.8,
     "ability.frogDolphinCost": 0.4,
-    "ability.legKickAcceleration": 1.4,
-    "ability.legKickSpeed": 1.15,
-    "ability.legStrokePower": 0.85,
+    "ability.legKickAcceleration": 1.15,
+    "ability.legKickSpeed": 1.03,
+    "ability.legStrokePower": 0.9,
     "ability.catRecovery": 1.8,
     "ability.ninjaPerfectWidth": 0.7,
-    "ability.ninjaPerfectReward": 1.35,
+    "ability.ninjaPerfectReward": 1.25,
     "ability.ninjaOtherReward": 0.75,
     "ability.coachMaxStrokeHz": 2.0,
     "ability.coachHeartLoad": 0.65,
@@ -285,7 +285,7 @@
     "ability.diverAscentSpeed": 1.6,
     "ability.diverKickHoldSeconds": 0.65,
     "ability.chainMaxStacks": 5.0,
-    "ability.chainSpeedPerStack": 0.02,
+    "ability.chainSpeedPerStack": 0.017,
     "ability.chainIdleCycles": 2.0
   }
 }

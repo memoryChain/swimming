@@ -20,7 +20,7 @@ function sample(character,level,target=.375,empty=false) {
 // 30Hz时选窗口前段以免一帧跨出最窄PERFECT；60Hz选中点。
 function feelSample(character,level,gap=.08,fps=60) {
     const playerBalance=resolvePlayerBalance(character,level,30,character.weight,character.energyGain,character.heartRateTrait);
-    return replay(fps===30?.34:.375,true,true,{playerBalance,heartRate:null,
+    return replay(fps===30?.34:.375,true,true,{playerBalance,abilityId:character.abilityId,heartRate:null,
         duration:25,warmup:5,gap,fps,exactRelease:false});
 }
 function kickSpeed() {

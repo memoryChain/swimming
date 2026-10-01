@@ -13,12 +13,17 @@ const characters = option('characters', 'all') === 'all' ? PLAYER_CHARACTER_DEFI
 const levels = option('levels', '1,15,30').split(',').map(Number);
 const tiers = option('tiers', 'rookie,normal,skilled,expert,extreme').split(',');
 const distances = option('distances', '200,400').split(',').map(Number);
+const modes = args.includes('--modes') ? option('modes').split(',') : null;
+const courses = modes ? modes.map(mode => {
+    if (!['beginner','competitive','championship'].includes(mode)) throw new Error('赛制不存在');
+    setRaceDifficulty(mode); return {mode,distance:getRaceDistance()};
+}) : distances.map(distance=>({mode:distance===400?'championship':'beginner',distance}));
 const seeds = option('seeds', '20260913').split(',').map(Number);
 const fps = Number(option('fps', '30'));
 const results = [];
-for (const distance of distances) for (const character of characters) for (const level of levels) for (const tier of tiers) for (const seed of seeds) {
+for (const {mode,distance} of courses) for (const character of characters) for (const level of levels) for (const tier of tiers) for (const seed of seeds) {
     if (!AI_INTELLIGENCE[tier] || !PLAYER_CHARACTER_DEFINITIONS.some(c => c.id === character)) throw new Error('角色或智力不存在');
-    setRaceDifficulty(distance === 400 ? 'championship' : 'beginner');
+    setRaceDifficulty(mode);
     reseedSharedRandom(seed);
     const s = h.create(character, level, AI_INTELLIGENCE[tier].value);
     // 出发飞行由 Creator Tween 驱动，此基准从水面静速起算，不能冒充完整场景成绩。
@@ -29,7 +34,7 @@ for (const distance of distances) for (const character of characters) for (const
         if (exhaustedAt === null && s.condition.energy <= 0) exhaustedAt = seconds;
     }
     const stats = s.body.rhythmStats;
-    results.push({ character, level, tier, distance, seed, fps,
+    results.push({ character, level, tier, mode, distance, seed, fps,
         finished: s.body.distance >= getRaceDistance(), seconds: +seconds.toFixed(3),
         perfectRate: +(stats.perfectCount / Math.max(1, stats.perfectCount + stats.goodCount + stats.missCount)).toFixed(4),
         ...stats, energy: +s.condition.energy.toFixed(3), peakHeart: +peakHeart.toFixed(2), exhaustedAt,
@@ -41,7 +46,7 @@ fs.writeFileSync(output, JSON.stringify({ note: '真实运动和阶段，水面�
 const summary = option('summary', '.cache/ai-benchmark-summary.md');
 const mean = (rows, key) => rows.length ? rows.reduce((sum, r) => sum + r[key], 0) / rows.length : 0;
 const lines = ['# 角色 AI 离线基准', '',
-    `样本：${results.length}场；等级 ${levels.join('／')}；种子 ${seeds.join('、')}；模拟频率 ${fps}Hz。`, '',
+    `样本：${results.length}场；等级 ${levels.join('／')}；种子 ${seeds.join('、')}；模拟频率 ${fps}Hz；赛制 ${courses.map(c=>c.mode).join('／')}。`, '',
     '使用当前保存调参，以及真实 AI、Swimmer、Motor、心率、体力、蓄气和比赛阶段代码。从水面低速起算，折返骨骼外壳仅提供与运行时相同的阶段时长；不含出发飞行、对手碰撞、玩家干扰或网络延迟。以下秒数不是完整场景比赛纪录。', '',
     '| 智力 | 场次 | 平均PERFECT | 200米平均秒 | 400米平均秒 | 提前耗尽场次 |',
     '| --- | ---: | ---: | ---: | ---: | ---: |'];
@@ -51,15 +56,15 @@ for (const tier of tiers) {
     lines.push(`| ${AI_INTELLIGENCE[tier].label} | ${rows.length} | ${(mean(rows, 'perfectRate') * 100).toFixed(1)}% | ${mean(rows.filter(r => r.distance === 200), 'seconds').toFixed(2)} | ${mean(rows.filter(r => r.distance === 400), 'seconds').toFixed(2)} | ${early} |`);
 }
 lines.push('', '提前耗尽指距完赛超过2秒时体力归零；末次划水耗尽单独保留在原始数据中。不同角色和等级等权平均。', '',
-    '## 1级变态档：首个测试种子', '', '| 角色 | 200米秒 | 400米秒 |', '| --- | ---: | ---: |');
+    '## 1级变态档：首个测试种子', '', '| 角色 | 赛制 | 赛程米 | 秒 |', '| --- | --- | ---: | ---: |');
 for (const id of characters) {
     const rows = results.filter(r => r.character === id && r.level === 1 && r.tier === 'extreme' && r.seed === seeds[0]);
     if (!rows.length) continue;
-    lines.push(`| ${PLAYER_CHARACTER_DEFINITIONS.find(c => c.id === id).name} | ${rows.find(r => r.distance === 200)?.seconds ?? '—'} | ${rows.find(r => r.distance === 400)?.seconds ?? '—'} |`);
+    for (const row of rows) lines.push(`| ${PLAYER_CHARACTER_DEFINITIONS.find(c => c.id === id).name} | ${row.mode} | ${row.distance} | ${row.seconds} |`);
 }
 const slower = [];
 for (const row of results.filter(r => r.tier === 'extreme')) {
-    const expert = results.find(e => e.tier === 'expert' && e.character === row.character && e.level === row.level && e.distance === row.distance && e.seed === row.seed);
+    const expert = results.find(e => e.tier === 'expert' && e.character === row.character && e.level === row.level && e.distance === row.distance && e.mode === row.mode && e.seed === row.seed);
     if (expert && row.seconds > expert.seconds + .1) slower.push({ ...row, delta: row.seconds - expert.seconds });
 }
 lines.push('', '## 极限档的实际边界', '',
@@ -69,7 +74,7 @@ for (const row of slower.sort((a, b) => b.delta - a.delta).slice(0, 5)) {
     lines.push(`- ${PLAYER_CHARACTER_DEFINITIONS.find(c => c.id === row.character).name}，${row.level}级，${row.distance}米，种子${row.seed}：慢${row.delta.toFixed(2)}秒。`);
 }
 lines.push('', '复现命令：', '', '```powershell',
-    `npx.cmd --yes --package typescript@5.4.5 -c "node scripts/benchmark-ai.cjs --levels ${levels.join(',')} --seeds ${seeds.join(',')} --fps ${fps}"`, '```', '');
+    `npx.cmd --yes --package typescript@5.4.5 -c "node scripts/benchmark-ai.cjs --levels ${levels.join(',')} --seeds ${seeds.join(',')} --fps ${fps}${modes?' --modes '+modes.join(','):''}"`, '```', '');
 fs.mkdirSync(path.dirname(summary), { recursive: true }); fs.writeFileSync(summary, lines.join('\n'));
 console.log(JSON.stringify({ output, races: results.length, unfinished: results.filter(r => !r.finished).length,
     exhausted: results.filter(r => r.exhaustedAt !== null).length,

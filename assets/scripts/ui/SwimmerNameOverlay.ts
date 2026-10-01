@@ -1,8 +1,11 @@
-import { Camera, Color, Graphics, Label, Node, UITransform, Vec3, view } from 'cc';
+import { Camera, Color, Font, Graphics, Label, Node, Sprite, UITransform, Vec3, view } from 'cc';
 import type { RaceFinishResult } from '../core/RaceManager';
 import type { Swimmer } from '../entity/Swimmer';
 import { styleProjectUiLabel, styleDynamicUiLabel } from './ProjectUiFonts';
 import { makeUiNode } from './RuntimeUiFactory';
+import { RosterNameAtlas } from './RosterNameAtlas';
+import { loadRaceAsset } from '../core/RaceBundleLoader';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 const TAG_WIDTH = 174;
 const TAG_HEIGHT = 24;
@@ -32,6 +35,9 @@ type NameEntry = {
     root: Node;
     rankRoot: Node;
     rankLabel: Label;
+    rankAtlas: Sprite | null;
+    nameLabel: Label;
+    displayName: string;
     nameRoot: Node;
     nameWidth: number;
     visualWidth: number;
@@ -60,6 +66,9 @@ export class SwimmerNameOverlay {
     private readonly _placedWidths: number[] = [];
     private readonly _placedHeights: number[] = [];
     private _anchorWarmupFrames = 0;
+    private _atlas: RosterNameAtlas | null = null;
+    private _rosterVersion = 0;
+    private _atlasLoading = false;
 
     bind(hud: Node) {
         if (!hud?.isValid) {
@@ -69,6 +78,14 @@ export class SwimmerNameOverlay {
         if (!this._root?.isValid) {
             this._root = makeUiNode('SwimmerNameTags', hud);
             this._root.active = false;
+            const owner = this._root;
+            owner.once(Node.EventType.NODE_DESTROYED, () => {
+                if (this._root !== owner) return;
+                this._rosterVersion++;
+                this._atlasLoading = false;
+                this._atlas?.dispose(); this._atlas = null;
+                this._entries.length = 0; this._entriesBySwimmer.clear();
+            });
         }
     }
 
@@ -76,6 +93,21 @@ export class SwimmerNameOverlay {
         if (!this._root?.isValid) {
             return;
         }
+        let count = 0, changed = false;
+        for (const swimmer of swimmers) {
+            if (!swimmer?.node?.isValid || swimmer === player) continue;
+            const entry = this._entries[count++];
+            if (!entry || entry.swimmer !== swimmer || entry.displayName !== fitName(swimmer.swimmerName)) changed = true;
+        }
+        if (!changed && count === this._entries.length) {
+            this.resetTracking();
+            if (!this._atlas) this.prepareNameAtlas();
+            return;
+        }
+        this._rosterVersion++;
+        this._atlasLoading = false;
+        for (const entry of this._entries) if (entry.root.active) entry.root.active = false;
+        this._atlas?.dispose(); this._atlas = null;
         this._root.destroyAllChildren();
         this._entries.length = 0;
         this._entriesBySwimmer.clear();
@@ -101,6 +133,9 @@ export class SwimmerNameOverlay {
                 root: tag,
                 rankRoot,
                 rankLabel,
+                rankAtlas: null,
+                nameLabel: nameNode.getComponent(Label)!,
+                displayName: fitName(swimmer.swimmerName),
                 nameRoot: nameNode,
                 nameWidth,
                 visualWidth: nameWidth,
@@ -113,6 +148,71 @@ export class SwimmerNameOverlay {
             this._entriesBySwimmer.set(swimmer, entry);
         }
         this.resetTracking();
+        this.prepareNameAtlas();
+    }
+
+    private prepareNameAtlas() {
+        if (this._entries.length === 0 || this._atlasLoading) return;
+        const version = this._rosterVersion;
+        this._atlasLoading = true;
+        // 等待真实随包字体，避免把异步加载期间的替代字型永久缓存。
+        loadRaceAsset(RESOURCE_PATHS.uiFonts.semibold, Font, (error, font) => {
+            if (!this._root?.isValid || version !== this._rosterVersion) return;
+            this._atlasLoading = false;
+            if (error || !font) return;
+            const source = makeUiNode('RankAtlasSource', this._root);
+            const label = source.addComponent(Label);
+            label.overflow = Label.Overflow.SHRINK;
+            label.enableWrapText = false;
+            label.font = font; label.useSystemFont = false;
+            label.fontSize = 16; label.lineHeight = LIVE_PLACEMENT_BADGE_HEIGHT;
+            label.color = RANK_TEXT;
+            label.horizontalAlign = Label.HorizontalAlign.CENTER;
+            label.verticalAlign = Label.VerticalAlign.CENTER;
+            source.getComponent(UITransform)!.setContentSize(LIVE_PLACEMENT_BADGE_WIDTH, LIVE_PLACEMENT_BADGE_HEIGHT);
+            source.active = false;
+            let atlas: RosterNameAtlas | null = null;
+            const installed: { rank: Sprite; name: Sprite }[] = [];
+            try {
+                atlas = RosterNameAtlas.build(this._entries.map(entry => entry.nameLabel), label, RANK_BG);
+                for (let i = 0; i < this._entries.length; i++) {
+                    const entry = this._entries[i];
+                    const rankNode = makeUiNode('CachedRank', entry.rankRoot);
+                    rankNode.getComponent(UITransform)!.setContentSize(LIVE_PLACEMENT_BADGE_WIDTH, LIVE_PLACEMENT_BADGE_HEIGHT);
+                    rankNode.active = false;
+                    const rank = rankNode.addComponent(Sprite);
+                    rank.sizeMode = Sprite.SizeMode.CUSTOM;
+                    rank.trim = false;
+                    rank.spriteFrame = atlas.ranks[Math.max(0, entry.placement - 1)];
+                    const frame = atlas.names[i];
+                    const nameNode = makeUiNode('CachedName', entry.nameRoot);
+                    nameNode.active = false;
+                    nameNode.getComponent(UITransform)!.setContentSize(frame.width, frame.height);
+                    nameNode.setPosition(frame.x, frame.y, 0);
+                    const sprite = nameNode.addComponent(Sprite);
+                    sprite.sizeMode = Sprite.SizeMode.CUSTOM; sprite.trim = false; sprite.spriteFrame = frame.frame;
+                    installed.push({ rank, name: sprite });
+                }
+                this._atlas = atlas;
+                for (let i = 0; i < this._entries.length; i++) {
+                    const entry = this._entries[i], cached = installed[i];
+                    entry.rankAtlas = cached.rank;
+                    cached.rank.node.active = cached.name.node.active = true;
+                    // 仅保留共享纹理页；释放原文字纹理和各自的 Graphics 模型。
+                    const background = entry.rankRoot.getComponent(Graphics)!;
+                    background.enabled = false; background.destroy();
+                    entry.rankLabel.enabled = false; entry.rankLabel.destroy();
+                    entry.nameLabel.enabled = false; entry.nameLabel.destroy();
+                }
+            } catch (error) {
+                for (const cached of installed) { cached.rank.node.destroy(); cached.name.node.destroy(); }
+                if (atlas !== this._atlas) atlas?.dispose();
+                console.warn('[名牌] 纹理缓存未完成，保留完整文字显示', error);
+            } finally {
+                label.enabled = false;
+                source.destroy();
+            }
+        });
     }
 
     // Called from the existing 5 Hz live-standing snapshot. Placement text is
@@ -124,7 +224,10 @@ export class SwimmerNameOverlay {
                 continue;
             }
             entry.placement = result.placement;
-            entry.rankLabel.string = `${result.placement}`;
+            if (entry.rankAtlas && this._atlas) {
+                const frame = this._atlas.ranks[result.placement - 1];
+                if (entry.rankAtlas.spriteFrame !== frame) entry.rankAtlas.spriteFrame = frame;
+            } else entry.rankLabel.string = `${result.placement}`;
             if (!entry.rankRoot.active) {
                 layoutNameAndPlacement(entry, true);
                 entry.rankRoot.active = true;
@@ -300,7 +403,11 @@ export function makeSwimmerNameLabel(name: string, parent: Node, value: string):
 
 function fitName(value: string): string {
     const name = value || 'AI';
-    return name.length > 8 ? `${name.slice(0, 8)}…` : name;
+    if (name.length <= 8) return name;
+    let end = 8;
+    const last = name.charCodeAt(end - 1);
+    if (last >= 0xD800 && last <= 0xDBFF) end--;
+    return `${name.slice(0, end)}…`;
 }
 
 function layoutNameAndPlacement(entry: NameEntry, showPlacement: boolean) {

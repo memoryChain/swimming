@@ -1,7 +1,8 @@
 #target photoshop
+#include "ui-atlas-export-paths.jsx"
 // 仅在源稿临时副本导出；文字保留运行时 Label，左右复用左侧切图镜像。
 var root=File($.fileName).parent.parent.fsName;
-var dest=new Folder(root+'/assets/race/ui/race-stroke-v1');dest.create();
+
 var source=app.documents.getByName('比赛HUD-1280x720.psd');
 function find(p,n){for(var i=0;i<p.layers.length;i++){var l=p.layers[i];if(l.name===n)return l;if(l.typename==='LayerSet'){var q=find(l,n);if(q)return q;}}return null;}
 function hide(p){for(var i=0;i<p.layers.length;i++){var l=p.layers[i];l.visible=false;if(l.typename==='LayerSet')hide(l);}}
@@ -18,7 +19,7 @@ function out(name,group,names,box,band){
    var overlay=new ActionDescriptor();overlay.putBoolean(charIDToTypeID('enab'),true);overlay.putEnumerated(charIDToTypeID('Md  '),charIDToTypeID('BlnM'),charIDToTypeID('Nrml'));overlay.putUnitDouble(charIDToTypeID('Opct'),charIDToTypeID('#Prc'),100);overlay.putObject(charIDToTypeID('Clr '),charIDToTypeID('RGBC'),color);fx.putObject(charIDToTypeID('SoFi'),charIDToTypeID('SoFi'),overlay);
    var action=new ActionDescriptor(),ref=new ActionReference();ref.putProperty(charIDToTypeID('Prpr'),charIDToTypeID('Lefx'));ref.putIdentifier(charIDToTypeID('Lyr '),target.id);action.putReference(charIDToTypeID('null'),ref);action.putObject(charIDToTypeID('T   '),charIDToTypeID('Lefx'),fx);executeAction(charIDToTypeID('setd'),action,DialogModes.NO);
   }
-  d.crop(box);d.saveAs(new File(dest.fsName+'/'+name+'.png'),new PNGSaveOptions(),true,Extension.LOWERCASE);
+  d.crop(box);var outputFile=uiAtlasExportFile(root,'race-stroke-v1',name);if(outputFile)d.saveAs(outputFile,new PNGSaveOptions(),true,Extension.LOWERCASE);
  }finally{d.close(SaveOptions.DONOTSAVECHANGES);app.activeDocument=source;}
 }
 out('hand','07 左划按钮',['手掌剪影'],[152,538,203,593],false);

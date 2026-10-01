@@ -161,7 +161,7 @@ export const TECHNIQUE_BALANCE = {
     // 标准PERFECT稳定游速的校准目标，非每帧直接乘速度。
     speedGainPerPoint: 0.003,
     // 真实输入回放拟合；仅用于把目标游速差换成推进倍率，不改变水阻或游速上限。
-    propulsionExponent: 5.85,
+    propulsionExponent: 5.7,
     propulsionCurvature: 6,
 };
 

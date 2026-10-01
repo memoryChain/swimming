@@ -9,6 +9,9 @@
 // return-to-room after finishing) is phase 2B and needs on-device testing.
 
 import { Node } from 'cc';
+import { UiPageLoadGate } from './UiAssetBarrier';
+import { preloadUiArt } from './AvatarUiAssets';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { LEAGUES } from '../progression/CareerRules';
 import { OnlineRoomView, OnlineMember, ROOM_MODES } from './OnlineRoomView';
 import { RaceDifficulty, setRaceDifficulty } from '../core/GameBalance';
@@ -55,6 +58,7 @@ type SlotMember = {
 };
 
 export class RoomFlow {
+    private readonly _uiLoadGate = new UiPageLoadGate();
     private static _networkOwner: RoomFlow | null = null;
     private _disposed = false;
     private _initializing = false;
@@ -139,8 +143,23 @@ export class RoomFlow {
             this._isHost = !_joinRoomId;
         }
         this._localPos = this._isHost ? 0 : -1;
-        this.build();
-        this.setupNet();
+        // 网络建立不等待美术；绘制与迟到资源由本次界面门禁收集。
+        this._uiLoadGate.open(done => {
+            const initial = !this._root?.isValid;
+            if (initial) { this.build(); this.setupNet(); }
+            preloadUiArt([RESOURCE_PATHS.onlineRoomUi, RESOURCE_PATHS.avatarPickerUi.avatars,
+                RESOURCE_PATHS.lobbyUi, RESOURCE_PATHS.characterUi.headerBackground,
+                RESOURCE_PATHS.characterUi.backIcon, RESOURCE_PATHS.lobbyB.background], error => {
+                if (!error && !initial && this.live()) {
+                    // 仅资源失败后的显式重试重建视图；网络会话与成员状态保留。
+                    this._root!.destroy(); this.build();
+                }
+                done(error);
+            });
+        }, () => {
+            if (!this.live()) return;
+            this.render();
+        }, () => !!this._root?.isValid, () => this._view?.playEntrance());
     }
 
     private build() {
@@ -150,7 +169,7 @@ export class RoomFlow {
             invite: () => this.invite(),
             mode: value => this.changeMode(value),
             kick: member => { void this.kickMember(member); },
-        });
+        }, true);
         this._root = this._view.root;
     }
 
@@ -571,6 +590,7 @@ export class RoomFlow {
     // leaving them in a fake room showing a raw "invalid room state" error.
     private showRoomUnavailable(message: string) {
         if (this._roomUnavailable) return;
+        this._uiLoadGate.cancel();
         this._netReal = false;
         this._roomUnavailable = true;
         this._startRequested = false;
@@ -581,6 +601,10 @@ export class RoomFlow {
     }
 
     private render() {
+        this._uiLoadGate.run(() => this.renderPrepared());
+    }
+
+    private renderPrepared() {
         if (this._disposed || this._roomUnavailable || !this._root?.isValid) return;
         const localDigest = resolveLocalModifierDigest();
         const members: OnlineMember[] = this._members.map(m => {
@@ -992,6 +1016,7 @@ export class RoomFlow {
             return;
         }
         this._raceEntered = true;
+        this._uiLoadGate.cancel();
         lastRoomMode = this._mode;
         this.stopRulesTimer();
         this.clearStartTimeout();
@@ -1017,6 +1042,7 @@ export class RoomFlow {
     }
 
     private async exit() {
+        this._uiLoadGate.cancel();
         if (await this.leaveForInvite()) {
             if (!this._disposed && this._root?.isValid) this._callbacks.onExit();
         }
@@ -1053,6 +1079,7 @@ export class RoomFlow {
     }
 
     dispose() {
+        this._uiLoadGate.cancel();
         if (this._disposed) return;
         this._disposed = true;
         this.stopRulesTimer();

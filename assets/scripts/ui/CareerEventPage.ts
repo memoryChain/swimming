@@ -1,4 +1,4 @@
-import { BlockInputEvents, Button, Label, Mask, Node, Sprite, UITransform, sys, view } from 'cc';
+import { BlockInputEvents, Button, CacheMode, Label, Mask, Node, Sprite, UITransform, sys, view } from 'cc';
 import type { PlayerProfile } from '../backend/PlayerProfile';
 import { LEAGUES, RaceRule, SoloSource } from '../progression/CareerRules';
 import { findPlayerCharacter, PlayerCharacterId } from '../app/PlayerCharacterConfig';
@@ -32,7 +32,7 @@ const ROUND_COLORS: Record<CareerRoundStyle, ReturnType<typeof uiColor>> = {
 const RED = uiColor(170,67,58);
 const CENTERS = [148,350,546,742,938,1137];
 type TierView = { control: CareerControl; badge: CareerImage; selection: CareerImage };
-type RoundView = { root: Node; bg: CareerImage; status: Label; name: Label; distance: Label; unit: Label; condition: Label };
+type RoundView = { root: Node; surface: Node; bg: CareerImage; status: Label; name: Label; distance: Label; unit: Label; condition: Label };
 
 /** 生涯主稿的稳定节点树；刷新只更新变化的文字、贴图、颜色和状态。无update。 */
 export class CareerEventPage {
@@ -126,6 +126,7 @@ export class CareerEventPage {
             control.label.node.getComponent(UITransform)!.setContentSize(155, 30);
             const widths = [74,114,120,130,133,144];
             const badge = new CareerImage(control.root, 'Badge', ART.lockedBadges[i], widths[i], 112, 0, 17, true);
+            control.label.node.setSiblingIndex(control.root.children.length - 1);
             this.tiers.push({control, badge, selection});
         }
         this.hero = careerImage(honor, 'HonorBadge', ART.badges[0], 28, 238, 327, 249, true);
@@ -135,6 +136,7 @@ export class CareerEventPage {
         careerColor(this.rulesButton.label, CAREER_WHITE);
         const underline = careerImage(honor, 'RulesUnderline', ART.panel, 145, 652, 92, 2);
         careerColor(underline.sprite, CAREER_WHITE);
+        underline.node.setSiblingIndex(2);
         careerImage(character, 'CharacterBar', ART.characterBar, 392, 218, 862, 74);
         const avatarClip = makeUiNode('CharacterAvatarClip', character);
         avatarClip.setPosition(439 - 640, 360 - 256);
@@ -159,6 +161,8 @@ export class CareerEventPage {
         const cup = this.motion.group(eventPanel, 'CareerCupEntrance', 48, -24, 0.11);
         careerImage(detail, 'LeaguePanel', ART.panel, 392, 306, 416, 368);
         careerImage(cup, 'CupPanel', ART.panel, 822, 306, 432, 368, false, true);
+        // 底板与轮次文字分层，共用杯赛入场组；仅布局变化时同步位置和显隐。
+        const roundSurfaces = makeUiNode('CupRoundSurfaces', cup);
         this.tag(detail, '账号', '账号共享', 418, 326, 103, 36, ART.tagAccount);
         this.tag(cup, '角色', '角色专属', 848, 326, 106, 36, ART.tagCharacter);
         careerLabel(detail, 'LeagueTitle', '联赛挑战', 420, 366, 320, 52, 38);
@@ -183,16 +187,32 @@ export class CareerEventPage {
         this.cupTitle = careerLabel(cup, 'CupName', '', 850, 366, 225, 52, 36);
         for (let i = 0; i < 3; i++) {
             const r = makeUiNode(`CupRound${i}`, cup);
-            const bg = new CareerImage(r, 'RoundSurface', ART.panelWhite, 112, 94, 0, 0, false, true);
+            const surface = makeUiNode(`CupRoundSurface${i}`, roundSurfaces);
+            const bg = new CareerImage(surface, 'RoundSurface', ART.panelWhite, 112, 94, 0, 0, false, true);
             const make = (name: string, y: number, size: number, bold = true) => careerLabel(r, name, '', 640 - 76, 360 + y - 12, 152, 24, size, CAREER_INK, false, bold);
             const distance = make('Distance', 12, 20, false);
             styleCurrencyNumberLabel(distance, 27);
             const unit = make('DistanceUnit', 12, 20, false); careerText(unit, '米'); careerColor(unit, CAREER_MUTED);
-            this.rounds.push({ root: r, bg, status: make('Status', -47, 14), name: make('Name', -19, 24),
+            this.rounds.push({ root: r, surface, bg, status: make('Status', -47, 14), name: make('Name', -19, 24),
                 distance, unit, condition: make('Condition', 39, 18, false) });
             if (i < 2) this.roundArrows.push(careerImage(cup, `RoundArrow${i}`, ART.arrow, 964 + i * 136, 474, 14, 14));
         }
         this.cupStart = new CareerControl(cup, 'StartCup', '', 839, 598, 397, 62, () => this.onCup(), true, 31);
+        // 只调整无交叠的装饰顺序；按钮子树与头像 stencil 边界保持完整。
+        for (const [index, name] of ['LevelPill', 'ChangeArrow', '出场Tag', 'CharacterAvatarClip'].entries()) {
+            character.getChildByName(name)!.setSiblingIndex(index + 1);
+        }
+        this.characterName.node.setSiblingIndex(character.children.length - 1);
+        for (const [index, name] of ['PointsArea', 'ProgressTrack', 'ProgressFill', '账号Tag'].entries()) {
+            detail.getChildByName(name)!.setSiblingIndex(index + 1);
+        }
+        for (let i = 0; i < this.roundArrows.length; i++) this.roundArrows[i].node.setSiblingIndex(2 + i);
+        // 仅本页有界赛事文案和数字使用 CHAR；自动尺寸角色名、弹窗长文及后台状态保持原纹理。
+        for (const group of [this.header, this.career]) {
+            for (const label of group.getComponentsInChildren(Label)) {
+                if (label !== this.characterName) label.cacheMode = CacheMode.CHAR;
+            }
+        }
         this.footer = careerLabel(this.design, 'EventStatus', '', 392, 681, 862, 30, 17, CAREER_WHITE, true);
         this.rules = this.overlay('RulesOverlay', true);
         careerLabel(this.rules, 'RulesTitle', '赛事规则', 310, 174, 660, 50, 32, CAREER_INK, true);
@@ -299,10 +319,12 @@ export class CareerEventPage {
         careerText(this.cupTitle, m.title);
         const count = m.rounds.length;
         for (let i = 0; i < 3; i++) {
-            const r = this.rounds[i], state = m.rounds[i]; showCareerNode(r.root, !!state); if (!state) continue;
+            const r = this.rounds[i], state = m.rounds[i];
+            showCareerNode(r.root, !!state); showCareerNode(r.surface, !!state); if (!state) continue;
             if (this.roundCount !== count) {
                 const x = count === 2 ? [926.5, 1149.5][i] : 903 + i * 136;
                 r.root.setPosition(x - 640, 360 - 481);
+                r.surface.setPosition(x - 640, 360 - 481);
                 const width = count === 2 ? 159 : 112;
                 const padding = count === 2 ? 18 : 10;
                 r.bg.node.getComponent(UITransform)!.setContentSize(width, 94);

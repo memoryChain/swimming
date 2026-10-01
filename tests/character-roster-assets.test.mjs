@@ -580,8 +580,8 @@ test('新增机甲coser复用动作与单材质，装甲只使用R换色且有�
             assert.equal(mask[i + 3], 255);
         }
         assert.ok(coverage > 1000 && coverage < 512 * 512 / 2);
-        assert.equal(Resources.RESOURCE_PATHS.characterUi.portraits.cartonSwimmer15, 'ui/character-v1/portrait-cartonSwimmer15/texture');
-        const portrait = fs.readFileSync(new URL('assets/race/ui/character-v1/portrait-cartonSwimmer15.png', root));
+        assert.equal(Resources.RESOURCE_PATHS.characterUi.portraits.cartonSwimmer15, 'ui/character/portraits/portrait-cartonSwimmer15/spriteFrame');
+        const portrait = fs.readFileSync(new URL('assets/race/ui/character/portraits/portrait-cartonSwimmer15.png', root));
         assert.equal(portrait.readUInt32BE(16), 320);
         assert.equal(portrait.readUInt32BE(20), 320);
     } finally {
@@ -795,7 +795,7 @@ test('赛博少女保持精修模型预算，复用标准动作并提供独立R/
     assert.ok(clothes > 30000 && clothes < 60000);
     assert.ok(skin > 25000 && skin < 45000);
     assert.ok(edges > 0 && edges < skin / 2);
-    assert.equal(Resources.RESOURCE_PATHS.characterUi.portraits.cartonSwimmer16, 'ui/character-v1/portrait-cartonSwimmer16/texture');
-    const portrait = fs.readFileSync(new URL('assets/race/ui/character-v1/portrait-cartonSwimmer16.png', root));
+    assert.equal(Resources.RESOURCE_PATHS.characterUi.portraits.cartonSwimmer16, 'ui/character/portraits/portrait-cartonSwimmer16/spriteFrame');
+    const portrait = fs.readFileSync(new URL('assets/race/ui/character/portraits/portrait-cartonSwimmer16.png', root));
     assert.deepEqual([portrait.readUInt32BE(16), portrait.readUInt32BE(20)], [320, 320]);
 });

@@ -216,7 +216,7 @@ if (require.main === module) {
         const paths = Object.values(p.settlementUi).flat();
         assert.equal(paths.length, 16);
         for (const resource of paths) {
-            const file = path.join(root, 'assets/race', resource.replace('/texture', '.png'));
+            const file = path.join(root, 'assets/race', resource.replace(/\/(texture|spriteFrame)$/, '.png'));
             assert.ok(fs.existsSync(file), resource); assert.ok(fs.existsSync(file + '.meta'), resource + '.meta');
         }
     });

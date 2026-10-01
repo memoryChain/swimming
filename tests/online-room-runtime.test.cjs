@@ -101,8 +101,11 @@ class Node {
     position = { x: 0, y: 0, z: 0 }; scale = { x: 1, y: 1, z: 1 };
     constructor(name) { this.name = name; }
     setParent(p) { this.parent = p; p.children.push(this); }
+    getChildByName(name) { return this.children.find(child => child.name === name); }
+    setSiblingIndex(index) { const siblings=this.parent.children; siblings.splice(siblings.indexOf(this),1); siblings.splice(index,0,this); }
     addComponent(C) { const c = new C(); c.node = this; this.components.push(c); return c; }
     getComponent(C) { return this.components.find(c => c instanceof C); }
+    getComponentsInChildren(C) { return this.components.filter(c => c instanceof C).concat(...this.children.map(child => child.getComponentsInChildren(C))); }
     get activeInHierarchy() { return this.active && this.isValid && (!this.parent || this.parent.activeInHierarchy); }
     getWorldPosition(out) { out.x = this.position.x; out.y = this.position.y; out.z = this.position.z; for (let p = this.parent; p; p = p.parent) { out.x += p.position.x; out.y += p.position.y; out.z += p.position.z; } return out; }
     setPosition(x, y, z = 0) { this.position = { x, y, z }; }
@@ -113,22 +116,29 @@ class Node {
     destroy() { this.isValid = false; for (const c of this.children) c.destroy(); for (const fn of this.handlers['node-destroyed'] ?? []) fn(); }
 }
 const resizeListeners = new Map();
-const cc = { Node, UITransform, UIOpacity, Vec3, tween: target => new RoomTween(target), Label, Sprite, Button, Graphics, Color, Canvas, Widget,
+const cc = { CacheMode: { NONE: 0, BITMAP: 1, CHAR: 2 }, Node, UITransform, UIOpacity, Vec3, tween: target => new RoomTween(target), Label, Sprite, Button, Graphics, Color, Canvas, Widget,
     Layers: { Enum: { UI_2D: 1 } }, view: { getVisibleSize: () => visibleSize,
         on: (event, fn) => { if (!resizeListeners.has(event)) resizeListeners.set(event, new Set()); resizeListeners.get(event).add(fn); },
         off: (event, fn) => resizeListeners.get(event)?.delete(fn) },
     sys: { getSafeAreaRect: () => ({ x: safeLeft, y: 0, width: visibleSize.width - safeLeft - safeRight, height: visibleSize.height }) } };
 const net = { isSupported: () => false, setCallbacks: () => {}, broadcast: () => {}, updateReady: async () => {}, isOwner: () => true, getRoomInfo: async () => null, kickMember: async () => {}, leaveRoom: async () => {}, currentAccessInfo: () => 'test-room' };
 const cache = {};
+const nameAtlases = []; let failNameAtlas = false;
 function previewFrame(p) {
-    const file = path.join(root, 'assets/race', p.replace('/texture', '.png'));
+    const file = path.join(root, 'assets/race', p.replace(/\/(texture|spriteFrame)$/, '.png'));
     const png = fs.existsSync(file) ? fs.readFileSync(file) : null;
     return { path: p, isValid: true, rect: { width: png ? png.readUInt32BE(16) : 120, height: png ? png.readUInt32BE(20) : 100 } };
 }
 const stubs = {
     'cc': cc,
+    'ui/RosterNameAtlas': { RosterNameAtlas: { buildNames(labels) {
+        if (failNameAtlas) throw new Error('画布不可用');
+        const atlas={ names: labels.map(label => ({frame:{text:label.string},width:80,height:23,x:0,y:0})),disposed:0,dispose(){this.disposed++;} };
+        nameAtlases.push(atlas); return atlas;
+    } } },
     'core/GameBalance': require('./helpers/cocos-math-harness.cjs').createHarness().load(path.join(root, 'assets/scripts/core/GameBalance.ts')),
-    'ui/AvatarUiAssets': { avatarTexturePath: id => `avatar/${id}`, loadAvatarUiSpriteFrame: (p, done) => done(previewFrame(p)) },
+    'ui/UiAssetBarrier':{UiPageLoadGate:class { open(prepare,mount,_ready,enter){prepare(error=>{if(!error){mount();enter?.();}});} run(work){work();} cancel(){} }},
+    'ui/AvatarUiAssets': { preloadUiArt(_sources,done){done(null);}, avatarTexturePath: id => `avatar/${id}`, loadAvatarUiSpriteFrame: (p, done) => done(previewFrame(p)) },
     'ui/ProjectUiFonts': { PROJECT_UI_ENGLISH_BOLD_FAMILY: 'Arial Black', styleProjectUiLabel: (label, weight, lineHeight) => { label.weight = weight; label.lineHeight = lineHeight; } },
     'backend/PlayerData': { PlayerData: { loaded: true, avatarId: 'coral', nickName: '小龟9460', profile: { career: { league: 2 } } } },
     'net/NetManager': { netRoom: () => net, serializeRoomOperation: action => Promise.resolve().then(action) },
@@ -284,7 +294,7 @@ test('真实大厅与角色页保留横屏间距且翻转不改变留白', () =>
     const code = ts.transpileModule(`class LayoutHarness { ${methods.map(n => n.getText(source)).join('\n')} }`,
         { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
     let careerParent;
-    const Harness = vm.runInNewContext(`${code}; LayoutHarness`, { makeScreenEdgeGroup,
+    const Harness = vm.runInNewContext(`${code}; LayoutHarness`, { makeScreenEdgeGroup, Label, CacheMode: { BITMAP: 1 },
         getUILayer: canvas => canvas, UILayer: { Popup: 1 },
         CareerPrototypePanel: class { constructor(parent) { careerParent = parent; } } });
     const safeApi = cc.sys.getSafeAreaRect;
@@ -586,7 +596,7 @@ test('踢人前复查成员身份，座位换人不能误踢', async () => {
 test('资源都在分包，联机复用大厅全景，返回和绿色主按钮保持原资源引用', () => {
     const { RESOURCE_PATHS: p } = load(path.join(root, 'assets/scripts/core/ResourcePaths.ts'));
     for (const value of Object.values(p.onlineRoomUi)) {
-        const file = path.join(root, 'assets/race', value.replace('/texture', '.png'));
+        const file = path.join(root, 'assets/race', value.replace(/\/(texture|spriteFrame)$/, '.png'));
         assert.ok(fs.existsSync(file), file);
         const bytes = fs.readFileSync(file); assert.equal(bytes[25], 6, '必须是 RGBA');
     }
@@ -597,7 +607,7 @@ test('资源都在分包，联机复用大厅全景，返回和绿色主按钮�
     assert.equal(background.getComponent(Sprite).spriteFrame.path, p.lobbyB.background);
     assert.equal(find(v.root, 'BackIcon').getComponent(Sprite).spriteFrame.path, p.characterUi.backIcon);
     assert.equal(v.primaryArt.spriteFrame.path, p.lobbyUi.startButton);
-    const bytes = fs.readFileSync(path.join(root, 'assets/race', p.lobbyB.background.replace('/texture', '.png')));
+    const bytes = fs.readFileSync(path.join(root, 'assets/race', p.lobbyB.background.replace(/\/(texture|spriteFrame)$/, '.png')));
     const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
     const count = nodes(v.root).length;
     const { computePrepareSceneLayout } = load(path.join(root, 'assets/scripts/ui/PrepareSceneLayout.ts'));
@@ -647,8 +657,8 @@ function navigationHarness() {
         compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
     }).outputText;
     let loaded, roomMode = true, opened = 0;
-    const context = { exports: {}, console,
-        cancelLobbyResourcePreparation() {}, StartupLoadingCover: class { setLoading() {} setProgress() {} dispose() {} }, UiAssetBarrier: class { cancel() {} },
+    const context = { exports: {}, console, STARTUP_COPY:{loadingProfile:"资料"}, PlayerData:{loaded:true,profile:{tutorialCompleted:true}},
+        cancelLobbyResourcePreparation() {}, UiPageLoadGate:class { open(prepare,mount,_ready,enter){prepare(error=>{if(!error){mount();enter?.();}});} run(work){work();} cancel(){} }, StartupLoadingCover: class { setLoading() {} setProgress() {} dispose() {} }, UiAssetBarrier: class { cancel() {} },
         getUILayer: n => n, UILayer: { Screen: 1 }, setRoomMode: value => { roomMode = value; },
         PrepareRaceFlow: class { showReadyScreen() { opened++; } },
         RoomFlow: class { dispose() {} },
@@ -662,7 +672,7 @@ function navigationHarness() {
         manager.buildPrepareRace(); manager._lobbyLoading = null;
         if (manager._loginUiRoot?.isValid) manager._loginUiRoot.active = false;
     };
-    manager._entryResourcesReady = true;
+    manager._entryResourcesReady = true;manager._identityLoadGate={cancel(){}};
     manager._canvasNode = new Node('Canvas'); manager._canvasNode.getChildByName = () => null;
     manager._designWidth = 1280; manager._designHeight = 720;
     return { manager, loaded: root => loaded(null, { root }), opened: () => opened, roomMode: () => roomMode };
@@ -899,4 +909,48 @@ test('属性tips跨相机投影：主画布原点和覆盖层原点不同，弹�
         canvas.getComponent(Canvas).cameraComponent = null;
         tips.show(anchor); assert.equal(tips.root.active, false, '缺少渲染相机不回退到错误的世界坐标');
     } finally { tips.dispose(); visibleSize.width = 1280; }
+});
+
+test('房间昵称共享名单页，准备与赛制变化不重打，换名和离开释放旧页，节点与监听保持稳定', () => {
+    const view = new OnlineRoomView(new Node('root'), {exit(){},primary(){},invite(){},mode(){},kick(){}}, true);
+    try {
+        view.update(state()); const atlas=view.nameAtlas, count=nodes(view.root).length, animations=createdRoomTweens;
+        assert.equal(atlas.names.length,3);
+        for(const name of ['HostName','Nickname0','Nickname2']) {
+            const label=find(view.root,name).getComponent(Label);
+            assert.equal(label.enabled,false); assert.notEqual(label.cacheMode,cc.CacheMode.CHAR);
+            assert.equal(label.fontFamily,'Arial Black');
+        }
+        for(const name of ['MemberHeading','SeatNumber0','Status0','Mode','RoomNumber'])
+            assert.equal(find(view.root,name).getComponent(Label).cacheMode,cc.CacheMode.CHAR);
+        for(const name of ['RoomHint','PopupName'])assert.notEqual(find(view.root,name).getComponent(Label).cacheMode,cc.CacheMode.CHAR);
+        const panel=find(view.root,'MembersEntrance');
+        assert.ok(panel.children.indexOf(find(view.root,'StatusBackground7')) < panel.children.indexOf(find(view.root,'Avatar0')));
+        assert.ok(panel.children.indexOf(find(view.root,'Avatar2')) < panel.children.indexOf(find(view.root,'Status0')));
+        assert.ok(panel.children.indexOf(find(view.root,'Status7')) < panel.children.indexOf(find(view.root,'Nickname0')));
+        for(let i=0;i<20;i++) {
+            view.update(state({ready:i%2===0,mode:i%2?'beginner':'championship',members:[host,{...guest,ready:i%2===0}]}));
+            assert.equal(view.nameAtlas,atlas);assert.equal(nodes(view.root).length,count);assert.equal(createdRoomTweens,animations);
+        }
+        view.update(state({members:[host,{...guest,nickName:'𠮷昕😀'}]}));
+        assert.equal(atlas.disposed,1); const changed=view.nameAtlas;
+        assert.equal(changed.names[2].frame.text,'𠮷昕😀（我）');
+        view.update(state({members:[host]}));assert.equal(changed.disposed,1);
+        assert.equal(find(view.root,'Nickname2').active,false);
+        const last=view.nameAtlas;view.root.destroy();assert.equal(last.disposed,1);
+    } finally { if(view.root.isValid)view.root.destroy(); }
+});
+
+test('房间画布失败保留完整昵称，不因准备刷新不断重试，下一份名单可恢复缓存', () => {
+    const view = new OnlineRoomView(new Node('root'), {exit(){},primary(){},invite(){},mode(){},kick(){}}, true);
+    try {
+        failNameAtlas=true;view.update(state()); assert.equal(view.nameAtlas,null);
+        for(const name of ['HostName','Nickname0','Nickname2']) {
+            const label=find(view.root,name).getComponent(Label);assert.equal(label.enabled,true);assert.equal(find(label.node,'CachedName').active,false);
+        }
+        failNameAtlas=false;view.update(state({ready:true}));assert.equal(view.nameAtlas,null);
+        view.update(state({members:[host,{...guest,nickName:'更名后恢复'}]}));assert.ok(view.nameAtlas);
+        failNameAtlas=true;const old=view.nameAtlas;view.update(state({members:[host]}));assert.equal(old.disposed,1);
+        assert.equal(view.nameAtlas,null);assert.equal(find(view.root,'Nickname0').getComponent(Label).enabled,true);
+    } finally {failNameAtlas=false;view.root.destroy();}
 });

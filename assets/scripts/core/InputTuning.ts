@@ -20,7 +20,8 @@ export const INPUT_TUNING = {
 export const MOTION_TUNING = {
     // Motion speed multiplier while a stroke side is held.
     // 单侧划水按住期间的动作速度倍率。
-    heldMotionSpeedScale: 1,
+    // 白点与真实划水进度同步放慢，低心率基础完美窗约 156～174ms。
+    heldMotionSpeedScale: 0.8,
 
     // Motion speed multiplier after a stroke side is released.
     // 单侧划水松开后的动作释放速度倍率。

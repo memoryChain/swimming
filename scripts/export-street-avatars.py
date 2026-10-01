@@ -10,7 +10,7 @@ SIZE = 256
 
 def main():
     entries = json.loads((SOURCE / 'manifest.json').read_text())
-    paths = re.findall(r"'ui/avatar-picker-v1/(avatar-\d+[^']*)/texture'",
+    paths = re.findall(r"'ui/avatars/(avatar-\d+[^']*)/spriteFrame'",
                        (ROOT / 'assets/scripts/core/ResourcePaths.ts').read_text())
     assert len(entries) == len(paths) == 10
     # 超采样仅用于导出抗锯齿，运行时无需额外遮罩和绘制节点。
@@ -23,7 +23,7 @@ def main():
         image = src.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
         # 保留透明像素的原始颜色，避免线性采样产生黑色或白色杂边。
         image.putalpha(mask)
-        dest = ROOT / 'assets/race/ui/avatar-picker-v1' / (name + '.png')
+        dest = ROOT / 'assets/race/ui/avatars' / (name + '.png')
         assert dest.with_suffix('.png.meta').exists()
         image.save(dest, optimize=True)
         print(dest.relative_to(ROOT))

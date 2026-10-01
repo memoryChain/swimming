@@ -10,6 +10,6 @@ const root = path.resolve(__dirname, '..');
     ]) {
         await sharp(path.join(root, 'tools/ui-source/stroke-feedback', source + '.svg'), { density: 288 })
             .resize(size, size).png({ compressionLevel: 9 })
-            .toFile(path.join(root, 'assets/race/ui/race-stroke-v1', output + '.png'));
+            .toFile(path.join(root, 'assets/race/ui/race-hud', output + '.png'));
     }
 })().catch(error => { console.error(error); process.exitCode = 1; });

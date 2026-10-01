@@ -1,7 +1,8 @@
 #target photoshop
+#include "ui-atlas-export-paths.jsx"
 // 从当前已打开的最终主稿导出固定美术提示与蓄力部件；中文提示在运行时使用 Label。
 var project = File($.fileName).parent.parent;
-var dest = new Folder(project.fsName + '/assets/race/ui/race-start-v1'); dest.create();
+
 var notes = new Folder(project.fsName + '/docs/race-start-ui'); notes.create();
 var source = app.documents.getByName('划水大师-比赛HUD-起跑提示与蓄力.psd');
 if (source.width.as('px') !== 1290 || source.height.as('px') !== 720) throw Error('起跳主稿尺寸必须为 1290×720');
@@ -12,7 +13,7 @@ function isolate(d,g){for(var i=0;i<d.layers.length;i++)show(d.layers[i],false);
 function color(v){var z=new ActionDescriptor();z.putDouble(c('Rd  '),v[0]);z.putDouble(c('Grn '),v[1]);z.putDouble(c('Bl  '),v[2]);return z;}
 function poly(d,parent,name,pts,v){var a=[];for(var i=0;i<pts.length;i++){var p=new PathPointInfo();p.kind=PointKind.CORNERPOINT;p.anchor=pts[i];p.leftDirection=pts[i];p.rightDirection=pts[i];a.push(p);}var sub=new SubPathInfo();sub.closed=true;sub.operation=ShapeOperation.SHAPEADD;sub.entireSubPath=a;var path=d.pathItems.add('导出临时路径',[sub]);var mk=new ActionDescriptor(),r=new ActionReference();r.putClass(s('contentLayer'));mk.putReference(c('null'),r);var b=new ActionDescriptor(),f=new ActionDescriptor();f.putObject(c('Clr '),c('RGBC'),color(v));b.putObject(c('Type'),s('solidColorLayer'),f);mk.putObject(c('Usng'),s('contentLayer'),b);executeAction(c('Mk  '),mk,DialogModes.NO);var l=d.activeLayer;l.name=name;l.move(parent,ElementPlacement.INSIDE);path.remove();return l;}
 function quad(d,g,n,y1,y2,a,b,v){function x(y){return 1234-(y-226)*.2;}return poly(d,g,n,[[x(y1)+a,y1],[x(y1)+b,y1],[x(y2)+b,y2],[x(y2)+a,y2]],v);}
-function out(name,target,edit,fixedBox){app.activeDocument=source;var d=source.duplicate('起跳切图临时副本');try{var g=find(d,target);if(!g)throw Error('缺少图层：'+target);isolate(d,g);if(edit)edit(d,g);d.activeLayer=g;app.refresh();d.mergeVisibleLayers();var b=d.activeLayer.bounds;var box=fixedBox||[Math.max(0,Math.floor(b[0].as('px'))-4),Math.max(0,Math.floor(b[1].as('px'))-4),Math.min(1290,Math.ceil(b[2].as('px'))+4),Math.min(720,Math.ceil(b[3].as('px'))+4)];d.crop(box);app.refresh();d.saveAs(new File(dest.fsName+'/'+name+'.png'),new PNGSaveOptions(),true,Extension.LOWERCASE);manifest.push({name:name,x:box[0],y:box[1],width:box[2]-box[0],height:box[3]-box[1]});}finally{d.close(SaveOptions.DONOTSAVECHANGES);app.activeDocument=source;}}
+function out(name,target,edit,fixedBox){app.activeDocument=source;var d=source.duplicate('起跳切图临时副本');try{var g=find(d,target);if(!g)throw Error('缺少图层：'+target);isolate(d,g);if(edit)edit(d,g);d.activeLayer=g;app.refresh();d.mergeVisibleLayers();var b=d.activeLayer.bounds;var box=fixedBox||[Math.max(0,Math.floor(b[0].as('px'))-4),Math.max(0,Math.floor(b[1].as('px'))-4),Math.min(1290,Math.ceil(b[2].as('px'))+4),Math.min(720,Math.ceil(b[3].as('px'))+4)];d.crop(box);app.refresh();var outputFile=uiAtlasExportFile(project.fsName,'race-start-v1',name);if(outputFile)d.saveAs(outputFile,new PNGSaveOptions(),true,Extension.LOWERCASE);manifest.push({name:name,x:box[0],y:box[1],width:box[2]-box[0],height:box[3]-box[1]});}finally{d.close(SaveOptions.DONOTSAVECHANGES);app.activeDocument=source;}}
 function noHint(d,g){var l=find(g,'提示_可编辑文字');if(l)l.visible=false;}
 out('ready','READY_蓝色',noHint);
 out('go','GO_黄色');out('late','LATE_START_起跳偏晚');

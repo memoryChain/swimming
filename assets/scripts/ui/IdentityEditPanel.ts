@@ -11,7 +11,8 @@ import { AVATARS, generateRandomNickName } from '../backend/IdentityConfig';
 import { platform } from '../platform/PlatformManager';
 import { PlayerData } from '../backend/PlayerData';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
-import { loadAvatarSpriteFrame, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
+import { loadAvatarSpriteFrame, loadAvatarUiSpriteFrame, preloadUiArt } from './AvatarUiAssets';
+import { UiPageLoadGate } from './UiAssetBarrier';
 import { styleDynamicUiLabel, styleProjectUiLabel } from './ProjectUiFonts';
 import {
     fitFullScreenBackgroundCover,
@@ -36,6 +37,7 @@ const AVATAR_ART_SIZE = 76;
 const AVATAR_HIT_SIZE = 90;
 
 export class IdentityEditPanel {
+    private readonly _loadGate = new UiPageLoadGate();
     private _root: Node | null = null;
     private _motion: PopupUiMotion | null = null;
     private _nicknameLabel: Label | null = null;
@@ -88,6 +90,10 @@ export class IdentityEditPanel {
     }
 
     show(): void {
+        this._loadGate.open(done => preloadUiArt([RESOURCE_PATHS.avatarPickerUi], done), () => this.showPrepared());
+    }
+
+    private showPrepared(): void {
         if (!this._root?.isValid || this._saving || this._motion?.showing) return;
         this._draftAvatarId = AVATARS.some((option) => option.id === PlayerData.avatarId)
             ? PlayerData.avatarId
@@ -102,12 +108,14 @@ export class IdentityEditPanel {
     }
 
     hide(): void {
+        this._loadGate.cancel();
         if (this._saving || !this._root?.isValid) return;
         this._copyGeneration++;
         this._motion?.hide();
     }
 
     dispose(): void {
+        this._loadGate.cancel();
         PlayerData.offChange(this._onProfileChange);
         this._copyGeneration++;
         this._copying = false;

@@ -240,12 +240,17 @@ function client(h, storage = new Map(), options = {}) {
         return require('typescript');
     })();
     let drop = 0, offline = false, account = h.context, calls = 0;
+    const requests = [];
     const localStorage = { getItem: k => storage.get(k) ?? null,
-        setItem: (k, v) => { if (options.failWrite && k.endsWith('.pending')) throw Error('本地空间不足'); storage.set(k, v); },
+        setItem: (k, v) => {
+            if (options.failWrite && k.endsWith('.pending') || options.failTutorialWrite && /\.tutorial-/.test(k)) throw Error('本地空间不足');
+            storage.set(k, v);
+        },
         removeItem: k => storage.delete(k) };
     const wx = { cloud: { init() {}, callFunction({ data, success, fail }) {
-        calls++; if (offline) { queueMicrotask(() => fail({})); return; }
-        h.service.player(copy(data), account).then(result => {
+        calls++; requests.push(copy(data)); if (offline) { queueMicrotask(() => fail({})); return; }
+        const run = () => h.service.player(copy(data), account);
+        Promise.resolve(options.respond ? options.respond(copy(data), run) : run()).then(result => {
             if (data.action !== 'load' && drop > 0) { drop--; fail({}); } else success({ result });
         }, fail);
     } } };
@@ -271,7 +276,7 @@ function client(h, storage = new Map(), options = {}) {
     activeBackend = options.local
         ? new (load(path.resolve(__dirname, '../assets/scripts/backend/MockBackend.ts')).MockBackend)()
         : new WechatCloudBackend();
-    return { backend: activeBackend, data: () => load(path.resolve(__dirname, '../assets/scripts/backend/PlayerData.ts')).PlayerData, storage, options, calls: () => calls, drop: n => { drop = n; }, offline: v => { offline = v; },
+    return { backend: activeBackend, data: () => load(path.resolve(__dirname, '../assets/scripts/backend/PlayerData.ts')).PlayerData, storage, options, requests, calls: () => calls, drop: n => { drop = n; }, offline: v => { offline = v; },
         config: () => load(path.resolve(__dirname, '../assets/scripts/app/PlayerCharacterConfig.ts')),
         mock: () => new (load(path.resolve(__dirname, '../assets/scripts/backend/MockBackend.ts')).MockBackend)(),
         account: value => { account = value; } };
@@ -705,4 +710,130 @@ test('本地教学重置保留其余存档并可反复完成重置；云端入�
     const cloud = client(harness());
     await assert.rejects(cloud.data().resetTutorialForLocalTesting(), /仅本地预览/);
     assert.equal(cloud.calls(), 0);
+});
+
+test('教学完成先写账号本地标记，云请求不返回时仍可导航且不占经济队列', async () => {
+    const h = harness(); let release, hold = true;
+    const c = client(h, new Map(), { respond(request, run) {
+        return request.action === 'tutorialComplete' && hold ? new Promise(resolve => { release = () => { hold = false; run().then(resolve); }; }) : run();
+    } });
+    const data = c.data(); await data.load();
+    const before = copy(data.profile);
+    await data.completeTutorial();
+    assert.equal(data.loaded, true); assert.equal(data.profile.tutorialCompleted, true);
+    assert.deepEqual(copy(data.profile), { ...before, tutorialCompleted: true });
+    assert.ok([...c.storage.keys()].some(key => key.endsWith('.tutorial-completed') && c.storage.get(key) === '1'));
+    assert.ok(![...c.storage.keys()].some(key => key.endsWith('.pending')));
+    assert.equal((await data.loadForNavigation()).tutorialCompleted, true);
+    await data.executeCareer({ ...beginData, type: 'begin' });
+    assert.equal(data.profile.tutorialCompleted, true); assert.ok(data.profile.career.pending);
+    release(); await c.backend.syncTutorialCompletion();
+    assert.equal((await h.load()).profile.tutorialCompleted, true);
+    assert.ok(data.profile.career.pending, '后台教学响应不能替换前台比赛票据');
+});
+
+test('断网完成教学仍保持 loaded，本地重启恢复并在云读取恢复后补传', async () => {
+    const h = harness(), storage = new Map(), c = client(h, storage), data = c.data();
+    await data.load(); c.offline(true); await data.completeTutorial(); await c.backend.syncTutorialCompletion();
+    assert.equal(data.loaded, true); assert.equal(data.profile.tutorialCompleted, true);
+    assert.equal((await data.loadForNavigation()).tutorialCompleted, true);
+    assert.equal((await h.load()).profile.tutorialCompleted, false);
+    const restarted = client(h, storage); await restarted.data().load();
+    assert.equal(restarted.data().profile.tutorialCompleted, true, '云端旧值不能再次触发教学');
+    await restarted.backend.syncTutorialCompletion();
+    assert.equal((await h.load()).profile.tutorialCompleted, true);
+    assert.ok(![...storage.keys()].some(key => key.endsWith('.tutorial-pending')));
+    const other = client(h, new Map()); await other.data().load();
+    assert.equal(other.data().profile.tutorialCompleted, true, '同账号换设备由云端恢复');
+});
+
+test('旧云函数拒绝教学写入时不阻塞大厅/正常存档，更新后沿用本地记录补传', async () => {
+    const h = harness(); let old = true;
+    const c = client(h, new Map(), { respond(request, run) {
+        return old && request.action === 'tutorialComplete'
+            ? { ok: false, code: 'FORBIDDEN', message: '不支持此存档操作' } : run();
+    } });
+    const data = c.data(); await data.load(); await data.completeTutorial(); await c.backend.syncTutorialCompletion();
+    assert.equal(data.loaded, true); assert.equal((await data.loadForNavigation()).tutorialCompleted, true);
+    await data.setIdentity({ avatarId: 'coral' });
+    await c.backend.syncTutorialCompletion();
+    assert.equal(data.profile.tutorialCompleted, true); assert.equal(data.avatarId, 'coral');
+    old = false; await data.load(true); await c.backend.syncTutorialCompletion();
+    assert.equal((await h.load()).profile.tutorialCompleted, true);
+});
+
+test('数据库错误及响应丢失保留教学请求，恢复补传不重复写进度或发奖', async () => {
+    for (const failure of ['database', 'response']) {
+        const h = harness(), c = client(h), data = c.data(); await data.load();
+        if (failure === 'database') h.db.fail = true; else c.drop(2);
+        await data.completeTutorial(); await c.backend.syncTutorialCompletion();
+        assert.equal(data.loaded, true); assert.equal(data.profile.tutorialCompleted, true);
+        const failedRequests = c.requests.filter(r => r.action === 'tutorialComplete');
+        assert.equal(failedRequests.length, failure === 'database' ? 1 : 2);
+        if (failedRequests.length > 1) assert.equal(failedRequests[0].requestId, failedRequests[1].requestId);
+        h.db.fail = false; await data.load(true); await c.backend.syncTutorialCompletion();
+        const confirmed = await h.load();
+        assert.equal(confirmed.profile.tutorialCompleted, true); assert.equal(confirmed.profile.coins, 0);
+        assert.equal(confirmed.revision, 1);
+    }
+});
+
+test('旧版经济 outbox 中的失败教学请求在读取时迁移，不再锁住登录', async () => {
+    const h = harness(), storage = new Map(), c = client(h, storage); const initial = await c.backend.loadProfile();
+    const profileKey = [...storage.keys()].find(k => k.endsWith('.cache'));
+    const pendingKey = profileKey.replace(/\.cache$/, '.pending');
+    storage.set(pendingKey, JSON.stringify(h.request('tutorialComplete', {}, 0)));
+    const restarted = client(h, storage, { respond(request, run) {
+        return request.action === 'tutorialComplete' ? { ok: false, code: 'FORBIDDEN' } : run();
+    } });
+    await restarted.data().load(); await restarted.backend.syncTutorialCompletion();
+    assert.equal(restarted.data().loaded, true); assert.equal(restarted.data().profile.tutorialCompleted, true);
+    assert.equal(storage.has(pendingKey), false);
+    assert.deepEqual(copy(restarted.data().profile.career), copy(initial.career));
+    await restarted.data().setIdentity({ avatarId: 'coral' });
+    assert.equal(restarted.data().avatarId, 'coral');
+});
+
+test('本地教学标记按环境与账号隔离，另一账号不会读取或重放', async () => {
+    const h = harness(), storage = new Map(), c = client(h, storage); await c.data().load();
+    c.offline(true); await c.data().completeTutorial(); await c.backend.syncTutorialCompletion();
+    h.context = { ...h.context, OPENID: 'user-b' };
+    const other = client(h, storage); await other.data().load(); await other.backend.syncTutorialCompletion();
+    assert.equal(other.data().profile.tutorialCompleted, false);
+    assert.equal(other.requests.filter(r => r.action === 'tutorialComplete').length, 0);
+    const wrongEnv = new Map(Array.from(storage, ([k, v]) => [k.replace('test-env', 'another-env'), v]));
+    const fresh = client(h, wrongEnv); await fresh.data().load();
+    assert.equal(fresh.data().profile.tutorialCompleted, false);
+});
+
+test('教学补传版本冲突自动更新版本，经济改动仍保留', async () => {
+    const h = harness(), c = client(h); await c.data().load(); await h.compensate(1234);
+    await c.data().completeTutorial(); await c.backend.syncTutorialCompletion();
+    const requests = c.requests.filter(r => r.action === 'tutorialComplete');
+    assert.equal(requests.length, 2); assert.equal(requests[0].requestId, requests[1].requestId);
+    const saved = await h.load(); assert.equal(saved.profile.tutorialCompleted, true); assert.equal(saved.profile.coins, 1234);
+    await c.data().load(true); assert.equal(c.data().coins, 1234);
+});
+
+test('后台教学先提交时前台存档自动恢复仅教学标记引起的冲突', async () => {
+    const h = harness(); let release;
+    const c = client(h, new Map(), { respond(request, run) {
+        if (request.action === 'tutorialComplete') return run().then(result => new Promise(resolve => { release = () => resolve(result); }));
+        return run();
+    } });
+    await c.data().load(); await c.data().completeTutorial();
+    await new Promise(resolve => setImmediate(resolve));
+    await c.data().setIdentity({ avatarId: 'coral' });
+    const currentRevision = c.backend.revision;
+    release(); await c.backend.syncTutorialCompletion();
+    assert.equal(c.backend.revision, currentRevision, '迟到教学响应不能倒退版本');
+    assert.equal(c.data().avatarId, 'coral'); assert.equal(c.data().profile.tutorialCompleted, true);
+    assert.equal(c.requests.filter(r => r.action === 'identity').length, 2);
+});
+
+test('本地空间不足也能结束当前教学并补传，正常云存档仍不允许无持久化扣费', async () => {
+    const h = harness(), c = client(h), data = c.data(); await data.load(); c.options.failTutorialWrite = true;
+    await data.completeTutorial(); await c.backend.syncTutorialCompletion();
+    assert.equal(data.loaded, true); assert.equal(data.profile.tutorialCompleted, true);
+    assert.equal((await h.load()).profile.tutorialCompleted, true);
 });

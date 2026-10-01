@@ -1110,7 +1110,9 @@ export class SwimmerMotor {
         // 超出本划完美区终点不再增加耗时奖励。
         const progress = clamp(releaseProgress, 0,
             Math.min(perfect.end, clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress)));
-        const referencePeriod = Math.max(0.0001, minHold + center * heldCycleSeconds);
+        // 按住速度放慢增加了每次输入的等待，补偿到未缩放的标准周期。
+        // 判定、白点与手臂仍共用真实进度；空等与超过完美终点仍不追加奖励。
+        const referencePeriod = Math.max(0.0001, minHold + center * this.currentCycleSeconds());
         const periodScale = (minHold + progress * heldCycleSeconds) / referencePeriod;
         const strength = clamp01(SWIMMER_BALANCE.strokeTimeCompensation);
         // 满补偿直接返回，避免混合运算的浮点消减残留历史耗时差异。

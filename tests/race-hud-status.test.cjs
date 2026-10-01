@@ -5,7 +5,7 @@ const ts=compiler(),root=path.resolve(__dirname,'..');
 let writes=0;
 class Color{constructor(r=255,g=255,b=255,a=255){Object.assign(this,{r,g,b,a});}equals(c){return this.r===c.r&&this.g===c.g&&this.b===c.b&&this.a===c.a;}static WHITE=new Color();}
 class Comp{get isValid(){return this.node.isValid;}}
-class UITransform extends Comp{setContentSize(width,height){this.contentSize={width,height};}}
+class UITransform extends Comp{anchorX=.5;anchorY=.5;get width(){return this.contentSize.width;}get height(){return this.contentSize.height;}setContentSize(width,height){this.contentSize={width,height};}}
 class Label extends Comp{static Overflow={SHRINK:1};static HorizontalAlign={LEFT:0,RIGHT:1,CENTER:2};static VerticalAlign={CENTER:0};set string(s){this._string=s;writes++;}get string(){return this._string;}}
 class Sprite extends Comp{static SizeMode={CUSTOM:1};static Type={FILLED:1};static FillType={RADIAL:0,HORIZONTAL:1,VERTICAL:2};color=Color.WHITE;set fillRange(v){this._fillRange=v;writes++;}get fillRange(){return this._fillRange;}}
 class Button extends Comp{static Transition={SCALE:1};static EventType={CLICK:'click'};interactable=true;}
@@ -13,30 +13,97 @@ class BlockInputEvents extends Comp{}
 class Font{}
 class UIOpacity extends Comp{opacity=255;}
 class Vec3{constructor(x=0,y=0,z=0){Object.assign(this,{x,y,z});}}
-class Vec2{constructor(x,y){this.x=x;this.y=y;}}
+class Vec2{constructor(x=0,y=0){this.x=x;this.y=y;}static set(out,x,y){out.x=x;out.y=y;return out;}}
 class Node{static EventType={NODE_DESTROYED:'destroy'};children=[];components=[];events={};active=true;isValid=true;scale={x:1,y:1};position={x:0,y:0};constructor(name){this.name=name;}get activeInHierarchy(){return this.active&&(!this.parent||this.parent.activeInHierarchy);}setParent(p){if(this.parent)this.parent.children=this.parent.children.filter(n=>n!==this);this.parent=p;p.children.push(this);}addComponent(C){const c=new C();c.node=this;this.components.push(c);return c;}getComponent(C){return this.components.find(c=>c instanceof C);}setPosition(x,y){this.position=typeof x==='object'?{x:x.x,y:x.y}:{x,y};}setScale(x,y){this.scale=typeof x==='object'?{x:x.x,y:x.y}:{x,y};}on(e,f){this.events[e]=f;}once(e,f){this.on(e,f);}off(e){delete this.events[e];}destroy(){this.isValid=false;for(const c of this.children)c.destroy();this.events.destroy?.();}}
 function load(file,imports,extras={}){const m={exports:{}};const js=ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;vm.runInNewContext(js,{require:p=>{assert.ok(imports[p],p);return imports[p];},module:m,exports:m.exports,...extras});return m.exports;}
 Node.prototype.getChildByName=function(name){return this.children.find(n=>n.name===name);};
+Node.prototype.setSiblingIndex=function(index){const siblings=this.parent.children;const old=siblings.indexOf(this);siblings.splice(old,1);siblings.splice(index,0,this);};
 const heartPresentation=load('assets/scripts/ui/HeartRatePresentation.ts',{'cc':{Color}});
-function fixture(reservedRatio=0){
+function fixture(reservedRatio=0,trimmed=false){
  let size={width:1280,height:720},safe={x:0,y:0,...size},jumps=0;const pending=[],listeners=new Map();
  const view={getVisibleSize:()=>size,on:(e,f,ctx)=>listeners.set(e,()=>f.call(ctx)),off:e=>listeners.delete(e)};
  const animations=[];
  const trackedTween=target=>{const t={target,steps:[],stopped:false,to(seconds,props){this.steps.push({seconds,props});return this;},delay(seconds){this.steps.push({seconds});return this;},call(fn){this.steps.push({fn});return this;},stop(){this.stopped=true;return this;},start(){animations.push(this);return this;}};return t;};
- const cc={BlockInputEvents,Button,Color,Font,Label,Node,Sprite,UITransform,Vec2,Vec3,UIOpacity,Tween:{stopAllByTarget(){}},tween:trackedTween,view,sys:{getSafeAreaRect:()=>safe}};
+ const cc={BlockInputEvents,Button,CacheMode:{NONE:0,BITMAP:1,CHAR:2},Color,Font,Label,Node,Sprite,UITransform,Vec2,Vec3,UIOpacity,Tween:{stopAllByTarget(){}},tween:trackedTween,view,sys:{getSafeAreaRect:()=>safe}};
  const block=fs.readFileSync(path.join(root,'assets/scripts/core/ResourcePaths.ts'),'utf8').match(/raceHudUi: (\{[\s\S]*?\n    \}),/)[1];
  const art=vm.runInNewContext('('+block+')');
  function node(name,p){const n=new Node(name);n.setParent(p);n.addComponent(UITransform);return n;}
  const constants={StrokeType:{LEFT:'left',RIGHT:'right'},Rating:{PERFECT:'perfect',GOOD:'good',BAD:'bad'}};
  const entrance=load('assets/scripts/ui/RaceHudEntrance.ts',{'cc':cc,'./RuntimeUiFactory':{makeUiNode:node}});
- const stroke=load('assets/scripts/ui/RaceStrokeView.ts',{'./HeartRatePresentation':heartPresentation,'cc':cc,'../core/GameConstants':constants,'./RuntimeUiFactory':{makeUiNode:node},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}}});
- const mod=load('assets/scripts/ui/RaceHudStatusView.ts',{'./RaceHudEntrance':entrance,'./HeartRatePresentation':heartPresentation,'../platform/PlatformManager':{platform:()=>({getTopRightReservedBottomRatio:()=>reservedRatio})},'./RaceStrokeView':stroke,'../core/GameConstants':constants,'cc':cc,'../core/ResourcePaths':{RESOURCE_PATHS:{raceHudUi:art}},'../core/RaceBundleLoader':{loadRaceAsset:(p,t,cb)=>cb(null,new Font())},'./AvatarUiAssets':{avatarTexturePath:id=>id,loadAvatarUiSpriteFrame:(p,cb)=>{if(p.startsWith('ui/race-hud')||p.startsWith('ui/race-stroke'))cb({path:p});else pending.push({p,cb});}},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}},'./RuntimeUiFactory':{makeUiNode:node}});
+ const fillGeometry=load('assets/scripts/ui/UiFilledSpriteGeometry.ts',{'cc':cc});
+ const stroke=load('assets/scripts/ui/RaceStrokeView.ts',{'./UiFilledSpriteGeometry':fillGeometry,'./HeartRatePresentation':heartPresentation,'cc':cc,'../core/GameConstants':constants,'./RuntimeUiFactory':{makeUiNode:node},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}}});
+ const image=p=>{
+  const data=fs.readFileSync(path.join(root,'assets/race',p.replace(/\/(spriteFrame|texture)$/,'.png'))),w=data.readUInt32BE(16),h=data.readUInt32BE(20);
+  const ring=trimmed&&p.includes('/status-ring/'),band=trimmed&&p.includes('/perfect-band/');
+  return {path:p,rect:{x:142,y:280,width:ring?76:band?121:w,height:ring?64:band?180:h},originalSize:{width:w,height:h},offset:{x:band?-1.5:0,y:ring?6:0},width:2048,height:1024,isRotated:()=>false,getRect(){return this.rect;}};
+ };
+ const mod=load('assets/scripts/ui/RaceHudStatusView.ts',{'./UiFilledSpriteGeometry':fillGeometry,'./RaceHudEntrance':entrance,'./HeartRatePresentation':heartPresentation,'../platform/PlatformManager':{platform:()=>({getTopRightReservedBottomRatio:()=>reservedRatio})},'./RaceStrokeView':stroke,'../core/GameConstants':constants,'cc':cc,'../core/ResourcePaths':{RESOURCE_PATHS:{raceHudUi:art}},'../core/RaceBundleLoader':{loadRaceAsset:(p,t,cb)=>cb(null,new Font())},'./AvatarUiAssets':{avatarTexturePath:id=>id,loadAvatarUiSpriteFrame:(p,cb)=>{if(p.startsWith('ui/race-hud')||p.startsWith('ui/race-stroke'))cb(image(p));else pending.push({p,cb});}},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}},'./RuntimeUiFactory':{makeUiNode:node}});
  mod.preloadRaceHudStatus(e=>assert.equal(e,null));const parent=new Node('root');const hud=new mod.RaceHudStatusView(parent,()=>jumps++);
  return {hud,parent,pending,listeners,animations,finish(){for(const t of animations){if(t.stopped||t.finished)continue;for(const step of t.steps){if(t.stopped)break;if(step.props)Object.assign(t.target,step.props);step.fn?.();}t.finished=true;}},get jumps(){return jumps;},resize(w,h,l=0,r=0,top=0){size={width:w,height:h};safe={x:l,y:0,width:w-l-r,height:h-top};listeners.get('canvas-resize')();}};
 }
 function find(n,name){if(n.name===name)return n;for(const c of n.children){const f=find(c,name);if(f)return f;}}
 function count(n){return 1+n.children.reduce((s,c)=>s+count(c),0);}
 function update(h,charge=1,can=true){h.updateValues(2.37,182,true,.72,20,200,charge,can);}
+
+function filledAssembler(name) {
+ const config=JSON.parse(fs.readFileSync(path.join(root,'temp/tsconfig.cocos.json'),'utf8'));
+ const internal=config.compilerOptions.paths['db://internal/*'][0];
+ const engine=process.env.COCOS_ENGINE_ROOT||path.resolve(internal,'../../..');
+ const file=path.join(engine,'cocos/2d/assembler/sprite',name+'.ts');
+ const output=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+ const exports={};
+ const imports={'internal:constants':{JSB:false},'../../../core':{Mat4:class{},Vec2,errorID:id=>assert.fail(`引擎错误 ${id}`)},'../../components':{Sprite},'../../utils/dynamic-atlas/atlas-manager':{dynamicAtlasManager:{packToDynamicAtlas(){}}}};
+ vm.runInNewContext(output,{exports,require:id=>{assert.ok(imports[id],id);return imports[id];}});
+ return name==='radial-filled'?exports.radialFilled:exports.barFilled;
+}
+function assemble(sprite,assembler){
+ sprite.node._getUITransformComp=()=>sprite.node.getComponent(UITransform);
+ sprite._markForUpdateRenderData=()=>{};
+ const renderData=sprite.renderData={vertDirty:true,floatStride:9,data:Array.from({length:32},()=>({})),chunk:{vb:new Float32Array(32*9)},resize(count){this.vertexCount=count;this.indexCount=count;},updateRenderData(){}};
+ assembler.updateRenderData(sprite);return renderData;
+}
+
+test('真实径向组装器：裁切图集与完整源图在心率、体力、蓄气各进度下保持同一圆心和像素位置',()=>{
+ const assembler=filledAssembler('radial-filled');
+ const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} 与 ${b} 不一致`);
+ for(const trimmed of [false,true]){
+  const s=fixture(0,trimmed);s.hud.setVisible(true);
+  for(const ratio of [0,.15,.5,.85,1]){
+   s.hud.updateValues(2,80+100*ratio,false,ratio,80,200,ratio,false);
+   for(const [fillName,trackName,size] of [['HeartFill','HeartTrack',76],['EnergyFill','EnergyTrack',76],['JumpFill','JumpTrack',88]]){
+    const fill=find(s.parent,fillName).getComponent(Sprite),track=find(s.parent,trackName);
+    const t=fill.node.getComponent(UITransform),frame=fill.spriteFrame;
+    near(fill.node.position.x+(fill.fillCenter.x-.5)*t.width,track.position.x);
+    near(fill.node.position.y+(fill.fillCenter.y-.5)*t.height,track.position.y);
+    const rendered=assemble(fill,assembler);
+    for(let i=0;i<rendered.vertexCount;i++){
+     const v=rendered.data[i],px=v.u*frame.width-frame.rect.x,py=v.v*frame.height-frame.rect.y;
+     near(fill.node.position.x+v.x,track.position.x+(px-38)*size/76);
+     near(fill.node.position.y+v.y,track.position.y+(38-py)*size/76);
+    }
+   }
+  }
+ }
+});
+
+test('真实直线组装器：左右绿色弧线的裁切帧保持原像素映射、区间端点和重复更新零额外写入',()=>{
+ const assembler=filledAssembler('bar-filled'),near=(a,b)=>assert.ok(Math.abs(a-b)<1e-4,`${a} 与 ${b} 不一致`);
+ const s=fixture(0,true);s.hud.setVisible(true);
+ const guide={active:true,currentRatio:.55,displayEndRatio:1,heartRate:80,intervals:[{rating:'perfect',startRatio:.4,endRatio:.6}]};
+ for(const [side,sign] of [['left',1],['right',-1]]){
+  s.hud.stroke.updateSide(side,guide);
+  const rootSide=find(s.parent,side==='left'?'LeftStrokeUi':'RightStrokeUi'),band=find(rootSide,'PerfectBand0').getComponent(Sprite);
+  const rendered=assemble(band,assembler),f=band.spriteFrame;
+  near(band.node.position.y+rendered.data[0].y,-(401+177*.6));
+  near(band.node.position.y+rendered.data[2].y,-(401+177*.4));
+  for(let i=0;i<4;i++){
+   const v=rendered.data[i],px=rendered.chunk.vb[i*9+3]*f.width-f.rect.x+2,py=rendered.chunk.vb[i*9+4]*f.height-f.rect.y+3;
+   near(band.node.position.x+v.x*sign,sign*(274+px-64));
+   near(band.node.position.y+v.y,-490+93-py);
+  }
+  const before=writes;s.hud.stroke.updateSide(side,guide);assert.equal(writes,before);
+ }
+});
 function roster(){return Array.from({length:8},(_,i)=>({swimmer:{id:i},avatarId:`avatar${i}`}));}
 function rows(entries,self=5){return entries.map((e,i)=>({swimmer:e.swimmer,isPlayer:i===self,placement:i+1}));}
 
@@ -149,7 +216,7 @@ test('空蓄气不可点、满蓄气可点一次；隐藏/非比赛状态不跳�
 test('换位保留头像身份，本人只能一处放大，迟到请求和销毁不覆盖',()=>{
  const s=fixture(),entries=roster(),n=count(s.parent);s.hud.setRoster(entries);s.hud.setVisible(true);s.hud.updateRanks(rows(entries));const first=s.pending.splice(0);
  const swapped=[entries[1],entries[0],...entries.slice(2)];s.hud.updateRanks(rows(swapped));for(const q of s.pending.splice(0))q.cb({path:q.p});for(const q of first)q.cb({path:q.p});
- assert.equal(find(find(s.parent,'Rank1'),'Avatar').getComponent(Sprite).spriteFrame.path,'avatar1');
+ assert.equal(s.hud.ranks[0].portrait.spriteFrame.path,'avatar1');
  for(let self=0;self<8;self++){s.hud.updateRanks(rows(entries,self));assert.equal(find(s.parent,'Ranking').children.filter(x=>x.name.startsWith('Rank')&&x.name!=='RankingTitle'&&find(x,'SelfRing').active).length,1);assert.equal(count(s.parent),n);}
  s.hud.setRoster([]);for(const q of s.pending.splice(0))q.cb({path:q.p});assert.equal(find(s.parent,'Rank1').active,false);s.parent.destroy();assert.equal(s.listeners.size,0);
 });
@@ -162,6 +229,39 @@ test('双侧长按仅处理左右划水，不再触发海豚跳手势',()=>{
  let now=0,jumps=0;const held=[];const callbacks=new Proxy({onStrokeHeld:(side,value)=>{held.push([side,value]);return true;},onDolphinJump:()=>jumps++},{get:(o,k)=>o[k]??(()=>{})});
  const mod=load('assets/scripts/core/InputRouter.ts',{'cc':{Node,Vec2,input:{on(){},off(){}},Input:{EventType:{}},EventMouse:{}},'./GameConstants':{StrokeType:{LEFT:0,RIGHT:1}},'./InputTuning':{INPUT_TUNING:{},STROKE_QUALITY_TUNING:{minHoldSeconds:.1}}},{Date:{now:()=>now}});
  const router=new mod.InputRouter(new Node('input'),callbacks);router.handleScreenStroke(0);router.handleScreenStroke(1);now=3000;router.tick();assert.equal(jumps,0);assert.equal(held.length,2);router.handleScreenStrokeEnd(0);router.handleScreenStrokeEnd(1);assert.equal(held.length,4);
+});
+test('排名三层连续绘制，换位/观战保持圆心、身份、文字与显隐且不重建',()=>{
+ const s=fixture(),hud=s.hud,entries=roster();hud.setRoster(entries);hud.setVisible(true);
+ const ranking=find(s.parent,'Ranking'),portraits=find(ranking,'PortraitArtwork'),numbers=find(ranking,'PlacementText'),total=count(s.parent);
+ const original=hud.ranks.map(slot=>[slot.root,slot.portraitRoot,slot.numberRoot,slot.portrait,slot.number]);
+ assert.ok(ranking.children.indexOf(portraits)>ranking.children.indexOf(hud.ranks[7].root));
+ assert.ok(ranking.children.indexOf(numbers)>ranking.children.indexOf(portraits));
+ for(let self=0;self<8;self++){
+  hud.updateRanks(rows(entries,self));let y=84;
+  for(let i=0;i<8;i++){
+   const slot=hud.ranks[i],height=i===self?62:32,center=-(y+height/2);y+=height;
+   assert.deepEqual([slot.root,slot.portraitRoot,slot.numberRoot,slot.portrait,slot.number],original[i]);
+   for(const node of [slot.root,slot.portraitRoot,slot.numberRoot]){assert.equal(node.active,true);assert.equal(node.position.y,center);}
+   assert.equal(slot.portraitRoot.parent,portraits);assert.equal(slot.numberRoot.parent,numbers);
+   assert.equal(slot.portrait.node.position.x,-32);assert.equal(slot.portrait.node.position.y,0);
+   assert.equal(slot.number.node.position.y,0);assert.equal(slot.number.string,String(i+1));
+   assert.equal(slot.number.cacheMode,2);
+  }
+  assert.equal(count(s.parent),total);
+ }
+ hud.updateRanks(rows(entries).slice(0,3));
+ for(const slot of hud.ranks.slice(3))for(const node of [slot.root,slot.portraitRoot,slot.numberRoot])assert.equal(node.active,false);
+ hud.setRoster([]);for(const slot of hud.ranks)for(const node of [slot.root,slot.portraitRoot,slot.numberRoot])assert.equal(node.active,false);
+});
+
+test('比赛有限文案与数字使用字符缓存，读数变化仍节流，昵称保持原有字体策略',()=>{
+ const s=fixture();s.hud.setVisible(true);
+ const check=node=>{const label=node.getComponent(Label);if(label)assert.equal(label.cacheMode,2,node.name);for(const child of node.children)check(child);};
+ check(s.hud.root);
+ update(s.hud);const before=writes;for(let i=0;i<30;i++)update(s.hud);assert.equal(writes,before);
+ const policy=fs.readFileSync(path.join(root,'assets/scripts/ui/ProjectUiFonts.ts'),'utf8');
+ assert.match(policy,/function styleDynamicUiLabel[\s\S]*?cacheMode = CacheMode.NONE/);
+ assert.match(policy,/function styleBundledUiLabel[\s\S]*?cacheMode = CacheMode.NONE/);
 });
 
 if(process.env.HUD_LAYOUT_OUTPUT){
@@ -176,7 +276,7 @@ test('泳道隐藏本人姓名名次；对手排名为正圆且复用字库，�
  Node.prototype.destroyAllChildren=function(){this.children=[];};
  const cc={Color,Graphics,Label,Node,UITransform,Vec3,view:{}};
  function node(name,p){const n=new Node(name);n.setParent(p);n.addComponent(UITransform);return n;}
- const mod=load('assets/scripts/ui/SwimmerNameOverlay.ts',{'cc':cc,'./RuntimeUiFactory':{makeUiNode:node},'./ProjectUiFonts':{styleProjectUiLabel:(l)=>l.font='项目粗体',styleDynamicUiLabel:(l)=>l.font='动态姓名'}});
+ const mod=load('assets/scripts/ui/SwimmerNameOverlay.ts',{'cc':cc,'./RosterNameAtlas':{},'../core/RaceBundleLoader':{loadRaceAsset(){}},'../core/ResourcePaths':{RESOURCE_PATHS:{uiFonts:{semibold:'font'}}},'./RuntimeUiFactory':{makeUiNode:node},'./ProjectUiFonts':{styleProjectUiLabel:(l)=>l.font='项目粗体',styleDynamicUiLabel:(l)=>l.font='动态姓名'}});
  const root=new Node('hud'),self={node:new Node('self'),swimmerName:'本人'},other={node:new Node('other'),swimmerName:'其他选手'};
  const overlay=new mod.SwimmerNameOverlay();overlay.bind(root);overlay.setSwimmers([self,other],self);
  const tags=find(root,'SwimmerNameTags');assert.equal(tags.children.length,1);assert.equal(find(tags,'SwimmerName_self'),undefined);
@@ -214,8 +314,8 @@ test('动态完美区随判定快照收缩和移动；左右镜像、白点与�
 
 test('评价按照实际手别显示；两侧独立，失误不显示负面文字',()=>{
  const s=fixture();s.hud.setVisible(true);s.hud.showStrokePraise('right','Crazy',new Color(255,100,180),5);
- assert.equal(find(find(s.parent,'RightStrokeUi'),'Praise').getComponent(Sprite).spriteFrame.path,'ui/race-stroke-v1/praise-crazy/texture');assert.equal(find(find(s.parent,'RightStrokeUi'),'Combo').getComponent(Label).string,'x5');assert.equal(find(find(s.parent,'LeftStrokeUi'),'Praise').getComponent(Sprite).spriteFrame,undefined);
- s.hud.showStrokePraise('left','Good',new Color(80,240,160),0);assert.equal(find(find(s.parent,'LeftStrokeUi'),'Combo').getComponent(Label).string,'');s.hud.showStrokePraise('left','',undefined,0);assert.equal(find(find(s.parent,'LeftStrokeUi'),'Praise').getComponent(Sprite).spriteFrame.path,'ui/race-stroke-v1/praise-good/texture');
+ assert.equal(find(find(s.parent,'RightStrokeUi'),'Praise').getComponent(Sprite).spriteFrame.path,'ui/race-hud/praise-crazy/spriteFrame');assert.equal(find(find(s.parent,'RightStrokeUi'),'Combo').getComponent(Label).string,'x5');assert.equal(find(find(s.parent,'LeftStrokeUi'),'Praise').getComponent(Sprite).spriteFrame,undefined);
+ s.hud.showStrokePraise('left','Good',new Color(80,240,160),0);assert.equal(find(find(s.parent,'LeftStrokeUi'),'Combo').getComponent(Label).string,'');s.hud.showStrokePraise('left','',undefined,0);assert.equal(find(find(s.parent,'LeftStrokeUi'),'Praise').getComponent(Sprite).spriteFrame.path,'ui/race-hud/praise-good/spriteFrame');
 });
 
 test('旧质量倍率不再叠加缩放，真实圆盘与新UI共用基础调参',()=>{
@@ -321,8 +421,8 @@ test('高清波纹扩大扩散范围，内发光置于底图与手掌之间且�
  const s=fixture(),ui=s.hud.stroke;s.hud.setVisible(true);ui.consumeSample(0);
  const left=find(s.parent,'LeftStrokeUi'),hand=find(left,'HandButtonVisual'),glow=find(left,'HandInnerGlow');
  const ring=find(left,'HandRipple0');
- assert.ok(ring.getComponent(Sprite).spriteFrame.path.includes('ripple-ring/texture'));
- assert.ok(glow.getComponent(Sprite).spriteFrame.path.includes('inner-glow/texture'));
+ assert.ok(ring.getComponent(Sprite).spriteFrame.path.includes('ripple-ring/spriteFrame'));
+ assert.ok(glow.getComponent(Sprite).spriteFrame.path.includes('inner-glow/spriteFrame'));
  assert.ok(hand.children.indexOf(glow)>hand.children.indexOf(find(hand,'strokeButton')));
  assert.ok(hand.children.indexOf(glow)<hand.children.indexOf(find(hand,'strokeHand')));
  assert.equal(glow.active,false);ui.setPressed('left',true);assert.equal(glow.active,true);

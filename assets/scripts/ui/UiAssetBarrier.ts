@@ -1,4 +1,5 @@
 import { director, Director } from 'cc';
+import { StartupLoadingCover } from '../../startup/StartupLoadingCover';
 
 let current: UiAssetBarrier | null = null;
 
@@ -79,4 +80,49 @@ export function trackUiCallback<T extends (...args: any[]) => void>(
         } catch (error) { scope.fail(error); }
         finally { scope.pending--; scope.completed++; }
     }) as T;
+}
+
+/** 首次整页呈现：先准备美术，遮罩下挂载并提交，完成后播放入场。 */
+export class UiPageLoadGate {
+    private scope: UiAssetBarrier | null = null;
+    private cover: StartupLoadingCover | null = null;
+
+    open(prepare: (done: (error: Error | null) => void) => void, mount: () => void,
+        ready: () => boolean = () => true, enter: () => void = () => {}): void {
+        if (this.scope) return;
+        const scope = this.scope = new UiAssetBarrier();
+        let mounted = false;
+        let failure: Error | null = null;
+        scope.run(() => prepare(trackUiCallback((error: Error | null) => {
+            if (this.scope !== scope) return;
+            if (error) { failure = error; scope.fail(error); return; }
+            mount(); mounted = true;
+        })));
+        if (!failure && mounted && scope.pending === 0 && ready()) {
+            scope.cancel(); this.scope = null;
+            this.cover?.dispose(); this.cover = null;
+            enter(); return;
+        }
+        this.cover ??= new StartupLoadingCover(null, 'transparent');
+        this.cover.setLoading();
+        void scope.waitFor(() => mounted && ready(), 60000,
+            (completed, total) => this.cover?.setResourceProgress(completed, total)).then(() => {
+            if (this.scope !== scope) return;
+            this.scope = null;
+            this.cover?.dispose(); this.cover = null;
+            enter();
+        }).catch(error => {
+            if (this.scope !== scope) return;
+            this.scope = null;
+            console.warn('[界面] 资源未就绪，可重试', error);
+            this.cover?.setRetry(() => this.open(prepare, mount, ready, enter));
+        });
+    }
+
+    run(work: () => void): void { if (this.scope) this.scope.run(work); else work(); }
+
+    cancel(): void {
+        const scope = this.scope; this.scope = null;
+        scope?.cancel(); this.cover?.dispose(); this.cover = null;
+    }
 }

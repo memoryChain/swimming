@@ -7,6 +7,7 @@ const {resolvePlayerBalance}=load('progression/PlayerBalanceOverrides');
 const {CONDITION_BALANCE:B,conditionEfficiencyScale,energyDepletionCadenceScale}=load('core/ConditionBalance');
 const {PlayerConditionModel}=load('condition/PlayerConditionModel');
 const {StrokeType}=load('core/GameConstants');
+const {MOTION_TUNING}=load('core/InputTuning');
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
 
 test('耗尽后完整PERFECT内前中后均明显减速和放慢动作，30/60/120Hz可连续输入',()=>{
@@ -28,7 +29,7 @@ test('耗尽切换保留在途动作进度及判定区，动画与判定同速�
         m.setStrokeHeld(side,true,.2);m.recordStroke(side);m.update(.02,{isAI});
         const actions=side===StrokeType.LEFT?m._leftActions:m._rightActions;
         const action=actions[0],progress=action.progress,ranges=JSON.stringify(action.ranges);
-        const normalRate=m.currentActionCycleSpeed();
+        const normalRate=m.currentActionCycleSpeed()*MOTION_TUNING.heldMotionSpeedScale;
         const cycle=side===StrokeType.LEFT?m.leftArmCycle:m.rightArmCycle;
         m.setConditionSpeedScale(conditionEfficiencyScale(0));m.setConditionCadenceScale(energyDepletionCadenceScale(0));
         near(action.progress,progress);near(action.propulsionScale,1);
@@ -43,10 +44,12 @@ test('耗尽切换保留在途动作进度及判定区，动画与判定同速�
         m.setStrokeHeld(side,true,.2);assert.equal(m.recordStroke(side),true);
         near(actions[0].propulsionScale,.15);
         // 长按到超时只结算一次，不因慢轮速卡死或每帧重复扣费。
+        m.consumeStrokeQualityResults(); // 清掉前一划已验证的松手事件，只统计这次超时。
         let count=0;
         for(let i=0;i<240;i++) {m.update(1/240,{isAI});count+=m.consumeStrokeQualityResults().length;}
-        assert.equal(count,1);m.setStrokeHeld(side,false);
-        m.startRace(0,2);near(m.currentActionCycleSpeed(),normalRate);
+        assert.equal(count,isAI?0:1); // AI由控制器主动松手，自动超时仅走玩家更新路径。
+        m.setStrokeHeld(side,false);
+        m.startRace(0,2);near(m.currentActionCycleSpeed()*MOTION_TUNING.heldMotionSpeedScale,normalRate);
         near(m._conditionSpeedScale,1);near(m._conditionCadenceScale,1);
     }
 });

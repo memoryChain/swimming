@@ -5,6 +5,7 @@ import { setSoloRaceTicket } from '../progression/SoloRaceSession';
 import { setSoloRaceDistance } from '../core/GameBalance';
 import { setSoloAiEvent } from '../competitor/CompetitorConfig';
 import { loadRaceBundle } from '../core/RaceBundleLoader';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { mountAiDebugSetupPicker } from '../ui/AiDebugSetupPicker';
 import { getAiDebugSetup } from '../core/GameLaunchOptions';
 import { setRaceDifficulty } from '../core/GameBalance';
@@ -29,7 +30,8 @@ import { PrepareRaceFlow } from '../ui/PrepareRaceFlow';
 import { takeStartupHandoff } from '../../startup/StartupHandoff';
 import { StartupLoadingCover } from '../../startup/StartupLoadingCover';
 import { STARTUP_COPY } from '../../startup/StartupCopy';
-import { UiAssetBarrier } from '../ui/UiAssetBarrier';
+import { UiAssetBarrier, UiPageLoadGate } from '../ui/UiAssetBarrier';
+import { preloadUiArt } from '../ui/AvatarUiAssets';
 import { prepareProjectUiFonts } from '../ui/ProjectUiFonts';
 import { retainLobbyForRace } from './LobbySceneSession';
 
@@ -38,6 +40,7 @@ const { ccclass } = _decorator;
 
 @ccclass('LoginManager')
 export class LoginManager extends Component {
+    private readonly _identityLoadGate = new UiPageLoadGate();
     private _canvasNode: Node = null;
     private _designWidth = 1280;
     private _designHeight = 720;
@@ -135,12 +138,15 @@ export class LoginManager extends Component {
         if (!this._canvasNode) {
             return;
         }
-        const popup = getUILayer(this._canvasNode, UILayer.Popup);
-        if (!this._identityEditPanel) {
-            this._identityEditPanel = new IdentityEditPanel();
-            this._identityEditPanel.build(popup, this._designWidth, this._designHeight);
-        }
-        this._identityEditPanel.show();
+        this._identityLoadGate.open(done => preloadUiArt([RESOURCE_PATHS.avatarPickerUi], done), () => {
+            if (!this._canvasNode?.isValid || this._destroyed) return;
+            const popup = getUILayer(this._canvasNode, UILayer.Popup);
+            if (!this._identityEditPanel) {
+                this._identityEditPanel = new IdentityEditPanel();
+                this._identityEditPanel.build(popup, this._designWidth, this._designHeight);
+            }
+            this._identityEditPanel.show();
+        });
     }
 
     // Mount once like the identity popup; reopening only refreshes draft values.
@@ -205,6 +211,7 @@ export class LoginManager extends Component {
     }
 
     onDestroy() {
+        this._identityLoadGate.cancel();
         this._destroyed = true;
         this.cancelLobbyLoading();
         this._nextInvitedRoom = null;

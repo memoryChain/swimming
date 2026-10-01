@@ -116,12 +116,13 @@ test('新手感完美节奏优于抢划，换手速度起伏受控，30/60/120 �
     const steady = [];
     for (const fps of [30, 60, 120]) {
         const fast = replayStrokeFeel(h, { period: 0.3, hold: 0.28, fps });
-        const perfect = replayStrokeFeel(h, { period: 0.4, hold: 0.38, fps });
+        // 0.8倍率下固定节奏的准确松手时刻前移；0.50秒已可能跨出高心率完美区。
+        const perfect = replayStrokeFeel(h, { period: 0.46, hold: 0.44, fps });
         assert.equal(fast.rejected, 0);
         assert.equal(perfect.rejected, 0);
         assert.ok(perfect.mean > fast.mean + 0.05, '时机准确比无脑抢划更有效');
         assert.ok(perfect.mean > 2.35 && perfect.mean < 2.7);
-        assert.ok(perfect.ripple < 0.1, '换手时保留惯性');
+        assert.ok(perfect.ripple < 0.15, '放慢划频后换手速度起伏仍受控');
         steady.push(perfect.mean);
     }
     assert.ok(Math.max(...steady) - Math.min(...steady) < 0.15);
@@ -666,7 +667,7 @@ test('单独指定推进倍率时预算同比缩放，判定不受推进倍率�
         const action = h.start(h.StrokeType[sideName]);
         const speed = h.motor.currentActionCycleSpeed();
         if (changeDuringHold) h.motor.setConditionSpeedScale(.5);
-        const seconds = Math.PI * 2 * progress / speed;
+        const seconds = Math.PI * 2 * progress / (speed * h.loadModule('core/InputTuning').MOTION_TUNING.heldMotionSpeedScale);
         for (let i = 0; i < 120; i++) h.motor.update(seconds / 120, { isAI: false });
         let result;
         if (timeout) result = h.motor.consumeStrokeQualityResults()[0];
@@ -843,7 +844,7 @@ test('角色固有心率贯穿本地成长、联机解析、AI模型和重新比
     const {resolveModifiersFromDigest,applyRaceModifiersToMotor}=h.loadModule('progression/RaceModifiers');
     const {SwimmerMotor}=h.loadModule('swimmer/SwimmerMotor');
     const motor=new SwimmerMotor();
-    const traits={cartonSwimmer6:'balanced',cartonSwimmer8:'balanced',cartonSwimmer5:'quick',cartonSwimmer9:'quick',cartonSwimmer10:'balanced',cartonSwimmer11:'steady',cartonSwimmer12:'quick',cartonSwimmer13:'steady',cartonSwimmer14:'quick',cartonSwimmer15:'slow',muscleMan:'slow'};
+    const traits={cartonSwimmer6:'balanced',cartonSwimmer8:'balanced',cartonSwimmer5:'quick',cartonSwimmer9:'quick',cartonSwimmer10:'balanced',cartonSwimmer11:'steady',cartonSwimmer12:'quick',cartonSwimmer13:'steady',cartonSwimmer14:'quick',cartonSwimmer15:'slow',cartonSwimmer16:'balanced',muscleMan:'slow'};
     for(const c of PLAYER_CHARACTER_DEFINITIONS) for(const level of [1,15,30,60]) {
         const local=resolvePlayerBalance(c,level,30,c.weight,c.energyGain,c.heartRateTrait);
         const net=resolveModifiersFromDigest({characterId:c.id,level});
@@ -1185,7 +1186,7 @@ test('蹬墙差异在30/60/120Hz均可见，满级高速不被普通上限截断
 });
 
 
-test('角色取舍：爆发与体重同时占优者必须让出体力，成长和海豚扣费后仍成立', () => {
+test('角色取舍：重型爆发让出续航，技能与禁跳纳入比较，成长和实际扣费一致', () => {
     const h=setup();h.tuning.loadSavedTuningAsync(()=>{});
     const {PLAYER_CHARACTER_DEFINITIONS:C}=h.loadModule('app/PlayerCharacterConfig');
     const {resolveCharacterDisplayStats}=h.loadModule('progression/PlayerBalanceOverrides');
@@ -1198,10 +1199,41 @@ test('角色取舍：爆发与体重同时占优者必须让出体力，成长�
             condition.updateFromStroke({strokeAccepted:true,qualityScore:1,pressureScore:1,dt:0});
         }
         assert.equal(condition.energy,0);assert.equal(condition.energyDepleted,true);
-        for(const b of C)if(a!==b&&a.burst>=b.burst&&a.weight>=b.weight&&(a.burst>b.burst||a.weight>b.weight)) {
-            const other=resolveCharacterDisplayStats(b,level,30);
-            assert.ok(stats.stamina<other.stamina,`${a.name}相对${b.name}不能同时占据三个属性优势`);
-            assert.ok(Math.max(0,stats.stamina-10)<Math.max(0,other.stamina-10),'同样两次海豚扣费后仍保留续航取舍');
+        // 固有技能会改变推进、免费踢腿和跳跃资格，不能只按爆发/体重要求全名册严格排序。
+        // 重型爆发角色仍让出有限续航；潜水哥的高续航需付出禁用海豚跳的代价。
+        if (a.weight >= 1.25) for (const id of ['cartonSwimmer6', 'cartonSwimmer9', 'cartonSwimmer13']) {
+            const other=resolveCharacterDisplayStats(C.find(c=>c.id===id),level,30);
+            assert.ok(stats.stamina<other.stamina,'重型角色保留属性取舍');
         }
+    }
+});
+
+
+test('旧备份原按住速度默认值迁移为慢节奏，手动调参与新版值仍保留', () => {
+    for (const [version, held, expected] of [[49, 1, .8], [50, 1, .8], [50, .7, .7], [51, .65, .8], [51, .7, .7], [52, .65, .65]]) {
+        const { tuning, controls, project, saved } = setup();
+        tuning.loadSavedTuningAsync(() => {}); tuning.saveCurrentTuning();
+        const [key, encoded] = [...saved.entries()][0];
+        const local = JSON.parse(encoded);
+        local.version = version; local.updatedAt = '2099-01-01T00:00:00.000Z';
+        local.values['motion.heldMotionSpeedScale'] = held;
+        saved.set(key, JSON.stringify(local));
+        tuning.loadSavedTuningAsync(() => {});
+        assert.equal(controls.get('motion.heldMotionSpeedScale').get(), expected);
+        assert.equal(controls.get('motion.releasedMotionSpeedScale').get(), project.values['motion.releasedMotionSpeedScale']);
+    }
+});
+
+
+test('慢节奏技能默认值迁移，不覆盖自定义倍率或当前版本备份', () => {
+    const pairs = [['ability.legKickAcceleration',1.4,1.15],['ability.legKickSpeed',1.15,1.03],
+        ['ability.legStrokePower',.85,.9],['ability.ninjaPerfectReward',1.35,1.25],['ability.chainSpeedPerStack',.02,.017],['ability.frogPerfectReward',.8,.9]];
+    for (const version of [49,50,51,52]) for (const custom of [false,true]) {
+        const {tuning,controls,saved}=setup();tuning.loadSavedTuningAsync(()=>{});tuning.saveCurrentTuning();
+        const [key,encoded]=[...saved.entries()][0],local=JSON.parse(encoded);
+        local.version=version;local.updatedAt='2099-01-01T00:00:00.000Z';
+        for(const [id,old] of pairs)local.values[id]=custom?old+.001:old;
+        saved.set(key,JSON.stringify(local));tuning.loadSavedTuningAsync(()=>{});
+        for(const [id,old,current] of pairs)assert.ok(Math.abs(controls.get(id).get()-(custom?old+.001:version<=51?current:old))<1e-8);
     }
 });

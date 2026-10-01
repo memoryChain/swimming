@@ -7,14 +7,14 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'temp/lobby-b-preview'
 OUT.mkdir(parents=True, exist_ok=True)
-ART = ROOT / 'assets/race/ui/lobby-b'
+ART = ROOT / 'assets/race/ui/lobby/controls'
 FONT = ROOT / 'assets/race/fonts/ShuiMasterUI-SemiBold.ttf'
 # 离线预览可指定本机同名字体；不复制到运行时资源或声称已随包。
 NUMBER_FONT = Path(os.environ.get('LOBBY_NUMBER_FONT', '/System/Library/Fonts/Supplemental/Arial Black.ttf'))
 if not NUMBER_FONT.exists(): NUMBER_FONT = FONT
 W = int(sys.argv[1]) if len(sys.argv) > 1 else 1280
 S = max(W / 1280, 1)
-background = Image.open(ART / 'background.png').convert('RGBA').resize((round(1280*S),round(720*S)),Image.Resampling.LANCZOS)
+background = Image.open(ROOT / 'assets/race/ui/lobby/background/background.png').convert('RGBA').resize((round(1280*S),round(720*S)),Image.Resampling.LANCZOS)
 base = Image.new('RGBA',(W,720))
 base.alpha_composite(background,(round((W-1280*S)/2),round((720-720*S)/2-240*(S-1))))
 def shift(x,manage=False):
@@ -28,7 +28,7 @@ def text(s,x,y,size=20,color='#0e2042',anchor='mm'):
     ImageDraw.Draw(base).text((shift(x,s=='角色与培养'),y),s,font=ImageFont.truetype(str(NUMBER_FONT if s and all(c in '0123456789LV./ ' for c in s) else FONT),size),fill=color,anchor=anchor)
 art('character-info',(17,199,233,274))
 art('career-card',(809,160,449,250))
-art('career-badge',(1028,117,206,192))
+art('career-badge',(1028,117,206,192),ROOT/'assets/race/ui/career/badges/badge-1.png')
 art('career-button',(809,409,441,91))
 art('arrow',(1199,439,24,30))
 art('progress-track',(842,354,370,10))
@@ -36,9 +36,9 @@ art('progress-fill',(842,354,296,10))
 art('quick-button',(902,516,352,102))
 art('quick-icon',(947,542,38,43))
 art('character-button',(318,600,263,70))
-art('skill-base',(64,452,74,74))
-art('skill-breath',(78,466,46,44))
-art('online',(805,516,102,102), ROOT/'assets/race/ui/lobby-v1/online-button.png')
+art('skill-base',(64,452,74,74),ROOT/'assets/race/ui/common/skill-base.png')
+art('skill-breath',(78,466,46,44),ROOT/'assets/race/ui/character-skills/skill-breath.png')
+art('online',(805,516,102,102), ROOT/'assets/race/ui/common/online-button.png')
 reference = OUT/'character-reference.png'
 if reference.exists(): base.alpha_composite(Image.open(reference).convert('RGBA'),(round((W-1280)/2-174*(S-1)),0))
 text('健身教练',62,213,28,anchor='lm');text('LV.1',92,246,16,'white')
@@ -53,10 +53,10 @@ text('继续生涯',835,454,28,anchor='lm');text('联赛·第1站',1145,454,18)
 text('快速比赛',1103,567,38);text('联机',856,576,18)
 text('角色与培养',477,635,24)
 # 共享顶栏保留微信右上胶囊的运行时预留，示意昵称及币数。
-art('top-player',(33,10,227,86),ROOT/'assets/race/ui/lobby-v1/top-player.png')
-art('career-badge',(225,34,42,39));text('冠军飞鱼',171,53,20,'white')
-art('top-currency',(990,25,198,56),ROOT/'assets/race/ui/lobby-v1/top-currency.png')
-art('top-settings',(934,25,56,56),ROOT/'assets/race/ui/lobby-v1/top-settings.png')
+art('top-player',(33,10,227,86),ROOT/'assets/race/ui/common/top-player.png')
+art('career-badge',(225,34,42,39),ROOT/'assets/race/ui/career/badges/badge-1.png');text('冠军飞鱼',171,53,20,'white')
+art('top-currency',(990,25,198,56),ROOT/'assets/race/ui/common/top-currency.png')
+art('top-settings',(934,25,56,56),ROOT/'assets/race/ui/common/top-settings.png')
 text('2461',1086,53,22,'white')
 base.convert('RGB').save(OUT/f'layout-{W}.jpg',quality=94)
 print(OUT/f'layout-{W}.jpg')

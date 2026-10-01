@@ -1,7 +1,8 @@
 #target photoshop
+#include "ui-atlas-export-paths.jsx"
 // 在临时副本导出基础 HUD；只读取当前定稿，保留主稿选择和隐藏状态。
 var root=File($.fileName).parent.parent.fsName;
-var dest=new Folder(root+'/assets/race/ui/race-hud-v1');dest.create();
+
 var source=app.documents.getByName('比赛HUD-1280x720.psd');
 if(source.width.as('px')!==1280||source.height.as('px')!==720)throw Error('HUD 源稿尺寸不符');
 function find(p,n){for(var i=0;i<p.layers.length;i++){var l=p.layers[i];if(l.name===n)return l;if(l.typename==='LayerSet'){var r=find(l,n);if(r)return r;}}return null;}
@@ -18,7 +19,7 @@ function out(name,group,leaf,box,mono){
    d.activeLayer=target;d.artLayers.add();d.mergeVisibleLayers();d.selection.selectAll();var c=new SolidColor();c.rgb.red=255;c.rgb.green=255;c.rgb.blue=255;
    d.selection.fill(c,ColorBlendMode.NORMAL,100,true);d.selection.deselect();
   }
-  d.saveAs(new File(dest.fsName+'/'+name+'.png'),new PNGSaveOptions(),true,Extension.LOWERCASE);
+  var outputFile=uiAtlasExportFile(root,'race-hud-v1',name);if(outputFile)d.saveAs(outputFile,new PNGSaveOptions(),true,Extension.LOWERCASE);
  }finally{d.close(SaveOptions.DONOTSAVECHANGES);app.activeDocument=source;}
 }
 out('status-base','02 心率','半透明底',[22,114,98,190],false);

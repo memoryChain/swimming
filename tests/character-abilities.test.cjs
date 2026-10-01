@@ -262,14 +262,14 @@ test('实际实体：按下反馈不改变潜水深度和Y，短按确认不重�
     near(body.motor.ability.depth,.6);near(body.motor.ability.kickRemaining,.2);
 });
 
-test('真实输入回放：风火轮满层在30/60/120Hz与1/30级均提升约一成普通游速', () => {
+test('真实输入回放：风火轮满层在30/60/120Hz与1/30级均提升约百分之八至十一的普通游速', () => {
     for (const level of [1,30]) for (const fps of [30,60,120]) {
         const profile = resolveModifiersFromDigest({characterId:'cartonSwimmer14',level});
         const opts = {playerBalance:profile.balance,fps,heartRate:180};
         const base = analysis.replay(.375,true,false,opts);
         const chain = analysis.replay(.375,true,false,{...opts,abilityId:'perfectChain'});
         const gain = chain.meanSpeed/base.meanSpeed-1;
-        assert.ok(gain>=.09&&gain<=.13,`${level}/${fps}: ${gain}`);
+        assert.ok(gain>=.075&&gain<=.115,`${level}/${fps}: ${gain}`);
         assert.equal(chain.bad+chain.good,0);
     }
 });

@@ -14,6 +14,7 @@ const { assertStartupCodeOutput, assertStartupSceneEntry } = require('./startup-
 const { applyWechatIosDpr } = require('./wechat-ios-dpr');
 const { applyWechatFirstScreen } = require('./wechat-first-screen');
 const { preparePublisher, publishAfterBuild } = require('./cdn-publish');
+const { assertUiAtlasPolicy, assertBuiltUiAtlases } = require('../../scripts/ui-atlas-policy.cjs');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -64,6 +65,9 @@ exports.onBeforeBuild = async function onBeforeBuild(options) {
         }
     }
     if (remoteConfig.enabled && remoteConfig.autoUpload) preparePublisher(PROJECT_ROOT);
+    if (options.packAutoAtlas !== true) throw new Error('[ui-atlas] 当前构建任务必须开启「合并自动图集」，请导入 config/build/wechatgame.json 或修改任务设置。');
+    const atlasAudit = assertUiAtlasPolicy(PROJECT_ROOT);
+    console.log(`[ui-atlas] 已检查 ${atlasAudit.groups.length} 组图集。`);
 
     applyWechatProjectConfig(options);
     assertStartupSceneEntry(PROJECT_ROOT);
@@ -215,6 +219,8 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
         }
     }
     assertWechatProjectOutput(result.dest);
+    const builtAtlasAudit = assertBuiltUiAtlases(PROJECT_ROOT, result.dest);
+    console.log(`[ui-atlas] 已验证 ${builtAtlasAudit.groups} 组构建图集，无重复散图纹理路径。`);
     const startupAudit = assertStartupCodeOutput(result.dest);
     console.log(`[startup-code] 主包脚本 ${(startupAudit.mainJsBytes / 1024).toFixed(1)} KiB；延迟业务脚本 ${(startupAudit.gameplayJsBytes / 1024).toFixed(1)} KiB。`);
     assertBuiltMotionRuntime(result.dest);

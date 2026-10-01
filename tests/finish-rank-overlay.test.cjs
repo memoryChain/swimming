@@ -1,7 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {createHarness}=require('./helpers/cocos-math-harness.cjs');
 let labelWrites=0,projections=0;
-const h=createHarness({'./ProjectUiFonts':{styleProjectUiLabel:l=>l.font='项目粗体',styleDynamicUiLabel:l=>l.font='动态昵称'},'./RuntimeUiFactory':{makeUiNode:(name,parent)=>{const n=new UiNode(name);n.parent=parent;parent.children.push(n);n.addComponent(UITransform);return n;}}});
+const h=createHarness({'../core/RaceBundleLoader':{loadRaceAsset(){}},'./ProjectUiFonts':{styleProjectUiLabel:l=>l.font='项目粗体',styleDynamicUiLabel:l=>l.font='动态昵称'},'./RuntimeUiFactory':{makeUiNode:(name,parent)=>{const n=new UiNode(name);n.parent=parent;parent.children.push(n);n.addComponent(UITransform);return n;}}});
 class UiNode extends h.Node{
  constructor(name){super();this.name=name;this.components=[];this.active=true;}
  get activeInHierarchy(){return this.active&&(!this.parent||this.parent.activeInHierarchy);}

@@ -68,7 +68,7 @@ function loginHarness({ deferResources = false } = {}) {
         prepareProjectUiFonts() { requests.push(h.trackUiCallback(() => {}, error => error)); }, console: { warn() {} },
     });
     const manager = new Login();
-    Object.assign(manager, { _destroyed: false, _lobbyLoading: null, _lobbyCover: null, _prepareRaceFlow: null,
+    Object.assign(manager, { _identityLoadGate:{cancel(){}}, _destroyed: false, _lobbyLoading: null, _lobbyCover: null, _prepareRaceFlow: null,
         _canvasNode: { isValid: true }, _loginUiRoot: { isValid: true, active: true },
         buildHeadBar() { calls.push('head'); this._headBar = { dispose() { calls.push('dispose-head'); } }; },
         buildPrepareRace() {
@@ -284,7 +284,7 @@ test('进度条按整数百分比更新且只改变填充缩放，不逐帧重�
     const Cover = methods('assets/startup/StartupLoadingCover.ts', ['setProgress', 'setResourceProgress', 'showProgress'], {
         STARTUP_COPY: { preparing: '资源准备中', loadingUi: '准备界面资源' },
     });
-    const cover = Object.assign(new Cover(), { disposed: false, progressPixels: -1, animation: null,
+    const cover = Object.assign(new Cover(), { presentation: 'startup', disposed: false, progressPixels: -1, animation: null,
         spinner: { active: true }, progressRoot: { active: false }, progressFill: { setScale() { scales++; } }, label });
     cover.setProgress(0); cover.setProgress(0.009); cover.setProgress(0.011); cover.setProgress(1);
     assert.equal(labels, 3); assert.equal(scales, 3); assert.equal(cover.progressPixels, 360);
@@ -296,6 +296,32 @@ test('进度条按整数百分比更新且只改变填充缩放，不逐帧重�
     cover.setResourceProgress(2, 20); assert.equal(labels, 5);
     cover.setProgress(0.1, '下载资源包'); assert.equal(text, '下载资源包 10%');
     cover.disposed = true; cover.setResourceProgress(20, 20); assert.equal(labels, 6);
+});
+
+test('透明页面等待收到下载与资源进度仍保留转圈，失败重试后恢复转圈', () => {
+    let starts = 0, stops = 0, scales = 0;
+    const animation = { by() { return this; }, repeatForever() { return this; },
+        start() { starts++; return this; }, stop() { stops++; } };
+    const Cover = methods('assets/startup/StartupLoadingCover.ts',
+        ['setLoading', 'setProgress', 'setResourceProgress', 'showProgress', 'setRetry'], {
+            STARTUP_COPY: { loading: '加载中', preparing: '资源准备中', loadingUi: '准备界面资源', retry: '点击重试' },
+            tween: () => animation,
+        });
+    const cover = Object.assign(new Cover(), { presentation: 'transparent', disposed: false, animation: null,
+        spinner: { active: false }, progressRoot: { active: false },
+        progressFill: { setScale() { scales++; } }, label: { node: { active: true }, string: '' } });
+    cover.setLoading();
+    for (const fraction of [0, 0.5, 1]) cover.setProgress(fraction);
+    for (const [completed, total] of [[0, 10], [5, 10], [5, 20], [20, 20]]) cover.setResourceProgress(completed, total);
+    assert.equal(cover.spinner.active, true); assert.equal(cover.progressRoot.active, false);
+    assert.equal(cover.label.node.active, false); assert.equal(scales, 0);
+    assert.equal(starts, 1); assert.equal(stops, 0);
+    cover.setRetry(() => cover.setLoading());
+    assert.equal(cover.spinner.active, false); assert.equal(cover.label.node.active, true);
+    assert.equal(cover.label.string, '点击重试'); assert.equal(stops, 1);
+    cover.retry(); cover.setResourceProgress(1, 2);
+    assert.equal(cover.spinner.active, true); assert.equal(cover.progressRoot.active, false);
+    assert.equal(cover.label.node.active, false); assert.equal(starts, 2); assert.equal(stops, 1);
 });
 
 
@@ -392,7 +418,7 @@ test('暂停大厅会停止页面动效、隐藏预览；从角色页恢复只�
     const ready = { content: { isValid: true, active: false }, motion: motion(), rotateArea: null };
     const characters = { content: { isValid: true, active: true }, motion: motion(), rotateArea: null };
     const f = Object.assign(new Flow(), { _root: { isValid: true, active: true }, _previewRoot: { active: true },
-        _view: 'characters', _content: characters.content, _motion: characters.motion,
+        _characterLoadGate:{cancel(){}}, _view: 'characters', _content: characters.content, _motion: characters.motion,
         _pages: new Map([['ready', ready], ['characters', characters]]), _leaveDisabledButtons: [{ interactable: false }],
         _presentation: { detail: 1 }, _callbacks: {},
         _careerPanel: { setSuspended: v => calls.push(v), restoreNavigation: v => calls.push(['navigation', v]) },

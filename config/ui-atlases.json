@@ -1,0 +1,1243 @@
+{
+  "schema": 1,
+  "groups": {
+    "avatars": {
+      "atlas": "ui/avatars/atlas",
+      "maxWidth": 1536,
+      "maxHeight": 1024,
+      "maxPages": 1
+    },
+    "common": {
+      "atlas": "ui/common/atlas",
+      "maxWidth": 1024,
+      "maxHeight": 1024,
+      "maxPages": 1
+    },
+    "avatar-picker": {
+      "atlas": "ui/avatar-picker/atlas",
+      "maxWidth": 1024,
+      "maxHeight": 1024,
+      "maxPages": 1
+    },
+    "career/controls": {
+      "atlas": "ui/career/controls/atlas",
+      "maxWidth": 1024,
+      "maxHeight": 1024,
+      "maxPages": 1
+    },
+    "character-skills": {
+      "atlas": "ui/character-skills/atlas",
+      "maxWidth": 1024,
+      "maxHeight": 1024,
+      "maxPages": 1
+    },
+    "character/controls": {
+      "atlas": "ui/character/controls/atlas",
+      "maxWidth": 1024,
+      "maxHeight": 1024,
+      "maxPages": 1
+    },
+    "character/portraits": {
+      "atlas": "ui/character/portraits/atlas",
+      "maxWidth": 1536,
+      "maxHeight": 1024,
+      "maxPages": 2
+    },
+    "lobby/controls": {
+      "atlas": "ui/lobby/controls/atlas",
+      "maxWidth": 1024,
+      "maxHeight": 1024,
+      "maxPages": 1
+    },
+    "online-room": {
+      "atlas": "ui/online-room/atlas",
+      "maxWidth": 1536,
+      "maxHeight": 1024,
+      "maxPages": 1
+    },
+    "race-intro": {
+      "atlas": "ui/race-intro/atlas",
+      "maxWidth": 1024,
+      "maxHeight": 1024,
+      "maxPages": 1
+    },
+    "race-hud": {
+      "atlas": "ui/race-hud/atlas",
+      "maxWidth": 1024,
+      "maxHeight": 1024,
+      "maxPages": 1
+    },
+    "settlement": {
+      "atlas": "ui/settlement/atlas",
+      "maxWidth": 1536,
+      "maxHeight": 1024,
+      "maxPages": 1
+    }
+  },
+  "assets": {
+    "avatar-picker-v1/avatar-01-female-diver.png": {
+      "path": "avatars/avatar-01-female-diver.png",
+      "uuid": "ef8f5d38-f2af-4af3-82b7-992e89823105",
+      "sha256": "50a40f1bc685fd49d854a139027f0721f7d04f1e737281023f1cdc8b609e008c",
+      "atlas": true
+    },
+    "avatar-picker-v1/avatar-02-future-girl.png": {
+      "path": "avatars/avatar-02-future-girl.png",
+      "uuid": "19d590f2-0068-4ff3-b24d-ef41dc52df57",
+      "sha256": "86d07aa69cf0ce3193df26cefe10e07b58e078a158b2d2ede8a98b3db834f02a",
+      "atlas": true
+    },
+    "avatar-picker-v1/avatar-03-courier-boy.png": {
+      "path": "avatars/avatar-03-courier-boy.png",
+      "uuid": "1b7063ef-f7e2-424d-8409-520188e97182",
+      "sha256": "f4700d392c3984e7906d8b83fc1e6c35a92e733558d98ee4e908a78a79dff675",
+      "atlas": true
+    },
+    "avatar-picker-v1/avatar-04-skater-boy.png": {
+      "path": "avatars/avatar-04-skater-boy.png",
+      "uuid": "926a3b46-18d9-4352-9c14-9fab6bff6033",
+      "sha256": "fddcbee9be748d965d66445100d22a6138ebb04dfdc69080ab847cd0fea644aa",
+      "atlas": true
+    },
+    "avatar-picker-v1/avatar-05-short-hair-girl.png": {
+      "path": "avatars/avatar-05-short-hair-girl.png",
+      "uuid": "403015e0-63c9-41d2-8a5e-72f689d9bc12",
+      "sha256": "df9e4928bfeb3a5f53a854f9c9c50f9b533efc2e6da150f422837ee98b5cc7c6",
+      "atlas": true
+    },
+    "avatar-picker-v1/avatar-06-muscle-man.png": {
+      "path": "avatars/avatar-06-muscle-man.png",
+      "uuid": "ee127e47-f025-460c-83f4-86341f95eb60",
+      "sha256": "6d63822ebc931104b4c7c66137f5b90d209a39b416f89841b44b0efaca247f09",
+      "atlas": true
+    },
+    "avatar-picker-v1/avatar-07-frog-girl.png": {
+      "path": "avatars/avatar-07-frog-girl.png",
+      "uuid": "6d4b7f82-fc57-42a1-8674-772304671b67",
+      "sha256": "42eb8fe69a407e432cd5389612e5c1a53cdbc26fc82a5b01bb74540c5c303c0a",
+      "atlas": true
+    },
+    "avatar-picker-v1/avatar-08-frog-boy-yellow.png": {
+      "path": "avatars/avatar-08-frog-boy-yellow.png",
+      "uuid": "434236f4-0d49-43de-ac16-ea187ae2ce6b",
+      "sha256": "d9ecb116aabd4a074858812fc4510b6d10acf3f0505a13ae5b7eca491ea55456",
+      "atlas": true
+    },
+    "avatar-picker-v1/avatar-09-frog-boy-lime.png": {
+      "path": "avatars/avatar-09-frog-boy-lime.png",
+      "uuid": "69e1d1cd-4cb3-4c42-b404-06f082c11d1c",
+      "sha256": "79feb94190ed05a057e6efeea51a5a951104aa7c46d4cea22a846558413deada",
+      "atlas": true
+    },
+    "avatar-picker-v1/avatar-10-lifeguard-girl.png": {
+      "path": "avatars/avatar-10-lifeguard-girl.png",
+      "uuid": "63f50e72-d6f2-42c8-aaaf-56e2007c7476",
+      "sha256": "628325e415cb360fbf77db2889f9594891a63bd8f2ee536e53a6fe3da22e5ad6",
+      "atlas": true
+    },
+    "avatar-picker-v1/avatar-base.png": {
+      "path": "common/avatar-base.png",
+      "uuid": "715942bc-2d6b-4b30-8734-d493230e7dc3",
+      "sha256": "d02d6a8449e0e9d77d3e6b67df5af0de233651d32337e615a547398625d93d6f",
+      "atlas": true
+    },
+    "avatar-picker-v1/button-cancel.png": {
+      "path": "avatar-picker/button-cancel.png",
+      "uuid": "3431d109-84a5-4fd6-af52-c01ad6b5781b",
+      "sha256": "658d8a3d08ef2ba81ec04e793a425c6099a735dd5d0aa430f9c0ee582e2f27eb",
+      "atlas": true
+    },
+    "avatar-picker-v1/button-confirm.png": {
+      "path": "avatar-picker/button-confirm.png",
+      "uuid": "711c3cbe-c206-4a8b-aa08-0f98184490aa",
+      "sha256": "7aadd66bab5206079849c012fb49bcd6a15ad113c47382f2fe251966537081b9",
+      "atlas": true
+    },
+    "avatar-picker-v1/nickname-field.png": {
+      "path": "avatar-picker/nickname-field.png",
+      "uuid": "b34d7673-ac24-406f-b576-0f1998432d59",
+      "sha256": "81f4dcbdfc7bd2901b82e074dd1d00a7839f11b70babcd4a45f50e3f8e51d762",
+      "atlas": true
+    },
+    "avatar-picker-v1/nickname-row.png": {
+      "path": "avatar-picker/nickname-row.png",
+      "uuid": "da8ea5c3-8cbe-4092-bca1-7d21d243d257",
+      "sha256": "a35ac40fea504b1148360b9f06f9b2d8e4ca0bef3a73f74cd68df0cfddd22662",
+      "atlas": true
+    },
+    "avatar-picker-v1/panel.png": {
+      "path": "avatar-picker/panel.png",
+      "uuid": "fb805888-3947-4f3f-b88c-76ccb4368bf6",
+      "sha256": "c398385227735a5fd7cb704fb5c6eaebcc745d8578c5331dcee353596a9ac626",
+      "atlas": true
+    },
+    "avatar-picker-v1/refresh-icon.png": {
+      "path": "avatar-picker/refresh-icon.png",
+      "uuid": "11e66abd-efd9-481a-9447-d3e41ea5a57f",
+      "sha256": "89cb336b4633016fde5e75ad0a84ffb7c46a52e39d1b9069ed40563f4ab9dcf2",
+      "atlas": true
+    },
+    "avatar-picker-v1/selected-check.png": {
+      "path": "avatar-picker/selected-check.png",
+      "uuid": "30e0b470-bba8-4cb5-a337-d184b592378b",
+      "sha256": "d1de4e1cbb05e6999cb6080f16180ac977bb8edcde35cc581491520205675d81",
+      "atlas": true
+    },
+    "avatar-picker-v1/selected-ring.png": {
+      "path": "avatar-picker/selected-ring.png",
+      "uuid": "41115e17-c509-4bd6-9a10-6a8bcf9265fa",
+      "sha256": "859488c6427e0fc3734b4ac99b1e66cf3c0f964519f3332c69f8ebf01b17b931",
+      "atlas": true
+    },
+    "career-v1/arrow.png": {
+      "path": "career/controls/arrow.png",
+      "uuid": "859710d6-1f73-4126-a6e9-cedd0a6dba9d",
+      "sha256": "1f698492d9eb1f3a426e38548650c773b09e479dd388c77b09e1a52a8173520e",
+      "atlas": true
+    },
+    "career-v1/background.png": {
+      "path": "career/background/background.png",
+      "uuid": "c8475538-982a-4b0e-ada4-b66953abed32",
+      "sha256": "a0770455f18f5e0b7cb07c3ef9dcfa101477b0e406304688842bd5e636584231",
+      "atlas": false
+    },
+    "career-v1/badge-1-locked.png": {
+      "path": "career/badges/badge-1-locked.png",
+      "uuid": "c06c9898-8e83-43e3-8313-ed3b6fc91da5",
+      "sha256": "d25c0efde7857209124c82ef963bd2902a46edc25abca4df01d1d21345c3e808",
+      "atlas": false
+    },
+    "career-v1/badge-1.png": {
+      "path": "career/badges/badge-1.png",
+      "uuid": "8fae1647-97b4-45f1-9f85-d058c5cd5ff2",
+      "sha256": "e306cb85d59dcb59e69a32c9488a0c9200ad09f637491e1b0e166357472a16d6",
+      "atlas": false
+    },
+    "career-v1/badge-2-locked.png": {
+      "path": "career/badges/badge-2-locked.png",
+      "uuid": "aaeb5254-6b16-421a-9ccf-357bc6cb8e70",
+      "sha256": "d7431565ada42d1469104783896ad2f6526cae60e2084dfd7bbb384c7539514a",
+      "atlas": false
+    },
+    "career-v1/badge-2.png": {
+      "path": "career/badges/badge-2.png",
+      "uuid": "877b2822-0f18-4a7d-a4db-4ba23bf67e9c",
+      "sha256": "aa5cff8f607a0212e68d7a96dd0f3355affa9d917cd05f1fa0297a995916b255",
+      "atlas": false
+    },
+    "career-v1/badge-3-locked.png": {
+      "path": "career/badges/badge-3-locked.png",
+      "uuid": "69da65f9-bf47-402b-a176-81e2ad27c837",
+      "sha256": "66f1ce21f767b443a2c24ad3a0f3cecb3724d60001dd89e6173c5ab09a3d9d8c",
+      "atlas": false
+    },
+    "career-v1/badge-3.png": {
+      "path": "career/badges/badge-3.png",
+      "uuid": "105b4588-26f5-46ba-9141-2b319d9d0ab9",
+      "sha256": "77d4d1ef9628b49a52cda184567de436f5ee0d743b08100264607002746549b1",
+      "atlas": false
+    },
+    "career-v1/badge-4-locked.png": {
+      "path": "career/badges/badge-4-locked.png",
+      "uuid": "80408e9c-65e2-47a0-ac36-bfdf7717e42a",
+      "sha256": "b1f3a115c7f05ce8151f7836907b0b3d8a8d71006d476945c529e26c1df06d0e",
+      "atlas": false
+    },
+    "career-v1/badge-4.png": {
+      "path": "career/badges/badge-4.png",
+      "uuid": "5cba8f38-c391-4581-aafa-4915f8b2385c",
+      "sha256": "a5fbd5bd44d511bcce1262225c05730b0a1e078d9cbb037899947adc4c7b10f3",
+      "atlas": false
+    },
+    "career-v1/badge-5-locked.png": {
+      "path": "career/badges/badge-5-locked.png",
+      "uuid": "dcd2a06f-3dfd-4c77-8730-d93974989ab7",
+      "sha256": "3a814d6089d283dcdbb0a70bd1ac3781d61031f982ba5b090994e28291a121ea",
+      "atlas": false
+    },
+    "career-v1/badge-5.png": {
+      "path": "career/badges/badge-5.png",
+      "uuid": "51165c62-4ff7-46f0-b99f-67b4379b4cc7",
+      "sha256": "e41038ed0ae65af50d6eb3211d3f025ef1c225b2ff617e7f1abf0286a2c60074",
+      "atlas": false
+    },
+    "career-v1/badge-6-locked.png": {
+      "path": "career/badges/badge-6-locked.png",
+      "uuid": "88764bd4-ba35-430e-8109-87374b4df721",
+      "sha256": "04c827a23f6acf2b9271dd5d6cd9f04384b719d4d9e97a2472986bca2e0f5c95",
+      "atlas": false
+    },
+    "career-v1/badge-6.png": {
+      "path": "career/badges/badge-6.png",
+      "uuid": "22742a32-f198-4db2-ba07-ebef0dce52a5",
+      "sha256": "415e9656e151b0a30dac30f3be0715b52f39402c92255b7e643e3ba923091a32",
+      "atlas": false
+    },
+    "career-v1/button-disabled.png": {
+      "path": "career/controls/button-disabled.png",
+      "uuid": "fa341361-91c2-4443-b6dd-15abb72e6fc9",
+      "sha256": "ec844bae631cc2b53e9e8a24e0f05645a4c9bea182c761f8a4077f9075b1b952",
+      "atlas": true
+    },
+    "career-v1/button-yellow.png": {
+      "path": "career/controls/button-yellow.png",
+      "uuid": "c930dace-fae0-475c-9950-8b51d8fb7192",
+      "sha256": "48f74a0d2423e35f24eda08fe22a17202a8e2bafce581aea232bb565ed0a7b14",
+      "atlas": true
+    },
+    "career-v1/character-bar.png": {
+      "path": "career/controls/character-bar.png",
+      "uuid": "349d3128-7da4-4fba-9727-f0adcb90fd1d",
+      "sha256": "e5531a8cec94246ba3d683a9e564213397a4f76fc2c0422e9c9ee428aa1df705",
+      "atlas": true
+    },
+    "career-v1/lock.png": {
+      "path": "career/controls/lock.png",
+      "uuid": "73f2d1f4-f86c-42f5-8f6f-29e9debcd9af",
+      "sha256": "751167bce9fceb1018652f65b12ddaffed0149a0053a26d48d9cf31c3b3b56d4",
+      "atlas": true
+    },
+    "career-v1/panel-white.png": {
+      "path": "career/controls/panel-white.png",
+      "uuid": "e773107b-8d8f-4726-8dd8-42e825fe3ef4",
+      "sha256": "0a67af995b8dd354f9e6c8b946877b40f54fe2ab86ef41fc3e7ec7cafed2b130",
+      "atlas": true
+    },
+    "career-v1/panel.png": {
+      "path": "career/controls/panel.png",
+      "uuid": "5661ed02-060e-4615-bfa6-19ae7f607a91",
+      "sha256": "6d17b07cd6165bcfa6b623ce144046a98ae37fcba884fe70212f3311bca348b8",
+      "atlas": true
+    },
+    "career-v1/podium.png": {
+      "path": "career/controls/podium.png",
+      "uuid": "456ed1d0-8d09-4a49-a638-d0b1d8c95709",
+      "sha256": "1d434aadeda6f7feec8f3d389ab9efc7aeb3278d6907273e74664f504e858fa9",
+      "atlas": true
+    },
+    "career-v1/progress-fill.png": {
+      "path": "career/controls/progress-fill.png",
+      "uuid": "9674fef1-9891-4165-8ac8-66a8e6aa31e6",
+      "sha256": "01785c2bcd26a38577a4b54e84ff4ec93cec92abe7c530f0000f0ebd9f9c7054",
+      "atlas": true
+    },
+    "career-v1/progress-track.png": {
+      "path": "career/controls/progress-track.png",
+      "uuid": "b411a77d-0bdb-4d31-a889-f7c234d6c5a6",
+      "sha256": "6d5660d1ebcef97694fa2c5a4de2abc8ad30fe0794041b0f7b80863e7fbfc9f1",
+      "atlas": true
+    },
+    "career-v1/route.png": {
+      "path": "career/controls/route.png",
+      "uuid": "c05ac9f2-1a26-425f-91c4-34ee0e3ef678",
+      "sha256": "f773b94ae7cc894c726e965277fcb949e46020531788dfe00f6a47b7b3f0a37a",
+      "atlas": true
+    },
+    "career-v1/tag-account.png": {
+      "path": "career/controls/tag-account.png",
+      "uuid": "da8222f0-a95c-4251-972c-f99e65741952",
+      "sha256": "6ee44f8779524772e8dc8ddefd9be084f6f169df0f64fbd5dab0d5273b9ab6b8",
+      "atlas": true
+    },
+    "career-v1/tag-active.png": {
+      "path": "career/controls/tag-active.png",
+      "uuid": "45c5c137-3f7e-4546-83e2-5ca7a29c45a6",
+      "sha256": "719b70fecbef59f1a914a6f37177f6d68654d21dfad53d834dd3ae837b136e13",
+      "atlas": true
+    },
+    "career-v1/tag-character.png": {
+      "path": "career/controls/tag-character.png",
+      "uuid": "f175d906-a53d-4052-8fc1-3005fb6db813",
+      "sha256": "6d96d6bd11862f91d495c5860f2ebaf60f3a9a4cb5c11ea195927984e5341eb8",
+      "atlas": true
+    },
+    "character-skills/cat-balance.png": {
+      "path": "character-skills/cat-balance.png",
+      "uuid": "95bd93b0-2389-4254-8f27-9b624e24553b",
+      "sha256": "d6f11475c46bbf4d8328418c9cf8f63de37400fff50daacc6e4f1eecdbed0255",
+      "atlas": true
+    },
+    "character-skills/exoskeleton.png": {
+      "path": "character-skills/exoskeleton.png",
+      "uuid": "69d437d6-0c23-443f-96d0-48f3147823d8",
+      "sha256": "aaa707908b9af9a3171457bf004e5d24fc759827d7f4313328b0c0d7205093f6",
+      "atlas": true
+    },
+    "character-skills/frog-hop.png": {
+      "path": "character-skills/frog-hop.png",
+      "uuid": "b2384bbf-a116-4e05-9caf-8b5b5d242085",
+      "sha256": "afb03a6f2f3c66d5f67498f05538a54816aae30cddbd15cad3a07ebb31f8b175",
+      "atlas": true
+    },
+    "character-skills/frog-sense.png": {
+      "path": "character-skills/frog-sense.png",
+      "uuid": "9617df05-4162-4a7e-91d6-b5b84e0e39f7",
+      "sha256": "64ba9bbd35d315f692f7c4b6db56313e859c76c33747f42c69a002dfdb61b6fb",
+      "atlas": true
+    },
+    "character-skills/heavy-body.png": {
+      "path": "character-skills/heavy-body.png",
+      "uuid": "7ec653b3-254d-4e25-add4-f309f1599a8e",
+      "sha256": "e1385a8039d9941da26b5269e454fe4bcd6854486bbbdae22aa2e612b881bf03",
+      "atlas": true
+    },
+    "character-skills/kick-dive.png": {
+      "path": "character-skills/kick-dive.png",
+      "uuid": "2c314718-28a4-46c0-ac58-26582c923ec5",
+      "sha256": "b758f8fb85d06bbe56ad2e727a2c78e860898c807a68de40fe0f59c5fb623a01",
+      "atlas": true
+    },
+    "character-skills/perfect-chain.png": {
+      "path": "character-skills/perfect-chain.png",
+      "uuid": "827f07f0-672a-4fdf-9fb0-f1aa4bbe5fff",
+      "sha256": "6571f1bcec1fdae41e81b774cac5e31e77554befb248a05548c7d60e5485e7a3",
+      "atlas": true
+    },
+    "character-skills/power-kick.png": {
+      "path": "character-skills/power-kick.png",
+      "uuid": "cda4cfbd-6838-4bba-9828-e673913f69c4",
+      "sha256": "3c6ec474a71f75d53a1171de750e501344d37f88e5fd4e4d73c7d51fdfee6f49",
+      "atlas": true
+    },
+    "character-skills/precision.png": {
+      "path": "character-skills/precision.png",
+      "uuid": "a1b10b29-e2a8-42d4-b61b-02c971d04cae",
+      "sha256": "090a7b471ec272e77107f889971bc04493a063ca79b9d7d73d46520df8989636",
+      "atlas": true
+    },
+    "character-skills/wall-kick.png": {
+      "path": "character-skills/wall-kick.png",
+      "uuid": "cc4d1b8c-b447-4bda-891a-ca7c165f02e9",
+      "sha256": "a55d6986f6b6f3d7dc3c57b30068b46f756932fe6bd2db97e07a09f0e32eba16",
+      "atlas": true
+    },
+    "character-v1/back-icon.png": {
+      "path": "common/back-icon.png",
+      "uuid": "6bd7dd92-7a29-4e89-bc1e-488d7d1745c1",
+      "sha256": "ee59594422f49991dc9ece62c796453a8645c111e1cf3eacebbba60a81a2c76c",
+      "atlas": true
+    },
+    "character-v1/card-base.png": {
+      "path": "character/controls/card-base.png",
+      "uuid": "d18b9afc-d0f0-443d-b4c9-74e9a8883edd",
+      "sha256": "41242681e72405d2b261f86a06f3bdd9e3f3ee93ae359df73360913fda472796",
+      "atlas": true
+    },
+    "character-v1/card-selected.png": {
+      "path": "character/controls/card-selected.png",
+      "uuid": "670707e5-7f8d-4cff-bdc1-5fd0ab7b3cd0",
+      "sha256": "970e23614bef0ce9c21b98fb365f0e4a9416a61693fa4e633ab4ce7cbcdd5015",
+      "atlas": true
+    },
+    "character-v1/confirm-button.png": {
+      "path": "character/controls/confirm-button.png",
+      "uuid": "0c333b73-f9ac-4300-a049-821d1c0c41ed",
+      "sha256": "d67b41c9712282b320c2cf97fd9f1e2ee1c309a9925c36a15f1d194389d7d780",
+      "atlas": true
+    },
+    "character-v1/detail-panel-bg.png": {
+      "path": "character/controls/detail-panel-bg.png",
+      "uuid": "620cf92e-72d3-4865-99f1-0236e0ae64d9",
+      "sha256": "e1b8d386be4e406756e107e45347e4162edc9e44b0a663f2a034bc3de41fbca6",
+      "atlas": true
+    },
+    "character-v1/header-bg.png": {
+      "path": "common/header-bg.png",
+      "uuid": "cc52edcd-07d9-460f-b1a8-383174f9ed5a",
+      "sha256": "033187b334b50da4d131e66e21c8a87a05690ffaab63a36d7844d35b296f29f0",
+      "atlas": true
+    },
+    "character-v1/level-pill.png": {
+      "path": "common/level-pill.png",
+      "uuid": "00c32931-6a78-425d-a84f-7ceeafbef710",
+      "sha256": "b46e9e2b08e917cae7166bf8681e0501f8a5a4b2dc008088fa6c270cfcdb51e3",
+      "atlas": true
+    },
+    "character-v1/portrait-cartonSwimmer10.png": {
+      "path": "character/portraits/portrait-cartonSwimmer10.png",
+      "uuid": "15a2cd0c-37fe-4ff0-b56d-2fcb9f879098",
+      "sha256": "37cc268a3caee61a1f4c8a47a0f0d5c9824e53913c187f80891d774c0f68e371",
+      "atlas": true
+    },
+    "character-v1/portrait-cartonSwimmer11.png": {
+      "path": "character/portraits/portrait-cartonSwimmer11.png",
+      "uuid": "ee98c510-0aaf-41f0-b09c-1f2b0eda2a7c",
+      "sha256": "b5709cbcb3d9b10a5e130eb0065d4f45d71222282042b200fc40a84112558ac7",
+      "atlas": true
+    },
+    "character-v1/portrait-cartonSwimmer12.png": {
+      "path": "character/portraits/portrait-cartonSwimmer12.png",
+      "uuid": "24641812-b45c-42f1-bc6a-0ce51a6b8d0a",
+      "sha256": "c21b9a9459f007375157aec438693723ce29f104d81cc0f46478fb7c7adaa501",
+      "atlas": true
+    },
+    "character-v1/portrait-cartonSwimmer13.png": {
+      "path": "character/portraits/portrait-cartonSwimmer13.png",
+      "uuid": "190344d3-d3a3-409b-acd4-21400ebdc81b",
+      "sha256": "427142bb4b4b369009e3bd9a7cff4d4fb362812832a7120a5617127979610a7d",
+      "atlas": true
+    },
+    "character-v1/portrait-cartonSwimmer14.png": {
+      "path": "character/portraits/portrait-cartonSwimmer14.png",
+      "uuid": "6d499e35-0192-4cc7-a02d-979168f9f5c4",
+      "sha256": "d88101981aa8c78e5cc16cbcb88e510559ef45ff28e229d3532be7c36c1690a5",
+      "atlas": true
+    },
+    "character-v1/portrait-cartonSwimmer15.png": {
+      "path": "character/portraits/portrait-cartonSwimmer15.png",
+      "uuid": "1bb18e07-91d9-4c53-9bdf-04387406f172",
+      "sha256": "fca8086824847e1474a349fe7acd9e682f125a9ef1c81d85f83d7e0ae24e6b86",
+      "atlas": true
+    },
+    "character-v1/portrait-cartonSwimmer16.png": {
+      "path": "character/portraits/portrait-cartonSwimmer16.png",
+      "uuid": "979fda94-be4e-4d53-b292-008d6579bee8",
+      "sha256": "3351e63ef56bc72a40a6a2f2da83d784897e7bbe927e70f10f668731c15ea92a",
+      "atlas": true
+    },
+    "character-v1/portrait-cartonSwimmer5.png": {
+      "path": "character/portraits/portrait-cartonSwimmer5.png",
+      "uuid": "fe4cc565-f5af-4210-ad26-7a527d858d3b",
+      "sha256": "3c7a5deaf56916a01538c19c140c2dc520a88a9cf61d5937f005af1119814ea2",
+      "atlas": true
+    },
+    "character-v1/portrait-cartonSwimmer6.png": {
+      "path": "character/portraits/portrait-cartonSwimmer6.png",
+      "uuid": "21deb54b-da39-4619-a9a4-ae94d7795280",
+      "sha256": "6bb46d41a2a8f8faf31ed105ae7250d24d966065f058fdd77bc883e1811bf031",
+      "atlas": true
+    },
+    "character-v1/portrait-cartonSwimmer8.png": {
+      "path": "character/portraits/portrait-cartonSwimmer8.png",
+      "uuid": "5f9fa464-ec84-460c-9a2e-3dff6da40bd7",
+      "sha256": "33afb4cfd72437dc5245dd2e585b27acf52309937d06299c4e5b46f0f000da80",
+      "atlas": true
+    },
+    "character-v1/portrait-cartonSwimmer9.png": {
+      "path": "character/portraits/portrait-cartonSwimmer9.png",
+      "uuid": "96db49f5-49dc-47e4-b5f3-092786ebefda",
+      "sha256": "dbfbf97453a29dc02b5a51c78ea7e3b091dba61fb191926de904d3b54cdce982",
+      "atlas": true
+    },
+    "character-v1/portrait-muscleMan.png": {
+      "path": "character/portraits/portrait-muscleMan.png",
+      "uuid": "a68a8cfb-c6ed-4e83-a2b1-d82112ded6e3",
+      "sha256": "9461e5729e47007487eb7a4e2bb10e9d4a9e277376029d029faabd116d64c30f",
+      "atlas": true
+    },
+    "character-v1/skill-header.png": {
+      "path": "character/controls/skill-header.png",
+      "uuid": "b947c927-6e21-4e62-bdf6-9dfdfd0f0442",
+      "sha256": "cb2d7ad7032692dcc4763225367708dc9b544ddea861fb04aa2d5ab10eb53408",
+      "atlas": true
+    },
+    "character-v1/skin-deep.png": {
+      "path": "character/controls/skin-deep.png",
+      "uuid": "c568f699-3962-412b-9646-72ed02090f3f",
+      "sha256": "2bdf1d41fcb0d5a63c87106ae2287c630c7232c5076721aca48345c98b4c15cc",
+      "atlas": true
+    },
+    "character-v1/skin-warm.png": {
+      "path": "character/controls/skin-warm.png",
+      "uuid": "caca7a3d-f3ae-4f71-b8a7-1067a4aa7bfb",
+      "sha256": "5cdf9628a00d3e6408f477112dfc5b44c43e92c93694392fea7cf1d790538250",
+      "atlas": true
+    },
+    "character-v1/stat-arrow.png": {
+      "path": "character/controls/stat-arrow.png",
+      "uuid": "4901cdf2-7cfb-4cb7-8de6-fade58c6ced1",
+      "sha256": "d4853b074e2cc9d3f28daf6bb094a55c448560d3cba33f9ef13be89ac70b16b9",
+      "atlas": true
+    },
+    "character-v1/stat-burst.png": {
+      "path": "character/controls/stat-burst.png",
+      "uuid": "66c1f6b2-d6c5-43c7-89c7-bf511d88cedc",
+      "sha256": "78361806dc824fbace5ce5e696b7474871dfca2c62645d862e5f7dd7a429eef2",
+      "atlas": true
+    },
+    "character-v1/stat-hp.png": {
+      "path": "character/controls/stat-hp.png",
+      "uuid": "938d94d8-10e3-4d4c-b83a-88798b0f1be5",
+      "sha256": "62d58185f74673acf1cc6638fed251c3f7d245e31179e7d29755f7f796a16c0a",
+      "atlas": true
+    },
+    "character-v1/stat-row.png": {
+      "path": "character/controls/stat-row.png",
+      "uuid": "e6ed746e-37ac-46e0-998e-8514ba8ce3e3",
+      "sha256": "7218f811c4fa22640e99fa3a5fea6825d6a55535d4a306d041697887b6c9a38b",
+      "atlas": true
+    },
+    "character-v1/stat-technique.png": {
+      "path": "character/controls/stat-technique.png",
+      "uuid": "407f8033-103f-44cd-87bb-569e043a4307",
+      "sha256": "9d61edfe7679da783defb394be753ce9b2133b5c2110c0389ae431f34342066a",
+      "atlas": true
+    },
+    "character-v1/status-active.png": {
+      "path": "character/controls/status-active.png",
+      "uuid": "805d15a8-aca2-40cd-8e43-9efb3a0f5afc",
+      "sha256": "d6ca893e13494277c4377267a0db2afb813c9165fbecc2147bab90c4a1c35cf4",
+      "atlas": true
+    },
+    "character-v1/swatch-black.png": {
+      "path": "character/controls/swatch-black.png",
+      "uuid": "21273322-68de-4700-9c17-cd220cc1f127",
+      "sha256": "bdcf2a853234ed49dcc03f38e46035993605931cc9882ad56a7d2b43f0568476",
+      "atlas": true
+    },
+    "character-v1/swatch-blue.png": {
+      "path": "character/controls/swatch-blue.png",
+      "uuid": "dc9642a2-23eb-4eb4-a759-9bbf1d738cec",
+      "sha256": "fb489aa59ae51aaf1fd06ed1e2dd2a8130bb23bf31f005ace46d17915fb92d14",
+      "atlas": true
+    },
+    "character-v1/swatch-cherry-red.png": {
+      "path": "character/controls/swatch-cherry-red.png",
+      "uuid": "8ffac443-d7e4-426b-850f-8f52f21debc5",
+      "sha256": "af9ddb76c29bfc349869315412b31bb94e6d0d8875778325fa6a8d057e4c1350",
+      "atlas": true
+    },
+    "character-v1/swatch-cyan.png": {
+      "path": "character/controls/swatch-cyan.png",
+      "uuid": "8ac2d00c-4bc2-4d9d-9657-5c66533831ef",
+      "sha256": "a3b4b4cb2f718d5ca9bdbf49e094268c084ea42a54caa85f6605e6abfed6516b",
+      "atlas": true
+    },
+    "character-v1/swatch-deep-ocean.png": {
+      "path": "character/controls/swatch-deep-ocean.png",
+      "uuid": "84ba3cb9-7091-4de9-9aca-27189448f990",
+      "sha256": "90fa9f486c9a34d2c4b012ceab0c0c7edac120c04189a89e018361ca5f4f9832",
+      "atlas": true
+    },
+    "character-v1/swatch-green.png": {
+      "path": "character/controls/swatch-green.png",
+      "uuid": "c1b1f8c7-92ec-44ce-984c-c9217393db0d",
+      "sha256": "a59532aae6caae02fc8b5a168a9af83a78a3037b2b0bfe61fb6a8eca2a38cb9d",
+      "atlas": true
+    },
+    "character-v1/swatch-lake-teal.png": {
+      "path": "character/controls/swatch-lake-teal.png",
+      "uuid": "0e22bb4e-dd21-4e08-bd50-bd2a1e702f16",
+      "sha256": "75ae6dac7f35dabddffe7e33c3fcfe488bb75838a154139b25285ea674f08950",
+      "atlas": true
+    },
+    "character-v1/swatch-lime.png": {
+      "path": "character/controls/swatch-lime.png",
+      "uuid": "6077619a-5f81-481d-9a73-678d80d01887",
+      "sha256": "ecaa89a04d431d81cff493cc76019226539fedc64a5b872aac73c586fb241701",
+      "atlas": true
+    },
+    "character-v1/swatch-orange.png": {
+      "path": "character/controls/swatch-orange.png",
+      "uuid": "53c59c1e-40e9-40b8-a0ae-e05255dd7563",
+      "sha256": "d5ad093b56547892adc9a3bfeacfe1456be75d97c0a36e5a14bf745eea068875",
+      "atlas": true
+    },
+    "character-v1/swatch-purple.png": {
+      "path": "character/controls/swatch-purple.png",
+      "uuid": "dce1db61-20ba-44c7-b489-130914904acb",
+      "sha256": "0c4c1ff1da0296c9c5c13cbd7ba70e782b283b52b91ec2b752ca9ea4bbb3b0da",
+      "atlas": true
+    },
+    "character-v1/swatch-red.png": {
+      "path": "character/controls/swatch-red.png",
+      "uuid": "0a5531dc-8300-4c88-a6a9-50e004dbff4a",
+      "sha256": "1f1df40b2c8532f919c746d0f50ddc87a653fe1588b8a7a96b80df75a5b47eb0",
+      "atlas": true
+    },
+    "character-v1/swatch-soft-lilac.png": {
+      "path": "character/controls/swatch-soft-lilac.png",
+      "uuid": "c0e9ff59-5113-44e9-8939-0a890d8e6cc8",
+      "sha256": "fd2bba9e0da3a80e8f2c429107edd9d864df60a00f086624b13741c3b48bbe1a",
+      "atlas": true
+    },
+    "character-v1/swatch-strawberry-pink.png": {
+      "path": "character/controls/swatch-strawberry-pink.png",
+      "uuid": "2a3c5285-9dc8-4f65-ac3a-9c484ca3387a",
+      "sha256": "330f19228057f89b2b0977243d16c48a84e5c65667494a37007a3d145796e854",
+      "atlas": true
+    },
+    "character-v1/swatch-yellow.png": {
+      "path": "character/controls/swatch-yellow.png",
+      "uuid": "7acb13ad-4982-40af-bdba-dbe008a23ba0",
+      "sha256": "7b395d85713282ecbec0d864000510b41844bd06dee58d942aca07d2b7f8e20b",
+      "atlas": true
+    },
+    "character-v1/tab-appearance.png": {
+      "path": "character/controls/tab-appearance.png",
+      "uuid": "0cbfebb5-703a-4842-bf26-716748299ad5",
+      "sha256": "72d3b1c13336198c74ab3561e41e7a8029385b879e08dbb3fe08d25567b9e048",
+      "atlas": true
+    },
+    "character-v1/tab-attributes.png": {
+      "path": "character/controls/tab-attributes.png",
+      "uuid": "b7044ce7-8dea-478c-93df-3f3da3961f42",
+      "sha256": "a1d42566bc78b34dddc22690ce05b140ff218d49cdc24b22b08218dbcf17cc6e",
+      "atlas": true
+    },
+    "character-v1/upgrade-button.png": {
+      "path": "character/controls/upgrade-button.png",
+      "uuid": "313a76c9-c847-44ac-90a7-ffec37e503a2",
+      "sha256": "bc401629c2a6fc1a13f9053f3b9737fa121e9df749234c64271696e1e74ec5d1",
+      "atlas": true
+    },
+    "character-v1/upgrade-currency.png": {
+      "path": "character/controls/upgrade-currency.png",
+      "uuid": "7bb1b76c-3495-49a1-ac42-74f986ccfb64",
+      "sha256": "a76564065bf41b49d10d31091255591777f88569eea7661ec492a79bad95d712",
+      "atlas": true
+    },
+    "lobby-b/arrow.png": {
+      "path": "lobby/controls/arrow.png",
+      "uuid": "c207a462-24cb-477e-873e-88aacaef45c1",
+      "sha256": "2330261aa233390dde96b7bc3fefa2851649bcb0f96450f33ae99ed8b72db022",
+      "atlas": true
+    },
+    "lobby-b/background.png": {
+      "path": "lobby/background/background.png",
+      "uuid": "f7acb818-ef85-4e5a-ae74-c6f21243848b",
+      "sha256": "f69525ef22cabf58a66b6a2783662b784111eb41bbd7e81bba25dd9fdf0e93f3",
+      "atlas": false
+    },
+    "lobby-b/career-button.png": {
+      "path": "lobby/controls/career-button.png",
+      "uuid": "40a0e6d4-e648-4590-ad7b-6645269708dc",
+      "sha256": "013323d46448fe4b87d8c47a7249915d42261d5ae004323f9d3c21da3ef30f4f",
+      "atlas": true
+    },
+    "lobby-b/career-card.png": {
+      "path": "lobby/controls/career-card.png",
+      "uuid": "e1d9868d-9569-498e-b628-6688cff95d6e",
+      "sha256": "dc0e7b9852abb6199a78cf955e0aec2fb21d026da369a291e2ed4cf198bd4f0c",
+      "atlas": true
+    },
+    "lobby-b/character-button.png": {
+      "path": "lobby/controls/character-button.png",
+      "uuid": "9f3813d8-b88e-429b-b6b4-d6daa9a29256",
+      "sha256": "e49ad9ca40339e8ae87689c73de8c38150eb87d770209f845918f10f647e71fc",
+      "atlas": true
+    },
+    "lobby-b/character-info.png": {
+      "path": "lobby/controls/character-info.png",
+      "uuid": "d6ffa34e-4694-4ceb-abc3-1f5376f802e7",
+      "sha256": "09f9672c2d479f8f880251316034b00df8110fe640efdc19969d56debc002e53",
+      "atlas": true
+    },
+    "lobby-b/progress-fill.png": {
+      "path": "lobby/controls/progress-fill.png",
+      "uuid": "1028cffc-4b74-4f27-a7d2-d9e765ce4fb5",
+      "sha256": "6d1a9efb8d955a89f56c1130b0ea423a82efb9596589ffdc238aba571944a03f",
+      "atlas": true
+    },
+    "lobby-b/progress-track.png": {
+      "path": "lobby/controls/progress-track.png",
+      "uuid": "1f2f8f3c-7f2e-4d29-b0f4-11603eb61852",
+      "sha256": "79fdc2c4534939cbd32391331719cacbee309ada6608e80951aad05fcf8515f1",
+      "atlas": true
+    },
+    "lobby-b/quick-button.png": {
+      "path": "lobby/controls/quick-button.png",
+      "uuid": "2770bf0a-3ea3-4f0a-8b39-e0b11699b0fd",
+      "sha256": "2319e90bcb0aaf9c88f959e8ec2abc897ef3ded3c3c6792e9ffcd65ca0f88eff",
+      "atlas": true
+    },
+    "lobby-b/quick-icon.png": {
+      "path": "lobby/controls/quick-icon.png",
+      "uuid": "ec24eda9-a96c-46a0-a0e3-2ef57186861c",
+      "sha256": "4d65ad150de42f37f61c4d56131df6019533bbae528f978b3aac2a101112bcca",
+      "atlas": true
+    },
+    "lobby-b/skill-base.png": {
+      "path": "common/skill-base.png",
+      "uuid": "278ca4df-196d-42ce-a461-e67f58758666",
+      "sha256": "f0c41ddfdd4be7a980dd343d1b901c14f0d44ececea4f4afb602930151ea0171",
+      "atlas": true
+    },
+    "lobby-b/skill-breath.png": {
+      "path": "character-skills/skill-breath.png",
+      "uuid": "23ffb979-c8f0-4f48-922c-f6fe81cb767e",
+      "sha256": "fe43072771e483890f5cc77651b6781ab370f1df2a398a7dc9917fd76a06d6a4",
+      "atlas": true
+    },
+    "lobby-v1/online-button.png": {
+      "path": "common/online-button.png",
+      "uuid": "4c58149b-5dd8-445e-b46b-c464d8f4aae6",
+      "sha256": "6504c3c98b1b46a9a6cf8c4c562da9428b092d36a430522c3520d9a70642821c",
+      "atlas": true
+    },
+    "lobby-v1/start-button.png": {
+      "path": "common/start-button.png",
+      "uuid": "0eeaacc7-8a27-4439-ab03-93e8d593d866",
+      "sha256": "d577cff921e515367f5b956e71d7076f754fe9d233e7506047fda9633e091f59",
+      "atlas": true
+    },
+    "lobby-v1/top-currency.png": {
+      "path": "common/top-currency.png",
+      "uuid": "0a19deec-78a2-490a-9a9a-241459b6c2e1",
+      "sha256": "2096ce36ddacbe99abb47b38d1c84899dab9a1b2a81dbc47722c7ff1cd25cdc5",
+      "atlas": true
+    },
+    "lobby-v1/top-player.png": {
+      "path": "common/top-player.png",
+      "uuid": "54530d46-3ec4-4d4d-bbca-610e25129bcf",
+      "sha256": "1a19942d8c1b9dcad1cdf317510c56c7282bd3a6b5c06b18ab347334d7633751",
+      "atlas": true
+    },
+    "lobby-v1/top-settings.png": {
+      "path": "common/top-settings.png",
+      "uuid": "3ecb803e-b6bb-48ea-808a-acb7b31fb037",
+      "sha256": "54ad948a216cdcf7d97f91db5d2570c1a39e1e9989b775fac2d961f69fe8d736",
+      "atlas": true
+    },
+    "online-room-v1/avatar-ring.png": {
+      "path": "online-room/avatar-ring.png",
+      "uuid": "1cafcfb4-9551-4b1e-89aa-f294fb7aac20",
+      "sha256": "bad814894c0a25e0ccba69515098373a5fcd9f4c64c51e5dc6e49d234437d625",
+      "atlas": true
+    },
+    "online-room-v1/badge-host.png": {
+      "path": "online-room/badge-host.png",
+      "uuid": "9d559cfa-2907-460d-b2c6-be382eccf00a",
+      "sha256": "c85e94fe64e29e69669014e8167dcbb5be68cb5abe1708e63f25c469456f5031",
+      "atlas": true
+    },
+    "online-room-v1/badge-idle.png": {
+      "path": "online-room/badge-idle.png",
+      "uuid": "7e9d3258-df70-4a11-9381-e80fb7416d6d",
+      "sha256": "c33a044e3d98844a839d99e6ddc024f29745a13b037b404b62db2e11ea05b7c3",
+      "atlas": true
+    },
+    "online-room-v1/badge-ready.png": {
+      "path": "online-room/badge-ready.png",
+      "uuid": "91ef9e94-0a42-4c84-adce-965a9e77986c",
+      "sha256": "595ebd82634b9211286b6ca96494d8ec5435a5941e820f15d1f00be909c208f9",
+      "atlas": true
+    },
+    "online-room-v1/cancel-ready.png": {
+      "path": "online-room/cancel-ready.png",
+      "uuid": "6718cddf-bcaf-4715-9738-5aa7b8e07a7e",
+      "sha256": "6023aa764b8f729fb590f2dae4e4ab0605cf841cbc2ad7dd39a11d8a37f916e3",
+      "atlas": true
+    },
+    "online-room-v1/danger-button.png": {
+      "path": "online-room/danger-button.png",
+      "uuid": "f592031d-2219-4edc-8853-fdaa372dcaf3",
+      "sha256": "db4e39c85fd5978c551584701259c09042ced2683a19b61bc0287b2aae9f4844",
+      "atlas": true
+    },
+    "online-room-v1/drawer.png": {
+      "path": "online-room/drawer.png",
+      "uuid": "3d3615f8-ffb9-47b5-97a8-8c9379a730b8",
+      "sha256": "d3ba14ca3510dd2a0176587970ae07126d8a0a0873e19e0334471f5cc4af8554",
+      "atlas": true
+    },
+    "online-room-v1/exit-button.png": {
+      "path": "online-room/exit-button.png",
+      "uuid": "ee01379e-a490-45e1-a97f-471c0556ad90",
+      "sha256": "9f0852221cf611d2e6cc77d19485c3cd30e167ac15107aa915bb7ac32c0fa6d1",
+      "atlas": true
+    },
+    "online-room-v1/host-panel.png": {
+      "path": "online-room/host-panel.png",
+      "uuid": "0a6e6f83-f05a-4aaa-afcb-8d047163359c",
+      "sha256": "8d42e6e6256280015c7e3f82153e07fb85bd1ea1d040fee62fd4f4761073d0cc",
+      "atlas": true
+    },
+    "online-room-v1/member-empty.png": {
+      "path": "online-room/member-empty.png",
+      "uuid": "c9af42b6-974e-4b7b-aa3c-138d580ac2f5",
+      "sha256": "d4f5f5303a7a39eeee260ffb4ba4d3396d3676e032260ecdb7dc8999c997cdea",
+      "atlas": true
+    },
+    "online-room-v1/member-host.png": {
+      "path": "online-room/member-host.png",
+      "uuid": "f561318c-066c-49a7-87d2-259f59c8d354",
+      "sha256": "e39cd53704dc6b08c902b14516bda8ff1ebeb83f2ede5f847308afd0510c7ee7",
+      "atlas": true
+    },
+    "online-room-v1/member-idle.png": {
+      "path": "online-room/member-idle.png",
+      "uuid": "c07daf69-ceeb-492d-9e8a-0c687e705a95",
+      "sha256": "dc3671e8505c2c2f471e744bbe162357f606eba1fb3687b9a04c79c23a4a1759",
+      "atlas": true
+    },
+    "online-room-v1/member-ready.png": {
+      "path": "online-room/member-ready.png",
+      "uuid": "bea65c89-ad4e-4434-a49d-ef407c379c4b",
+      "sha256": "d9b6dbc4a6a6daaac2d4c5d67e3bbfe6962fcdd143cfa25109e223da6dab0a27",
+      "atlas": true
+    },
+    "online-room-v1/members-panel.png": {
+      "path": "online-room/members-panel.png",
+      "uuid": "9ad90f49-947a-4a60-96d1-acc2a90e9151",
+      "sha256": "8656aa6fe7707f7530ec75507971a607aff55cb9a08ccd4cdf3bdadc550ffc30",
+      "atlas": true
+    },
+    "online-room-v1/mode-panel.png": {
+      "path": "online-room/mode-panel.png",
+      "uuid": "d8316479-5ae6-4a36-b15e-06cd70dfd015",
+      "sha256": "140225800f9ded964789e33c7b50202f8815ed8383352b4a134c449600dbba1b",
+      "atlas": true
+    },
+    "online-room-v1/popup.png": {
+      "path": "online-room/popup.png",
+      "uuid": "26612f6c-5b88-4510-935b-ba15c864f828",
+      "sha256": "f2c12992c3f0c27506cf6c8481a117c8a4287d9fac3212d5e9d49aca94e1bcb9",
+      "atlas": true
+    },
+    "pre-race-v1/card-normal.png": {
+      "path": "race-intro/card-normal.png",
+      "uuid": "18266182-6e95-4737-b4c2-246d07b3283f",
+      "sha256": "3e564947c815495bcece6f7fb86aa9f86f70a9219da3abfa69ad119eb7178122",
+      "atlas": true
+    },
+    "pre-race-v1/card-self.png": {
+      "path": "race-intro/card-self.png",
+      "uuid": "c09f9ad4-046c-4eaa-a65a-fa89f98b6c6b",
+      "sha256": "d8c68a8a3a57e588259e2ce01a8ce9f9d09e0b55241b90584140766b9265cc49",
+      "atlas": true
+    },
+    "pre-race-v1/event-strip.png": {
+      "path": "race-intro/event-strip.png",
+      "uuid": "e7ef12ad-8ec4-486e-b8fd-a44933938bc5",
+      "sha256": "567fe38c6bd2bc02aa9f6a51fb3638fbe142c4e14a6fd79b6dae2ac88f2c54b9",
+      "atlas": true
+    },
+    "pre-race-v1/lane-normal.png": {
+      "path": "race-intro/lane-normal.png",
+      "uuid": "e26f13eb-8d6c-458e-921a-cc6788c41883",
+      "sha256": "9180df66e8dbc03493fe6e255803027fd85bb2d103d2c71c7487cd72abe7ca1b",
+      "atlas": true
+    },
+    "pre-race-v1/lane-self.png": {
+      "path": "race-intro/lane-self.png",
+      "uuid": "ece8bde2-336f-4779-9218-72cf324dc19a",
+      "sha256": "1d628eb2415f423102d2719c9bb31ce25198e35b6f36a7a9c4c09f7c21162627",
+      "atlas": true
+    },
+    "pre-race-v1/self-tag.png": {
+      "path": "race-intro/self-tag.png",
+      "uuid": "a5a3ba64-1413-4212-840c-b8309fb87aca",
+      "sha256": "353a8766cc38eb6652707dde6ec957ea8aa6e9df7aa1bfddc3586db7d9773510",
+      "atlas": true
+    },
+    "race-hud-v1/dolphin.png": {
+      "path": "race-hud/dolphin.png",
+      "uuid": "50f0df45-8000-4fa9-833f-2ce576817982",
+      "sha256": "d2ede81925e5cf7ad9b2ba387c06b01b3dc8b595d0f34e6170ae8d3a42722480",
+      "atlas": true
+    },
+    "race-hud-v1/heart.png": {
+      "path": "race-hud/heart.png",
+      "uuid": "3d6b31ed-894a-4849-b266-c4b685bdd40c",
+      "sha256": "62d194bf599f036fd6724ac6a44c47ec5a641642c7d7e95444311accb0c3985d",
+      "atlas": true
+    },
+    "race-hud-v1/jump-ready.png": {
+      "path": "race-hud/jump-ready.png",
+      "uuid": "ebe287f8-62f6-42c3-b488-f04a93d46dea",
+      "sha256": "bf6a847632358c01800b56920ed1641fb4d4f40c796bd6f847cf81dd015bc624",
+      "atlas": true
+    },
+    "race-hud-v1/lightning.png": {
+      "path": "race-hud/lightning.png",
+      "uuid": "af131311-d8e8-49df-9209-3117922f0e77",
+      "sha256": "7801824141d6d296fcca02a37f98a8fc0be6861fe90d5a74f305ef2f0aeecf01",
+      "atlas": true
+    },
+    "race-hud-v1/progress-track.png": {
+      "path": "race-hud/progress-track.png",
+      "uuid": "be32552c-4f5e-461d-94b9-f6b5db66137f",
+      "sha256": "6f2016a05e44c1f711f2615accdaa240a3f533c7ba4ad078f566d6c6f18d34a8",
+      "atlas": true
+    },
+    "race-hud-v1/rank-ring.png": {
+      "path": "race-hud/rank-ring.png",
+      "uuid": "08eab077-158c-47d6-a07f-5880d5fd6c86",
+      "sha256": "36f3710983ad96fd16c46f7431165feae0121ac92559f50bcc8ebb862d7a4aba",
+      "atlas": true
+    },
+    "race-hud-v1/rank-self-ring.png": {
+      "path": "race-hud/rank-self-ring.png",
+      "uuid": "ce81ef13-30e8-49ef-a56b-c8536cafff3f",
+      "sha256": "7a0aa1e6f7088deb061f3652c3b6ad9eaa40546e7e1c6e0f744d3f70cddcb58e",
+      "atlas": true
+    },
+    "race-hud-v1/status-base.png": {
+      "path": "race-hud/status-base.png",
+      "uuid": "af39d303-997f-499f-a5e8-cee8d63a5f2b",
+      "sha256": "da81c5befe8704f95df539c445f23e50a040ef0e8a12205cc15cffc2384c8b3a",
+      "atlas": true
+    },
+    "race-hud-v1/status-ring.png": {
+      "path": "race-hud/status-ring.png",
+      "uuid": "e3f8bf20-f83b-427c-9e58-e6a231332f89",
+      "sha256": "f3d913784e48623e45793a58e3c8c0834c35b4ec51f11aabcc43427bf17952aa",
+      "atlas": true
+    },
+    "race-hud-v1/warning.png": {
+      "path": "race-hud/warning.png",
+      "uuid": "34d74c73-49ff-410d-97ef-725d7646797c",
+      "sha256": "0ddfac0fc79204c6dfcc559b611ffbd443a43b51d90aa570d8610f678fa58120",
+      "atlas": true
+    },
+    "race-start-v1/charge-cap.png": {
+      "path": "race-intro/charge-cap.png",
+      "uuid": "ffd65cb4-1272-4367-b672-bf7730edd606",
+      "sha256": "d056b5c15d53e655dd0a399e9629bae9ff5bc9774f4c0d3e039eb6dbe89a8cb1",
+      "atlas": true
+    },
+    "race-start-v1/charge-fill-high.png": {
+      "path": "race-intro/charge-fill-high.png",
+      "uuid": "e6d440da-22c5-4a30-b2e8-328de9f3f1bf",
+      "sha256": "634f79541a4d199092d8982b0c3214ee6a031a01259aea2742d68bbac484e890",
+      "atlas": true
+    },
+    "race-start-v1/charge-fill-low.png": {
+      "path": "race-intro/charge-fill-low.png",
+      "uuid": "65af1088-73bd-402d-bb39-654667fc0d24",
+      "sha256": "5af1d3e4dc6e82226b5241519a1bf3419071c356124f70ee0d9c588eaa55fb61",
+      "atlas": true
+    },
+    "race-start-v1/charge-fill-mid.png": {
+      "path": "race-intro/charge-fill-mid.png",
+      "uuid": "f4ba481a-aad3-4b20-b195-6b09445ecd64",
+      "sha256": "d800bbca7665e9baec93aec0fe57fbe8f39ee0253cdfbb541d91cf4b5ad7ba57",
+      "atlas": true
+    },
+    "race-start-v1/charge-track.png": {
+      "path": "race-intro/charge-track.png",
+      "uuid": "bd433eba-03cb-4652-9008-0cfc7757397b",
+      "sha256": "6408e99e0833f1b482de29972bfa7feea9f3ab8e4f6b9c60f6988527d7e8929b",
+      "atlas": true
+    },
+    "race-start-v1/go.png": {
+      "path": "race-intro/go.png",
+      "uuid": "c06aef61-80d4-4f53-83c5-b4d01e87cb2a",
+      "sha256": "0ea807daf9d4504ee189a8788339f76365895b03b7b5bb38741f83789b3c11f8",
+      "atlas": true
+    },
+    "race-start-v1/good.png": {
+      "path": "race-intro/good.png",
+      "uuid": "7319b81c-e2ba-4fba-b553-f83d2bcaf122",
+      "sha256": "d5fb4f4c0b01a9f1cb8e800f3ddab56e67bf8739a2533e9b47e0757efc573339",
+      "atlas": true
+    },
+    "race-start-v1/great.png": {
+      "path": "race-intro/great.png",
+      "uuid": "bfbf8b5d-8efc-4fa1-b3bf-77d16bf38bfc",
+      "sha256": "a0f82661b9aaa7a099a485d66e586ec9ac6cb058473e712b6c6e4675745b9f78",
+      "atlas": true
+    },
+    "race-start-v1/late.png": {
+      "path": "race-intro/late.png",
+      "uuid": "3514ca61-92e6-4e46-8d98-dcb42c51a964",
+      "sha256": "4521f289ab00b191e4a30ece42d670ed53a042dbf0dd00e908df01642a878122",
+      "atlas": true
+    },
+    "race-start-v1/perfect.png": {
+      "path": "race-intro/perfect.png",
+      "uuid": "d028deac-0d3c-4d05-8a03-4235cfc49c49",
+      "sha256": "8609b8401db785953e75d931f367d194dcbd6e6384bfac0de8e4c98def952754",
+      "atlas": true
+    },
+    "race-start-v1/ready.png": {
+      "path": "race-intro/ready.png",
+      "uuid": "23abc56a-e80f-4e44-b06c-1a6a0f20bf79",
+      "sha256": "8a1ca51ef71ec58f785093186e94f37b4b0923e824c19b6e5542fe49cb5b8d1f",
+      "atlas": true
+    },
+    "race-stroke-v1/arc.png": {
+      "path": "race-hud/arc.png",
+      "uuid": "63f33c7e-18a2-4c05-a8fa-ccd660a05ed2",
+      "sha256": "bed2f0acf991f2f38783c4ab4561ad9e978adfef51447dd27c1f054459ad3185",
+      "atlas": true
+    },
+    "race-stroke-v1/button.png": {
+      "path": "race-hud/button.png",
+      "uuid": "0ae9ee0b-3d3c-4735-b6da-8756691e3829",
+      "sha256": "ea42028aff83e183c257fc0a70303bf385b01ea207f462fc47af90b2b0112a19",
+      "atlas": true
+    },
+    "race-stroke-v1/hand.png": {
+      "path": "race-hud/hand.png",
+      "uuid": "185a9096-b841-48ee-ac61-0bdd85415663",
+      "sha256": "7d43b34ded949abd61f737d99921a2746d6d6658a966e87341cfc1f4568948b3",
+      "atlas": true
+    },
+    "race-stroke-v1/inner-glow.png": {
+      "path": "race-hud/inner-glow.png",
+      "uuid": "7a2ac925-ec80-401f-bc84-ada1b4586e02",
+      "sha256": "65999764aa4e76b750f5f8a82048a1dcedbbeabdb2f0fc0caee5e48bda1744d0",
+      "atlas": true
+    },
+    "race-stroke-v1/marker-glow.png": {
+      "path": "race-hud/marker-glow.png",
+      "uuid": "f3e4c3c7-24bd-45eb-855d-ea3ffcc583b2",
+      "sha256": "a458f723f25a178b7f517f27ee1172bb2b224531235f39fb4d47a743237415c9",
+      "atlas": true
+    },
+    "race-stroke-v1/marker.png": {
+      "path": "race-hud/marker.png",
+      "uuid": "2843fc29-cb04-4c13-9f93-a226208786ef",
+      "sha256": "7d209a35eb9ba8fdffc548c489298516a302d9e5386f70b7b4e352ff62d9baa5",
+      "atlas": true
+    },
+    "race-stroke-v1/perfect-band.png": {
+      "path": "race-hud/perfect-band.png",
+      "uuid": "b28a6742-7259-4e1c-a1fb-25b6b5b9a86a",
+      "sha256": "43d2ac2ca8c9409c0276e80cd23ea0f66518270f89110b43b795891216a80409",
+      "atlas": true
+    },
+    "race-stroke-v1/praise-amazing.png": {
+      "path": "race-hud/praise-amazing.png",
+      "uuid": "371e0196-f799-4298-9428-bffdd6ed8798",
+      "sha256": "135668b2c0eed6fbcd36caa477076871625dd8f41f2986b236ea8c925e2225f7",
+      "atlas": true
+    },
+    "race-stroke-v1/praise-crazy.png": {
+      "path": "race-hud/praise-crazy.png",
+      "uuid": "dbed5f41-354e-407c-b7ac-5a1829b3f8dd",
+      "sha256": "02976d3b2769591b19d4b3bd10a27d80777495199947e310129ca2101b3c8c4d",
+      "atlas": true
+    },
+    "race-stroke-v1/praise-excellent.png": {
+      "path": "race-hud/praise-excellent.png",
+      "uuid": "eddb0377-3b40-4de5-8dec-b2e9ffee8a5e",
+      "sha256": "59bb7bf7fee159235fce2ff63ff3b5c432c0ba1f340da81404716d138295bcaa",
+      "atlas": true
+    },
+    "race-stroke-v1/praise-good.png": {
+      "path": "race-hud/praise-good.png",
+      "uuid": "0d497d3a-c5af-4728-af89-bc84fe79fc6b",
+      "sha256": "7f862259e9d59c735e0bec38334981fc4413b1fe22c6f8303583cf63540c51d6",
+      "atlas": true
+    },
+    "race-stroke-v1/praise-great.png": {
+      "path": "race-hud/praise-great.png",
+      "uuid": "8fe6dcbc-54c1-4ea8-a314-044182f1c7d0",
+      "sha256": "f298b841cac6f23ead316e4cb2881210b13a75b92ab2b3222cace1df4bfbdbb4",
+      "atlas": true
+    },
+    "race-stroke-v1/praise-perfect.png": {
+      "path": "race-hud/praise-perfect.png",
+      "uuid": "6f923309-caf9-4d11-8d36-5f25af3e7b3e",
+      "sha256": "e2be8897243c6e4aef2d05e3c651520c85319cb1b3b0829ddc06760a2546a4f1",
+      "atlas": true
+    },
+    "race-stroke-v1/praise-unbelievable.png": {
+      "path": "race-hud/praise-unbelievable.png",
+      "uuid": "be0d482c-6b5c-4078-a168-33992940ac87",
+      "sha256": "1d6af53798431f83da722ccaa8c11a4e7681389788f5902b4e313191f97cd056",
+      "atlas": true
+    },
+    "race-stroke-v1/ripple-ring.png": {
+      "path": "race-hud/ripple-ring.png",
+      "uuid": "8ebd2163-7889-462f-be66-e656c6d8504c",
+      "sha256": "c58b61ae0576449dc7c452b49b0f0762c6cca74de6259610ad2feae771634005",
+      "atlas": true
+    },
+    "settlement-v1/honor-bronze.png": {
+      "path": "settlement/honor-bronze.png",
+      "uuid": "65a620e9-319b-4294-b57f-69071b658494",
+      "sha256": "c88482fb3d41ca1e85a8e2e9b83dd5af2fd5a4494b4b9b6cebbec13e07fbe988",
+      "atlas": true
+    },
+    "settlement-v1/honor-gold.png": {
+      "path": "settlement/honor-gold.png",
+      "uuid": "8d488da6-8a89-4e8d-aee4-7f7f39076a51",
+      "sha256": "a92b33b61a350d7ac539f989e3075b065788d135b8db5d569fa926d8903f0cc5",
+      "atlas": true
+    },
+    "settlement-v1/honor-normal.png": {
+      "path": "settlement/honor-normal.png",
+      "uuid": "ab55122f-81d4-40f2-8950-2f508f2cb8b4",
+      "sha256": "4517c9c6e0e777f903d40df47e938b12895bfd8aa86893285e567142168377c7",
+      "atlas": true
+    },
+    "settlement-v1/honor-silver.png": {
+      "path": "settlement/honor-silver.png",
+      "uuid": "2e2e9a35-d5c5-4f57-8afd-e2c25c554cde",
+      "sha256": "42e12282ba2256f5adc9af80ebef899649f812db6d16aa0e4cef3bf46310fc3c",
+      "atlas": true
+    },
+    "settlement-v1/medal-bronze.png": {
+      "path": "settlement/medal-bronze.png",
+      "uuid": "ad555224-d208-49df-8473-1825e606259d",
+      "sha256": "b27c02ad801e8618d729cb56cd146df33dcbd456c5dd9339a3e9bded6e4d7c9e",
+      "atlas": true
+    },
+    "settlement-v1/medal-gold.png": {
+      "path": "settlement/medal-gold.png",
+      "uuid": "9fa83fb3-1dee-444a-971f-5d35244bcd98",
+      "sha256": "9fb00c474e3ff2e0f51ee0eca60ae3ca47274956383f1b0dfa908cc5f41b2efd",
+      "atlas": true
+    },
+    "settlement-v1/medal-normal.png": {
+      "path": "settlement/medal-normal.png",
+      "uuid": "60a46196-1514-4a1a-bc19-2630e53c0253",
+      "sha256": "5561f687939946ee85154c5bff2404fbb30bf2ae90f1bdf2e9b6b7a5805005fb",
+      "atlas": true
+    },
+    "settlement-v1/medal-silver.png": {
+      "path": "settlement/medal-silver.png",
+      "uuid": "73dcfb2f-4ce4-4067-906b-94c678cb001a",
+      "sha256": "304c5cd7707b8d4d5f79c664cfcc18a17c0fb76ff4f6c962a6ccc0eacd8710ce",
+      "atlas": true
+    },
+    "settlement-v1/right-shade.png": {
+      "path": "settlement/right-shade.png",
+      "uuid": "1627c847-306c-4dbd-b97f-70cd7d5f6d45",
+      "sha256": "19b62df6d5409927d01e2d7350a3f9f4e6dcca27153ef3a0895c1f369ecf6fec",
+      "atlas": true
+    },
+    "settlement-v1/row-bronze.png": {
+      "path": "settlement/row-bronze.png",
+      "uuid": "80468d1b-7199-476a-aba7-bf89c307989b",
+      "sha256": "e997475d38cac0e2abdb55fe50c40c998843ca150e82958df2ff50803ae9a1e8",
+      "atlas": true
+    },
+    "settlement-v1/row-gold.png": {
+      "path": "settlement/row-gold.png",
+      "uuid": "4cf26502-da31-4d45-91cc-60ff36ee4228",
+      "sha256": "5809b7256cbdfd160d89358bc82edcbfa984ea232c33216a3e7b0e0ee5691f22",
+      "atlas": true
+    },
+    "settlement-v1/row-normal.png": {
+      "path": "settlement/row-normal.png",
+      "uuid": "2d3d9be3-8ce4-4c0c-9a45-e7c4cd4e2e73",
+      "sha256": "358912f2f23e9a72e8dd1c2ccf5125f2b05d0dc6c1998ee73314c2fd293ff56e",
+      "atlas": true
+    },
+    "settlement-v1/row-self.png": {
+      "path": "settlement/row-self.png",
+      "uuid": "41d967f0-fc5d-448e-b317-9d94de9821a0",
+      "sha256": "ebd118c463c7c236286329f231235e09bc3e93ad4a384d6bd6d26d569c70a8c6",
+      "atlas": true
+    },
+    "settlement-v1/row-silver.png": {
+      "path": "settlement/row-silver.png",
+      "uuid": "637f6a0f-6d7a-4f66-8a2a-3a0cd460561b",
+      "sha256": "3e94b8f2323aedb69470db7d010a9f8ddee48bff2894826efe110e5bbcb6f92f",
+      "atlas": true
+    },
+    "settlement-v1/table-header.png": {
+      "path": "settlement/table-header.png",
+      "uuid": "2d65a166-9dee-4385-b67f-9ea1dbbe2ef5",
+      "sha256": "a7bbb9298358a35875121eef5525eadc845efb1cf4c643fecfed266fffe987df",
+      "atlas": true
+    },
+    "settlement-v1/wave.png": {
+      "path": "settlement/wave.png",
+      "uuid": "74a7c158-7639-4cb6-a743-0644918fd5fc",
+      "sha256": "4e7a68dbe2d297a462283efe0e3f83ea742ed5bb8b6c68a94c54ffbf72047d8d",
+      "atlas": true
+    },
+    "vfx/SoftSpeedStreak.png": {
+      "path": "vfx/SoftSpeedStreak.png",
+      "uuid": "e5169375-69a7-4505-9134-d3cfef39466b",
+      "sha256": "f5fa2dd899eb890a97fbc945046769f21fd6c29590ea3fd85c98e474e8d552b5",
+      "atlas": false
+    }
+  }
+}

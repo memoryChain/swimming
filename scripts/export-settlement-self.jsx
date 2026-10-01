@@ -17,6 +17,6 @@
   // 当前源稿填充为0，描边由样式产生；不能沿用旧稿假设改写填充值。
   target.rasterize(RasterizeType.ENTIRELAYER);
   d.crop([975,179,1641,296]);
-  d.saveAs(new File(project+'/assets/race/ui/settlement-v1/row-self.png'),new PNGSaveOptions(),true,Extension.LOWERCASE);
+  d.saveAs(new File(project+'/assets/race/ui/settlement/row-self.png'),new PNGSaveOptions(),true,Extension.LOWERCASE);
  }finally{d.close(SaveOptions.DONOTSAVECHANGES);app.activeDocument=source;}
 })();

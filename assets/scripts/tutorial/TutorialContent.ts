@@ -36,6 +36,10 @@ export const LESSON_COPY: Record<LessonStep, [string, string]> = {
     complete: ['200 米，完成！', '准备好正式开游了。'],
 };
 
+// 掉帧越过末段检查点时仍完成体力说明；没有实际耗尽就不声称已经变慢。
+export const STAMINA_REMAINING_COPY: [string, string] = ['闪电显示你的体力',
+    '划水和海豚跳会消耗体力，用光后划水会变慢。\n轻点踢水还能前进，但不会补回体力。'];
+
 /** 五个学习目标；泳程负责安排空间，章节让玩家知道自己正在学什么。 */
 export function lessonChapter(step: LessonStep): string {
     if (step === 'diveInfo' || step === 'dive' || step === 'flight') return '1 / 5  ·  起跳入水';

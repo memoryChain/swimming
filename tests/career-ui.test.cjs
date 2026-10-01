@@ -84,14 +84,14 @@ const listeners = new Set();
 const store = { profile: null, onChange: f => listeners.add(f), offChange: f => listeners.delete(f),
     stageCharacterAppearance() {}, async flushCharacterAppearances() {},
     async executeCareer(command) { const result = rules.executeCareer(store.profile, command); for (const f of listeners) f(store.profile); return result; } };
-class SpriteFrame {isValid=true;rect={width:100,height:100};set texture(v){this._texture=v;this.rect={width:v.width,height:v.height};} get texture(){return this._texture;} destroy(){this.isValid=false;} }
+class SpriteFrame {clone(){const frame=new SpriteFrame();frame._texture=this._texture;frame.rect={...this.rect};return frame;} isValid=true;rect={width:100,height:100};set texture(v){this._texture=v;this.rect={width:v.width,height:v.height};} get texture(){return this._texture;} destroy(){this.isValid=false;} }
 class Sprite extends Component {static SizeMode={CUSTOM:1};static Type={SLICED:1};color=factory.uiColor(255,255,255);set spriteFrame(v){this.frame=v;this.node.asset=v?.texture?.path;}get spriteFrame(){return this.frame;} }
 const imageCallbacks=[];let deferImages=false;
-function uiFrame(asset,done){const frame=new SpriteFrame();let width=512,height=512;const file=path.join(__dirname,'../assets/race',asset.replace(/\/texture$/,'.png'));if(require('node:fs').existsSync(file)){const bytes=require('node:fs').readFileSync(file);width=bytes.readUInt32BE(16);height=bytes.readUInt32BE(20);}frame.texture={path:asset,width,height};if(deferImages)imageCallbacks.push(()=>done(frame));else done(frame);}
+function uiFrame(asset,done){const frame=new SpriteFrame();let width=512,height=512;const file=path.join(__dirname,'../assets/race',asset.replace(/\/(texture|spriteFrame)$/,'.png'));if(require('node:fs').existsSync(file)){const bytes=require('node:fs').readFileSync(file);width=bytes.readUInt32BE(16);height=bytes.readUInt32BE(20);}frame.texture={path:asset,width,height,addRef(){}};if(deferImages)imageCallbacks.push(()=>done(frame));else done(frame);}
 const pageLoads = [];
 const h = createHarness({
     '../../startup/StartupLoadingCover': { StartupLoadingCover: class { setLoading() {} setRetry(retry) { this.retry = retry; } dispose() { this.disposed = true; } } },
-    './UiAssetBarrier': { UiAssetBarrier: class { run(work) { return work(); } waitFor() { return new Promise((resolve,reject) => { this.reject = reject; pageLoads.push({resolve,reject}); }); } cancel() { this.reject?.(new Error('取消')); } } }, '../core/RaceBundleLoader':{loadRaceAsset(asset,type,done){uiFrame(asset,frame=>done(null,frame.texture));}}, './AvatarUiAssets':{loadAvatarUiSpriteFrame:uiFrame}, './CareerUiArt': {
+    './UiAssetBarrier': { UiPageLoadGate:class { open(prepare,mount,_ready,enter){prepare(error=>{if(!error){mount();enter?.();}});} run(work){work();} cancel(){} }, UiAssetBarrier: class { run(work) { return work(); } waitFor() { return new Promise((resolve,reject) => { this.reject = reject; pageLoads.push({resolve,reject}); }); } cancel() { this.reject?.(new Error('取消')); } } }, '../core/RaceBundleLoader':{loadRaceAsset(asset,type,done){uiFrame(asset,frame=>done(null,frame.texture));}}, './AvatarUiAssets':{loadAvatarUiSpriteFrame:uiFrame,preloadUiArt(_sources,done){done(null);}}, './CareerUiArt': {
     careerArt(parent,name,asset,w,h,x=0,y=0,sliced=false){const n = factory.makeRect(name,parent,w,h); n.setPosition(x,y,0); n.asset=asset;n.sliced=sliced;return n;},
     careerButtonFeedback() {}
 }, './RuntimeUiFactory': factory, './ProjectUiFonts': { styleCurrencyNumberLabel(label, lineHeight) { label.currencyNumberFont = true; label.lineHeight = lineHeight; }, styleProjectUiLabel(label, weight, lineHeight) {
@@ -107,7 +107,7 @@ const h = createHarness({
     '../platform/PlatformManager': { platform: () => ({ name: 'default', showRewardedAd: async () => adResult === 'pending' ? new Promise(r => { resolveAd = r; }) : adResult }) },
     '../platform/AdConfig': { rewardedAdUnitId: () => '测试广告位' },
 });
-Object.assign(h.cc, { Vec2: class { constructor(x,y){this.x=x;this.y=y;} }, ScrollView, Mask, Graphics, view: {on(){},off(){},getVisibleSize(){return {width:1280,height:720};},getVisibleOrigin(){return {x:0,y:0};}}, UIOpacity, tween: uiTween, Node, Button, Label, Sprite, SpriteFrame, UITransform, BlockInputEvents, sys: { getSafeAreaRect(){return {x:0,y:0,width:1280,height:720};}, localStorage: { getItem: () => null } } });
+Object.assign(h.cc, { CacheMode: { NONE: 0, CHAR: 2 }, Vec2: class { constructor(x,y){this.x=x;this.y=y;} }, ScrollView, Mask, Graphics, view: {on(){},off(){},getVisibleSize(){return {width:1280,height:720};},getVisibleOrigin(){return {x:0,y:0};}}, UIOpacity, tween: uiTween, Node, Button, Label, Sprite, SpriteFrame, UITransform, BlockInputEvents, sys: { getSafeAreaRect(){return {x:0,y:0,width:1280,height:720};}, localStorage: { getItem: () => null } } });
 const load = name => h.load(path.join(h.root, 'assets/scripts', name + '.ts'));
 Object.assign(h.cc, { Canvas, Widget, Layers: { Enum: { UI_2D: 1 } } });
 // 生涯页通过真实适配工具创建返回组，不让测试替身把错误锚点当成正常位置。
@@ -636,13 +636,13 @@ test('复用美术的迟到加载不写销毁节点，独立帧释放且不销�
     class SpriteFrame {constructor(){frames++;} destroy(){destroyed++;}}
     class Graphics {}
     const artHarness=createHarness({'./RuntimeUiFactory':{makeUiNode:node},
-        '../core/RaceBundleLoader':{loadRaceAsset(path,type,cb){pending.push(cb);}}});
+        './AvatarUiAssets':{loadAvatarUiSpriteFrame(path,cb){pending.push(cb);}}});
     Object.assign(artHarness.cc,{Node,Button,UITransform,Sprite,SpriteFrame,Texture2D,Graphics});
     const {careerArt}=artHarness.load(path.join(h.root,'assets/scripts/ui/CareerUiArt.ts'));
     const root=new Node('Root'),late=careerArt(root,'Surface','test',100,80,0,0,true);
-    late.destroy();pending.shift()(null,{width:200,height:160});assert.equal(frames,0);
+    late.destroy();pending.shift()({rect:{width:200,height:160},clone(){return new SpriteFrame();}});assert.equal(frames,0);
     const live=careerArt(root,'Surface','test',100,80,0,0,true);
-    pending.shift()(null,{width:200,height:160});assert.equal(frames,1);
+    pending.shift()({rect:{width:200,height:160},clone(){return new SpriteFrame();}});assert.equal(frames,1);
     assert.equal(live.getComponent(Sprite).spriteFrame.insetLeft,40);
     root.destroy();assert.equal(destroyed,1);
 });
@@ -794,13 +794,13 @@ test('安全区变化只调整页面变换，宽屏与窄屏均保留全部内�
 });
 
 
-test('动态合图后反复返回生涯，九宫格始终使用原始纹理且旧帧独立释放', () => {
+test('静态图集反复返回生涯，九宫格保留子图坐标且仅释放私有克隆帧', () => {
     const original={width:416,height:368,path:'panel'}, atlas={width:2048,height:2048,path:'atlas'};
     const packed=new SpriteFrame(); packed.texture=atlas; packed.rect={x:710,y:500,width:416,height:368};
     const requests=[];
     const fixture=createHarness({
         './RuntimeUiFactory':factory,'./CareerUiArt':{careerButtonFeedback(){}},
-        './AvatarUiAssets':{loadAvatarUiSpriteFrame(_path,done){done(packed);}},
+        './AvatarUiAssets':{loadAvatarUiSpriteFrame(_path,done){requests.push(()=>done(packed));}},
         '../core/RaceBundleLoader':{loadRaceAsset(_path,_type,done){requests.push(()=>done(null,original));}},
     });
     Object.assign(fixture.cc,{Node,Sprite,SpriteFrame,UITransform});
@@ -809,7 +809,7 @@ test('动态合图后反复返回生涯，九宫格始终使用原始纹理且�
         const root=new Node('页面');
         const panel=new CareerImage(root,'九宫格','panel',200,100,0,0,false,true);
         requests.shift()(); const frame=panel.sprite.spriteFrame;
-        assert.equal(frame.texture,original);assert.equal(frame.rect.width,416);assert.equal(frame.rect.height,368);
+        assert.equal(frame.texture,atlas);assert.equal(frame.rect.x,710);assert.equal(frame.rect.y,500);assert.equal(frame.rect.width,416);assert.equal(frame.rect.height,368);
         assert.equal(frame.insetLeft,18);assert.equal(frame.insetTop,18);
         assert.notEqual(frame,packed);root.destroy();assert.equal(frame.isValid,false);assert.equal(packed.isValid,true);
     }
@@ -833,7 +833,7 @@ test('头像不拉伸、名称变宽后等级跟随，徽章居中并逐级增�
     }
     assert.equal(find(page.root,'ReturnCurrent'),undefined);
     assert.equal(find(page.root,'SelectionMark'),undefined);
-    assert.match(find(page.root,'RouteLine').asset,/career-v1\/route/);
+    assert.match(find(page.root,'RouteLine').asset,/career\/controls\/route/);
     let height=0;
     for(let i=0;i<6;i++) {
         find(page.root,'LeagueTier'+i).click();const badge=find(page.root,'HonorBadge');
@@ -932,4 +932,34 @@ test('开赛请求未返回时切入房间，迟到成功不能在恢复大厅�
         await task;
         assert.equal(starts, 0); assert.equal(p.busy, false); assert.equal(session.getSoloRaceTicket(), null);
     } finally { store.executeCareer = execute; root.destroy(); }
+});
+
+test('生涯有限文字合批、底板分层保持两轮三轮位置与显隐，刷新不增长节点或重播动作', () => {
+    reset(); const host = new Node('Root'), panel = warmPanel(host, () => {}, () => {});
+    try {
+        panel.open('career'); const page = panel.page, count = descendants(page.root).length;
+        const cached = [...find(page.root, 'CareerHeader').getComponentsInChildren(Label), ...find(page.root, 'CareerMap').getComponentsInChildren(Label)];
+        assert.ok(cached.length > 30); assert.ok(cached.filter(label => label.node.name !== 'CharacterName').every(label => label.cacheMode === h.cc.CacheMode.CHAR));
+        for (const name of ['CharacterName', 'EventStatus', 'RulesText', 'ConfirmWarning', 'QuickStatus'])
+            assert.notEqual(find(page.root, name)?.getComponent(Label)?.cacheMode, h.cc.CacheMode.CHAR);
+        const created = createdTweens;
+        for (let repeat = 0; repeat < 18; repeat++) {
+            panel.tier = repeat % 6; store.profile.career.league = 5; store.profile.career.points = repeat * 5; panel.refresh();
+            const group = find(page.root, 'CupRoundSurfaces');
+            const cup = group.parent;
+            assert.ok(cup.children.indexOf(group) < cup.children.indexOf(find(page.root, 'CupName')));
+            for (let i = 0; i < 3; i++) {
+                const text = find(page.root, 'CupRound' + i), surface = find(page.root, 'CupRoundSurface' + i);
+                assert.equal(surface.active, text.active);
+                if (text.active) assert.deepEqual(surface.position, text.position);
+            }
+            for (const name of ['StartLeague', 'StartCup']) {
+                const button = find(page.root, name);
+                assert.equal(button.children.at(-1).name, 'Label');
+                assert.equal(button.getComponent(Button).target, button);
+            }
+            assert.equal(descendants(page.root).length, count); assert.equal(createdTweens, created);
+        }
+        assert.ok(find(page.root, 'CharacterAvatarClip').getComponent(Mask));
+    } finally { host.destroy(); }
 });

@@ -1,6 +1,6 @@
-import { Node, Sprite, SpriteFrame, Texture2D, UITransform } from 'cc';
+import { Node, Sprite, SpriteFrame, UITransform } from 'cc';
 import type { CharacterAbilityId } from '../core/CharacterAbilityConfig';
-import { loadRaceAsset } from '../core/RaceBundleLoader';
+import { loadAvatarUiSpriteFrame } from './AvatarUiAssets';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { makeUiNode } from './RuntimeUiFactory';
 
@@ -20,7 +20,6 @@ export class CharacterSkillIcon {
         this._sprite.trim = false;
         this.node.once(Node.EventType.NODE_DESTROYED, () => {
             ++this._request;
-            this._frame?.destroy();
             this._frame = null;
         });
     }
@@ -47,19 +46,15 @@ export class CharacterSkillIcon {
         const y = coach ? this._diameter / 74 : 0;
         if (this.node.position.y !== y || this.node.position.z !== 1) this.node.setPosition(0, y, 1);
         const path = RESOURCE_PATHS.characterSkillIcons[abilityId];
-        loadRaceAsset(path, Texture2D, (error, texture) => {
+        loadAvatarUiSpriteFrame(path, frame => {
             if (!this.node.isValid || !this._sprite.isValid || request !== this._request) return;
-            if (error || !texture) {
+            if (!frame) {
                 this._abilityId = undefined; // 允许下一次界面刷新重试。
-                console.warn(`[CharacterSkillIcon] 技能图标加载失败：${path}`, error);
+                console.warn(`[CharacterSkillIcon] 技能图标加载失败：${path}`);
                 return;
             }
-            const previous = this._frame;
-            const frame = new SpriteFrame();
-            frame.texture = texture;
             this._frame = frame;
             this._sprite.spriteFrame = frame;
-            previous?.destroy();
             this.setVisible(true);
         });
     }

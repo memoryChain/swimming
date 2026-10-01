@@ -1,8 +1,8 @@
 #target photoshop
+#include "ui-atlas-export-paths.jsx"
 // 从当前已打开的定稿导出；原 PSD 保持可编辑且不被改写。
 var root = File($.fileName).parent.parent.fsName;
-var dest = new Folder(root + '/assets/race/ui/pre-race-v1');
-dest.create();
+
 var source = app.documents.getByName('划水大师-比赛开场-1290x720.psd');
 if (source.width.as('px') !== 1290 || source.height.as('px') !== 720) throw Error('开场源稿尺寸不匹配');
 function find(parent, name) {
@@ -35,7 +35,7 @@ function out(name, target, keep, box) {
         }
         strip(g, keep);
         d.crop(box);
-        d.saveAs(new File(dest.fsName + '/' + name + '.png'), new PNGSaveOptions(), true, Extension.LOWERCASE);
+        var outputFile=uiAtlasExportFile(root,'pre-race-v1',name);if(outputFile)d.saveAs(outputFile, new PNGSaveOptions(), true, Extension.LOWERCASE);
     } finally {
         d.close(SaveOptions.DONOTSAVECHANGES);
         app.activeDocument = source;

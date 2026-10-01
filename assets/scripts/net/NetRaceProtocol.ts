@@ -37,7 +37,9 @@
 // 版本48：新增赛博少女，角色名册及AI抽样必须在各端一致。
 // 版本49：确认踢水加速姿态恢复、减轻正撞并持续侧滑；AI同规则，余时随权威状态同步。
 // 版本50：放缓踢水回正、保留更多撞击与松软反馈，AI撞后才主动脱困。
-export const NET_RACE_PROTOCOL_VERSION = 50;
+// 版本51：按住划水速度降至0.65，放宽实际松手时间；旧版不得混跑。
+// 版本52：按住倍率0.8，按狂野赛程重平衡角色、技能与AI；同ID/等级必须解析相同属性。
+export const NET_RACE_PROTOCOL_VERSION = 52;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

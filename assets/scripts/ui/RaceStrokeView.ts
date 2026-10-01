@@ -1,10 +1,11 @@
 import { HEART_TIERS, HEART_BAND_TINTS, heartRateTier } from './HeartRatePresentation';
 import type { RaceHudEntrance } from './RaceHudEntrance';
-import { Color, Label, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3 } from 'cc';
+import { CacheMode, Color, Label, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3 } from 'cc';
 import { StrokeType, Rating } from '../core/GameConstants';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 import { makeUiNode } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
+import { configureUiFillGeometry, setUiLinearFill, UiLinearFillGeometry } from './UiFilledSpriteGeometry';
 
 // 从定稿弧线贴图逐行测量的中心线；镜像复用，不能单独移动绿色区。
 const ARC_X = [215.05,224.46,233.89,244.24,252.29,261.06,267.8,275.15,280.72,286.84,291.53,296.6,300.38,304.58,307.69,311.09,313.61,316.32,318.66,320.37,322.28,323.68,325.06,326.08,327.12,327.88,328.6,329.07,329.55,329.85,330.05,330.14,330.05];
@@ -37,7 +38,7 @@ const PRAISE_ART: Record<string, {key: PraiseArt; width: number; height: number}
     Unbelievable: {key:'praiseUnbelievable',width:168,height:35},
 };
 export type StrokeArt = PraiseArt| 'strokeArc'|'strokeBand'|'strokeHand'|'strokeButton'|'strokeMarker'|'progress'|'strokeRipple'|'strokeInnerGlow'|'strokeMarkerGlow';
-type Side = {markerOpacity:UIOpacity; markerGlow:Node; markerGlowOpacity:UIOpacity; markerGlowAge:number; innerGlow:Node; innerGlowOpacity:UIOpacity; innerGlowAge:number; ripples:HandRipple[]; rippleNext:number;   root:Node; sign:number; hand:Node; opacity:UIOpacity; marker:Node; bands:Sprite[]; starts:Node[]; ends:Node[]; praise:Sprite; praiseKey:string; zoneRatio:number; combo:Label; feedback:Node; feedbackOpacity:UIOpacity; held:boolean; inPerfect:boolean; handSprite:Sprite; markerSprite:Sprite; lastTier:number};
+type Side = {markerOpacity:UIOpacity; markerGlow:Node; markerGlowOpacity:UIOpacity; markerGlowAge:number; innerGlow:Node; innerGlowOpacity:UIOpacity; innerGlowAge:number; ripples:HandRipple[]; rippleNext:number;   root:Node; sign:number; hand:Node; opacity:UIOpacity; marker:Node; bands:Sprite[]; bandGeometry:UiLinearFillGeometry[]; starts:Node[]; ends:Node[]; praise:Sprite; praiseKey:string; zoneRatio:number; combo:Label; feedback:Node; feedbackOpacity:UIOpacity; held:boolean; inPerfect:boolean; handSprite:Sprite; markerSprite:Sprite; lastTier:number};
 
 /** 只消费判定快照：弧线裁切、白点位置和评价不参与划水计算。 */
 export class RaceStrokeView {
@@ -54,10 +55,10 @@ export class RaceStrokeView {
                 n.getComponent(UITransform)!.setContentSize(w,h);n.setPosition(sign*x,-y);n.setScale(sign,1,1);return s;
             };
             sprite('Arc','strokeArc',274,490,128,186);
-            const bands:Sprite[]=[],starts:Node[]=[],ends:Node[]=[];
+            const bands:Sprite[]=[],bandGeometry:UiLinearFillGeometry[]=[],starts:Node[]=[],ends:Node[]=[];
             // 现有判定最多形成少量区间，固定池不在比赛中增删节点。
             for(let i=0;i<4;i++) {
-                const band=sprite('PerfectBand'+i,'strokeBand',274,490,128,186);band.type=Sprite.Type.FILLED;band.fillType=Sprite.FillType.VERTICAL;band.fillStart=0;band.fillRange=0;band.node.active=false;bands.push(band);
+                const band=sprite('PerfectBand'+i,'strokeBand',274,490,128,186);bandGeometry.push(configureUiFillGeometry(band,Sprite.FillType.VERTICAL));band.fillStart=0;band.fillRange=0;band.node.active=false;bands.push(band);
                 for(const target of [starts,ends]){const tick=sprite('PerfectBoundary','progress',0,0,11,2);tick.color=GREEN;tick.node.active=false;target.push(tick.node);}
             }
             // 专用高清圆环，固定三槽；独立于手掌缩放，层级在按钮下方。
@@ -93,7 +94,7 @@ export class RaceStrokeView {
             const praiseNode=makeUiNode('Praise',feedback),praise=praiseNode.addComponent(Sprite);
             praise.sizeMode=Sprite.SizeMode.CUSTOM;praise.trim=false;
             const combo=this.label(feedback,'Combo','',sign*24,32,64,24,18);combo.color=GOLD;
-            this.sides.push({markerOpacity,markerGlow,markerGlowOpacity,markerGlowAge:MARKER_FLASH_SECONDS,innerGlow,innerGlowOpacity,innerGlowAge:INNER_GLOW_SECONDS,ripples,rippleNext:0,root,sign,hand,opacity,marker,bands,starts,ends,praise,combo,feedback,feedbackOpacity,held:false,inPerfect:false,handSprite,markerSprite,lastTier:0,praiseKey:'',zoneRatio:.8});root.active=false;
+            this.sides.push({markerOpacity,markerGlow,markerGlowOpacity,markerGlowAge:MARKER_FLASH_SECONDS,innerGlow,innerGlowOpacity,innerGlowAge:INNER_GLOW_SECONDS,ripples,rippleNext:0,root,sign,hand,opacity,marker,bands,bandGeometry,starts,ends,praise,combo,feedback,feedbackOpacity,held:false,inPerfect:false,handSprite,markerSprite,lastTier:0,praiseKey:'',zoneRatio:.8});root.active=false;
             entrance?.wrap(root, 0, 0, 0.12, 0, true);
             root.once(Node.EventType.NODE_DESTROYED,()=>{Tween.stopAllByTarget(hand);Tween.stopAllByTarget(feedback);Tween.stopAllByTarget(feedbackOpacity);});
         }
@@ -249,7 +250,7 @@ export class RaceStrokeView {
             if(!band.node.active)band.node.active=true;
             // 贴图有4px上留白，路径有效高度177px；与白点完全同一映射。
             const start=1-(4+177*b)/186,range=177*(b-a)/186;
-            if(band.fillStart!==start)band.fillStart=start;if(band.fillRange!==range)band.fillRange=range;
+            setUiLinearFill(band,s.bandGeometry[used],start,range);
             if(!s.starts[used].active)s.starts[used].active=true;
             if(!s.ends[used].active)s.ends[used].active=true;
             this.position(s.starts[used],a,s.sign,true);this.position(s.ends[used],b,s.sign,true);
@@ -283,7 +284,8 @@ export class RaceStrokeView {
         if(boundary){const angle=Math.round(Math.atan2(sign*(ARC_X[i+1]-ARC_X[i]),177/32)*180/Math.PI);if(n.angle!==angle)n.angle=angle;}
     }
     private label(parent:Node,name:string,text:string,x:number,y:number,w:number,h:number,size:number):Label {
-        const n=makeUiNode(name,parent),l=n.addComponent(Label);l.overflow=Label.Overflow.SHRINK;l.enableWrapText=false;l.string=text;l.fontSize=size;l.color=WHITE;l.enableOutline=true;l.outlineWidth=1.5;l.outlineColor=OUTLINE;l.horizontalAlign=Label.HorizontalAlign.CENTER;l.verticalAlign=Label.VerticalAlign.CENTER;styleProjectUiLabel(l,'semibold',size+7);n.getComponent(UITransform)!.setContentSize(w,h);n.setPosition(x,y);return l;
+        // 仅左右/AI 划水文案与连击数字，字符、字体、字号和颜色组合有限。
+        const n=makeUiNode(name,parent),l=n.addComponent(Label);l.overflow=Label.Overflow.SHRINK;l.enableWrapText=false;l.string=text;l.fontSize=size;l.color=WHITE;l.enableOutline=true;l.outlineWidth=1.5;l.outlineColor=OUTLINE;l.horizontalAlign=Label.HorizontalAlign.CENTER;l.verticalAlign=Label.VerticalAlign.CENTER;styleProjectUiLabel(l,'semibold',size+7);l.cacheMode=CacheMode.CHAR;n.getComponent(UITransform)!.setContentSize(w,h);n.setPosition(x,y);return l;
     }
 }
 function clamp(v:number){return Math.max(0,Math.min(1,v));}

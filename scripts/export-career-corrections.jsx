@@ -1,20 +1,17 @@
 #target photoshop
+#include "ui-atlas-export-paths.jsx"
 // 保留原稿色彩空间、混合关系与调色层；不要复制到使用工作色彩空间的新空白文档。
 (function(){
 var src=app.activeDocument;
 if(src.name!=='生涯之路.psd')throw Error('请激活生涯之路.psd');
-var dest=File($.fileName).parent.parent+'/assets/race/ui/career-v1/';
+var dest=File($.fileName).parent.parent+'/assets/race/ui/career/controls/';
 var kind=typeof CAREER_CORRECTION_EXPORT==='undefined'?'background':CAREER_CORRECTION_EXPORT;
+// 金杯已退出运行时资源，保留源稿即可，旧导出入口不再产生孤立贴图。
+if(kind==='cup')return;
 if(kind==='panel-white'){
  var panel=app.open(new File(dest+'panel.png'));
  try{panel.selection.selectAll();var white=new SolidColor();white.rgb.red=white.rgb.green=white.rgb.blue=255;panel.selection.fill(white,ColorBlendMode.NORMAL,100,true);panel.selection.deselect();panel.saveAs(new File(dest+'panel-white.png'),new PNGSaveOptions(),true,Extension.LOWERCASE);}
  finally{panel.close(SaveOptions.DONOTSAVECHANGES);app.activeDocument=src;}return;
-}
-if(kind==='cup'){
- var trophy=app.open(new File(File($.fileName).parent.parent+'/art/career-ui/assets/cup-redrawn.png'));
- try{trophy.trim(TrimType.TRANSPARENT,true,true,true,true);var w=trophy.width.as('px'),h=trophy.height.as('px'),scale=320/Math.max(w,h);trophy.resizeImage(UnitValue(Math.round(w*scale),'px'),UnitValue(Math.round(h*scale),'px'),72,ResampleMethod.BICUBICSHARPER);trophy.saveAs(new File(dest+'cup.png'),new PNGSaveOptions(),true,Extension.LOWERCASE);}
- finally{trophy.close(SaveOptions.DONOTSAVECHANGES);app.activeDocument=src;}
- return;
 }
 var tags={
  'tag-active':['05 当前出场 · 两赛事共用','出场状态底',[484,239,572,269]],
@@ -29,7 +26,7 @@ if(tags[kind]){
   for(var k=0;k<group.layers.length;k++)group.layers[k].visible=group.layers[k].name===spec[1];
   tmp.crop(spec[2]);tmp.convertProfile('sRGB IEC61966-2.1',Intent.RELATIVECOLORIMETRIC,true,false);
   tmp.resizeImage(UnitValue((spec[2][2]-spec[2][0])*2,'px'),UnitValue((spec[2][3]-spec[2][1])*2,'px'),72,ResampleMethod.BICUBIC);
-  tmp.saveAs(new File(dest+kind+'.png'),new PNGSaveOptions(),true,Extension.LOWERCASE);
+  var outputFile=uiAtlasExportFile(File($.fileName).parent.parent,'career-v1',kind);if(outputFile)tmp.saveAs(outputFile,new PNGSaveOptions(),true,Extension.LOWERCASE);
  }finally{tmp.close(SaveOptions.DONOTSAVECHANGES);app.activeDocument=src;}
  return;
 }
@@ -41,7 +38,7 @@ try{
   filter(d.layers.getByName('03 六阶晋升路线'));d.crop([146,140,1136,150]);
  }
  d.convertProfile('sRGB IEC61966-2.1',Intent.RELATIVECOLORIMETRIC,true,false);
- d.saveAs(new File(dest+(kind==='background'?'background':'route')+'.png'),new PNGSaveOptions(),true,Extension.LOWERCASE);
+ var outputFile=uiAtlasExportFile(File($.fileName).parent.parent,'career-v1',kind);if(outputFile)d.saveAs(outputFile,new PNGSaveOptions(),true,Extension.LOWERCASE);
 }finally{d.close(SaveOptions.DONOTSAVECHANGES);app.activeDocument=src;}
 
 })();

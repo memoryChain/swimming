@@ -128,13 +128,13 @@ test('导出清单尺寸与运行时 PNG、资源路径一致；不包含未选�
     const paths=fs.readFileSync('assets/scripts/core/ResourcePaths.ts','utf8');
     assert.equal(manifest.assets.length,11);
     for(const asset of manifest.assets) {
-        const file=`assets/race/ui/race-start-v1/${asset.name}.png`;
+        const file=`assets/race/ui/race-intro/${asset.name}.png`;
         const png=fs.readFileSync(file);
         assert.equal(png.readUInt32BE(16),asset.width,file);
         assert.equal(png.readUInt32BE(20),asset.height,file);
-        assert.ok(paths.includes(`ui/race-start-v1/${asset.name}/texture`),file);
+        assert.ok(paths.includes(`ui/race-intro/${asset.name}/spriteFrame`),file);
     }
-    assert.equal(fs.existsSync('assets/race/ui/race-start-v1/ready-on-block.png'),false);
+    assert.equal(fs.existsSync('assets/race/ui/race-intro/ready-on-block.png'),false);
 });
 
 test('蓄力光点固定复用；释放不重复启动，取消与重入清理回弹和透明度',()=>{

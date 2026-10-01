@@ -48,7 +48,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 50;
+const TUNING_FILE_VERSION = 52;
 
 type TuningFileData = {
     version: number;
@@ -1012,6 +1012,29 @@ function applyTuningCandidate(candidate: TuningLoadCandidate) {
         if (values['collision.kickRecoveryRate'] === 8) values['collision.kickRecoveryRate'] = 2;
         if (values['collision.kickHeadOnPenaltyScale'] === 0.25) values['collision.kickHeadOnPenaltyScale'] = 0.4;
         if (values['collision.kickEscapeSpeed'] === 1.8) values['collision.kickEscapeSpeed'] = 0.9;
+    }
+    // v50 及更旧备份仅迁移原按住速度默认值，保留主动调低/调高的手感参数。
+    if (typeof candidate.data.version === 'number' && candidate.data.version <= 50
+        && values['motion.heldMotionSpeedScale'] === 1) {
+        values['motion.heldMotionSpeedScale'] = 0.8;
+    }
+    if (candidate.data.version === 51 && values['motion.heldMotionSpeedScale'] === 0.65) {
+        values['motion.heldMotionSpeedScale'] = 0.8;
+    }
+    // v51及更旧备份只替换原技能默认值，避免较新本地时间戳覆盖本轮平衡。
+    // 自定义数值仍保留；角色基础属性和AI档位由共享配置直接解析。
+    if (typeof candidate.data.version === 'number' && candidate.data.version <= 51) {
+        const defaults: readonly (readonly [string, number, number])[] = [
+            ['ability.frogPerfectReward', 0.8, 0.9],
+            ['ability.legKickAcceleration', 1.4, 1.15],
+            ['ability.legKickSpeed', 1.15, 1.03],
+            ['ability.legStrokePower', 0.85, 0.9],
+            ['ability.ninjaPerfectReward', 1.35, 1.25],
+            ['ability.chainSpeedPerStack', 0.02, 0.017],
+        ];
+        for (const [key, previous, current] of defaults) {
+            if (values[key] === previous) values[key] = current;
+        }
     }
     applyTuningSnapshot(values);
     logLoadedTuning(candidate);

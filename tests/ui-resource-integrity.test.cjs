@@ -39,7 +39,7 @@ test('所有 UI 图片均有集中路径登记，所有登记路径都能解析�
     const actual = new Map();
     const counts = {};
     for (const bundle of ['assets/race', 'assets/resources']) {
-        for (const file of files(path.join(root, bundle, 'ui')).filter(file => /\.(png|jpg|jpeg|webp|prefab)$/i.test(file))) {
+        for (const file of files(path.join(root, bundle, 'ui')).filter(file => /\.(png|jpg|jpeg|webp|prefab|pac)$/i.test(file))) {
             const asset = path.relative(path.join(root, bundle), file).replace(/\\/g, '/').replace(/\.[^.]+$/, '');
             assert.ok(!actual.has(asset), `资源路径重复：${asset}`);
             assert.ok(fs.existsSync(file + '.meta'), `缺少导入信息：${file}`);

@@ -43,9 +43,9 @@ function setup(){
     const art={};for(const k of ['eventStrip','cardNormal','cardSelf','laneNormal','laneSelf','selfTag'])art[k]=k;
     const definitions=Array.from({length:8},(_,i)=>({id:`model${i}`,modelVariantId:`model${i}`,name:`角色${i}`}));
     const portraits=Object.fromEntries(definitions.map(d=>[d.id,d.id]));
-    const cc={Vec3,Color,Graphics,Label,Mask,Node,Sprite,UIOpacity,UITransform,sys,view,
+    const cc={CacheMode:{NONE:0,BITMAP:1,CHAR:2},Vec3,Color,Graphics,Label,Mask,Node,Sprite,UIOpacity,UITransform,sys,view,
         Tween:{stopAllByTarget:o=>{for(const t of tweens)if(t.o===o)t.stopped=true;}},
-        tween:o=>{const t={o,delay(seconds){this.delaySeconds=seconds;return this;},to(_s,values){this.values=values;return this;},call(f){this.cb=f;return this;},start(){tweens.push(this);return this;}};return t;}};
+        tween:o=>{const t={o,delay(seconds){this.delaySeconds=seconds;return this;},to(_s,values,options){this.values=values;this.options=options;return this;},call(f){this.cb=f;return this;},start(){tweens.push(this);return this;}};return t;}};
     const imports={cc,'../app/PlayerCharacterConfig':{PLAYER_CHARACTER_DEFINITIONS:definitions},
         '../core/ResourcePaths':{RESOURCE_PATHS:{preRaceUi:art,characterUi:{portraits}}},
         './AvatarUiAssets':{loadAvatarUiSpriteFrame:(p,cb)=>pending.push({p,cb})},
@@ -55,7 +55,7 @@ function setup(){
     vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,
         {require:p=>{assert.ok(imports[p],p);return imports[p];},module:mod,exports:mod.exports});
     const panel=new mod.exports.PreRaceIntroPanel();const parent=new Node('root');panel.build(parent,1290,720);
-    const finish=()=>{for(const t of tweens.splice(0)){if(!t.stopped){Object.assign(t.o,t.values);t.cb?.();}}};
+    const finish=()=>{for(const t of tweens.splice(0)){if(!t.stopped){Object.assign(t.o,t.values);t.options?.onUpdate?.();t.cb?.();}}};
     const resolve=()=>{for(const q of pending.splice(0))q.cb({path:q.p});};
     const resize=(width,height,left=0)=>{size={width,height};inset=left;events.get('canvas-resize')?.();};
     return {panel,parent,pending,tweens,finish,resolve,resize,events,compact:mod.exports.compactIntroName};
@@ -77,9 +77,9 @@ test('任意泳道本人唯一，复用节点，乱序名单仍按泳道，不�
     for(let self=0;self<8;self++){
         s.panel.populate(entries(self).reverse());s.resolve();
         let tags=0;for(let lane=1;lane<=8;lane++){
-            const card=find(s.parent,`LaneCard${lane}`);tags+=find(card,'SelfTag').active?1:0;
-            assert.equal(find(card,'LaneNumber').getComponent(Label).string,String(lane));
-            assert.equal(find(card,'Portrait').getComponent(Sprite).spriteFrame.path,`model${lane-1}`);
+            const card=s.panel._cards[lane-1];tags+=card.selfTag.active?1:0;
+            assert.equal(card.laneLabel.string,String(lane));
+            assert.equal(card.portrait.spriteFrame.path,`model${lane-1}`);
         }assert.equal(tags,1);assert.equal(count(s.parent),initial);
     }
     const before=s.pending.length;s.panel.populate(entries(7));assert.equal(s.pending.length,before);
@@ -90,8 +90,8 @@ test('旧立绘回调不能覆盖新角色，也不能复活空槽、改掉本�
     const s=setup();s.resolve();s.panel.populate([entries()[0]]);
     const old=s.pending.pop();s.panel.populate([{...entries()[0],modelVariantId:'model1',isPlayer:true}]);
     const next=s.pending.pop();next.cb({path:'new'});old.cb({path:'old'});
-    const card=find(s.parent,'LaneCard1');assert.equal(find(card,'Portrait').getComponent(Sprite).spriteFrame.path,'new');
-    s.panel.populate([]);next.cb({path:'late'});assert.equal(card.active,false);assert.equal(find(card,'Portrait').active,false);
+    const card=s.panel._cards[0];assert.equal(card.portrait.spriteFrame.path,'new');
+    s.panel.populate([]);next.cb({path:'late'});assert.equal(card.group.active,false);assert.equal(card.portrait.node.active,false);
     s.parent.destroy();old.cb({path:'destroyed'});assert.equal(s.events.size,0);
 });
 test('窄屏/宽屏等比适配，长昵称截断且不拆 UTF-16 代理对',()=>{
@@ -149,4 +149,30 @@ test('卡片按泳道错峰入场，重入复位且销毁取消所有动效',()=
     assert.equal(count(s.parent),initial);
     s.panel.setPhase('hidden');s.panel.setPhase('roster');
     s.parent.destroy();assert.ok(s.tweens.every(t=>t.stopped));
+});
+
+test('名牌分层保留遮罩、字体覆盖和入场同步，空泳道/本人切换不重建',()=>{
+    const s=setup(),initial=count(s.parent),cards=s.panel._cards;
+    const identities=cards.map(c=>[...c.layers.map(l=>l.node),c.portrait,c.nameLabel]);
+    assert.deepEqual(find(s.parent,'CompetitorCards').children.map(n=>n.name),['CardBases','Portraits','CardDecorations','CardReadouts','Nicknames']);
+    s.panel.populate(entries());s.resolve();s.panel.setPhase('roster');
+    for(const card of cards){
+        assert.ok(card.portrait.node.parent.getComponent(Mask));
+        assert.equal(card.nameLabel.fontWeight,'dynamic');assert.equal(card.nameLabel.cacheMode,1);
+        assert.equal(card.laneLabel.cacheMode,2);assert.equal(card.characterLabel.cacheMode,2);
+        assert.equal(card.nameLabel.node.parent.parent.name,'Nicknames');
+        card.group.setPosition(card.baseX,-11);card.opacity.opacity=123;
+        const motion=s.tweens.find(t=>t.o===card.group);motion.options.onUpdate();
+        for(const layer of card.layers){assert.equal(layer.node.position.x,card.baseX);assert.equal(layer.node.position.y,-11);assert.equal(layer.opacity.opacity,123);}
+    }
+    s.finish();
+    for(let self=0;self<8;self++){
+        s.panel.populate(entries(self).filter(e=>e.lane===self+1));
+        for(let i=0;i<8;i++){
+            const card=cards[i];assert.deepEqual([...card.layers.map(l=>l.node),card.portrait,card.nameLabel],identities[i]);
+            for(const layer of card.layers)assert.equal(layer.node.active,i===self);
+        }
+        assert.equal(count(s.parent),initial);
+    }
+    s.panel.populate([]);for(const card of cards)for(const layer of card.layers)assert.equal(layer.node.active,false);
 });

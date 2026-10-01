@@ -95,6 +95,13 @@ class PlayerDataStore {
     }
 
     completeTutorial(): Promise<void> {
+        if (this.usesCloud) {
+            // 教学标记先存本地，不排在网络/结算队列后面；也不盖掉并发业务的其它字段。
+            return backend().completeTutorial().then(profile => {
+                this._profile = { ...this._profile, tutorialCompleted: profile.tutorialCompleted };
+                this._emit();
+            });
+        }
         return this.enqueue(async () => {
             this._profile = await backend().completeTutorial();
             if (this._profile.tutorialCompleted !== true) throw new Error('教学进度未保存');
@@ -162,6 +169,7 @@ class PlayerDataStore {
             return next;
         }
         if (this._loaded) {
+            void backend().syncTutorialCompletion?.();
             return Promise.resolve(this._profile);
         }
         if (this._loading) {

@@ -97,6 +97,8 @@ export class StartupLoadingCover {
     }
 
     private showProgress(fraction: number, message: string): void {
+        // 透明页面等待沿用居中转圈，不因资源计数或下载回调切换成启动进度条。
+        if (this.presentation === 'transparent') return;
         this.retry = null;
         this.animation?.stop(); this.animation = null;
         if (this.spinner.active) this.spinner.active = false;

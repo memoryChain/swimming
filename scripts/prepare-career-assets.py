@@ -6,7 +6,7 @@ import json
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-DEST = ROOT / 'assets/race/ui/career-v1'
+DEST = ROOT / 'assets/race/ui/career/badges'
 DEST.mkdir(parents=True, exist_ok=True)
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--badge', choices=[f'badge-{tier}{suffix}' for tier in range(1, 7) for suffix in ('', '-locked')], help='只重新导出指定徽章')

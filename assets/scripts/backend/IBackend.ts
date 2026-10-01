@@ -43,6 +43,8 @@ export interface IBackend {
     /** 云端分配的公开编号；本地模拟没有正式编号。 */
     readonly uid?: number;
     completeTutorial(): Promise<PlayerProfile>;
+    /** 云端教学补传在后台进行，调用方无需等待；本地模拟无需实现。 */
+    syncTutorialCompletion?(): Promise<void>;
     executeCareer(command: CareerCommand): Promise<CareerResult>;
 
     // Load (or first-time create) this account's profile.

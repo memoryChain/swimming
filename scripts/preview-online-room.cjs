@@ -9,9 +9,9 @@ fs.mkdirSync(output, { recursive: true });
 function resource(p) {
     if (p.startsWith('avatar/')) {
         const names = { coral: 'avatar-02-future-girl', lime: 'avatar-03-courier-boy', rose: 'avatar-10-lifeguard-girl' };
-        p = `ui/avatar-picker-v1/${names[p.slice(7)] || 'avatar-01-female-diver'}/texture`;
+        p = `ui/avatars/${names[p.slice(7)] || 'avatar-01-female-diver'}/texture`;
     }
-    let file = path.join(root, 'assets/race', p.replace('/texture', '.png'));
+    let file = path.join(root, 'assets/race', p.replace(/\/(texture|spriteFrame)$/, '.png'));
     if (!fs.existsSync(file)) file = file.replace(/\.png$/, '.jpg');
     return pathToFileURL(file).href;
 }
