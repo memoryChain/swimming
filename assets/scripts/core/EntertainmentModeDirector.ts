@@ -566,9 +566,13 @@ export class EntertainmentModeDirector {
     phaseId(): EntertainmentDirectorPhase { return this.phase; }
     secondsRemaining(): number { return this.remainingSeconds; }
 
-    canSpawnResidentObstacles(): boolean {
+    canSpawnResidentObstacles(lightweightLitter = false): boolean {
         if (this.phase === EntertainmentDirectorPhase.OPENING || this.phase === EntertainmentDirectorPhase.COMPLETE) return true;
-        if (this.phase === EntertainmentDirectorPhase.GAP) return this.remainingSeconds <= 0;
+        if (this.phase === EntertainmentDirectorPhase.GAP) {
+            // 浮标保持原门控；轻垃圾在恢复前两秒之后可穿插，返场等待同样提供空档。
+            const gap = this.eventIndex >= this.events.length ? ENCORE_GAP_MIN_SECONDS : this.gapSeconds();
+            return this.remainingSeconds <= (lightweightLitter ? Math.max(0, gap - 2) : 0);
+        }
         // 仅放行已有组合安全路径的漩涡／班车稳定段，喷泉、巨浪与强袭继续避让。
         const event = this.currentEvent();
         const stage = this.gradedPlan?.stages[this.eventIndex];

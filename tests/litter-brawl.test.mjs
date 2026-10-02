@@ -12,6 +12,7 @@ const { GameState } = GameConstants;
 const {
     LitterBrawlController,
     LITTER_BRAWL_TUNING,
+    ENTERTAINMENT_LITTER_MIN_WAVE_INTERVAL_SECONDS,
     LITTER_BRAWL_INDEPENDENT_SCHEDULE,
     buildEntertainmentLitterSchedule,
     litterCorridorOverlapsObstacle,
@@ -22,6 +23,43 @@ const { encodeLitterSnapshot, decodeLitterSnapshot } = LitterSnapshotCodec;
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const allGroupsLandedSeconds = LITTER_BRAWL_TUNING.fallingSeconds
     + LITTER_BRAWL_TUNING.burstGroupIntervalSeconds * 2 + 0.01;
+
+test('全程轻垃圾等候空档，延后落点跟随进度，接管保留间隔且不连续补投', () => {
+    const racer = { active: true, finished: false, distance: 80, lateral: -8 };
+    let allow = false;
+    const waves = [];
+    const landingCenters = [];
+    const create = () => new LitterBrawlController(1, 6, 21, () => racer, wave => waves.push(wave),
+        undefined, { waveDistances: [20, 60, 100], waveCounts: [2, 2, 2], landingLeadDistance: 6 },
+        courseX => { landingCenters.push(courseX); return true; }, undefined,
+        { itemsPerWave: 2, poolSize: 6 }, undefined, undefined,
+        ENTERTAINMENT_LITTER_MIN_WAVE_INTERVAL_SECONDS, 0, () => allow, Infinity, true);
+    const host = create();
+    host.update(20, GameState.RACING);
+    assert.equal(host.cancelledCount(), 0);
+    assert.equal(host.pendingWaveCount(), 3);
+    allow = true;
+    host.update(.1, GameState.RACING);
+    assert.deepEqual(waves, [0]);
+    // 80 米为返程，当前前方 6 米映射到池内 14 米，不能沿用原 26 米落点。
+    assert.equal(landingCenters[0], 14);
+    const guest = create();
+    assert.equal(guest.applySnapshotState(host.snapshotState()).applied, true);
+    racer.distance = 115;
+    guest.update(4, GameState.RACING, false);
+    assert.deepEqual(waves, [0], '访客不可自行补投');
+    guest.update(7.9, GameState.RACING, true);
+    assert.deepEqual(waves, [0], '接管不能重置八秒补投间隔');
+    guest.update(.2, GameState.RACING, true);
+    assert.deepEqual(waves, [0, 1]);
+    assert.equal(landingCenters[landingCenters.length - 1], 21);
+    guest.cancelPendingWaves();
+    guest.cancelPendingWaves();
+    assert.equal(guest.cancelledCount(), 1);
+    assert.equal(guest.pendingWaveCount(), 0);
+    guest.update(20, GameState.RACING, true);
+    assert.deepEqual(waves, [0, 1]);
+});
 
 test('投放门关闭仍取消过期波次，恢复快照后不补投旧垃圾', () => {
     const racer = { active: true, finished: false, distance: 0, lateral: -8 };

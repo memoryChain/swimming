@@ -1,6 +1,9 @@
 import { GameState } from './GameConstants';
 import { ContactEventWindow, expandedEllipseContains, segmentHitsExpandedEllipse } from './RaceContactGeometry';
 
+// 综合轻事件的补投保护间隔，不允许把被主事件挡住的多波连成垃圾雨。
+export const ENTERTAINMENT_LITTER_MIN_WAVE_INTERVAL_SECONDS = 8;
+
 export const LITTER_BRAWL_TUNING = {
     poolSize: 18,
     waveDistances: [18, 48, 82, 118, 154] as readonly number[],
@@ -259,6 +262,7 @@ export class LitterBrawlController {
         private readonly soloLandingSearchMeters = 0,
         private readonly canSpawnWave?: () => boolean,
         private readonly maxWaveDelayDistance = Number.POSITIVE_INFINITY,
+        private readonly followLeaderOnDeferredWave = false,
     ) {
         this.randomSeed = ((seed ^ 0x6c697474) >>> 0) || 0x9e3779b9;
         this.randomState = this.randomSeed;
@@ -332,6 +336,7 @@ export class LitterBrawlController {
     /** 首位完赛或导演收尾时只取消尚未投放的波次，已出现垃圾自然漂流和下沉。 */
     cancelPendingWaves(): void {
         if (this.nextWave >= this.waveDistances.length) return;
+        this.cancelledWaveCount += this.waveDistances.length - this.nextWave;
         this.nextWave = this.waveDistances.length;
         this.spawnRetryRemaining = 0;
         this.blockedWaveSeconds = 0;
@@ -644,19 +649,20 @@ export class LitterBrawlController {
         }
         if (leaderDistance < this.waveDistances[this.nextWave]) return;
         if (this.canSpawnWave && !this.canSpawnWave()) return;
+        // 先守住两次实际投放的间隔；对象池等待不能覆盖已经保存的补投冷却。
+        if (this.minimumWaveIntervalSeconds > 0 && this.nextWave > 0
+            && this.blockedWaveSeconds === 0 && this.spawnRetryRemaining > 0) return;
         // 对象池暂满只意味着旧垃圾尚未完成下沉，不应把后续正式波次误判为安全取消。
         if (this.freeSlotCount() < this.itemsInWave(this.nextWave)) {
             this.spawnRetryRemaining = LITTER_BRAWL_TUNING.spawnSafetyRetrySeconds;
             return;
         }
         // 融合事件的上一波冷却占用现有快照字段，不能算作出生安全失败。
-        if (this.minimumWaveIntervalSeconds > 0 && this.nextWave > 0
-            && this.blockedWaveSeconds === 0 && this.spawnRetryRemaining > 0) return;
         this.blockedWaveSeconds += step;
         this.spawnRetryRemaining = Math.max(0, this.spawnRetryRemaining - step);
         if (this.spawnRetryRemaining > 0) return;
         const wave = this.nextWave;
-        if (this.spawnWave(wave)) {
+        if (this.spawnWave(wave, leaderDistance)) {
             this.onWave?.(wave);
             this.nextWave++;
             this.revision++;
@@ -677,12 +683,14 @@ export class LitterBrawlController {
         this.spawnRetryRemaining = LITTER_BRAWL_TUNING.spawnSafetyRetrySeconds;
     }
 
-    private spawnWave(wave: number): boolean {
+    private spawnWave(wave: number, leaderDistance: number): boolean {
         const itemsInWave = this.itemsInWave(wave);
         if (this.freeSlotCount() < itemsInWave) return false;
         const halfWidth = this.usableHalfWidth();
         const randomStateBeforePlan = this.randomState;
-        const raceAnchor = this.waveDistances[wave] + this.landingLeadDistance;
+        // 综合模式把旧波次留给下一空档，实际落点仍在当前选手前方，不能投回过时的泳段。
+        const raceAnchor = (this.followLeaderOnDeferredWave
+            ? Math.max(this.waveDistances[wave], leaderDistance) : this.waveDistances[wave]) + this.landingLeadDistance;
         let courseX = courseOffset(raceAnchor);
         let safeCenter = this.plannedSafeCenter
             ? this.plannedSafeCenter(wave, courseX)

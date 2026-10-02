@@ -109,7 +109,8 @@
 // v123：整局场地事件按种子穿插前中后段，保留分档挑战预算及强事件门槛。
 // v124：代表段预算预留、障碍过期截止与海龟访客受击释放；计划 balanceVersion 6。
 // v125：短局场地优先、班车预选航段与失约替补；计划 balanceVersion 7。
-export const NET_RACE_PROTOCOL_VERSION = 125;
+// v126：综合垃圾作为全程轻事件择空档投放，延后落点跟随当前进度；计划 balanceVersion 8。
+export const NET_RACE_PROTOCOL_VERSION = 126;
 
 let lastRaceStamp = 0;
 

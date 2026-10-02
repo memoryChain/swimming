@@ -21,7 +21,7 @@ const turtle = load('core/TurtleBusRules.ts');
 const { TURTLE_BUS_LAYOUT } = load('core/TurtleBusLayout.ts');
 const recovery = load('core/EntertainmentRecoveryController.ts');
 const geyser = load('core/GeyserBrawlRules.ts');
-const { LitterBrawlController, LITTER_BRAWL_TUNING } = load('core/LitterBrawlController.ts');
+const { LitterBrawlController, LITTER_BRAWL_TUNING, ENTERTAINMENT_LITTER_MIN_WAVE_INTERVAL_SECONDS } = load('core/LitterBrawlController.ts');
 const { GameState } = load('core/GameConstants.ts');
 
 function extractClass(file, className, names, context = {}) {
@@ -136,12 +136,14 @@ function auditObstacleWaves(seed, distance, grade, speed, gated) {
     const racer = { active: true, finished: false, distance: 0, lateral: -8 };
     const waves = [];
     const litter = new LitterBrawlController(1, seed, 21, () => racer,
-        wave => waves.push({ wave, seconds: +seconds.toFixed(2), distance: +racer.distance.toFixed(2) }),
+        wave => waves.push({ wave, seconds: +seconds.toFixed(2), distance: +racer.distance.toFixed(2),
+            phase: director.phaseId(), event: director.currentEvent(), remaining: director.secondsRemaining() }),
         undefined, { waveDistances: plan.obstacle.litterWaveDistances, waveCounts: plan.obstacle.litterWaveCounts,
             landingLeadDistance: LITTER_BRAWL_TUNING.landingLeadDistance }, undefined, undefined,
         { itemsPerWave: Math.max(...plan.obstacle.litterWaveCounts), poolSize: plan.obstacle.litterPoolSize },
-        undefined, undefined, 2.2, 0, gated ? () => manager.canSpawnGradedObstacleWave() : () => seconds >= 10,
-        gated ? distance * .05 : Infinity);
+        undefined, undefined, ENTERTAINMENT_LITTER_MIN_WAVE_INTERVAL_SECONDS, 0,
+        gated ? () => manager.canSpawnGradedObstacleWave(true) : () => seconds >= 10,
+        Infinity, true);
     for (let frame = 1; frame / 30 < distance / speed; frame++) {
         seconds = frame / 30;
         racer.distance = seconds * speed;

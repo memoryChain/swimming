@@ -155,7 +155,7 @@ import { MINE_RELAY_ROUNDS, MINE_RELAY_TUNING, MineRelayArm, MineRelayBrawlContr
 import { MineRelayBrawlPresentation } from './MineRelayBrawlPresentation';
 import { MinefieldBrawlController, MinefieldImpact, MinefieldRacerState, MINEFIELD_TUNING } from './MinefieldBrawlController';
 import { MinefieldBrawlPresentation } from './MinefieldBrawlPresentation';
-import { buildEntertainmentLitterSchedule, litterCorridorOverlapsObstacle, LitterBrawlController, LitterContact, LitterRacerState, LitterRigidImpact, LITTER_BRAWL_TUNING } from './LitterBrawlController';
+import { buildEntertainmentLitterSchedule, litterCorridorOverlapsObstacle, LitterBrawlController, LitterContact, LitterRacerState, LitterRigidImpact, LITTER_BRAWL_TUNING, ENTERTAINMENT_LITTER_MIN_WAVE_INTERVAL_SECONDS } from './LitterBrawlController';
 import { LitterBrawlPresentation } from './LitterBrawlPresentation';
 import { ObstacleBrawlController } from './ObstacleBrawlController';
 import { buildObstaclePlan, buildObstacleSoloLitterSchedule, OBSTACLE_MIN_WAVE_INTERVAL_SECONDS, OBSTACLE_SOLO_ANCHOR_DISTANCE, OBSTACLE_SOLO_LANDING_SEARCH_METERS, type ObstaclePlan } from './ObstacleBrawlRules';
@@ -2243,11 +2243,11 @@ export class GameManager extends Component {
         this._pendingTurtleBusState = null;
     }
 
-    private canSpawnGradedObstacleWave(): boolean {
+    private canSpawnGradedObstacleWave(lightweightLitter = false): boolean {
         if (!this._entertainmentRacePlan) return true;
         if ((this._raceManager?.elapsedSeconds ?? 0) < 10 || (this._raceManager?.hasAnyFinisher() ?? false)) return false;
         if (!this.canContinueGradedObstacleSpawns()) return false;
-        return this._entertainmentDirector?.canSpawnResidentObstacles() ?? false;
+        return this._entertainmentDirector?.canSpawnResidentObstacles(lightweightLitter) ?? false;
     }
 
     private entertainmentReferenceSpeed(): number {
@@ -3757,10 +3757,12 @@ export class GameManager extends Component {
                 }
                 return true;
             } : undefined,
-            obstaclePlan ? OBSTACLE_MIN_WAVE_INTERVAL_SECONDS : 0,
+            this._entertainmentRacePlan ? ENTERTAINMENT_LITTER_MIN_WAVE_INTERVAL_SECONDS
+                : obstaclePlan ? OBSTACLE_MIN_WAVE_INTERVAL_SECONDS : 0,
             obstaclePlan && isObstacleBrawlMode() ? OBSTACLE_SOLO_LANDING_SEARCH_METERS : 0,
-            this._entertainmentRacePlan ? () => this.canSpawnGradedObstacleWave() : undefined,
-            this._entertainmentRacePlan ? getRaceDistance() * 0.05 : Number.POSITIVE_INFINITY,
+            this._entertainmentRacePlan ? () => this.canSpawnGradedObstacleWave(true) : undefined,
+            Number.POSITIVE_INFINITY,
+            !!this._entertainmentRacePlan,
         );
         this._netRaceController?.setLitterStateListener((state, planId) => {
             if (planId > 0 && this._obstaclePlan?.identity !== planId) return;
