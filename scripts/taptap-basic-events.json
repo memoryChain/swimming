@@ -1,0 +1,55 @@
+{
+  "schema_version": 2,
+  "channel": "taptap",
+  "transport_status": "local_only",
+  "remote_registration_verified": false,
+  "common": {
+    "event_id": "string",
+    "timestamp_ms": "integer",
+    "session_id": "string",
+    "build_version": "string",
+    "schema_version": "integer",
+    "is_test": "integer",
+    "channel": "string"
+  },
+  "race_context": {
+    "race_id": "string",
+    "mode": "string",
+    "distance": "integer",
+    "character_id": "string",
+    "play_type": "string",
+    "test_type": "string"
+  },
+  "events": {
+    "lobby_ready": {
+      "title": "大厅可操作",
+      "trigger": "大厅加载成功且根节点有效，每次游戏实例一次",
+      "race_context": false,
+      "properties": { "load_ms": "integer", "source": "string" }
+    },
+    "race_start": {
+      "title": "比赛实际开始",
+      "trigger": "进入出发状态，仅本地玩家，每局一次，排除调试和托管",
+      "race_context": true,
+      "properties": {}
+    },
+    "race_end": {
+      "title": "比赛结束",
+      "trigger": "本地完赛、权威结果或明确离场，每局一个终态，不将进程消失伪造为退出",
+      "race_context": true,
+      "properties": { "outcome": "string", "time_ms": "integer", "placement": "integer", "progress_percent": "integer" }
+    },
+    "race_again": {
+      "title": "再来一局",
+      "trigger": "已结算后请求重赛，每个上一局最多一次，关联上一局 race_id",
+      "race_context": true,
+      "properties": {}
+    }
+  },
+  "notes": [
+    "项目事件字典，不是平台登记请求，TapDB 初始化完成后再按实际接口映射。",
+    "time_ms 与抖音基础埋点一致，单位为毫秒；source 暂为 unknown。",
+    "不复制抖音专属侧边栏事件，不采集账号凭证、昵称、手机号或硬件设备标识。",
+    "当前均为开发测试数据；本地日志及自有接收端确认不代表 TapDB 入库。"
+  ]
+}

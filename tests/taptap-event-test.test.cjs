@@ -75,12 +75,23 @@ test('实际开赛、玩家触壁、总结果、重赛和退出去重，保留�
     assert.equal(g.manager.returnToLogin(), 14); g.manager.returnToLogin();
     const events = controller.dump();
     assert.deepEqual(events.map(e => e.name), ['lobby_ready', 'race_start', 'race_end', 'race_again', 'race_start', 'race_end']);
-    assert.equal(events[2].properties.time_s, 16.13);
+    assert.equal(events[2].properties.time_ms, 16127);
     assert.equal(events[2].properties.progress_percent, 100);
     assert.equal(events[5].properties.outcome, 'quit');
     assert.equal(events[5].properties.progress_percent, 25);
     assert.equal(events[1].properties.race_id, events[2].properties.race_id);
     assert.notEqual(events[1].properties.race_id, events[4].properties.race_id);
+    const manifest = require('../scripts/taptap-basic-events.json');
+    assert.deepEqual([...new Set(events.map(e=>e.name))].sort(), Object.keys(manifest.events).sort());
+    for (const event of events) {
+        const definition = manifest.events[event.name];
+        const fields = {...(definition.race_context ? manifest.race_context : {}), ...definition.properties};
+        assert.deepEqual(Object.keys(event.properties).sort(), Object.keys(fields).sort());
+        for (const [key,type] of Object.entries({...manifest.common,...fields})) {
+            const value = key in fields ? event.properties[key] : event[key];
+            assert.ok(type === 'integer' ? Number.isSafeInteger(value) : typeof value === type, key);
+        }
+    }
     assert.equal(g.stateChanges(), 4); assert.equal(requests.length, 0);
 });
 
@@ -93,7 +104,7 @@ test('联机只记录本地玩家，并等待权威名次；AI 调试和托管�
     assert.equal(controller.dump().length, 1);
     g.done([{ isPlayer: false, finished: true, time: 10, placement: 1 },
         { isPlayer: true, finished: true, time: 19.75, placement: 2 }]);
-    assert.equal(controller.dump()[1].properties.time_s, 19.75);
+    assert.equal(controller.dump()[1].properties.time_ms, 19750);
     assert.equal(controller.dump()[1].properties.placement, 2);
     for (const flag of ['_aiDebugMode', '_playerAutopilotEnabled', '_playerAutopilotUsedThisRace']) {
         const other = game(controller); other.manager[flag] = true;
@@ -136,6 +147,37 @@ test('本地存储容量有界、重启保留事件 ID，未知事件及敏感�
     assert.equal(JSON.stringify(restored.dump()).includes('private'), false);
     f.advance(8 * 24 * 60 * 60 * 1000);
     assert.equal(create(f.options).status().recorded, 0);
+});
+
+test('基础字段对齐抖音毫秒口径，数值为整数且旧版秒字段不会混入', () => {
+    const f = fixture({ version: '0.0.10' });
+    f.controller.lobbyReady();
+    const g = game(f.controller);
+    g.flow.bindRaceManagerCallbacks(); g.flow.startGame();
+    g.refs.raceManager.onStateChange('diving');
+    g.refs.raceManager.onSwimmerFinished({ isPlayer: true, time: 74.168, placement: 1 });
+    const events = f.controller.dump();
+    assert.equal(events[0].properties.source, 'unknown');
+    assert.equal(events[2].properties.time_ms, 74168);
+    for (const event of events) {
+        assert.equal(event.schema_version, 2); assert.equal(event.channel, 'taptap');
+        assert.equal(event.build_version, '0.0.10'); assert.equal(event.is_test, 1);
+        assert.ok(!('time_s' in event.properties));
+        for (const value of Object.values(event.properties)) if (typeof value === 'number') assert.ok(Number.isSafeInteger(value));
+    }
+    f.controller.record('race_end', { time_s: 10, time_ms: 12.5, placement: '1', distance: NaN, progress_percent: 120 });
+    assert.deepEqual(f.controller.dump().at(-1).properties, {time_ms:13,progress_percent:100});
+});
+
+test('新字段版本与旧缓存隔离，旧诊断事件不伪装为当前字段版本', () => {
+    const f = fixture();
+    f.storage.set('swimming.tap.event-test.v1', {events:[{name:'race_end',schema_version:1}],pending:[]});
+    assert.deepEqual(create(f.options).dump(), []);
+    f.controller.lobbyReady();
+    const saved = f.storage.get('swimming.tap.event-test.v2');
+    saved.events[0].schema_version = 1;
+    assert.deepEqual(create(f.options).dump(), []);
+    assert.ok(f.storage.has('swimming.tap.event-test.v1'));
 });
 
 test('仅配置真实 HTTPS 接收端才发送，普通 HTTP 200 不确认，失败重试有上限', () => {

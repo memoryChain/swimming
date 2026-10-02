@@ -3,11 +3,13 @@
 // 开发包事件采集器。只在业务状态变化时工作，不参与比赛帧循环或同步协议。
 // 接收端未配置时只记录本地事件，绝不将日志或 HTTP 200 冒充后台入库。
 var NAMES = ['lobby_ready', 'race_start', 'race_end', 'race_again'];
-var KEY = 'swimming.tap.event-test.v1';
+var KEY = 'swimming.tap.event-test.v2';
+var SCHEMA_VERSION = 2;
 var MAX_EVENTS = 64;
 var MAX_AGE = 7 * 24 * 60 * 60 * 1000;
-var FIELDS = ['load_ms', 'race_id', 'mode', 'distance', 'character_id', 'play_type',
-    'test_type', 'outcome', 'time_s', 'placement', 'progress_percent'];
+var FIELDS = ['load_ms', 'source', 'race_id', 'mode', 'distance', 'character_id', 'play_type',
+    'test_type', 'outcome', 'time_ms', 'placement', 'progress_percent'];
+var NUMBERS = ['load_ms', 'distance', 'time_ms', 'placement', 'progress_percent'];
 
 exports.create = function (options) {
     var api = options.api || {}, config = options.config || {};
@@ -29,8 +31,12 @@ exports.create = function (options) {
         var result = {};
         for (var i = 0; i < FIELDS.length; i++) {
             var key = FIELDS[i], value = fields && fields[key];
-            if (typeof value === 'number' && Number.isFinite(value)) result[key] = value;
-            else if (typeof value === 'string' && value.length <= 80) result[key] = value;
+            if (NUMBERS.indexOf(key) >= 0) {
+                if (typeof value === 'number' && Number.isFinite(value)) {
+                    result[key] = Math.min(key === 'progress_percent' ? 100 : Number.MAX_SAFE_INTEGER,
+                        Math.round(Math.max(0, value)));
+                }
+            } else if (typeof value === 'string' && value.length <= 80) result[key] = value;
         }
         return result;
     }
@@ -38,7 +44,7 @@ exports.create = function (options) {
         return record && NAMES.indexOf(record.name) >= 0 && typeof record.event_id === 'string'
             && record.event_id.length <= 100 && Number.isFinite(record.timestamp_ms)
             && record.timestamp_ms <= now() && now() - record.timestamp_ms <= MAX_AGE
-            && record.is_test === 1 && record.schema_version === 1;
+            && record.is_test === 1 && record.schema_version === SCHEMA_VERSION;
     }
     try {
         var saved = typeof api.getStorageSync === 'function' && api.getStorageSync(KEY);
@@ -48,7 +54,7 @@ exports.create = function (options) {
                 if (!valid(record)) return;
                 var restored = { event_id: record.event_id, timestamp_ms: record.timestamp_ms,
                     name: record.name, build_version: String(record.build_version).slice(0, 20),
-                    schema_version: 1, is_test: 1, session_id: String(record.session_id).slice(0, 100),
+                    schema_version: SCHEMA_VERSION, is_test: 1, channel: 'taptap', session_id: String(record.session_id).slice(0, 100),
                     properties: clean(record.properties) };
                 history.push(restored);
                 if (saved.pending.indexOf(record.event_id) >= 0) pending.push(record.event_id);
@@ -63,8 +69,8 @@ exports.create = function (options) {
     function record(name, fields) {
         if (NAMES.indexOf(name) < 0) return;
         var entry = { event_id: session + '-' + (++sequence), name: name, timestamp_ms: now(),
-            session_id: session, build_version: config.version || '0.0.5', schema_version: 1,
-            is_test: 1, properties: clean(fields) };
+            session_id: session, build_version: config.version || 'unversioned', schema_version: SCHEMA_VERSION,
+            is_test: 1, channel: 'taptap', properties: clean(fields) };
         history.push(entry); pending.push(entry.event_id);
         if (history.length > MAX_EVENTS) {
             var removed = history.shift();
@@ -106,7 +112,7 @@ exports.create = function (options) {
         try {
             api.request({ url: endpoint, method: 'POST', timeout: 5000,
                 header: { 'content-type': 'application/json' },
-                data: { app_id: '956108', schema_version: 1, is_test: 1, events: batch },
+                data: { app_id: '956108', schema_version: SCHEMA_VERSION, is_test: 1, events: batch },
                 success: finish, fail: function () { finish(null); } });
         } catch (_) { finish(null); }
     }
@@ -127,7 +133,7 @@ exports.create = function (options) {
         s.ended = true;
         var total = Math.max(1, s.race.distance || 1);
         record('race_end', Object.assign({}, s.race, { outcome: outcome,
-            time_s: Math.round(Math.max(0, time || 0) * 100) / 100,
+            time_ms: Math.round((Number.isFinite(time) ? Math.max(0, time) : 0) * 1000),
             placement: Math.max(0, Math.floor(placement || 0)),
             progress_percent: Math.min(100, Math.max(0, Math.round((distance || 0) / total * 100))) }));
     }
@@ -156,12 +162,14 @@ exports.create = function (options) {
     }
     var controller = {
         record: record, flush: flush,
-        status: function () { return { version: config.version || '0.0.5', mode: network ? 'configured_receiver' : 'local_only',
+        status: function () { return { version: config.version || 'unversioned', schema_version: SCHEMA_VERSION,
+            channel: 'taptap', mode: network ? 'configured_receiver' : 'local_only',
             pending: pending.length, recorded: history.length, dropped: dropped, activeRaces: activeRaces }; },
         dump: function () { return JSON.parse(JSON.stringify(history)); },
         lobbyReady: function () {
             if (lobby) return;
-            lobby = true; record('lobby_ready', { load_ms: Math.max(0, now() - startedAt) });
+            // TapTap 未验证桌面/扫码来源字段，明确标 unknown，不冒充抖音侧边栏来源。
+            lobby = true; record('lobby_ready', { load_ms: Math.max(0, now() - startedAt), source: 'unknown' });
         },
         attachFlow: function (flow, manager, context) {
             if (flow) { var s = state(flow); s.manager = manager; s.context = context; }
