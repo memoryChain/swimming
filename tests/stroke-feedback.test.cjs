@@ -1,14 +1,24 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createHarness } = require('./helpers/cocos-math-harness.cjs');
-const audio=[],network=[];
+const audio=[],audioStyles=[],network=[];
 const { load, Vec3, root } = createHarness({
- './StrokeSfxManager': { StrokeSfxManager: { playStroke: perfect=>audio.push(perfect) } },
+ './StrokeSfxManager': { StrokeSfxManager: { playStroke: (perfect,butterfly)=>{audio.push(perfect);audioStyles.push(butterfly);} } },
  '../net/NetInputCapture': { captureNetInput: event=>network.push(event) },
 });
 const { GameFlowController }=load(root+'/assets/scripts/app/GameFlowController.ts');
 const { GameState, Rating, StrokeType }=load(root+'/assets/scripts/core/GameConstants.ts');
 const { RaceCameraDirector, RaceCameraMode, RACE_CAMERA_TUNING }=load(root+'/assets/scripts/camera/RaceCameraDirector.ts');
+
+test('双手结算选择一次蝶泳音效，普通单臂不切换音效类型',()=>{
+ const flow=new GameFlowController({getState:()=>GameState.RACING,playerSwimmer:{distance:1},
+  uiFlow:{showRating(){}},raceCameraDirector:{notifyStrokeSettled(){}}});
+ audioStyles.length=0;
+ flow.presentStrokeResult({rating:Rating.PERFECT,combo:1,strokeSide:StrokeType.BOTH});
+ assert.deepEqual(audioStyles,[true]);
+ flow.presentStrokeResult({rating:Rating.GOOD,combo:0,strokeSide:StrokeType.LEFT});
+ assert.deepEqual(audioStyles,[true,false]);
+});
 
 test('观战镜头逐个读取指定 AI，失效回退玩家，玩家完赛同步恢复观战状态',()=>{
  const swimmer=i=>({node:{isValid:true,active:true,position:{x:i,y:0}},distance:10+i,currentSpeed:i,

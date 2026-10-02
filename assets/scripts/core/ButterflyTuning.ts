@@ -19,6 +19,7 @@ export const BUTTERFLY_TUNING = {
     pulseSeconds: 0.20,
     pulseBudgetScale: 1.02,
     bodyWaveDegrees: 9,
+    finishDetail: 1,
     bodyHeaveMeters: 0.10,
     holdDepthMeters: 0.26,
     releaseLiftMeters: 0.09,

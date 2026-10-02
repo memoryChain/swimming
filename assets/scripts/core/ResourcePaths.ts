@@ -695,6 +695,7 @@ export const RESOURCE_PATHS = {
         result: 'result_sunlit_podium',
         buoyPop: 'sfx/buoy_balloon_pop',
         toySharkBump: 'sfx/shark_toy_bump',
+        butterflyPush: 'sfx/butterfly_push',
         strokeSfx: [
             'sfx/stroke_water_01',
         ],

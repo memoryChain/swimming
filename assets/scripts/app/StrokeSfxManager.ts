@@ -12,6 +12,8 @@ export class StrokeSfxManager {
     private static _loading = false;
     private static _nextClip = 0;
     private static _volumeScale = 1;
+    private static _butterflyPush: AudioClip | null = null;
+    private static _butterflyPushLoading = false;
     private static _buoyPop: AudioClip | null = null;
     private static _buoyPopLoading = false;
     private static _lastBuoyPopMs = -Infinity;
@@ -76,7 +78,7 @@ export class StrokeSfxManager {
 
     static preload() {
         this.ensureSource();
-        if (this._loading || this.hasEveryClip()) {
+        if (this._loading || (this.hasEveryClip() && this._butterflyPush)) {
             return;
         }
         this._loading = true;
@@ -95,12 +97,16 @@ export class StrokeSfxManager {
         });
     }
 
-    static playStroke(perfect = false) {
+    static playStroke(perfect = false, butterfly = false) {
         if (this._volumeScale <= 0) {
             return;
         }
         const source = this.ensureSource();
         if (!source) {
+            return;
+        }
+        if (butterfly && this._butterflyPush) {
+            source.playOneShot(this._butterflyPush, (perfect ? 0.50 : 0.34) * this._volumeScale);
             return;
         }
         for (let offset = 0; offset < this._clips.length; offset++) {
@@ -121,6 +127,14 @@ export class StrokeSfxManager {
     }
 
     private static loadClips(bundle: AssetManager.Bundle) {
+        // 与已有比赛音效一起预载；异步完成绝不补播过期动作。
+        if (!this._butterflyPush && !this._butterflyPushLoading) {
+            this._butterflyPushLoading = true;
+            bundle.load(RESOURCE_PATHS.music.butterflyPush, AudioClip, (error, clip) => {
+                this._butterflyPushLoading = false;
+                if (!error && clip) this._butterflyPush = clip;
+            });
+        }
         let remaining = RESOURCE_PATHS.music.strokeSfx.length;
         RESOURCE_PATHS.music.strokeSfx.forEach((path, index) => {
             bundle.load(path, AudioClip, (error, clip) => {

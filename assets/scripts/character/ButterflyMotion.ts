@@ -17,6 +17,25 @@ export function butterflyExtension(phase: number): number {
     return smooth(phase < 0.5 ? (0.12 - phase) / 0.09 : (phase - 0.91) / 0.09);
 }
 
+/** 手腕细节只作用于手骨；首尾归零，不能把翻掌扭转传回肩腋。 */
+export function butterflyWristFlex(phase: number): number {
+    return -6 * pulse(phase, 0.06, 0.20, 0.34, 0.48)
+        + 4 * pulse(phase, 0.53, 0.64, 0.78, 0.94);
+}
+
+export function butterflyWristFeather(phase: number): number {
+    return 8 * pulse(phase, 0.48, 0.60, 0.75, 0.94);
+}
+
+/** 两次下踢仍同频同相：推水附近更明确，前伸附近较轻；不增加原峰值。 */
+export function butterflyKickPower(phase: number, detail: number): number {
+    return 1.35 * (1 - 0.22 * detail * (0.5 + 0.5 * Math.cos((phase - 0.95) * Math.PI * 2)));
+}
+
+function pulse(p: number, start: number, rise: number, fall: number, end: number): number {
+    return smooth((p - start) / (rise - start)) * (1 - smooth((p - fall) / (end - fall)));
+}
+
 export function sampleButterflyArm(phase: number, upper: Vec3, fore: Vec3): void {
     const p = Math.max(0, Math.min(1, phase));
     let i = 0;

@@ -192,7 +192,7 @@ export class GameFlowController {
         if (this._refs.getState() !== GameState.RACING || !player || player.distance >= getRaceDistance()) return;
         if (!this._cameraFollowAi) this._refs.uiFlow.showRating(result.rating, result.combo, result.strokeSide);
         if (result.rating !== Rating.GOOD && result.rating !== Rating.PERFECT) return;
-        StrokeSfxManager.playStroke(result.rating === Rating.PERFECT);
+        StrokeSfxManager.playStroke(result.rating === Rating.PERFECT, result.strokeSide === StrokeType.BOTH);
         if (!this._cameraFollowAi) this._refs.raceCameraDirector.notifyStrokeSettled(result.rating === Rating.PERFECT);
     }
 

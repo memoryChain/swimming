@@ -449,6 +449,33 @@ export const SPLASH_EMITTER_TUNING = {
         rippleScale: 2.6,
     },
 
+    // 蝶泳复用左右手系统：入水减少细滴，把预算留给推水与出水各一次。
+    butterfly: {
+        entryCountMin: 3,
+        entryCountMax: 4,
+        entryFineCount: 1,
+        sheetWidthScale: 1.05,
+        sheetHeightScale: 0.68,
+        sheetSpeedScale: 0.8,
+        pushDepth: 0.30,
+        pushAboveWater: 0.06,
+        pushCount: 2,
+        perfectPushCount: 3,
+        exitCount: 2,
+        pushElevation: 12,
+        exitElevation: 24,
+        pushSpeedMin: 0.75,
+        pushSpeedMax: 1.15,
+        exitSpeedMin: 0.35,
+        exitSpeedMax: 0.60,
+        pushSizeMin: 0.075,
+        pushSizeMax: 0.12,
+        exitSizeMin: 0.04,
+        exitSizeMax: 0.065,
+        lifetimeMin: 0.18,
+        lifetimeMax: 0.26,
+    },
+
     handImpact: {
         // 手骨位于腕部，4 厘米接触带近似手掌下缘；抬高后才允许下一次拍水。
         contactHeight: 0.04,

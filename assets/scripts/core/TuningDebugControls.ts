@@ -120,6 +120,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('butterfly.pulseSeconds', '集中发力时长', '松手后的基础发力时段；强推进与疲劳适度展宽，随后按原水阻滑行。', () => BUTTERFLY_TUNING.pulseSeconds, v => BUTTERFLY_TUNING.pulseSeconds = v, 0.01, 0.12, 0.3, 2),
             control('butterfly.pulseBudgetScale', '推进预算校准', '统一校准新曲线的总推进，不改变角色属性、计费和蓄气。', () => BUTTERFLY_TUNING.pulseBudgetScale, v => BUTTERFLY_TUNING.pulseBudgetScale = v, 0.005, 0.8, 1.2, 3),
             control('butterfly.bodyWaveDegrees', '身体起伏幅度', '仅改变蝶泳骨骼起伏，不改变实际碰撞位置。', () => BUTTERFLY_TUNING.bodyWaveDegrees, v => BUTTERFLY_TUNING.bodyWaveDegrees = v, 1, 0, 16, 0),
+            control('butterfly.finishDetail', '动作收尾细节', '控制手腕脱水、双次打腿轻重与脚尖跟随；0 对照原动作，只改变外观。', () => BUTTERFLY_TUNING.finishDetail, v => BUTTERFLY_TUNING.finishDetail = v, 0.1, 0, 1, 1),
             control('butterfly.bodyHeaveMeters', '身体升沉幅度', '沿水面上下移动模型，不改变碰撞和潜水状态。', () => BUTTERFLY_TUNING.bodyHeaveMeters, v => BUTTERFLY_TUNING.bodyHeaveMeters = v, 0.01, 0, 0.18, 2),
             control('butterfly.holdDepthMeters', '按住压水深度', '按住越久压水越深，仅改变身体表现，下次起划生效。', () => BUTTERFLY_TUNING.holdDepthMeters, v => BUTTERFLY_TUNING.holdDepthMeters = v, 0.01, 0, 0.3, 2),
             control('butterfly.releaseLiftMeters', '松手回浮幅度', '松手节奏准确时抬胸回浮更充分，不额外增加推进。', () => BUTTERFLY_TUNING.releaseLiftMeters, v => BUTTERFLY_TUNING.releaseLiftMeters = v, 0.005, 0, 0.1, 3),

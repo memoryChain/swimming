@@ -1164,8 +1164,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     triggerStrokeFeedback(type: StrokeType, perfect: boolean) {
-        this._splashEmitter?.triggerStrokeFeedback(type === StrokeType.RIGHT ? 'right' : 'left', perfect);
-        if (type === StrokeType.BOTH) this._splashEmitter?.triggerStrokeFeedback('right', perfect);
+        this._splashEmitter?.triggerStrokeFeedback(type === StrokeType.RIGHT ? 'right' : 'left', perfect, type === StrokeType.BOTH);
+        if (type === StrokeType.BOTH) this._splashEmitter?.triggerStrokeFeedback('right', perfect, true);
     }
 
     triggerArmStroke() {
@@ -2579,6 +2579,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         const state = this._splashState;
+        state.butterfly = this._poseState.isFreestyleActive && this._butterflyPoseWeight > 0;
         state.armAction = this._armAction;
         state.kickAction = this._kickAction;
         state.armCycleMotion = this._armCycleMotion;

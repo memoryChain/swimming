@@ -46,6 +46,7 @@ type SplashParticleEmitter = {
 };
 
 export type SplashEmitterState = {
+    butterfly?: boolean;
     armAction: number;
     kickAction: number;
     armCycleMotion: number;
@@ -98,20 +99,27 @@ const TUNING = SPLASH_EMITTER_TUNING;
 // 用手骨下缘穿过水面判断拍水；前伸姿态本身不会触发。
 class HandWaterContact {
     readonly point = new Vec3();
+    readonly exitPoint = new Vec3();
     private readonly previous = new Vec3();
     private readonly current = new Vec3();
     private ready = false;
     private armed = false;
     triggered = false;
+    exited = false;
+    private wet = false;
 
     reset() {
         this.ready = false;
         this.armed = false;
         this.triggered = false;
+        this.exited = false;
+        this.wet = false;
     }
 
-    update(options: SplashEmitterOptions, bone: string, waterY: number, suppressed: boolean) {
+    update(options: SplashEmitterOptions, bone: string, waterY: number, suppressed: boolean, trackExit = false) {
         this.triggered = false;
+        this.exited = false;
+        if (!trackExit) this.wet = false;
         if (suppressed || !options.getBoneWorldPosition(bone, this.current)) {
             this.reset();
             return;
@@ -121,6 +129,7 @@ class HandWaterContact {
         const continuous = this.ready && Vec3.squaredDistance(this.previous, this.current) < 4;
         if (!continuous) {
             this.armed = this.current.y > raisedY;
+            this.wet = false;
         } else {
             if (this.current.y > raisedY) this.armed = true;
             if (this.armed && this.previous.y > contactY && this.current.y <= contactY) {
@@ -130,7 +139,14 @@ class HandWaterContact {
                 this.triggered = true;
                 this.armed = false;
             }
+            if (trackExit && this.wet && this.previous.y < raisedY && this.current.y >= raisedY) {
+                const t = (raisedY - this.previous.y) / (this.current.y - this.previous.y);
+                Vec3.lerp(this.exitPoint, this.previous, this.current, t);
+                this.exited = true;
+                this.wet = false;
+            }
         }
+        if (trackExit && this.current.y <= contactY) this.wet = true;
         this.previous.set(this.current);
         this.ready = true;
     }
@@ -324,10 +340,21 @@ export class SplashEmitter {
         this._splashBurst = Math.max(this._splashBurst, TUNING.burst.armGeneric);
     }
 
-    triggerStrokeFeedback(side: 'left' | 'right', perfect: boolean) {
+    triggerStrokeFeedback(side: 'left' | 'right', perfect: boolean, butterfly = false) {
         if (this._culled || !this._particleEffectsEnabled || !TUNING.particleEmitters.enableHand) return;
+        if (butterfly && this._state.legSplashSuppressed) return;
         for (const emitter of this._particleEmitters) {
             if (emitter.role !== 'hand' || emitter.side !== side) continue;
+            if (butterfly) {
+                // 松手结算只给贴近水面的手补后推细沫，不在空中或深水炸出大水片。
+                if (emitter.visual !== 'spray'
+                    || !this._options.getBoneWorldPosition(side === 'left' ? 'LeftHand' : 'RightHand', this._tmpWorld)
+                    || this._tmpWorld.y < this._waterY - TUNING.butterfly.pushDepth
+                    || this._tmpWorld.y > this._waterY + TUNING.butterfly.pushAboveWater) continue;
+                this._tmpWorld.y = this._waterY + 0.025;
+                this.playButterflyDroplets(emitter, false, perfect);
+                continue;
+            }
             const progress = side === 'left' ? this._state.leftHandWaterProgress : this._state.rightHandWaterProgress;
             this.positionParticleEmitter(emitter, 0.5, progress, 1);
             this.playParticleBurst(emitter, perfect ? 7 : 3, perfect ? 0.7 : 0.35, perfect ? 1 : 0.7);
@@ -559,8 +586,8 @@ export class SplashEmitter {
             return;
         }
 
-        this._leftHandImpact.update(this._options, 'LeftHand', this._waterY, this._state.legSplashSuppressed);
-        this._rightHandImpact.update(this._options, 'RightHand', this._waterY, this._state.legSplashSuppressed);
+        this._leftHandImpact.update(this._options, 'LeftHand', this._waterY, this._state.legSplashSuppressed, this._state.butterfly);
+        this._rightHandImpact.update(this._options, 'RightHand', this._waterY, this._state.legSplashSuppressed, this._state.butterfly);
         const speedRatio = clamp(speed / TUNING.speedNormalize, 0, 1);
         this._countSpeedFactor = this.computeCountSpeedFactor(speed);
         this.node.setPosition(this._options.owner.position.x, this._waterY, this._options.owner.position.z);
@@ -966,6 +993,9 @@ export class SplashEmitter {
                     emitter.node.setWorldPosition(this._tmpWorld);
                     this.playParticleBurst(emitter, clamp(count, TUNING.behavior.handBurstCountClampMin, TUNING.behavior.handBurstCountClampMax), speedRatio, entryScale);
                 }
+            } else if (this._state.butterfly && impact.exited && emitter.visual === 'spray') {
+                this._tmpWorld.set(impact.exitPoint);
+                this.playButterflyDroplets(emitter, true, false);
             }
             this.emitSprayFrame(emitter);
             emitter.lastContact = entry;
@@ -996,19 +1026,47 @@ export class SplashEmitter {
         emitter.node.setRotationFromEuler(config.elevation, yaw, 0);
         if (!this.node.active) this.node.active = true;
         system.play();
-        const count = Math.round(lerp(config.countMin, config.countMax, speedRatio));
+        const butterfly = this._state.butterfly;
+        const count = Math.round(lerp(butterfly ? TUNING.butterfly.entryCountMin : config.countMin,
+            butterfly ? TUNING.butterfly.entryCountMax : config.countMax, speedRatio));
         (system as any).emit(count, 0);
         // 同一系统补少量细滴，无额外节点或材质；尺寸只在出生时采样。
         setCurveRangeTwoConstants(system.startLifetime, config.fineLifetimeMin, config.fineLifetimeMax);
         setCurveRangeTwoConstants(system.startSizeX, config.fineSizeMin, config.fineSizeMax);
         setCurveRangeTwoConstants(system.startSizeY, config.fineSizeMin, config.fineSizeMax);
         setCurveRangeTwoConstants(system.startSizeZ, config.fineSizeMin, config.fineSizeMax);
-        (system as any).emit(config.fineCount, 0);
+        (system as any).emit(butterfly ? TUNING.butterfly.entryFineCount : config.fineCount, 0);
         emitter.sprayTime = 0;
         emitter.sprayRate = 0;
         emitter.sprayCarry = 0;
         emitter.keepAlive = config.lifetimeMax;
         emitter.cooldown = config.lifetimeMin;
+    }
+
+    /** 仅改出生参数，复用现有水滴系统；不改透明材质、寿命曲线等存活粒子共享参数。 */
+    private playButterflyDroplets(emitter: SplashParticleEmitter, exiting: boolean, perfect: boolean) {
+        const config = TUNING.butterfly, system = emitter.system;
+        emitter.node.setWorldPosition(this._tmpWorld);
+        const direction = this._state.movementDirection >= 0 ? 1 : -1;
+        const outward = (emitter.side === 'left' ? -1 : 1) * direction;
+        const yaw = Math.atan2(direction, -outward * (exiting ? 0.45 : 0.15)) * 180 / Math.PI;
+        emitter.node.setRotationFromEuler(exiting ? config.exitElevation : config.pushElevation, yaw, 0);
+        setCurveRangeTwoConstants(system.startLifetime, config.lifetimeMin, config.lifetimeMax);
+        setCurveRangeTwoConstants(system.startSpeed, exiting ? config.exitSpeedMin : config.pushSpeedMin,
+            exiting ? config.exitSpeedMax : config.pushSpeedMax);
+        // 与普通入水同一重力，不能因细滴改变仍存活的主水滴轨迹。
+        setCurveRange(system.gravityModifier, TUNING.handImpact.gravity);
+        const sizeMin = exiting ? config.exitSizeMin : config.pushSizeMin;
+        const sizeMax = exiting ? config.exitSizeMax : config.pushSizeMax;
+        setCurveRangeTwoConstants(system.startSizeX, sizeMin, sizeMax);
+        setCurveRangeTwoConstants(system.startSizeY, sizeMin, sizeMax);
+        setCurveRangeTwoConstants(system.startSizeZ, sizeMin, sizeMax);
+        if (system.shapeModule) { system.shapeModule.angle = 12; system.shapeModule.radius = 0.025; }
+        if (!this.node.active) this.node.active = true;
+        system.play();
+        (system as any).emit(exiting ? config.exitCount : perfect ? config.perfectPushCount : config.pushCount, 0);
+        emitter.sprayTime = emitter.sprayRate = emitter.sprayCarry = 0;
+        emitter.keepAlive = Math.max(emitter.keepAlive, config.lifetimeMax);
     }
 
     private updateLegParticleEmitter(emitter: SplashParticleEmitter, speedRatio: number, kickParticleBurstPending: boolean) {
@@ -1139,7 +1197,9 @@ export class SplashEmitter {
         const baseSpeed = !isHand && !useHandSprayProfile
             ? lerp(TUNING.behavior.legSpeedMin, TUNING.behavior.legSpeedMax, speedRatio) * pullScale
             : lerp(TUNING.behavior.handSpeedMin, TUNING.behavior.handSpeedMax, speedRatio) * pullScale;
-        const speed = baseSpeed * (isPlume ? TUNING.behavior.plumeSpeedScale : 1);
+        const butterflySheet = isHand && isPlume && this._state.butterfly;
+        const speed = baseSpeed * (isPlume ? TUNING.behavior.plumeSpeedScale : 1)
+            * (butterflySheet ? TUNING.butterfly.sheetSpeedScale : 1);
         setCurveRangeTwoConstants(emitter.system.startSpeed, speed * TUNING.behavior.speedRangeMinScale, speed * TUNING.behavior.speedRangeMaxScale);
         setCurveRangeTwoConstants(
             emitter.system.startLifetime,
@@ -1154,8 +1214,8 @@ export class SplashEmitter {
         const size = (!isHand && !useHandSprayProfile
             ? lerp(TUNING.behavior.legSizeMin, TUNING.behavior.legSizeMax, speedRatio)
             : lerp(TUNING.behavior.handSizeMin, TUNING.behavior.handSizeMax, speedRatio)) * styleSizeScale;
-        const width = size * emitter.sizeScale;
-        const height = width * emitter.heightScale;
+        const width = size * emitter.sizeScale * (butterflySheet ? TUNING.butterfly.sheetWidthScale : 1);
+        const height = size * emitter.sizeScale * emitter.heightScale * (butterflySheet ? TUNING.butterfly.sheetHeightScale : 1);
         setCurveRangeTwoConstants(emitter.system.startSizeX, width * TUNING.behavior.sizeRangeMinScale, width * TUNING.behavior.sizeRangeMaxScale);
         setCurveRangeTwoConstants(emitter.system.startSizeY, height * TUNING.behavior.sizeRangeMinScale, height * TUNING.behavior.sizeRangeMaxScale);
         setCurveRangeTwoConstants(emitter.system.startSizeZ, width * TUNING.behavior.sizeRangeMinScale, width * TUNING.behavior.sizeRangeMaxScale);

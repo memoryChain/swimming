@@ -69,12 +69,66 @@ test('每次水片爆发只发一张，不再叠加连续发射', () => {
         lerp: (a,b,t) => a+(b-a)*t,
         setCurveRange: () => {}, setCurveRangeTwoConstants: () => {},
     });
-    const h = new Subject();h.node = {};h._countSpeedFactor = 1;
+    const h = new Subject();h.node = {};h._countSpeedFactor = 1;h._state = {};
     h.particleLifetimeMin = () => 0.16;h.particleLifetimeMax = () => 0.28;
     const counts = [];h.emitJitteredParticles = (_, count) => counts.push(count);
     const emitter = { role: 'hand', visual: 'plume', sizeScale: 4, heightScale: 0.8, countScale: 0.2, system: { play() {} } };
     h.playParticleBurst(emitter, 30, 1, 1);
     assert.deepEqual(counts, [1]);assert.equal(emitter.sprayRate, 0);assert.equal(emitter.sprayTime, 0);
+});
+
+test('蝶泳脱水只在手从水中真正抬出时发生，浮在空中、瞬移或退出不补发', () => {
+    const {Vec3}=createHarness();
+    const cls=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='HandWaterContact');
+    const {HandWaterContact}=evaluate('export '+cls.getText(source),{TUNING,Vec3});
+    const contact=new HandWaterContact(); let x=0,y=.4;
+    const options={getBoneWorldPosition:(_,out)=>{out.set(x,y,0);return true;}};
+    const step=(height,active=true,suppressed=false)=>{y=height;contact.update(options,'LeftHand',0,suppressed,active);return contact.exited;};
+    assert.equal(step(.4),false); assert.equal(step(.5),false);
+    step(.02); assert.equal(contact.triggered,true);
+    assert.equal(step(.08),false); assert.equal(step(.2),true);
+    assert.ok(Math.abs(contact.exitPoint.y-TUNING.handImpact.rearmHeight)<1e-9);
+    assert.equal(step(.3),false); step(.02); assert.equal(step(.2,false),false);
+    step(.02);x=10;assert.equal(step(.4),false,'瞬移不补脱水');
+    step(.02);step(.02,true,true);assert.equal(step(.4),false,'受控后重新采样');
+    step(.02);contact.reset();assert.equal(step(.4),false,'重开不补旧事件');
+});
+
+test('蝶泳结算只在水面附近发少量后推细沫，自由泳保持原反馈', () => {
+    const {Vec3}=createHarness(); const Subject=method('triggerStrokeFeedback'); const h=new Subject();
+    Object.assign(h,{_particleEffectsEnabled:true,_culled:false,_state:{legSplashSuppressed:false},_waterY:0,_tmpWorld:new Vec3()});
+    h._particleEmitters=['left','right'].flatMap(side=>['plume','spray'].map(visual=>({side,visual,role:'hand'})));
+    let height=-.1, found=true; const calls=[];
+    h._options={getBoneWorldPosition:(_,out)=>{out.set(2,height,3);return found;}};
+    h.playButterflyDroplets=(e,exit,perfect)=>calls.push([e.side,exit,perfect,h._tmpWorld.y]);
+    h.positionParticleEmitter=()=>{};h.playParticleBurst=()=>calls.push('普通');
+    h.triggerStrokeFeedback('left',true,true);
+    assert.deepEqual(calls,[['left',false,true,.025]]);
+    for(const y of [-.5,.2]) {height=y;h.triggerStrokeFeedback('right',false,true);}
+    height=-.1;found=false;h.triggerStrokeFeedback('right',false,true);
+    found=true;h._state.legSplashSuppressed=true;h.triggerStrokeFeedback('right',false,true);
+    h._state.legSplashSuppressed=false;h._culled=true;h.triggerStrokeFeedback('right',false,true);
+    assert.equal(calls.length,1,'深水、空中、缺骨、受控和离屏均不发射');
+    h._culled=false;h.triggerStrokeFeedback('right',false);
+    assert.deepEqual(calls.slice(1),['普通','普通']);
+});
+
+test('蝶泳推水及脱水为一次性小粒子，前后方向正确且不缩短已有粒子寿命', () => {
+    const {Vec3,Quat}=createHarness(); const Subject=method('playButterflyDroplets',{
+        setCurveRange:(r,v)=>{r.min=r.max=v;},setCurveRangeTwoConstants:(r,a,b)=>{r.min=a;r.max=b;},
+    });
+    for(const direction of [-1,1]) for(const side of ['left','right']) for(const exit of [false,true]) {
+        const h=new Subject();Object.assign(h,{_state:{movementDirection:direction},_tmpWorld:new Vec3(3,.12,4),node:{active:false}});
+        const counts=[],rotation=new Quat(),system={shapeModule:{},play(){},emit:n=>counts.push(n)};
+        for(const k of ['startLifetime','startSpeed','startSizeX','startSizeY','startSizeZ','gravityModifier'])system[k]={};
+        const emitter={side,system,node:{setWorldPosition(){},setRotationFromEuler:(x,y,z)=>Quat.fromEuler(rotation,x,y,z)},keepAlive:.4,sprayTime:1,sprayRate:5,sprayCarry:1};
+        h.playButterflyDroplets(emitter,exit,true);
+        assert.deepEqual(counts,[exit?2:3]);assert.equal(emitter.sprayTime,0);assert.equal(emitter.sprayRate,0);
+        assert.equal(emitter.keepAlive,.4);assert.equal(system.gravityModifier.min,TUNING.handImpact.gravity);
+        const axis=Vec3.transformQuat(new Vec3(),new Vec3(0,0,-1),rotation);
+        assert.ok(axis.x*direction<0 && axis.y>0,'后推方向及向上脱落');
+        assert.ok(axis.z*(side==='left'?-1:1)*direction>0,'两侧向外');
+    }
 });
 test('离水阶段停止后续脚部发射，不清掉刚触发的出水爆发', () => {
     const Subject = method('updateLegParticleEmitter');const h = new Subject();h._state = { legSplashSuppressed: true };
@@ -146,14 +200,14 @@ test('手掌下穿水面才触发，前伸悬停、上浮和水下停留均不�
 test('拍水在各自手骨落点即时发射少量水滴，无持续补发', () => {
     const { Vec3 } = createHarness();
     const Subject=method('playHandImpact',{lerp:(a,b,t)=>a+(b-a)*t,setCurveRange:()=>{},setCurveRangeTwoConstants:()=>{}});
-    for(const side of ['left','right']) for(const speed of [0,1]) {
+    for(const side of ['left','right']) for(const speed of [0,1]) for(const butterfly of [false,true]) {
         const h=new Subject();let position;const counts=[];
-        h.node={active:true};h._state={movementDirection:1};h._waterY=2;h._tmpWorld=new Vec3();
+        h.node={active:true};h._state={movementDirection:1,butterfly};h._waterY=2;h._tmpWorld=new Vec3();
         h._leftHandImpact={point:new Vec3(3,2,11)};h._rightHandImpact={point:new Vec3(5,2,12)};
         const emitter={side,node:{setWorldPosition:p=>position={x:p.x,y:p.y,z:p.z},setRotationFromEuler(){}},system:{shapeModule:{},play(){},emit:n=>counts.push(n)},sprayTime:1,sprayRate:20,sprayCarry:1};
         h.playHandImpact(emitter,speed);
         assert.deepEqual(position,{x:side==='left'?3:5,y:2+TUNING.handImpact.height,z:side==='left'?11:12});
-        assert.deepEqual(counts,[speed===0?4:6,TUNING.handImpact.fineCount]);
+        assert.deepEqual(counts,butterfly ? [speed===0?3:4,1] : [speed===0?4:6,TUNING.handImpact.fineCount]);
         assert.equal(emitter.sprayTime,0);assert.equal(emitter.sprayRate,0);assert.equal(emitter.sprayCarry,0);
         assert.equal(emitter.keepAlive,TUNING.handImpact.lifetimeMax);
     }

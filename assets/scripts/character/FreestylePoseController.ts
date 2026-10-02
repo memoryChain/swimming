@@ -1,5 +1,5 @@
 import { RecoveryFloatPose } from './RecoveryFloatPose';
-import { butterflyExtension, sampleButterflyArm } from './ButterflyMotion';
+import { butterflyExtension, butterflyKickPower, butterflyWristFeather, butterflyWristFlex, sampleButterflyArm } from './ButterflyMotion';
 import { BUTTERFLY_TUNING } from '../core/ButterflyTuning';
 import type { ButterflyBuoyancy } from '../swimmer/ButterflyBuoyancy';
 import { Node, Quat, Vec3 } from 'cc';
@@ -611,9 +611,11 @@ export class FreestylePoseController {
         this.applySurfaceArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, cycle, 1, true);
         // 同相双腿，与躯干错开少量相位；膝关节沿已有受限求解器屈伸。
         const kick = cycle * 2 - 0.95 + extraKickCycle;
+        const detail = clamp(BUTTERFLY_TUNING.finishDetail, 0, 1);
+        const kickPower = butterflyKickPower(p, detail);
         const thighFollow = Math.cos((p - 1.10) * Math.PI * 2) * wavePower * 0.7 - pelvisPitch;
-        this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, kick, 1.35, thighFollow);
-        this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, kick, 1.35, thighFollow);
+        this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, kick, kickPower, thighFollow, detail * 0.12);
+        this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, kick, kickPower, thighFollow, detail * 0.12);
         if (blend < 1) {
             for (let i = 0; i < this._manualBones.length; i++) {
                 const bone = this._manualBones[i];
@@ -1471,6 +1473,15 @@ export class FreestylePoseController {
             }
         }
         if (extension > 0) this.applyProneStraightReach(arm, foreArm, hand, extension);
+        if (butterfly) {
+            const p = cycle / (Math.PI * 2);
+            const detail = clamp(BUTTERFLY_TUNING.finishDetail, 0, 1) * (1 - extension);
+            if (detail > 0) {
+                Quat.fromEuler(this._tmpOffsetRotation, butterflyWristFlex(p) * detail, side * butterflyWristFeather(p) * detail, 0);
+                Quat.multiply(this._tmpResultRotation, hand.rotation, this._tmpOffsetRotation);
+                hand.setRotation(this._tmpResultRotation);
+            }
+        }
         if (weight < 1) {
             this.blendSurfaceBone(shoulder, this._surfaceShoulderRotation, weight);
             this.blendSurfaceBone(arm, this._surfaceArmRotation, weight);
@@ -2620,7 +2631,7 @@ export class FreestylePoseController {
         return out;
     }
 
-    private applyLeg(upLeg: Node, leg: Node, foot: Node, toe: Node, cycle: number, power: number, bodyFollowDegrees = 0) {
+    private applyLeg(upLeg: Node, leg: Node, foot: Node, toe: Node, cycle: number, power: number, bodyFollowDegrees = 0, footLag = 0) {
         if (!upLeg || !leg) {
             return;
         }
@@ -2628,14 +2639,14 @@ export class FreestylePoseController {
         const side = upLeg === this._leftUpLeg ? -1 : 1;
         const hip = Math.sin(cycle);
         const knee = Math.sin(cycle - 0.42);
-        const ankle = Math.sin(cycle - 0.72);
+        const ankle = Math.sin(cycle - 0.72 - footLag);
         const downBeat = Math.max(0, -hip);
         const calfUnderWater = Math.max(0, -knee);
         const calfHigh = Math.max(0, knee);
         const highNeutral = 1 - Math.min(1, calfHigh * 1.35);
         const plantarFlex = 16 + downBeat * 18 + calfUnderWater * 8;
         const footPitch = ankle * 8 * power - plantarFlex * power;
-        const toePitch = ankle * 4.5 * power - plantarFlex * 0.62 * power;
+        const toePitch = (footLag === 0 ? ankle : Math.sin(cycle - 0.72 - footLag * 2)) * 4.5 * power - plantarFlex * 0.62 * power;
 
         this.applyBoneOffset(upLeg, hip * 6.5 * power + bodyFollowDegrees, side * 0.35 * highNeutral, 0);
         this.applyBoneOffset(leg, knee * 10.5 * power - downBeat * 4.5 * power, side * 0.2 * highNeutral, side * 0.35 * highNeutral);
