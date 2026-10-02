@@ -62,7 +62,7 @@ function snapshot(root, entry, delay, cc) {
     visit(root);
     labels.forEach(function (label, index) { log('label', { entry: entry, delayMs: delay, index: index, label: label }); });
 }
-exports.install = function (cc) {
+exports.install = function (cc, options) {
     if (installed) return;
     installed = true;
     log('installed', { version: '0.0.4' });
@@ -97,7 +97,13 @@ exports.install = function (cc) {
         var entry = ++entries;
         log('entered', { entry: entry });
         [500, 3000, 12000].forEach(function (delay) {
-            setTimeout(function () { snapshot(page, entry, delay, cc); }, delay);
+            setTimeout(function () {
+                snapshot(page, entry, delay, cc);
+                if (delay === 500 && options && typeof options.inspectPage === 'function') {
+                    try { options.inspectPage(page, entry); }
+                    catch (error) { log('texture-probe-error', { error: String(error) }); }
+                }
+            }, delay);
         });
         return result;
     };
