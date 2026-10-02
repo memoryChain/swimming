@@ -137,14 +137,14 @@ test('实际模型入口仅在蝶泳测试分配状态，特殊动作阻止启�
         { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
     vm.runInNewContext(code, context);
     const rig = new context.Rig();
-    let presented = -1, mode = -1;
+    let presented = -1, mode = -1, recovery = 0, presentedRecovery = 0;
     Object.assign(rig, {
         _bodyRollTest: null, _loaded: false, _butterflyPoseWeight: 0, _treadWaterWeight: 0,
         _pose: { setMovementHeadingRadians() {}, setMovementPitchRadians() {}, setSurfaceBodyUpProjection() {},
-            setBodyRollTestPose(v) { mode = v; } },
+            setBodyRollTestPose(v, roll, left = 0, right = 0) { mode = v; recovery = right; } },
         consumeThrottledMotionDt: dt => dt,
         updateVisualArmCycles(l, r) { this._visualLeftArmCycle = l; this._visualRightArmCycle = r; },
-        updateFreestyle() { presented = mode; },
+        updateFreestyle() { presented = mode; presentedRecovery = recovery; },
     });
     const motor = { butterfly: null, rightArmCycle: 0, leftArmCycle: 0, currentSpeed: 2,
         axialRollAngularVelocity: 0, collisionPitchAngularVelocity: 0 };
@@ -158,10 +158,12 @@ test('实际模型入口仅在蝶泳测试分配状态，特殊动作阻止启�
         peak = Math.max(peak, presented); assert.equal(mode, -1);
     }
     assert.ok(peak > 0.95);
+    assert.ok(presentedRecovery > 0.95, '玩家入口把抬肘权重传入实际动作求解');
+    assert.equal(recovery, 0, '调用结束后清理临时抬肘参数');
     for (let i = 120; i < 360; i++) {
         motor.rightArmCycle = i / 60 * TAU;
         rig.updateFreestyleFromMotor(1 / 60, motor, 1, 0, 0, 1, false, true);
-        if (i >= 180) assert.equal(presented, 0);
+        if (i >= 180) { assert.equal(presented, 0); assert.equal(presentedRecovery, 0); }
     }
     // 八人模式 AI 只启用表现，完全不创建蝶泳玩法状态。
     motor.butterfly = null;
@@ -173,6 +175,7 @@ test('实际模型入口仅在蝶泳测试分配状态，特殊动作阻止启�
         peak = Math.max(peak, presented); assert.equal(mode, -1);
     }
     assert.ok(peak > 0.95, '八人测试的自由泳 AI 也会转体');
+    assert.ok(presentedRecovery > 0.95, 'AI 入口也把抬肘权重传入实际动作求解');
     assert.equal(motor.butterfly, null, '转体不开放 AI 蝶泳输入');
 });
 

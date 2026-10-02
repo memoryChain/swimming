@@ -55,14 +55,18 @@ def main():
         camera.rotation_euler = (Vector((2.7, 1.1, 0)) - camera.location).to_track_quat('-Z', 'Y').to_euler()
         target = OUT / view
         target.mkdir(exist_ok=True)
-        for i in range(120):
+        for i in ([6, 9, 10, 12, 14, 16, 20] if '--stills' in sys.argv else range(120)):
             scene.frame_set(i)
             scene.render.filepath = str(target / f'{i:03}.png')
             bpy.ops.render.render(write_still=True)
+        if '--stills' in sys.argv:
+            continue
         subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y',
                         '-framerate', '30', '-i', str(target / '%03d.png'),
                         '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20',
                         str(OUT / f'{view}.mp4')], check=True)
+    if '--stills' in sys.argv:
+        return
     review = (ROOT / 'scripts/templates/freestyle-body-roll-review.html').read_text(encoding='utf-8')
     if PREVIOUS:
         review = review.replace('下排：原游姿', '下排：上一版骨盆与胸肩转体').replace('上排：转体实验', '上排：整个模型侧倾')
@@ -76,6 +80,16 @@ def main():
                                 '两排转肩幅度与时序完全相同，只比较回臂时手的抬高、外摆与屈肘。暂不播放旧换气动作。')
         review = review.replace('重点看肩线和背部是否随左右划水连续变化，骨盆是否小幅跟随，头是否保持稳定。肌肉男原本已有转体，本版统一时序与关节配合；其他角色增加胸肩与骨盆联动，不以“所有角度都更大”作为验收标准。',
                                 '重点看手是否更贴近身体回到前方，以及出水、回臂、入水能否连续衔接。肌肉男保留原高肘曲线；深潜先锋等角色增加适度屈肘，收小直臂甩出的幅度。')
+        review = review.replace('实验目录', '当前蝶泳开发分支')
+    if '--high-elbow' in sys.argv:
+        if not PREVIOUS:
+            raise ValueError('抬肘对照必须使用 --previous')
+        review = review.replace('下排：上一版骨盆与胸肩转体', '下排：原回臂').replace('上排：整个模型侧倾', '上排：抬肘、手先落下')
+        review = review.replace('整个模型侧倾对照', '稳定俯泳抬肘回臂')
+        review = review.replace('先让划水具有连续的胸肩侧转，再决定是否叠加换气。这一版暂不播放旧换气动作。',
+                                '保留已认可的身体转肩。稳定俯泳时抬肘、小臂下垂、手先落下再前伸；被撞翻时平滑恢复原划水动作。')
+        review = review.replace('重点看肩线和背部是否随左右划水连续变化，骨盆是否小幅跟随，头是否保持稳定。肌肉男原本已有转体，本版统一时序与关节配合；其他角色增加胸肩与骨盆联动，不以“所有角度都更大”作为验收标准。',
+                                '重点看回臂中后段的手是否低于肘、肘部是否逐渐展开。两排身体转肩相同；此段展示稳定俯泳，物理翻滚退出另由动作测试检查。未放慢划水节奏，手与实际水面的关系仍需实玩确认。')
         review = review.replace('实验目录', '当前蝶泳开发分支')
     (OUT / 'index.html').write_text(review, encoding='utf-8')
 

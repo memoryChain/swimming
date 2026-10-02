@@ -1,3 +1,5 @@
+import { FreestyleRecoveryAdmission } from './FreestyleRecoveryMotion';
+
 /** 仅用于本地动作实验：真实左右划水驱动身体侧转，不产生输入或推进。 */
 export const FREESTYLE_BODY_ROLL_TUNING = {
     // 主侧倾由完整可见模型承担，胸廓只补8°，不再单独拧骨盆。
@@ -28,6 +30,9 @@ export function freestyleRecoveryRoll(cycle: number): number {
 }
 
 export class FreestyleBodyRollMotion {
+    private readonly _recovery = new FreestyleRecoveryAdmission();
+    get leftRecovery(): number { return this._recovery.left; }
+    get rightRecovery(): number { return this._recovery.right; }
     private _left = 0;
     private _right = 0;
     private _ready = false;
@@ -38,6 +43,7 @@ export class FreestyleBodyRollMotion {
     get roll(): number { return this._roll; }
 
     reset(): void {
+        this._recovery.reset();
         this._ready = false;
         this._left = this._right = this._idle = this._weight = this._roll = 0;
     }
@@ -65,5 +71,7 @@ export class FreestyleBodyRollMotion {
         this._weight += (gate - this._weight) * (1 - Math.exp(-step / FREESTYLE_BODY_ROLL_TUNING.fadeSeconds));
         if (gate === 0 && this._weight < 0.001) this._weight = 0;
         if (target === 0 && Math.abs(this._roll) < 0.0001) this._roll = 0;
+        this._recovery.update(step, left, right, allowed && gate > 0,
+            bodyUp, pitch, rollSpeed, pitchSpeed);
     }
 }

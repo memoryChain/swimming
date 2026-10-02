@@ -20,6 +20,7 @@ import type { SurfaceSwimStyle } from '../core/ResourcePaths';
 import { proneFreestyleExtensionWeight, proneFreestyleRollSignal, proneFreestyleWeight, sampleProneFreestyleArm } from './ProneFreestyleMotion';
 import { FREESTYLE_BREATHING_TUNING } from './FreestyleBreathingMotion';
 import { FREESTYLE_BODY_ROLL_TUNING } from './FreestyleBodyRollMotion';
+import { highElbowRecoveryEnvelope, sampleHighElbowRecovery } from './FreestyleRecoveryMotion';
 
 type InterpolatedActionSample = SampledActionMotionSample & {
     nextFootOrientationDeltas?: SampledActionMotionSample['footOrientationDeltas'];
@@ -104,14 +105,20 @@ export class FreestylePoseController {
     private _bodyRollTestWeight = -1;
     private _bodyRollTestSignal = 0;
     private _bodyRollTestModelAngle = 0;
+    private _leftHighElbowWeight = 0;
+    private _rightHighElbowWeight = 0;
+    private readonly _recoveryArmRotation = new Quat();
+    private readonly _recoveryForeRotation = new Quat();
     private readonly _bodyRollPivotBefore = new Vec3();
     private readonly _bodyRollPivotAfter = new Vec3();
     private readonly _bodyRollRootPosition = new Vec3();
 
-    /** -1 保留原动作；实验只替换视觉转体，权重由真实姿态准入决定。 */
-    setBodyRollTestPose(weight: number, signal = 0): void {
+    /** -1 保留原动作；转体与抬肘分别使用真实姿态准入权重。 */
+    setBodyRollTestPose(weight: number, signal = 0, leftRecovery = 0, rightRecovery = 0): void {
         this._bodyRollTestWeight = weight < 0 ? -1 : clamp(weight, 0, 1);
         this._bodyRollTestSignal = clamp(signal, -1, 1);
+        this._leftHighElbowWeight = weight < 0 ? 0 : clamp(leftRecovery, 0, 1);
+        this._rightHighElbowWeight = weight < 0 ? 0 : clamp(rightRecovery, 0, 1);
     }
 
     private _breathingTestWeight = -1;
@@ -565,6 +572,8 @@ export class FreestylePoseController {
         );
         this.applySurfaceArm(this._leftShoulder, this._leftArm, this._leftForeArm, this._leftHand, this.armPoseCycle(leftArmCycle), armPower);
         this.applySurfaceArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(rightArmCycle), armPower);
+        this.applyHighElbowRecovery(this._leftArm, this._leftForeArm, this._leftHand, this.armPoseCycle(leftArmCycle), this._leftHighElbowWeight);
+        this.applyHighElbowRecovery(this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(rightArmCycle), this._rightHighElbowWeight);
         this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, leftKickCycle, kickPower);
         this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, rightKickCycle, kickPower);
         this.applyBodyRollModelTilt();
@@ -1577,6 +1586,34 @@ export class FreestylePoseController {
         if (this._bodyRollTestWeight <= 0) return 0;
         const phase = positiveMod(cycle, Math.PI * 2) / (Math.PI * 2);
         return this._bodyRollTestWeight * smoothPulse(phase, 0.50, 0.64, 0.82, 0.98);
+    }
+
+    private applyHighElbowRecovery(arm: Node, foreArm: Node, hand: Node, cycle: number, admission: number): void {
+        if (admission <= 0 || !arm || !foreArm || !hand) return;
+        const weight = admission * highElbowRecoveryEnvelope(cycle);
+        if (weight <= 0) return;
+        Quat.copy(this._recoveryArmRotation, arm.rotation);
+        Quat.copy(this._recoveryForeRotation, foreArm.rotation);
+        const side = arm === this._leftArm ? 1 : -1;
+        sampleHighElbowRecovery(cycle, this._proneUpperDirection, this._proneForeDirection);
+        this.movementForwardInRoot(this._tmpMovementForwardRoot);
+        this.setProneArmDirection(this._proneUpperDirection, side);
+        this.swingRecoveryBone(arm, foreArm);
+        this.setProneArmDirection(this._proneForeDirection, side);
+        this.applyBoneOffset(foreArm, 0, 0, 0);
+        this.swingRecoveryBone(foreArm, hand);
+        this.blendSurfaceBone(arm, this._recoveryArmRotation, weight);
+        this.blendSurfaceBone(foreArm, this._recoveryForeRotation, weight);
+    }
+
+    /** 保留原动作的轴向关系，只作最短方向摆动，避免将额外翻掌集中到肩腋。 */
+    private swingRecoveryBone(bone: Node, child: Node): void {
+        this.root.getWorldRotation(this._tmpRootWorldRotation);
+        Vec3.transformQuat(this._tmpDirection, this._tmpDirection, this._tmpRootWorldRotation);
+        bone.getWorldPosition(this._tmpGroundHip);
+        child.getWorldPosition(this._tmpGroundKnee);
+        Vec3.subtract(this._tmpWorldDirection, this._tmpGroundKnee, this._tmpGroundHip);
+        this.rotateWorldBoneDirection(bone, this._tmpWorldDirection, this._tmpDirection);
     }
 
     private setProneArmDirection(direction: Vec3, side: number) {

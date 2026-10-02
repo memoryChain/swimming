@@ -1323,7 +1323,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 this._visualRightArmCycle + FREESTYLE_POSE_TUNING.armForwardCycleOffset,
                 allowed, bodyUpProjection, movementPitchRadians,
                 motor.axialRollAngularVelocity, motor.collisionPitchAngularVelocity);
-            this._pose.setBodyRollTestPose(motion.weight, motion.roll);
+            this._pose.setBodyRollTestPose(motion.weight, motion.roll, motion.leftRecovery, motion.rightRecovery);
         }
         // 正常收拍允许短暂淡出；取消、翻身或特殊动作接管立即撤销蝶泳叠加。
         if (!motor.butterfly?.active && motor.butterfly?.progress !== 1) this._butterflyPoseWeight = 0;

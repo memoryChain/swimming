@@ -53,7 +53,7 @@ for (const file of ['MuscleMan.glb', 'CartonSwimmer13.glb']) {
         rig.pose.setMovementHeadingRadians(sample.heading);
         rig.pose.setMovementPitchRadians(sample.pitch);
         rig.pose.setSurfaceBodyUpProjection(projection);
-        rig.pose.setBodyRollTestPose(before ? -1 : motion.weight,motion.roll);
+        rig.pose.setBodyRollTestPose(before ? -1 : motion.weight,motion.roll,motion.leftRecovery ?? 0,motion.rightRecovery ?? 0);
         const drive = Math.max(.85,Math.min(1.45,.9+sample.speed*.16));
         rig.pose.applyFreestylePose(sample.left,sample.right,sample.leftKick,sample.rightKick,sample.bodyPhase,drive,drive,drive);
         if(f < firstFrame)continue;
