@@ -3,6 +3,12 @@
 // 分析 vConsole 导出，不修改日志、不上传。未知阶段保持未知，不能把无错误当正常。
 const fs = require('node:fs');
 function timestampOf(line) {
+    // 宿主日志带显式时区时优先使用它，避免云测导出语言/时区影响入口前耗时。
+    const hostDate = line.match(/\b(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+\d{4}\s+\d{2}:\d{2}:\d{2}\s+GMT[+-]\d{4}\b/);
+    if (hostDate) {
+        const value = Date.parse(hostDate[0]);
+        if (Number.isFinite(value)) return value;
+    }
     const m = line.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(上午|下午)?\s*(\d{1,2}):(\d{2}):(\d{2})/);
     if (!m) return null;
     let hour = Number(m[5]);
@@ -42,8 +48,11 @@ function analyze(text) {
     const slowest = [...stages.values()].sort((a, b) => b.elapsed_ms - a.elapsed_ms).slice(0, 12);
     const warnings = events.filter(e => /waiting|failed/.test(e.name)).map(e => ({ name: e.name,
         since_entry_ms: e.since_entry_ms, properties: e.properties }));
-    const gap = entry && containerAt !== null ? Math.max(0, entry.timestamp_ms - containerAt) : null;
+    const rawGap = entry && containerAt !== null ? entry.timestamp_ms - containerAt : null;
+    // 秒级宿主时间与毫秒级入口时间可能存在小偏差；负值不得伪装成“零等待”。
+    const gap = rawGap !== null && rawGap >= 0 ? rawGap : null;
     const notes = [...new Set(parseErrors)];
+    if (rawGap !== null && rawGap < 0) notes.push('容器时间晚于游戏入口，时间顺序不一致；入口前耗时保持未知，需核对时区、时钟及日志来源。');
     if (!entry) notes.push('未发现游戏入口计时标记；可能尚未执行入口，或该版本/导出没有采集到此标记。');
     if (gap !== null && gap >= 10000) notes.push('容器首条日志至游戏入口之间存在较长间隔；这段不属于已测量的游戏资源加载，具体原因仍需宿主调试。');
     if (!ready) notes.push('未观察到大厅就绪标记，不能据此认定永久卡死。');
