@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>自由泳基础转体 · 正常速度对照</title>
+<style>
+body{margin:0;background:#171b23;color:#eef2f7;font:16px/1.7 system-ui,sans-serif}main{max-width:1080px;margin:auto;padding:28px 20px}h1{font-size:26px;margin:0 0 8px}h2{font-size:18px}p{color:#b7c3d4}strong{color:#edf3ff}.view{position:relative;background:#3d3d3d;border-radius:12px;overflow:hidden}video{width:100%;display:block}.tag{position:absolute;left:12px;border-radius:5px;padding:2px 9px;font-size:14px;pointer-events:none}.new{top:8%;background:#246c60}.old{top:48%;background:#465265}button{background:#303b4d;border:1px solid #516078;border-radius:7px;padding:9px 15px;color:white;cursor:pointer;margin:0 8px 10px 0}.note{border-left:3px solid #64c4b1;padding-left:14px}.columns{display:flex;justify-content:space-around;color:#b7c3d4;font-size:14px;margin:8px 0}
+</style>
+<main>
+<h1>自由泳基础转体 · 第一轮实验</h1>
+<p>先让划水具有连续的胸肩侧转，再决定是否叠加换气。这一版暂不播放旧换气动作。</p>
+<p class="note"><strong>这是运行时骨骼与原模型的离线重放，不是游戏录像。</strong><br>同一组真实玩家输入，4秒、30帧／秒，默认正常速度。未包含游戏水面、正式镜头、水花及全部动作叠加。</p>
+<button id="play">同步从头播放</button><button id="pause">全部暂停</button>
+<h2>斜上方视角</h2><div class="columns"><span>肌肉男</span><span>深潜先锋</span></div>
+<div class="view"><video src="oblique.mp4" controls muted loop playsinline preload="auto"></video><span class="tag new">上排：转体实验</span><span class="tag old">下排：原游姿</span></div>
+<h2>较低侧面视角</h2><div class="columns"><span>肌肉男</span><span>深潜先锋</span></div>
+<div class="view"><video src="side.mp4" controls muted loop playsinline preload="auto"></video><span class="tag new">上排：转体实验</span><span class="tag old">下排：原游姿</span></div>
+<p>重点看肩线和背部是否随左右划水连续变化，骨盆是否小幅跟随，头是否保持稳定。肌肉男原本已有转体，本版统一时序与关节配合；其他角色增加胸肩与骨盆联动，不以“所有角度都更大”作为验收标准。</p>
+<p>游戏内仅在实验目录的「调试模式 → 蝶泳测试」生效：单人、八人及7个AI均启用。实机仍需观察正常镜头下能否辨认，以及受撞、停划、蝶泳切换后的恢复。</p>
+</main>
+<script>
+const videos=[...document.querySelectorAll('video')];
+document.querySelector('#play').onclick=()=>videos.forEach(v=>{v.currentTime=0;v.playbackRate=1;v.play().catch(()=>{});});
+document.querySelector('#pause').onclick=()=>videos.forEach(v=>v.pause());
+</script>
+</html>

@@ -83,6 +83,32 @@ test('能力开关可以独立创建输入，但不切换测试场人数、读�
     assert.doesNotMatch(text('assignRaceLanes') + text('buildDeferredAiSwimmers'), /_butterflyEnabled/);
 });
 
+test('实际玩家与AI创建入口仅在蝶泳测试启用自由泳转体，正式蝶泳能力独立保留', () => {
+    const src=source('core/GameManager'),calls=[];
+    const declaration=src.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='GameManager');
+    function collect(n) {
+        if(ts.isExpressionStatement(n)&&ts.isCallExpression(n.expression)
+            &&/\.enable(?:Butterfly|FreestyleBodyRollTest)$/.test(n.expression.expression.getText(src))) calls.push(n.getText(src));
+        ts.forEachChild(n,collect);
+    }
+    for(const member of declaration.members) if(['buildPlayerSwimmer3D','buildDeferredAiSwimmers'].includes(member.name?.getText(src))) collect(member);
+    assert.equal(calls.length,3,'玩家的两个独立开关以及AI的表现开关均须接入');
+    const js=ts.transpileModule(`(function(){${calls.join('\n')}}).call(manager);`,
+        {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
+    for(const [debug,net,room] of [[false,null,false],[true,null,false],[true,{},false],[true,null,true]]) {
+        const manager=managerFixture(debug,net,room,true);
+        const player=createBody().body,ai=createBody().body;
+        player.enableButterfly(false);ai.enableButterfly(false);
+        Object.assign(manager,{_playerSwimmer:player,_aiSwimmers:[ai]});
+        vm.runInNewContext(js,{manager,i:0});
+        const expected=debug&&!net&&!room;
+        assert.equal(player._freestyleBodyRollTestEnabled,expected);
+        assert.equal(ai._freestyleBodyRollTestEnabled,expected);
+        assert.equal(player.beginButterfly(),!net&&!room,'本地正式模式继续可以蝶泳');
+        assert.equal(ai.beginButterfly(),false,'转体不开放AI蝶泳玩法');
+    }
+});
+
 test('娱乐单项及综合娱乐调试经实际输入工厂起划、松手结算和重开，不依赖蝶泳页标记', () => {
     const balance=load('core/GameBalance'),oldMode=balance.getRaceMode();
     const oldNow=Date.now;let now=1000;Date.now=()=>now;

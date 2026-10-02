@@ -9,7 +9,7 @@ import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer'
 import type { BreaststrokeBoneName, BreaststrokeMotionSample } from '../character/BreaststrokeMotionCurve';
 import { sampledActionIdFor } from '../character/CharacterActionConfig';
 import type { CharacterAction } from '../character/CharacterActionConfig';
-import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
+import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING } from '../character/CharacterMotionTuning';
 import { CharacterPoseState, CharacterPoseStateController } from '../character/CharacterPoseStateController';
 import { CharacterRig } from '../character/CharacterRig';
 import { StandingSoleContact } from '../character/StandingSoleContact';
@@ -20,6 +20,7 @@ import { DiveChargeGatherEffect } from '../character/DiveChargeGatherEffect';
 import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
 import type { DivePrepBoneName, DivePrepPoseSample } from '../character/DivePrepPoseCurve';
 import { FreestylePoseController, ProceduralPoseSnapshot } from '../character/FreestylePoseController';
+import { FreestyleBodyRollMotion } from '../character/FreestyleBodyRollMotion';
 import { BUTTERFLY_TUNING } from '../core/ButterflyTuning';
 import type { ButterflyBuoyancy } from '../swimmer/ButterflyBuoyancy';
 import { FLIP_TURN_KEYFRAME_1, FLIP_TURN_KEYFRAME_2 } from '../character/FlipTurnPoseCurve';
@@ -182,6 +183,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     };
     private _recoveryFloat: RecoveryFloatPresentation | null = null;
     private readonly _pose = new FreestylePoseController();
+    private _bodyRollTest: FreestyleBodyRollMotion | null = null;
     private readonly _animationPlayer = new CharacterAnimationPlayer();
     private readonly _poseState = new CharacterPoseStateController({
         pose: this._pose,
@@ -1143,6 +1145,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     setDiveStreamlinePose() {
+        this._bodyRollTest?.reset();
         this._butterflyPoseWeight = 0;
         this._pose.resetCollisionSoftness();
         if (this._modelDebugMode) {
@@ -1155,6 +1158,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     startDiveStreamlineTransition(duration = CHARACTER_POSE_TUNING.diveStreamlineTransitionSeconds) {
+        this._bodyRollTest?.reset();
         this._butterflyPoseWeight = 0;
         if (this._modelDebugMode) {
             return;
@@ -1292,6 +1296,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         movementPitchRadians = motor.collisionPitchRadians * this.axialRollVisualWeight,
         movementHeadingRadians = motor.heading,
         bodyUpProjection = Math.cos(motor.axialRollRadians) * Math.cos(motor.collisionPitchRadians),
+        surfaceBodyRollAllowed = false,
+        bodyRollTestEnabled = false,
     ) {
         const useDt = this.consumeThrottledMotionDt(dt);
         if (useDt < 0) {
@@ -1308,6 +1314,17 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             bodyUpProjection,
         );
         this._pose.setSurfaceBodyUpProjection(bodyUpProjection);
+        if (bodyRollTestEnabled) {
+            const motion = this._bodyRollTest ?? (this._bodyRollTest = new FreestyleBodyRollMotion());
+            const allowed = surfaceBodyRollAllowed && !motor.butterfly?.active
+                && this._butterflyPoseWeight <= 0 && this._treadWaterWeight < 0.1;
+            motion.update(useDt,
+                this._visualLeftArmCycle + FREESTYLE_POSE_TUNING.armForwardCycleOffset,
+                this._visualRightArmCycle + FREESTYLE_POSE_TUNING.armForwardCycleOffset,
+                allowed, bodyUpProjection, movementPitchRadians,
+                motor.axialRollAngularVelocity, motor.collisionPitchAngularVelocity);
+            this._pose.setBodyRollTestPose(motion.weight, motion.roll);
+        }
         // 正常收拍允许短暂淡出；取消、翻身或特殊动作接管立即撤销蝶泳叠加。
         if (!motor.butterfly?.active && motor.butterfly?.progress !== 1) this._butterflyPoseWeight = 0;
         this.updateFreestyle(
@@ -1326,6 +1343,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         );
         // 该补偿只作用于本次水面姿态，水下滑行、转身和独立预览使用默认方向。
         this._pose.setSurfaceBodyUpProjection(1);
+        if (bodyRollTestEnabled) this._pose.setBodyRollTestPose(-1);
         // 跟随原有降频与离屏裁剪，在完整基础姿态之后应用，下一次姿态会自然覆盖。
         if (this._loaded && this._poseState.isFreestyleActive) {
             this._pose.applyCollisionSoftness(motor.collisionSoftness, useDt);
@@ -1333,6 +1351,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     updateUnderwaterKickFromMotor(dt: number, motor: SwimmerMotor, movementDirection = 1, movementPitchRadians = 0) {
+        this._bodyRollTest?.reset();
         this._pose.resetCollisionSoftness();
         const useDt = this.consumeThrottledMotionDt(dt);
         if (useDt < 0) {
@@ -1660,6 +1679,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     resetPose() {
+        this._bodyRollTest?.reset();
         this._butterflyPoseWeight = 0;
         if (!this._loaded || !this.root) {
             return;

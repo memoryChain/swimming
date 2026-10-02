@@ -9,6 +9,7 @@ const file = path.join(h.root,'assets/scripts/entity/Swimmer.ts');
 const source = ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
 const decl = source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='Swimmer');
 const names = ['makeStrokeQualityResult','updatePerfectComboIdle','tryDolphinJump','canUseDolphinAbility',
+    'enableButterfly','enableFreestyleBodyRollTest','_freestyleBodyRollTestEnabled',
     'motor','courseLayout','startPosition','canUseArmStroke','butterflyAdmission','butterflyInterruptionVersion',
     'beginButterfly','releaseButterfly','cancelButterfly','butterflyPhaseReady','butterflyPoseAllowed',
     'canContinueButterfly','interruptButterflyIfNeeded','isButterflyRecoveryLocked','stepSimulation',
