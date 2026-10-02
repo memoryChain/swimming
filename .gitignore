@@ -32,6 +32,8 @@ sceneresource/*.tmp.png
 # Local tooling downloads
 tools/blender-portable/
 extensions/cocos-code-mode/
+/extensions/taptap-minigame-tools/logs/
+/extensions/taptap-minigame-tools/ENVIRONMENT_CHECK.md
 /.cache/
 
 #//////////////////////////

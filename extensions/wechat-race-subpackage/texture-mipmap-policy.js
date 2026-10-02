@@ -144,4 +144,5 @@ function assertBuildMipmaps(projectRoot, result) {
     return { compressedImages: checked.size };
 }
 
-module.exports = { mipFilterForImage, auditTextureMipmaps, inspectAstcMipChain, assertBuildMipmaps };
+module.exports = { mipFilterForImage, auditTextureMipmaps, inspectAstcMipChain, assertBuildMipmaps,
+    visitTargetImages, resolveRawAssetPaths };

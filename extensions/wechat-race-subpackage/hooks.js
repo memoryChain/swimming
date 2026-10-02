@@ -4,6 +4,9 @@ const fs = require('fs');
 const path = require('path');
 const { assertTextureCompressionPolicy } = require('./texture-compression-policy');
 const { assertBuildMipmaps } = require('./texture-mipmap-policy');
+const { bakeEmbeddedTextureMipmaps } = require('./embedded-texture-mipmaps');
+const { installTapBuildBridge, convertTapAfterAudit } = require('./taptap-build-bridge');
+const { assertTapRenderConfig } = require('./taptap-render-policy');
 const { assertUiFontPolicy } = require('../../scripts/ui-font-policy');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
@@ -51,6 +54,11 @@ exports.onBeforeBuild = async function onBeforeBuild(options) {
         return;
     }
 
+    if (options.packages?.['taptap-minigame-tools']?.enableTapConvert) {
+        assertTapRenderConfig(PROJECT_ROOT, options);
+        installTapBuildBridge(PROJECT_ROOT);
+    }
+
     // Do not silently publish newly imported large images or GLB-embedded images
     // without the project's tiered ASTC policy. The fixer must run before this
     // build so Creator has time to re-import the changed .meta files.
@@ -92,6 +100,9 @@ exports.onBeforeCompressSettings = async function onBeforeCompressSettings(optio
     if (options.platform !== 'wechatgame') {
         return;
     }
+    const baked = await bakeEmbeddedTextureMipmaps(PROJECT_ROOT, result);
+    console.log(`[embedded-mipmap] 已补齐 ${baked.generated} 张内嵌贴图，复用 ${baked.cached} 张缓存；`
+        + `${baked.unchanged} 张已有完整 mip 链。`);
     const assets = result.settings.assets || (result.settings.assets = {});
     const subpackages = Array.isArray(assets.subpackages) ? assets.subpackages : [];
     assets.subpackages = [...new Set([...subpackages, ...SUBPACKAGE_BUNDLES.map((bundle) => bundle.name)])];
@@ -189,14 +200,18 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
             );
         }
     }
-    const packageAudit = auditWechatPackageOutput(result.dest);
+    const tapEnabled = options.packages?.['taptap-minigame-tools']?.enableTapConvert === true;
+    // Tap 转换读取的是微信中间目录。微信源文件的 4 MiB 门禁仅用于微信发布；
+    // Tap 包体预算检查放在转换完成后，不把源目录大小当作 Tap ZIP 大小。
+    const packageAudit = auditWechatPackageOutput(result.dest, { enforceMainLimit: !tapEnabled });
     console.log(
         `[wechat-race-subpackage] generated and verified race/music subpackages; `
         + `main package ${(packageAudit.mainBytes / 1024).toFixed(1)} KiB.`,
     );
+    await convertTapAfterAudit(PROJECT_ROOT, options, result);
 };
 
-function auditWechatPackageOutput(outputRoot) {
+function auditWechatPackageOutput(outputRoot, { enforceMainLimit = true } = {}) {
     const resolvedRoot = path.resolve(outputRoot);
     const files = [];
     visitOutputFiles(resolvedRoot, files);
@@ -220,7 +235,7 @@ function auditWechatPackageOutput(outputRoot) {
             mainBytes += fs.statSync(filePath).size;
         }
     }
-    if (mainBytes > MAX_WECHAT_MAIN_SOURCE_BYTES) {
+    if (enforceMainLimit && mainBytes > MAX_WECHAT_MAIN_SOURCE_BYTES) {
         throw new Error(
             `[wechat-package] Main package is ${(mainBytes / 1024).toFixed(1)} KiB, `
             + `exceeding the 4096 KiB limit. Move new race-only assets into a subpackage `
@@ -229,6 +244,8 @@ function auditWechatPackageOutput(outputRoot) {
     }
     return { mainBytes };
 }
+
+exports.auditWechatPackageOutput = auditWechatPackageOutput;
 
 function visitOutputFiles(directory, files) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
