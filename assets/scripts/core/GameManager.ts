@@ -142,7 +142,7 @@ import {
     WHIRLPOOL_BRAWL_TUNING,
     WHIRLPOOL_SUPER_TUNING,
 } from './WhirlpoolBrawlRules';
-import { CannonBrawlController, CannonImpact, CannonLaunch, CannonRacerState } from './CannonBrawlController';
+import { CannonBrawlController, CannonImpact, CannonLaunch, CannonRacerState, CANNON_BRAWL_TUNING } from './CannonBrawlController';
 import { CannonBrawlPresentation } from './CannonBrawlPresentation';
 import {
     ENTERTAINMENT_RECOVERY_TUNING,
@@ -1805,6 +1805,7 @@ export class GameManager extends Component {
                 this._netSession ? this._netSession.entertainmentGrade : this._aiDebugMode
                     ? getAiDebugSetup().entertainmentRaceGrade ?? 3 : getEntertainmentRaceGrade(),
                 this._aiDebugMode ? getAiDebugSetup().obstacleLayout : undefined,
+                !this._netSession,
             );
             if (this._netSession && this._entertainmentRacePlan.identity !== this._netSession.entertainmentPlanId) {
                 throw new Error('Entertainment race plan does not match host start configuration');
@@ -1945,7 +1946,8 @@ export class GameManager extends Component {
             && director.phaseId() !== EntertainmentDirectorPhase.PREVIEW
             && director.phaseId() !== EntertainmentDirectorPhase.ACTIVE) {
             this._gradedObstaclePreviewShown = true;
-            if ((this._raceManager?.elapsedSeconds ?? 0) < 10) this._entertainmentEventBanner.showDirectorEvent(
+            if (this._entertainmentRacePlan.obstacle.layout !== 'debris'
+                && (this._raceManager?.elapsedSeconds ?? 0) < 10) this._entertainmentEventBanner.showDirectorEvent(
                 entertainmentPreviewCopy(EntertainmentEventId.OBSTACLE, false, getSharedRandomSeed(), 1),
                 'warning', 6000, entertainmentBannerIcon(EntertainmentEventId.OBSTACLE), '广播通知',
             );
@@ -2285,6 +2287,8 @@ export class GameManager extends Component {
         const plan = this._entertainmentRacePlan;
         const director = this._entertainmentDirector;
         if (!plan || !director || director.currentEvent() !== event) return null;
+        const currentStage = director.currentGradedStage();
+        if (currentStage) return currentStage;
         const index = director.snapshot().eventIndex;
         if (index < plan.stages.length) {
             const stage = plan.stages[index];
@@ -2432,7 +2436,7 @@ export class GameManager extends Component {
                 },
                 (wave, kind) => {
                     if (this._state !== GameState.RACING) return;
-                    if (isEntertainmentBrawlMode() && wave === 1) return;
+                    if (isEntertainmentBrawlMode()) return;
                     this._entertainmentEventBanner.showEvent(
                         kind === 'calm-slush'
                             ? `第 ${wave} 波冰沙道具 · 稳转向但暂减推进`
@@ -3798,6 +3802,24 @@ export class GameManager extends Component {
         safeCenter: number,
         safeHalfWidth: number,
     ): boolean {
+        if (this._entertainmentRacePlan) {
+            const worldX = COURSE_LAYOUT.distanceToWorldX(courseX);
+            if (this._geyserBrawl && !this._geyserBrawl.isBackgroundLitterRowSafe(worldX)
+                || this._giantWave && !this._giantWave.isBackgroundLitterRowSafe(worldX)
+                || this._turtleBus && !this._turtleBus.isBackgroundLitterRowSafe(worldX)) return false;
+            // 预告中的两发炮击都要留出打击与撤离带；旧炮击仍在结算时也适用。
+            const first = this._cannonBrawl?.currentLaunch();
+            const second = this._cannonBrawl?.currentSecondaryLaunch();
+            if (first && Math.abs(courseX - raceDistanceToCourseX(first.targetDistance))
+                <= CANNON_BRAWL_TUNING.splashAlongRadius + 2
+                || second && Math.abs(courseX - raceDistanceToCourseX(second.targetDistance))
+                <= CANNON_BRAWL_TUNING.splashAlongRadius + 2) return false;
+            const carrier = this._mineRelayBrawl?.currentArm();
+            const carrierSwimmer = carrier ? this.swimmerForLane(carrier.carrierLane) : null;
+            if (carrierSwimmer && Math.abs(courseX - raceDistanceToCourseX(carrierSwimmer.distance)) < 6) return false;
+            const target = this._shark?.target;
+            if (target && Math.abs(courseX - raceDistanceToCourseX(target.distance)) < 6) return false;
+        }
         const swimmerClearance = LITTER_BRAWL_TUNING.spawnSwimmerClearAlongRadius
             + LITTER_BRAWL_TUNING.rigidItemAlongRadius
             + LITTER_BRAWL_TUNING.swimmerContactAlongRadius;
@@ -3875,6 +3897,10 @@ export class GameManager extends Component {
             hasActiveLitter && isLitterBrawlMode() && this._state === GameState.RACING,
             dt,
             !!this._obstaclePlan,
+            isEntertainmentBrawlMode() && !!this._entertainmentDirector
+                && this._entertainmentDirector.phaseId() !== EntertainmentDirectorPhase.OPENING
+                && this._entertainmentDirector.phaseId() !== EntertainmentDirectorPhase.GAP
+                && this._entertainmentDirector.phaseId() !== EntertainmentDirectorPhase.COMPLETE,
         );
         if (!hasActiveLitter || this._state !== GameState.RACING) {
             if (this._litterInfluenceActive) this.clearLitterInfluence();

@@ -106,6 +106,8 @@ export class RaceEventPictureInPictureCamera {
     private buoyFocusWorldX = 0;
     private buoyFocusZ = 0;
     private litterWave = -1;
+    private litterBackgroundSuppressed = false;
+    private litterSkippedThroughWave = -1;
     private litterFocusWorldX = 0;
     private litterFocusZ = 0;
     private litterPanFromX = 0;
@@ -138,6 +140,8 @@ export class RaceEventPictureInPictureCamera {
     }
 
     reset(): void {
+        this.litterBackgroundSuppressed = false;
+        this.litterSkippedThroughWave = -1;
         this.resetTimedBombTrackingState();
         this.hide();
         this.buoyIntroShown = false;
@@ -301,7 +305,7 @@ export class RaceEventPictureInPictureCamera {
 
     showGiantWavePreview(state: GiantWaveState, impact = false): void {
         if (!this.camera || state.phase !== 'active'
-            || (this.mode !== 'none' && this.mode !== 'giant-wave')) return;
+            || (this.mode !== 'none' && this.mode !== 'giant-wave' && this.mode !== 'litter' && this.mode !== 'buoy')) return;
         if (this.mode === 'giant-wave' && this.giantWaveImpact === impact) return;
         this.mode = 'giant-wave';
         this.giantWaveImpact = impact;
@@ -316,7 +320,7 @@ export class RaceEventPictureInPictureCamera {
             return;
         }
         // 巨浪持续跟随，但只在共享镜头空闲时接回；不修改其他事件的停留时间。
-        if (!this.camera || (this.mode !== 'none' && this.mode !== 'giant-wave')) return;
+        if (!this.camera || (this.mode !== 'none' && this.mode !== 'giant-wave' && this.mode !== 'litter' && this.mode !== 'buoy')) return;
         this.showGiantWavePreview(state, state.age >= waveArrivalTime(state));
         if (!this.shouldRender(safeStep(dt))) return;
         this.focus.set(state.x, this.options.course.waterY, state.z);
@@ -544,17 +548,28 @@ export class RaceEventPictureInPictureCamera {
     }
 
     updateLitter(clusters: readonly LitterClusterState[], racing: boolean, dt: number,
-        obstacleEvent = false): void {
+        obstacleEvent = false, backgroundReserved = false): void {
         const safeDt = safeStep(dt);
+        if (backgroundReserved) {
+            this.litterBackgroundSuppressed = true;
+            if (this.mode === 'litter') this.hide();
+            return;
+        }
+        if (this.litterBackgroundSuppressed) {
+            // 让位期间错过的入场不排队，也不在主事件结束后补拍旧垃圾。
+            for (const cluster of clusters) {
+                if (cluster.active) this.litterSkippedThroughWave = Math.max(this.litterSkippedThroughWave, cluster.wave);
+            }
+            this.litterBackgroundSuppressed = false;
+        }
         if (!racing) {
             if (this.mode === 'litter') this.hide();
             this.litterHoldSeconds = 0;
             return;
         }
 
-        // 垃圾可抢占持续跟随的巨浪；其他事件占用时不遍历槽位或计算取景。
-        if (this.mode !== 'none' && this.mode !== 'litter' && this.mode !== 'buoy'
-            && this.mode !== 'giant-wave') return;
+        // 背景镜头不能抢占巨浪及其他主事件的共享画面。
+        if (this.mode !== 'none' && this.mode !== 'litter' && this.mode !== 'buoy') return;
         if (!this.camera) return;
 
         let fallingWave = -1;
@@ -566,6 +581,7 @@ export class RaceEventPictureInPictureCamera {
                 currentWaveEntering = true;
             }
             if (!cluster.active || cluster.phase !== 'falling' || cluster.phaseProgress < 0) continue;
+            if (cluster.wave <= this.litterSkippedThroughWave) continue;
             if (cluster.wave > fallingWave) fallingWave = cluster.wave;
         }
 

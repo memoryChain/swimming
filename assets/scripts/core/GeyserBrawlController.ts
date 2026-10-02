@@ -11,6 +11,7 @@ import { GEYSER_TUNING, geyserBurstOverlap, geyserPhaseAt, geyserSpec, geyserPul
 import { GeyserBrawlPresentation } from './GeyserBrawlPresentation';
 import { applyGeyserSizes, geyserLargeMask, geyserRadiusScale, geyserWarningSeconds, geyserPulseIndex } from './GeyserBrawlRules';
 import { selectGeyserLargeMask, type GeyserDanger, type GeyserSafetyResult } from './GeyserBrawlSafety';
+import { litterRowOverlapsDanger } from './EntertainmentBackgroundSafety';
 
 /** 喷口时钟和权威命中；画面从相同时钟重建，不参与判定。 */
 export class GeyserBrawlController {
@@ -74,6 +75,15 @@ export class GeyserBrawlController {
 
     get vents(): readonly GeyserVent[] { return this._vents; }
     get elapsedSeconds(): number { return this.age; }
+    isBackgroundLitterRowSafe(worldX: number): boolean {
+        if (this.isDone) return true;
+        for (const vent of this.vents) {
+            // 留出喷口、短暂腾空和落水附近的空间，包括下一脉冲的预警区。
+            if (litterRowOverlapsDanger(worldX, vent.x,
+                this.tuning.edgeRadius * geyserRadiusScale(vent, this.tuning) + 1.5)) return false;
+        }
+        return true;
+    }
     get isDone(): boolean { return this.age >= this.spec.actionSeconds; }
     get hasAuthoritativeSizes(): boolean { return this.sizesReady; }
     get largeCount(): number {

@@ -13,7 +13,8 @@ function replay(seed, distance, grade, speed, spike = false) {
     const director = new EntertainmentModeDirector(seed, distance, true, undefined, undefined, undefined, plan);
     const stages = plan.stages.map(stage => ({ ...stage, name: entertainmentEventName(stage.event),
         previewAt: null, activatedAt: null, finishedAt: null }));
-    const skips = [];
+    const skips = [], activations = [];
+    let lastEnd = null, longestGap = 0;
     for (let frame = 1; frame / 30 * speed < distance; frame++) {
         const time = frame / 30;
         // 一秒提速带来的额外进度保留，局长估计复用正式代码；仍不是完整马达轨迹。
@@ -24,23 +25,41 @@ function replay(seed, distance, grade, speed, spike = false) {
         const transition = director.update(1 / 30, progress, true, reference);
         const after = director.snapshot().eventIndex;
         if (transition.previewEvent !== null && stages[after]) stages[after].previewAt = time;
-        if (transition.activatedEvent !== null && stages[after]) stages[after].activatedAt = time;
+        if (transition.previewEvent !== null && lastEnd !== null) longestGap = Math.max(longestGap, time - lastEnd);
+        if (transition.activatedEvent !== null) {
+            if (transition.activatedEvent === E.TURTLE_BUS && lastEnd !== null) {
+                longestGap = Math.max(longestGap, time - lastEnd);
+            }
+            activations.push({ event: transition.activatedEvent, index: after, time,
+                required: stages[after]?.required ?? false });
+            if (stages[after]) {
+                stages[after].activatedAt = time;
+                stages[after].event = transition.activatedEvent;
+                stages[after].name = entertainmentEventName(transition.activatedEvent);
+            }
+        }
         if (transition.finishedEvent !== null && stages[before]) stages[before].finishedAt = time;
+        if (transition.finishedEvent !== null) lastEnd = time;
         for (let index = before; index < Math.min(after, stages.length); index++) {
             if (stages[index].activatedAt === null) skips.push({ index, time, progress, reference,
                 reason: director.stageSkipReason(index) });
         }
     }
     const cancelledPreview = director.lockAfterFirstFinish().cancelledPreview;
-    return { seed, distance, grade, speed, spike, stages, skips, cancelledPreview };
+    return { seed, distance, grade, speed, spike, stages, skips, cancelledPreview, activations, longestGap };
 }
 
 const cases = [];
 for (const distance of [200, 400]) for (const speed of [2, 2.5, 3.5]) for (let grade = 1; grade <= 5; grade++) {
     const counts = Object.fromEntries(eventIds.map(id => [id, { name: entertainmentEventName(id),
         selected: 0, activated: 0, completed: 0, skipped: 0, slots: {} }]));
+    const roundCounts = [], gaps = [];
+    let requiredMisses = 0;
     for (let seed = 1; seed <= seedCount; seed++) {
         const result = replay(seed, distance, grade, speed);
+        roundCounts.push(result.activations.length);
+        gaps.push(result.longestGap);
+        requiredMisses += Number(result.stages.some(stage => stage.required && stage.finishedAt === null));
         for (const [index, stage] of result.stages.entries()) {
             const count = counts[stage.event];
             count.selected++;
@@ -53,7 +72,11 @@ for (const distance of [200, 400]) for (const speed of [2, 2.5, 3.5]) for (let g
         }
     }
     for (const count of Object.values(counts)) assert.ok(count.completed <= count.activated && count.activated <= count.selected);
-    cases.push({ distance, speed, grade, seeds: seedCount, counts });
+    roundCounts.sort((a, b) => a - b); gaps.sort((a, b) => a - b);
+    const percentiles = values => ({ min: values[0], max: values[values.length - 1], p10: values[Math.floor(values.length * .1)],
+        median: values[Math.floor(values.length * .5)], p90: values[Math.floor(values.length * .9)] });
+    cases.push({ distance, speed, grade, seeds: seedCount, counts, requiredMisses,
+        activatedRounds: percentiles(roundCounts), longestGapSeconds: percentiles(gaps) });
 }
 const spikeChanges = [];
 for (let seed = 1; seed <= seedCount && spikeChanges.length < 3; seed++) {
@@ -69,5 +92,5 @@ for (const event of [E.TURTLE_BUS, E.GEYSER, E.GIANT_WAVE, E.WHIRLPOOL]) {
         if (result.stages.some(s => s.event === event && s.activatedAt === null)) { examples.push(result); break; }
     }
 }
-console.log(JSON.stringify({ assumptions: '每组种子1至500、30Hz、固定领游速度、所有主段按名义时长准时结束；统计主段、不含续场。未注入真实海龟预检，假设存在可用航段；结果不是海龟实际出现率或实机发生率。',
+console.log(JSON.stringify({ assumptions: '每组种子1至500、30Hz、固定领游速度，控制器按名义窗口结束。轮数包含基础、途中追加及返场；类型统计按计划槽的实际激活身份记录，不含表外返场。未注入真实海龟预检或玩家马达，假设存在航段；结果不代表实际参与率或实机发生率。最长间隔为已完成事件至下一轮公开预告，收尾和无下一轮不计。',
     cases, spikeChanges, examples }, null, 2));

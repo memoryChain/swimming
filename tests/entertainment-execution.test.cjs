@@ -26,7 +26,7 @@ test('娱乐执行回放：代表段完成、障碍不在尾段追补、海龟�
             assert.ok(row.distance - wave.distance >= Math.max(18, row.speed * 8));
             if (index > 0) assert.ok(wave.seconds - row.waves[index - 1].seconds >= 7.98, '不能连续补投');
             assert.notEqual(wave.phase, 1, '重点事件预告期禁止新垃圾');
-            if (wave.phase === 2) assert.ok([2, 7].includes(wave.event), '只允许稳定漩涡或海龟段穿插');
+            if (wave.phase === 2) assert.ok([1, 2, 4, 5, 7, 8, 9].includes(wave.event), '背景投放可在主事件稳定段尝试，落点由独立安全检查裁决');
         }
     }
     for (const row of report.turtleResults) {

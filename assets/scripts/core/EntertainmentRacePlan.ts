@@ -4,6 +4,7 @@ import { geyserSpec } from './GeyserBrawlRules';
 import { ENTERTAINMENT_GIANT_WAVE_SECONDS } from './GiantWaveRules';
 import { TURTLE_BUS_CONFIG, turtleBusDoneAge } from './TurtleBusRules';
 import type { ObstacleLayout } from './ObstacleBrawlRules';
+import { addGrade4Opportunities, entertainmentCadence, type EntertainmentCadence } from './EntertainmentCadence';
 
 /** The whole-race grade is independent of AI skill and an individual event's intensity. */
 export type EntertainmentRaceGrade = 1 | 2 | 3 | 4 | 5;
@@ -41,7 +42,7 @@ export type EntertainmentSupplyBudget = Readonly<{
 
 export type EntertainmentRacePlan = Readonly<{
     version: 1;
-    balanceVersion: 9;
+    balanceVersion: 10;
     identity: number;
     seed: number;
     raceDistance: 200 | 400;
@@ -49,7 +50,8 @@ export type EntertainmentRacePlan = Readonly<{
     obstacle: EntertainmentObstacleBudget;
     supply: EntertainmentSupplyBudget;
     stages: readonly EntertainmentMainStage[];
-    encoreLimit: 1;
+    encoreLimit: 0 | 1;
+    cadence: EntertainmentCadence;
 }>;
 
 type GradeNumbers = Readonly<{
@@ -154,7 +156,7 @@ function buildMainStages(seed: number, raceDistance: 200 | 400, grade: Entertain
                     : event === EntertainmentEventId.GIANT_WAVE ? ENTERTAINMENT_GIANT_WAVE_SECONDS : 8,
             true);
         if (event === EntertainmentEventId.TIMED_BOMB) return mainStage(event, grade === 3 ? 1 : 2,
-            progress, 1, grade === 3 ? 11.5 : 10.5, grade === 3 && challenges.indexOf(event) === index);
+            progress, 1, grade === 3 ? 11.5 : 10.5, grade === 4 || grade === 3 && challenges.indexOf(event) === index);
         if (event === EntertainmentEventId.CANNON) return mainStage(event, grade === 4 ? 2 : longRace ? 4 : 3,
             progress, grade === 4 ? longRace ? 3 : 2 : longRace ? 6 : 3,
             grade === 4 ? longRace ? 10.8 : 8.2 : longRace ? 9 : 9.9, true);
@@ -164,7 +166,7 @@ function buildMainStages(seed: number, raceDistance: 200 | 400, grade: Entertain
 
 /** Deterministic opening configuration; no scene nodes or per-frame allocations. */
 export function buildEntertainmentRacePlan(seed: number, distance: number,
-    grade: EntertainmentRaceGrade, forcedLayout?: ObstacleLayout): EntertainmentRacePlan {
+    grade: EntertainmentRaceGrade, forcedLayout?: ObstacleLayout, localCadenceTuning = false): EntertainmentRacePlan {
     const safeSeed = (Number.isFinite(seed) ? seed : 0) >>> 0;
     const raceDistance: 200 | 400 = distance >= 400 ? 400 : 200;
     const numbers = GRADE_NUMBERS[grade - 1];
@@ -185,9 +187,11 @@ export function buildEntertainmentRacePlan(seed: number, distance: number,
     const obstacleRandom = new SeededRandom((safeSeed ^ 0x4f425741) >>> 0);
     const supplyRandom = new SeededRandom((safeSeed ^ 0x53555050) >>> 0);
     const supplyWaves = longRace ? numbers.supplyWaves400 : numbers.supplyWaves200;
+    const cadence = entertainmentCadence(localCadenceTuning);
+    const baseline = buildMainStages(safeSeed, raceDistance, grade);
     const plan = {
         version: 1,
-        balanceVersion: 9,
+        balanceVersion: 10,
         seed: safeSeed,
         raceDistance,
         grade,
@@ -207,8 +211,9 @@ export function buildEntertainmentRacePlan(seed: number, distance: number,
                 .map(progress => progress * raceDistance),
             itemsPerWave: longRace ? numbers.supplyItems400 : numbers.supplyItems200,
         },
-        stages: buildMainStages(safeSeed, raceDistance, grade),
-        encoreLimit: 1,
+        stages: grade === 4 ? addGrade4Opportunities(safeSeed, raceDistance, baseline, cadence) : baseline,
+        encoreLimit: grade === 4 ? 0 : 1,
+        cadence,
     } as const;
     return { ...plan, identity: entertainmentRacePlanIdentity(plan) };
 }
@@ -217,6 +222,8 @@ function entertainmentRacePlanIdentity(plan: Omit<EntertainmentRacePlan, 'identi
     let hash = 2166136261;
     const mix = (value: number) => { hash = Math.imul(hash ^ (value >>> 0), 16777619) >>> 0; };
     mix(plan.version); mix(plan.balanceVersion); mix(plan.seed); mix(plan.raceDistance); mix(plan.grade);
+    mix(plan.encoreLimit); mix(plan.cadence.grade4Extras200); mix(plan.cadence.grade4Extras400);
+    mix(Math.round(plan.cadence.grade4GapSeconds * 1000)); mix(Math.round(plan.cadence.optionalBudgetRatio * 1000));
     mix(plan.obstacle.layout === 'debris' ? 1 : plan.obstacle.layout === 'buoy' ? 2 : 3);
     mix(plan.obstacle.intensity); mix(plan.obstacle.litterPoolSize);
     for (const value of plan.obstacle.litterWaveDistances) mix(Math.round(value * 1000));

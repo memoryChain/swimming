@@ -76,8 +76,13 @@ test('各档主事件在标准短长局完整启动，短暂提速不触发永�
                 const result = director.update(1 / 30, progress, true, entertainmentScheduleSpeed(progress, time));
                 if (result.finishedEvent !== null && before < plan.stages.length) completed.add(before);
             }
-            assert.equal(completed.size, plan.stages.length, `${distance}:${grade}:${seed}`);
-            assert.equal(director.skippedStageMask(), 0);
+            for (const [index, stage] of plan.stages.entries()) {
+                if (stage.required) assert.ok(completed.has(index), `${distance}:${grade}:${seed}:${index}`);
+            }
+            if (grade !== 4) {
+                assert.equal(completed.size, plan.stages.length, `${distance}:${grade}:${seed}`);
+                assert.equal(director.skippedStageMask(), 0);
+            }
         }
     }
 });
@@ -142,9 +147,10 @@ test('短局场地优先，长局场地只穿插前中段，强挑战保留进�
         const schedules = new Set();
         for (let seed = 1; seed <= 1000; seed++) {
             const plan = buildEntertainmentRacePlan(seed, distance, grade);
+            const baseline = plan.stages.filter(stage => stage.previewProgress > 0);
             const count = grade === 2 ? 1 : distance === 400 ? 3 : 2;
-            assert.equal(plan.stages.length, count);
-            for (const [index, stage] of plan.stages.entries()) {
+            assert.equal(baseline.length, count);
+            for (const [index, stage] of baseline.entries()) {
                 positions.get(stage.event)?.add(index);
                 if (stage.event === E.CANNON) assert.ok(stage.previewProgress >= .28);
                 if (stage.event === E.SHARK) assert.ok(stage.previewProgress >= .48);
@@ -163,14 +169,15 @@ test('环境池按两成海龟、三成漩涡、各四分之一喷泉和巨浪�
         for (let seed = 1; seed <= 2000; seed++) {
             for (let grade = 1; grade <= 5; grade++) {
                 const plan = buildEntertainmentRacePlan(seed, distance, grade);
-                const opening = plan.stages.find(stage => [E.TURTLE_BUS, E.WHIRLPOOL, E.GEYSER, E.GIANT_WAVE].includes(stage.event));
+                const opening = plan.stages.find(stage => stage.previewProgress > 0
+                    && [E.TURTLE_BUS, E.WHIRLPOOL, E.GEYSER, E.GIANT_WAVE].includes(stage.event));
                 if (grade === 1) {
                     assert.ok(plan.stages.length <= 1);
                     assert.ok(!opening || opening.event === E.TURTLE_BUS);
                 } else {
                     if (grade === 2) counts.set(opening.event, (counts.get(opening.event) ?? 0) + 1);
                     if (opening.event === E.GEYSER || opening.event === E.GIANT_WAVE) {
-                        assert.equal(opening.intensity, Math.max(1, grade - (plan.stages.indexOf(opening) === 0 ? 2 : 1)));
+                        assert.equal(opening.intensity, Math.max(1, grade - (plan.stages.filter(s => s.previewProgress > 0).indexOf(opening) === 0 ? 2 : 1)));
                     }
                     assert.equal(plan.stages.filter(stage => stage.event === E.GIANT_WAVE).length <= 1, true);
                 }
@@ -222,8 +229,10 @@ test('整局五档在两种距离及三种布局下遵守配额、白名单与�
                 assert.ok(plan.obstacle.litterPoolSize <= 24);
                 assert.ok(plan.obstacle.buoyBatchCounts.reduce((a, b) => a + b, 0) <= 8);
                 assert.ok(plan.stages.every(stage => allowed[grade - 1].includes(stage.event)));
-                assert.ok(plan.stages.every((stage, index) => index === 0
-                    || stage.previewProgress > plan.stages[index - 1].previewProgress));
+                const anchored = plan.stages.filter(stage => stage.previewProgress > 0);
+                assert.ok(anchored.every((stage, index) => index === 0
+                    || stage.previewProgress > anchored[index - 1].previewProgress));
+                assert.ok(plan.stages.length <= 6);
                 assert.ok(plan.supply.waveDistances.every((d, index) => index === 0
                     || d > plan.supply.waveDistances[index - 1]));
                 assert.ok(plan.obstacle.litterWaveDistances.every((d, index) => index === 0

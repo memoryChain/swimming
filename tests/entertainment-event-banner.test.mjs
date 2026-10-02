@@ -128,7 +128,8 @@ test('六合一激活时用原广播位置显示三秒红色行动提示', () =>
     assert.match(banner, /const EVENT_HEIGHT = 98/);
     assert.match(banner, /const EVENT_Y = 180/);
     assert.match(banner, /makeLabel\('Label', motion, '', 34, WHITE\)/);
-    assert.match(gameManager, /isEntertainmentBrawlMode\(\) && wave === 1/);
+    const supplyCallback = gameManager.slice(gameManager.indexOf('(wave, kind) => {'));
+    assert.match(supplyCallback, /if \(isEntertainmentBrawlMode\(\)\) return;[\s\S]*?showEvent\(/);
     assert.match(gameManager, /launch\.strikeId === 0 && !isEntertainmentBrawlMode\(\)/);
     assert.match(gameManager, /onRevealed: \(\) => \{[\s\S]*?if \(isEntertainmentBrawlMode\(\)\) return/);
 });

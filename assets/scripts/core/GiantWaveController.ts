@@ -8,6 +8,7 @@ import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { StrokeSfxManager } from '../app/StrokeSfxManager';
 import { GiantWaveIntensity, GiantWavePreset, GiantWaveSample, GiantWaveSimulation, giantWaveTargetZ, waveArrivalTime } from './GiantWaveRules';
 import { GiantWavePresentation } from './GiantWavePresentation';
+import { litterRowOverlapsDanger } from './EntertainmentBackgroundSafety';
 
 const PREVIEWS = ['出发端即将起浪 · 顺浪加速，迎浪减速', '折返端即将起浪 · 顺浪加速，迎浪减速'];
 const ACTIONS = ['出发端浪头出发 · 顺浪借力，迎浪绕行', '折返端浪头出发 · 顺浪借力，迎浪绕行'];
@@ -46,6 +47,11 @@ export class GiantWaveController {
         }
     }
     get isDone(): boolean { return this.simulation.state.phase === 'complete'; }
+    isBackgroundLitterRowSafe(worldX: number): boolean {
+        const state = this.simulation.state;
+        return state.phase !== 'active' || !litterRowOverlapsDanger(worldX, state.x,
+            state.length * .5 + 2, state.direction * state.speed * 2);
+    }
     /** 快照恢复静默进入当前年龄；迟到包不让浪倒退或重播入场。 */
     syncEventAge(age: number, playEntrance = false): void {
         if (!this.formal || !Number.isFinite(age) || age < 0) return;

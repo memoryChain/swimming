@@ -60,6 +60,16 @@ function fixture(direction = 1, intensity = 1, networked = false, options = {}) 
     return { s, hits, controller, course };
 }
 
+test('并行垃圾避开喷口和落水带，空闲水面允许投放且镜头不参与裁决', () => {
+    const { controller } = fixture(1, 2);
+    controller._vents = [{ id: 0, x: 12, z: 0, offsetSeconds: 0, size: 'large', mixed: true }];
+    assert.equal(controller.isBackgroundLitterRowSafe(12), false);
+    assert.equal(controller.isBackgroundLitterRowSafe(14), false);
+    assert.equal(controller.isBackgroundLitterRowSafe(20), true);
+    controller.age = controller.spec.actionSeconds;
+    assert.equal(controller.isBackgroundLitterRowSafe(12), true);
+});
+
 test('同一步大小口核心重叠时选择大口，后续同轮不重复腾空', () => {
     const { controller, s, hits } = fixture(1,2);
     controller._vents = [

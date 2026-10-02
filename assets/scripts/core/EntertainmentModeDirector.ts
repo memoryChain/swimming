@@ -1,21 +1,11 @@
 import { SeededRandom } from './SharedRNG';
 import { geyserSpec } from './GeyserBrawlRules';
 import { WHIRLPOOL_SUPER_CHANCE } from './WhirlpoolBrawlRules';
-import type { EntertainmentRacePlan } from './EntertainmentRacePlan';
+import type { EntertainmentMainStage, EntertainmentRacePlan } from './EntertainmentRacePlan';
+import { ENTERTAINMENT_FIELD_EVENTS, grade4AdditionalStage } from './EntertainmentCadence';
 
-export const enum EntertainmentEventId {
-    STIMULANT = 0,
-    TIMED_BOMB = 1,
-    WHIRLPOOL = 2,
-    MINEFIELD = 3,
-    OBSTACLE = 3,
-    SHARK = 4,
-    CANNON = 5,
-    LITTER = 6,
-    TURTLE_BUS = 7,
-    GEYSER = 8,
-    GIANT_WAVE = 9,
-}
+import { EntertainmentEventId } from './EntertainmentEventIds';
+export { EntertainmentEventId } from './EntertainmentEventIds';
 
 /** 正式娱乐导演从六种候选中按赛程抽取三至六种。 */
 export const ENTERTAINMENT_LITTER_SELECTION_ENABLED = true;
@@ -497,6 +487,8 @@ export class EntertainmentModeDirector {
     private anchorDistance = 0;
     private readonly eventAnchorDistances = [0, 0, 0, 0, 0, 0];
     private readonly events: EntertainmentEventId[];
+    private readonly additionalStages: (EntertainmentMainStage | null)[] = [];
+    private readonly turtleFallbackStages: (EntertainmentMainStage | null)[] = [];
     private readonly seed: number;
     private readonly raceDistance: number;
     private readonly transition: EntertainmentDirectorTransition = {
@@ -521,6 +513,16 @@ export class EntertainmentModeDirector {
         this.raceDistance = Number.isFinite(raceDistance) ? Math.max(1, raceDistance) : 200;
         this.events = gradedPlan ? gradedPlan.stages.map(stage => stage.event) : testEventOrder?.length
             ? [...testEventOrder] : [...buildEntertainmentEventOrder(this.seed, this.raceDistance, this.includeLitter)];
+        if (gradedPlan?.grade === 4) this.remainingSeconds = 10;
+        if (gradedPlan?.grade === 4) {
+            for (const event of ENTERTAINMENT_FIELD_EVENTS) this.additionalStages[event] = grade4AdditionalStage(event);
+        }
+        gradedPlan?.stages.forEach((stage, index) => {
+            if (stage.event === EntertainmentEventId.TURTLE_BUS) this.turtleFallbackStages[index] = {
+                event: EntertainmentEventId.WHIRLPOOL, intensity: 1, previewProgress: stage.previewProgress,
+                actionCount: 1, durationSeconds: 8, required: stage.required,
+            };
+        });
         this.specialMask = gradedPlan ? 0 : testWhirlpoolSuper === undefined
             ? buildEntertainmentSpecialMask(this.seed, this.events)
             : testWhirlpoolSuper && this.events.indexOf(EntertainmentEventId.WHIRLPOOL) >= 0
@@ -537,6 +539,7 @@ export class EntertainmentModeDirector {
         this.phase = EntertainmentDirectorPhase.OPENING;
         this.eventIndex = 0;
         this.remainingSeconds = OPENING_SECONDS;
+        if (this.gradedPlan?.grade === 4) this.remainingSeconds = 10;
         if (this.gradedPlan && this.events.length === 0) {
             this.phase = EntertainmentDirectorPhase.COMPLETE;
             this.remainingSeconds = 0;
@@ -566,6 +569,21 @@ export class EntertainmentModeDirector {
     phaseId(): EntertainmentDirectorPhase { return this.phase; }
     secondsRemaining(): number { return this.remainingSeconds; }
 
+    currentGradedStage(): EntertainmentMainStage | null {
+        return this.eventIndex < this.events.length ? this.stageForIndex(this.eventIndex) : null;
+    }
+
+    private stageForIndex(index: number): EntertainmentMainStage | null {
+        const planned = this.gradedPlan?.stages[index];
+        if (!planned) return null;
+        const event = this.events[index];
+        if (this.gradedPlan?.grade === 4 && !planned.required) return this.additionalStages[event];
+        if (planned.event === EntertainmentEventId.TURTLE_BUS && event === EntertainmentEventId.WHIRLPOOL) {
+            return this.turtleFallbackStages[index];
+        }
+        return planned;
+    }
+
     canSpawnResidentObstacles(lightweightLitter = false): boolean {
         if (this.phase === EntertainmentDirectorPhase.OPENING || this.phase === EntertainmentDirectorPhase.COMPLETE) return true;
         if (this.phase === EntertainmentDirectorPhase.GAP) {
@@ -575,7 +593,14 @@ export class EntertainmentModeDirector {
         }
         // 仅放行已有组合安全路径的漩涡／班车稳定段，喷泉、巨浪与强袭继续避让。
         const event = this.currentEvent();
-        const stage = this.gradedPlan?.stages[this.eventIndex];
+        const stage = this.currentGradedStage();
+        // 背景垃圾按落点安全判定，主事件启动前三秒保持清楚的预警／动作读感。
+        if (lightweightLitter && this.gradedPlan && this.phase === EntertainmentDirectorPhase.ACTIVE) {
+            const duration = stage?.durationSeconds ?? (event === EntertainmentEventId.SHARK ? 14
+                : event === EntertainmentEventId.CANNON ? 9.9
+                    : this.gradedPlan.grade === 3 ? 11.5 : this.gradedPlan.grade === 4 ? 10.5 : 10);
+            return duration - this.remainingSeconds >= 3;
+        }
         return this.phase === EntertainmentDirectorPhase.ACTIVE && !!stage
             && (event === EntertainmentEventId.TURTLE_BUS || event === EntertainmentEventId.WHIRLPOOL)
             && stage.durationSeconds - this.remainingSeconds >= 3;
@@ -633,8 +658,12 @@ export class EntertainmentModeDirector {
 
     anchorDistanceForEvent(event: EntertainmentEventId): number {
         if (this.currentEvent() === event && this.anchorDistance > 0) return this.anchorDistance;
-        const index = this.events.indexOf(event);
-        return index >= 0 ? this.eventAnchorDistances[index] : 0;
+        for (let index = this.events.length - 1; index >= 0; index--) {
+            if (this.events[index] === event && this.eventAnchorDistances[index] > 0) {
+                return this.eventAnchorDistances[index];
+            }
+        }
+        return 0;
     }
 
     /** 首位选手完赛后停止安排新事件；已经激活的事件保留到自身结算完成。 */
@@ -698,10 +727,10 @@ export class EntertainmentModeDirector {
             this.phase = EntertainmentDirectorPhase.ACTIVE;
             // 五档调试传入的已是完整事件窗口；现行规格仍按赛程长度缩放。
             this.remainingSeconds = (this.gradedPlan && event === EntertainmentEventId.TURTLE_BUS
-                ? this.preparedTurtleSeconds || this.gradedPlan.stages[this.eventIndex].durationSeconds
+                ? this.preparedTurtleSeconds || this.currentGradedStage()?.durationSeconds
                 : this.gradedPlan && this.events[this.eventIndex] !== this.gradedPlan.stages[this.eventIndex]?.event
-                    && this.eventIndex < this.events.length ? 8 : undefined)
-                ?? this.gradedPlan?.stages[this.eventIndex]?.durationSeconds
+                    && this.eventIndex < this.events.length && this.gradedPlan.stages[this.eventIndex]?.required ? 8 : undefined)
+                ?? this.currentGradedStage()?.durationSeconds
                 ?? (this.gradedPlan && this.encoreEvent !== null
                     ? this.encoreEvent === EntertainmentEventId.SHARK ? 14
                         : this.encoreEvent === EntertainmentEventId.CANNON ? 9.9
@@ -848,9 +877,12 @@ export class EntertainmentModeDirector {
             : this.testEventOrder?.length ? this.testEventOrder
                 : buildEntertainmentEventOrder(this.seed, this.raceDistance, this.includeLitter);
         if (events.length !== planned.length) return false;
-        if (this.gradedPlan) return events.every((event, index) => event === planned[index]
+        if (this.gradedPlan) return events.every((event, index) => (
+            this.gradedPlan!.grade === 4 && !this.gradedPlan!.stages[index].required
+                ? ENTERTAINMENT_FIELD_EVENTS.indexOf(event) >= 0
+                : event === planned[index]
             || (this.gradedPlan!.grade >= 2 && planned[index] === EntertainmentEventId.TURTLE_BUS
-                && event === EntertainmentEventId.WHIRLPOOL));
+                && event === EntertainmentEventId.WHIRLPOOL)));
         let replaced = 0;
         for (let index = 0; index < events.length; index++) {
             if (events[index] === planned[index]) continue;
@@ -919,6 +951,7 @@ export class EntertainmentModeDirector {
     }
 
     private gapSeconds(): number {
+        if (this.gradedPlan?.grade === 4) return this.gradedPlan.cadence.grade4GapSeconds;
         if (this.gradedPlan) return this.gradedPlan.raceDistance === 400 ? 8 : 5;
         return this.events.length >= 5 ? LONG_RACE_GAP_SECONDS : SHORT_RACE_GAP_SECONDS;
     }
@@ -953,10 +986,10 @@ export class EntertainmentModeDirector {
     }
 
     private stageBudgetSeconds(index: number): number {
-        const stage = this.gradedPlan!.stages[index];
+        const stage = this.stageForIndex(index)!;
         // 班车在公开前确认航段，不再预算额外的 18 秒无效等候。
-        return this.events[index] !== stage.event ? 8 : stage.event === EntertainmentEventId.TURTLE_BUS
-            ? this.preparedTurtleSeconds || stage.durationSeconds : stage.durationSeconds;
+        return stage.event === EntertainmentEventId.TURTLE_BUS
+            ? (index === this.eventIndex ? this.preparedTurtleSeconds : 0) || stage.durationSeconds : stage.durationSeconds;
     }
 
     private remainingBudget(distance: number, speed: number, includeOptional: boolean): number {
@@ -991,8 +1024,28 @@ export class EntertainmentModeDirector {
         }
         while (this.eventIndex < this.events.length) {
             const stage = this.gradedPlan!.stages[this.eventIndex];
+            if (this.gradedPlan!.grade === 4 && !stage.required) {
+                if (this.selectAdditionalField(distance, speed, available)) return true;
+                this.skipReasons[this.eventIndex] = 'optional-budget-or-space';
+                this.eventIndex++;
+                this.preparedTurtleSeconds = 0;
+                this.revision++;
+                continue;
+            }
             const early = this.remainingBudget(distance, speed, true) > available * 0.8;
-            const progress = early ? this.earliestPreviewProgress(this.eventIndex) : stage.previewProgress;
+            let progress = early ? this.earliestPreviewProgress(this.eventIndex) : stage.previewProgress;
+            if (this.gradedPlan!.grade === 4) {
+                // 稳定进度估计显示已空等约十二秒时，提前基础段，仍保留强挑战最低进度。
+                for (let previous = this.eventIndex - 1; previous >= 0; previous--) {
+                    const anchor = this.eventAnchorDistances[previous];
+                    if (anchor <= 0) continue;
+                    const previousStage = this.stageForIndex(previous)!;
+                    if ((distance - anchor) / speed >= previousStage.durationSeconds + 12) {
+                        progress = Math.min(progress, stage.event === EntertainmentEventId.CANNON ? .28 : .10);
+                    }
+                    break;
+                }
+            }
             // 未到启动窗口不作不可逆取消；后段容量只决定提前，不牺牲已选的当前主段。
             if (distance < progress * this.raceDistance) return false;
             if (this.currentEvent() === EntertainmentEventId.TURTLE_BUS && this.prepareTurtle) {
@@ -1026,6 +1079,32 @@ export class EntertainmentModeDirector {
             return true;
         }
         this.complete();
+        return false;
+    }
+
+    /** 机会槽先找未出现且可完整执行的类型，不让长航次占掉后续基础挑战预算。 */
+    private selectAdditionalField(distance: number, speed: number, available: number): boolean {
+        const plan = this.gradedPlan!;
+        const preferred = this.events[this.eventIndex];
+        for (let step = 0; step <= ENTERTAINMENT_FIELD_EVENTS.length; step++) {
+            const event = step === 0 ? preferred : ENTERTAINMENT_FIELD_EVENTS[step - 1];
+            if (step > 0 && event === preferred || (this.activatedMask & eventBit(event)) !== 0
+                || event === this.lastActivatedEvent
+                || plan.stages.some((stage, index) => stage.required && (stage.event === event
+                    || event === EntertainmentEventId.WHIRLPOOL && stage.event === EntertainmentEventId.TURTLE_BUS
+                        && index >= this.eventIndex))) continue;
+            this.events[this.eventIndex] = event;
+            this.preparedTurtleSeconds = 0;
+            if (event === EntertainmentEventId.TURTLE_BUS && this.prepareTurtle) {
+                this.preparedTurtleSeconds = this.prepareTurtle();
+                if (this.preparedTurtleSeconds <= 0) continue;
+            }
+            if (this.remainingBudget(distance, speed, false) <= available * plan.cadence.optionalBudgetRatio) {
+                if (event !== preferred) this.revision++;
+                return true;
+            }
+        }
+        this.events[this.eventIndex] = preferred;
         return false;
     }
 }

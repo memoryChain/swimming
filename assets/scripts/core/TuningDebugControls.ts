@@ -24,6 +24,7 @@ import { COLLISION_SOFTNESS_TUNING } from './CollisionSoftnessTuning';
 import { STIMULANT_BRAWL_TUNING } from './StimulantBrawlRules';
 import { TURTLE_BUS_TUNING } from './TurtleBusRules';
 import { SHARK_TUNING } from '../entity/SharkTuning';
+import { ENTERTAINMENT_CADENCE_TUNING } from './EntertainmentCadence';
 import { WHIRLPOOL_BRAWL_TUNING, WHIRLPOOL_SUPER_TUNING } from './WhirlpoolBrawlRules';
 import { MINE_RELAY_TUNING } from './MineRelayBrawlController';
 import { MINEFIELD_TUNING } from './MinefieldBrawlController';
@@ -91,6 +92,19 @@ type TuningLoadCandidate = {
 };
 
 export const TUNING_GROUPS: TuningGroup[] = [
+    {
+        name: '娱乐主事件节奏',
+        controls: [
+            control('entertainment.grade4Extras200', '四档短局追加上限', '基础事件之间和之后的追加机会数，下局生效；联机固定默认值。',
+                () => ENTERTAINMENT_CADENCE_TUNING.grade4Extras200, v => ENTERTAINMENT_CADENCE_TUNING.grade4Extras200 = v, 1, 0, 2, 0),
+            control('entertainment.grade4Extras400', '四档长局追加上限', '有时间和安全空间才启动，不挤掉基础挑战。',
+                () => ENTERTAINMENT_CADENCE_TUNING.grade4Extras400, v => ENTERTAINMENT_CADENCE_TUNING.grade4Extras400 = v, 1, 0, 3, 0),
+            control('entertainment.grade4GapSeconds', '四档事件恢复间隔', '两轮主事件之间的正常游泳时间，下局生效；联机固定默认值。',
+                () => ENTERTAINMENT_CADENCE_TUNING.grade4GapSeconds, v => ENTERTAINMENT_CADENCE_TUNING.grade4GapSeconds = v, .5, 5, 8, 1, ' s'),
+            control('entertainment.optionalBudgetRatio', '追加时间预算比例', '预留基础事件和收尾后，允许追加使用的剩余时间比例。',
+                () => ENTERTAINMENT_CADENCE_TUNING.optionalBudgetRatio, v => ENTERTAINMENT_CADENCE_TUNING.optionalBudgetRatio = v, .05, .65, .95, 2),
+        ],
+    },
     {
         name: '玩具鲨追逐',
         controls: [

@@ -8,6 +8,7 @@ import type { NetTurtleBusState } from '../net/NetTurtleBusSnapshot';
 import { TurtleBusVisual } from './TurtleBusPresentation';
 import { TURTLE_BUS_LAYOUT } from './TurtleBusLayout';
 import { SeededRandom } from './SharedRNG';
+import { litterRowOverlapsDanger } from './EntertainmentBackgroundSafety';
 import {
     TURTLE_BUS_CONFIG, TURTLE_BUS_LEFT_HAND, TURTLE_BUS_RIGHT_HAND,
     TURTLE_BUS_RING_FORWARD_OFFSETS, turtleBusRingWorldLateral,
@@ -166,6 +167,14 @@ export class TurtleBusController {
     get isDone(): boolean { return this.seats.phase === 'done'; }
     get isAwaitingActivation(): boolean { return this.awaitingActivation; }
     get visualNode(): Node { return this.visual.node; }
+    isBackgroundLitterRowSafe(worldX: number): boolean {
+        if (!this.started || this.isDone || this.awaitingActivation) return true;
+        const scale = this.worldScale();
+        const origin = this.direction === this.course.direction ? this.course.startX : this.course.finishX;
+        const x = origin + this.direction * turtleBusPositionAt(this.seats.age, this.startOffset) * scale;
+        return !litterRowOverlapsDanger(worldX, x, 5,
+            this.direction * turtleBusSpeedAt(this.seats.age, this.startOffset) * scale * 2);
+    }
 
     /** 综合排期先确认现时可搭航段；不启动上浮、广播或 AI 牵引。 */
     prepareLaunch(): number {

@@ -29,6 +29,27 @@ function land(slots) {
     for (const slot of slots) { slot.phase = 'floating'; slot.phaseProgress = 0; }
 }
 
+test('背景垃圾让位期间仍存在世界槽位，恢复空闲不补拍旧波，巨浪立即抢占', () => {
+    const { camera } = fixture(), first = wave(0, 10), second = wave(1, 20);
+    camera.updateLitter(first, true, .1);
+    assert.equal(camera.mode, 'litter');
+    camera.showGiantWavePreview({ phase: 'active' });
+    assert.equal(camera.mode, 'giant-wave');
+    camera.updateLitter(first, true, .1, true, true);
+    assert.equal(camera.mode, 'giant-wave');
+    assert.ok(first.every(slot => slot.active), '放弃镜头不能删除世界垃圾');
+    camera.hide();
+    camera.updateLitter(first, true, .1, true, false);
+    assert.equal(camera.mode, 'none', '空闲时不补拍旧波');
+    camera.updateLitter(second, true, .1, true, false);
+    assert.equal(camera.mode, 'litter', '之后的新波仍可使用空闲镜头');
+    camera.updateLitter(second, true, .1, true, true);
+    assert.equal(camera.mode, 'none', '主事件预告预约即可让位，不必等新镜头出现');
+    camera.reset();
+    camera.updateLitter(first, true, .1);
+    assert.equal(camera.mode, 'litter', '下一局不能保留旧波丢弃记录');
+});
+
 test('同波三组入场、漂浮和受推都不牵动已建立的构图', () => {
     const { camera } = fixture(), slots = wave(0, 10);
     camera.updateLitter(slots, true, 1 / 30);
