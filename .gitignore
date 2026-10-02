@@ -36,6 +36,10 @@ extensions/cocos-code-mode/
 /extensions/taptap-minigame-tools/ENVIRONMENT_CHECK.md
 /.cache/
 
+# 解压元数据与本机运行日志
+__MACOSX/
+/log/
+
 #//////////////////////////
 # VSCode
 #//////////////////////////
