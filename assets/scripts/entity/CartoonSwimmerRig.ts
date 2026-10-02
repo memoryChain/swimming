@@ -1315,7 +1315,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         movementHeadingRadians = motor.heading,
         bodyUpProjection = Math.cos(motor.axialRollRadians) * Math.cos(motor.collisionPitchRadians),
         surfaceBodyRollAllowed = false,
-        bodyRollTestEnabled = false,
+        freestylePresentationEnabled = false,
     ) {
         const useDt = this.consumeThrottledMotionDt(dt);
         if (useDt < 0) {
@@ -1332,7 +1332,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             bodyUpProjection,
         );
         this._pose.setSurfaceBodyUpProjection(bodyUpProjection);
-        if (bodyRollTestEnabled) {
+        if (freestylePresentationEnabled) {
             const motion = this._bodyRollTest ?? (this._bodyRollTest = new FreestyleBodyRollMotion());
             const allowed = surfaceBodyRollAllowed && !motor.butterfly?.active
                 && this._butterflyPoseWeight <= 0 && this._treadWaterWeight < 0.1;
@@ -1361,7 +1361,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         );
         // 该补偿只作用于本次水面姿态，水下滑行、转身和独立预览使用默认方向。
         this._pose.setSurfaceBodyUpProjection(1);
-        if (bodyRollTestEnabled) this._pose.setBodyRollTestPose(-1);
+        if (freestylePresentationEnabled) this._pose.setBodyRollTestPose(-1);
         // 跟随原有降频与离屏裁剪，在完整基础姿态之后应用，下一次姿态会自然覆盖。
         if (this._loaded && this._poseState.isFreestyleActive) {
             const lag = this._geyserLimbLag;

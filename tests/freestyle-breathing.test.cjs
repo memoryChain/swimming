@@ -125,7 +125,7 @@ test('中途恢复俯泳、仰泳反向相位和特殊动作期间不补做换�
     }
 });
 
-test('实际模型入口仅在蝶泳测试分配状态，特殊动作阻止启动，调用后还原正式求解模式', () => {
+test('比赛模型入口显式启用转体与抬肘，特殊动作阻止启动，调用后清理临时求解参数', () => {
     const ts = require(process.env.PATH.split(path.delimiter)
         .map(p => path.resolve(p, '../typescript/lib/typescript.js')).find(p => fs.existsSync(p)));
     const file = path.join(root, 'assets/scripts/entity/CartoonSwimmerRig.ts');

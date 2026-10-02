@@ -9,13 +9,15 @@ const file = path.join(h.root,'assets/scripts/entity/Swimmer.ts');
 const source = ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
 const decl = source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='Swimmer');
 const names = ['makeStrokeQualityResult','updatePerfectComboIdle','tryDolphinJump','canUseDolphinAbility',
-    'enableButterfly','enableFreestyleBodyRollTest','_freestyleBodyRollTestEnabled',
+    'enableButterfly','enableFreestylePresentation','enableFreestyleBodyRollTest','_freestylePresentationEnabled',
     'motor','courseLayout','startPosition','canUseArmStroke','butterflyAdmission','butterflyInterruptionVersion',
     'beginButterfly','releaseButterfly','cancelButterfly','butterflyPhaseReady','butterflyPoseAllowed',
     'canContinueButterfly','interruptButterflyIfNeeded','isButterflyRecoveryLocked','stepSimulation',
     'distance','rhythmStats','beginEntertainmentKnockout','respawnAfterEntertainmentHit','endEntertainmentInvulnerability',
     'resetEntertainmentKnockoutPresentation','syncEntertainmentRecoveryBodyVisibility','clearForcedLaunch',
-    'geyserHitEligible','applyGeyserHit','canRideGiantWave','clearGiantWave','sampleGiantWave',
+    'geyserHitEligible','applyGeyserHit','geyserBodyScale','sampleGeyserBody','emitGeyserContact',
+    'restoreGeyserReaction','updateGeyserReaction','updateGeyserLanding',
+    'canRideGiantWave','clearGiantWave','sampleGiantWave',
     'playFinishTouch','finishFloatX'];
 const members = decl.members.filter(n=>names.includes(n.name?.getText(source)));
 if(members.length!==names.length)throw new Error('实体测试入口缺失');
@@ -24,7 +26,7 @@ const Body = vm.runInNewContext(js+';Body',{
     ...load('core/StrokeQualityScoring'), ...load('core/GameConstants'), ...load('core/ConditionBalance'),
     ...load('core/CharacterAbilityConfig'), ...load('core/DolphinJumpConfig'), ...load('core/ButterflyTuning'),
     ...load('core/GameBalance'), PERFECT_COMBO_IDLE_SECONDS:1,
-    ...load('core/GeyserBrawlRules'), ...load('swimmer/ForcedLaunchModel'),
+    ...load('core/GeyserBrawlRules'), ...load('swimmer/ForcedLaunchModel'), ...load('swimmer/GeyserReactionModel'),
     ...load('core/GiantWaveRules'), ...load('net/NetGiantWaveCodec'), ...load('core/WhirlpoolBrawlRules'),
     ...load('character/CharacterMotionTuning'),
     Tween:{stopAllByTarget(){}},
@@ -45,6 +47,11 @@ function createBody(id='none', balance=null) {
     body._forcedLaunchAge=body._forcedLaunchGrace=body._forcedLaunchEdge=body._forcedLaunchHitId=0;
     body._forcedLaunchSample={distance:0,lateral:0,y:0,speed:0,done:false};
     body._geyserHits=new (load('core/GeyserBrawlRules').GeyserHitLedger)();
+    body._geyserReaction=null;body._geyserReactionAge=0;
+    body._geyserPose={pitch:0,roll:0,weight:0,forward:0,side:0};
+    body._geyserBodyScratch=load('swimmer/GeyserBodyContact').emptyGeyserBodyPose();
+    body._geyserLandingArmed=false;body._geyserLandingPlayed=true;
+    body._geyserPreviousFootX=body._geyserPreviousFootY=body._geyserPreviousFootZ=0;
     body.geyserTuning=load('core/GeyserBrawlRules').GEYSER_TUNING;
     body._entertainmentKnocked=body._entertainmentInvulnerable=false;
     body.giantWaveState=null;body.giantWaveTuning=null;body._waveX=NaN;body._waveZ=0;
@@ -61,7 +68,7 @@ function createBody(id='none', balance=null) {
         triggerStrokeFeedback(){},setDiveStreamlinePose(){},setLegSplashSuppressed(){},setPerfectGlowActive(){},
         updateUnderwaterBubbles(){},applyCollisionPitchPivotCompensation(){},
         setRecoveryBlinkVisible(){},setGiantWaveLift(){},setDiveReady(){},finishDiveChargeEffect(){},resetPose(){},
-        clearTransientBodyFeedback(){},setFinishFloating(){},
+        clearTransientBodyFeedback(){},setFinishFloating(){},setGeyserLimbLag(){},setTurtleBusGripHands(){},
         triggerSplashBurst(){},triggerTakeoffSplash(){},triggerBigSplash(){},setActiveSwimming(){},setStrokeHeld(){},finishRaceFlipTurn(){},
         startRaceFlipTurn(){elapsed=0;return .2;},
         updateRaceFlipTurn(dt){

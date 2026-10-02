@@ -96,12 +96,13 @@ function progressSpeedFixture() {
  const source=ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
  const swimmerClass=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='Swimmer');
  // 执行真实泳者的模拟步和读数接口，仅替代场景、动画与特殊动作调度。
- const names=['stepSimulation','interruptButterflyIfNeeded','updateMovementSpeed','movementSpeed','currentSpeed','netSpeed'];
+ const names=['stepSimulation','interruptButterflyIfNeeded','updateMovementSpeed','movementSpeed','currentSpeed','netSpeed',
+  'updateGeyserReaction','_geyserReaction','_geyserReactionAge','_geyserPose'];
  const methods=swimmerClass.members.filter(n=>names.includes(n.name?.getText(source)));
  assert.equal(methods.length,names.length);
  const js=ts.transpileModule(`class SpeedHarness { ${methods.map(n=>n.getText(source)).join('\n')} }`,
   {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
- const Harness=vm.runInNewContext(`${js}; SpeedHarness`,{isWhirlpoolBrawlMode:()=>false});
+ const Harness=vm.runInNewContext(`${js}; SpeedHarness`,{isWhirlpoolBrawlMode:()=>false,...loadModule('swimmer/GeyserReactionModel')});
  const swimmer=new Harness(),motor=new SwimmerMotor();
  motor.startRace(0,2.5);
  // 固定内部游速，单独检查真实运动模型的方向及翻滚损失。

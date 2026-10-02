@@ -1,6 +1,6 @@
 import { FreestyleRecoveryAdmission } from './FreestyleRecoveryMotion';
 
-/** 仅用于本地动作实验：真实左右划水驱动身体侧转，不产生输入或推进。 */
+/** 水面自由泳表现：真实左右划水驱动身体侧转，不产生输入或推进。 */
 export const FREESTYLE_BODY_ROLL_TUNING = {
     // 主侧倾由完整可见模型承担，胸廓只补8°，不再单独拧骨盆。
     chestDegrees: 56,
@@ -11,7 +11,7 @@ export const FREESTYLE_BODY_ROLL_TUNING = {
     fadeSeconds: 0.10,
     maxSignalSpeed: 10,
     idleGraceSeconds: 0.12,
-    // 只收敛实验中的出水回臂，不改变已经确认的转体幅度与节奏。
+    // 保留已经确认的转体幅度与节奏，收敛原出水回臂。
     recoveryHeightScale: 0.75,
     recoverySideScale: 0.85,
     recoveryElbowBendDegrees: 20,

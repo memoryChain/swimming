@@ -83,30 +83,93 @@ test('能力开关可以独立创建输入，但不切换测试场人数、读�
     assert.doesNotMatch(text('assignRaceLanes') + text('buildDeferredAiSwimmers'), /_butterflyEnabled/);
 });
 
-test('实际玩家与AI创建入口仅在蝶泳测试启用自由泳转体，正式蝶泳能力独立保留', () => {
+test('全部比赛创建入口为玩家与AI启用自由泳表现，模型预览及蝶泳能力独立保留', () => {
     const src=source('core/GameManager'),calls=[];
     const declaration=src.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='GameManager');
     function collect(n) {
         if(ts.isExpressionStatement(n)&&ts.isCallExpression(n.expression)
-            &&/\.enable(?:Butterfly|FreestyleBodyRollTest)$/.test(n.expression.expression.getText(src))) calls.push(n.getText(src));
+            &&/\.enable(?:Butterfly|FreestylePresentation)$/.test(n.expression.expression.getText(src))) calls.push(n.getText(src));
         ts.forEachChild(n,collect);
     }
     for(const member of declaration.members) if(['buildPlayerSwimmer3D','buildDeferredAiSwimmers'].includes(member.name?.getText(src))) collect(member);
     assert.equal(calls.length,3,'玩家的两个独立开关以及AI的表现开关均须接入');
     const js=ts.transpileModule(`(function(){${calls.join('\n')}}).call(manager);`,
         {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
-    for(const [debug,net,room] of [[false,null,false],[true,null,false],[true,{},false],[true,null,true]]) {
-        const manager=managerFixture(debug,net,room,true);
+    const {RACE_MODE_OPTIONS}=load('core/GameBalance');
+    for(const mode of RACE_MODE_OPTIONS) for(const launch of ['race','ai-debug','model-debug','underwater-debug'])
+      for(const [net,room] of [[null,false],[{},false],[null,true]]) {
+        const manager=managerFixture(launch==='ai-debug',net,room,true,mode.id,launch);
         const player=createBody().body,ai=createBody().body;
         player.enableButterfly(false);ai.enableButterfly(false);
         Object.assign(manager,{_playerSwimmer:player,_aiSwimmers:[ai]});
         vm.runInNewContext(js,{manager,i:0});
-        const expected=debug&&!net&&!room;
-        assert.equal(player._freestyleBodyRollTestEnabled,expected);
-        assert.equal(ai._freestyleBodyRollTestEnabled,expected);
-        assert.equal(player.beginButterfly(),!net&&!room,'本地正式模式继续可以蝶泳');
+        const expected=launch==='race'||launch==='ai-debug';
+        assert.equal(player._freestylePresentationEnabled,expected,`${mode.id}/${launch}/玩家`);
+        assert.equal(ai._freestylePresentationEnabled,expected,`${mode.id}/${launch}/AI或远程真人`);
+        assert.equal(player.beginButterfly(),expected&&!net&&!room,'自由泳表现不改变蝶泳玩法门控');
         assert.equal(ai.beginButterfly(),false,'转体不开放AI蝶泳玩法');
     }
+});
+
+test('正式比赛和联机不创建或更新下方动作诊断小字，比赛调试保留', () => {
+    const src=source('core/GameManager'),statements=[];
+    function visit(n) {
+        if(ts.isIfStatement(n)) {
+            const condition=n.expression.getText(src),body=n.thenStatement.getText(src);
+            if((condition.includes('_aiDebugMode') && /(?:enable|update)ButterflyStatus/.test(body))
+                || (condition==='this._butterflyTestMode' && body.includes('new ButterflyDebugHud')))
+                statements.push(n.getText(src));
+        }
+        ts.forEachChild(n,visit);
+    }
+    visit(src);assert.equal(statements.length,3,'须覆盖底部状态文字创建、更新及测试读数创建');
+    const js=ts.transpileModule(`(function(){${statements.join('\n')}}).call(manager);`,
+        {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
+    for(const [debug,net,room] of [[false,null,false],[false,{},false],[false,null,true],[true,null,false]]) {
+        const manager=managerFixture(debug,net,room,true);let created=0,updated=0,readouts=0;
+        Object.assign(manager,{_uiController:{raceHudStatus:{enableButterflyStatus(){created++;},updateButterflyStatus(){updated++;}}},
+            _playerSwimmer:{node:{active:true}},_playerAutopilotEnabled:false,_raceHud:{}});
+        vm.runInNewContext(js,{manager,dt:.1,raceActive:true,visibleSize:{width:1280,height:720},
+            ButterflyDebugHud:class {constructor(){readouts++;}}});
+        assert.equal(created,debug?1:0);assert.equal(updated,debug?1:0);assert.equal(readouts,debug?1:0);
+    }
+});
+
+test('自由泳表现消费实际同步倾角和角速度，翻面退出且特殊动作不启用', () => {
+    const motion=load('character/FreestyleBodyRollMotion');
+    const Entity=extractedClass(source('entity/Swimmer'),'Swimmer',
+        ['enableFreestylePresentation','_freestylePresentationEnabled','updateBodyMotion','applyNetAxialRoll','applyNetCollisionPitch'],
+        {...load('swimmer/GeyserReactionModel'),StrokeType});
+    const entity=new Entity(),motor=new SwimmerMotor();motor.startRace(0,2);
+    let args,kicks=0;
+    Object.assign(entity,{_motor:motor,raceDirection:1,_forcedLaunch:null,_entertainmentKnocked:false,
+        _geyserPose:{pitch:0,roll:0,weight:0,forward:0,side:0},
+        _phases:{diveRecoveryLean:()=>0,dolphinRollResidualRadians:()=>0,canUseArmStroke:true,
+            isUnderwater:false,isDiveGlidePoseActive:false,isFlipTurnActive:false,isFlipTurnCameraActive:false,isDolphinJumpActive:false},
+        cartoonRig:{axialRollVisualWeight:1,setLegSplashSuppressed(){},
+            updateFreestyleFromMotor(...values){args=values;},updateUnderwaterKickFromMotor(){kicks++;}}});
+    entity.enableFreestylePresentation(true);
+    const m=new motion.FreestyleBodyRollMotion();let time=0;
+    const present=()=>{
+        time+=1/60;entity.updateBodyMotion(1/60);assert.equal(args[7],true);
+        m.update(args[0],time*2*Math.PI,(time+.5)*2*Math.PI,args[6],args[5],args[3],
+            args[1].axialRollAngularVelocity,args[1].collisionPitchAngularVelocity);
+    };
+    for(let i=0;i<120;i++)present();assert.ok(m.leftRecovery>.95&&m.rightRecovery>.95);
+    entity.applyNetAxialRoll(Math.PI,4,1);entity.applyNetCollisionPitch(0,0,1);
+    entity.updateBodyMotion(1/60);assert.ok(args[5]<-.99);assert.equal(args[1].axialRollAngularVelocity,4);
+    for(let i=0;i<60;i++)present();assert.equal(m.leftRecovery,0);assert.equal(m.rightRecovery,0);
+    entity.applyNetAxialRoll(0,0,1);entity.applyNetCollisionPitch(Math.PI,4,1);
+    entity.updateBodyMotion(1/60);assert.ok(args[5]<-.99);assert.equal(args[3],Math.PI);
+    entity.applyNetCollisionPitch(0,0,1);
+    for(const flag of ['isUnderwater','isFlipTurnActive','isDolphinJumpActive','isDiveGlidePoseActive']) {
+        entity._phases[flag]=true;entity.updateBodyMotion(1/60);assert.equal(args[6],false,flag);entity._phases[flag]=false;
+    }
+    for(const key of ['_forcedLaunch','_entertainmentKnocked']) {
+        entity[key]=true;entity.updateBodyMotion(1/60);assert.equal(args[6],false,key);entity[key]=key==='_forcedLaunch'?null:false;
+    }
+    entity._phases.isDiveGlidePoseActive=true;entity._phases.canUseArmStroke=false;
+    entity.updateBodyMotion(1/60);assert.equal(kicks,1,'水下滑行仍由水下踢腿动作接管');
 });
 
 test('娱乐单项及综合娱乐调试经实际输入工厂起划、松手结算和重开，不依赖蝶泳页标记', () => {
