@@ -27,6 +27,8 @@ import { SettingsPanel } from '../ui/SettingsPanel';
 import { MusicManager } from './MusicManager';
 import { PrepareRaceFlow } from '../ui/PrepareRaceFlow';
 import { ShopDailySupplyPanel } from '../ui/ShopDailySupplyPanel';
+import { SidebarReturnPanel } from '../ui/SidebarReturnPanel';
+import { platformEngagement } from '../platform/PlatformEngagement';
 
 
 const { ccclass } = _decorator;
@@ -43,6 +45,7 @@ export class LoginManager extends Component {
     private _identityEditPanel: IdentityEditPanel | null = null;
     private _settingsPanel: SettingsPanel | null = null;
     private _shopPanel: ShopDailySupplyPanel | null = null;
+    private _sidebarPanel: SidebarReturnPanel | null = null;
     private _shopIdentityWasVisible = true;
     private _shopTransitioning = false;
     private _shopNavigationVersion = 0;
@@ -55,6 +58,7 @@ export class LoginManager extends Component {
     private _offAppShow: (() => void) | null = null;
 
     onLoad() {
+        platformEngagement();
         const canvasNode = this.findCanvasNode();
         canvasNode.layer = Layers.Enum.UI_2D;
 
@@ -152,6 +156,15 @@ export class LoginManager extends Component {
         this._settingsPanel.show();
     }
 
+    private openSidebar(): void {
+        if (!this._canvasNode?.isValid || !this._prepareRaceFlow || this._roomFlow || this._shopTransitioning) return;
+        if (!this._sidebarPanel) {
+            this._sidebarPanel = new SidebarReturnPanel(presented => this._prepareRaceFlow?.setModalOverlayActive(presented));
+            this._sidebarPanel.build(getUILayer(this._canvasNode, UILayer.Hud), this._designWidth, this._designHeight);
+        }
+        this._sidebarPanel.show();
+    }
+
     private toast(text: string) {
         if (this._canvasNode?.isValid) {
             showToast(this._canvasNode, text);
@@ -176,6 +189,7 @@ export class LoginManager extends Component {
     }
 
     onDestroy() {
+        this._sidebarPanel?.dispose(); this._sidebarPanel = null;
         this._shopNavigationVersion++;
         this._shopTransitioning = false;
         this._offAppShow?.();
@@ -210,6 +224,7 @@ export class LoginManager extends Component {
             onOpenRoom: () => this.openRoomFromPrepare(),
             onAiDebug: () => this.showAiDebugPicker(),
             onOpenShop: () => this.openShop(),
+            onOpenSidebar: () => this.openSidebar(),
             onCharacterManagementChanged: (active) => {
                 this._headBar?.setBack(null);
                 this._headBar?.setIdentityVisible(!active);

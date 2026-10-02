@@ -1157,6 +1157,7 @@ export class GameManager extends Component {
             return;
         }
         this._isReturningToLogin = true;
+        this._gameFlow?.recordPlayerExit();
         if (!this._roomMode && getSoloRaceTicket()) { setReturnToLobby(true); markSoloReturn(); }
         // Room-mode races return to the online room, not the main menu.
         if (this._roomMode) {
@@ -1279,6 +1280,13 @@ export class GameManager extends Component {
 
     private createGameFlow(): GameFlowController {
         return new GameFlowController({
+            analyticsContext: () => ({
+                mode: getRaceDifficultyConfig().id,
+                distance: getRaceDistance(),
+                character_id: getPlayerCharacterSelection().characterId,
+                play_type: this._netSession ? 'network' : 'local',
+                test_type: this._aiDebugMode ? 'ai_debug' : 'normal',
+            }),
             raceManager: this._raceManager,
             playerSwimmer: this._playerSwimmer,
             aiSwimmers: this._aiSwimmers,

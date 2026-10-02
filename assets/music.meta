@@ -11,10 +11,12 @@
     "bundleName": "music",
     "priority": 6,
     "compressionType": {
-      "wechatgame": "subpackage"
+      "wechatgame": "subpackage",
+      "bytedance-mini-game": "subpackage"
     },
     "isRemoteBundle": {
-      "wechatgame": false
+      "wechatgame": false,
+      "bytedance-mini-game": false
     }
   }
 }

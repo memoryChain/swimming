@@ -102,6 +102,7 @@ export class PopupUiMotion {
         node.on(Node.EventType.TOUCH_CANCEL, release);
         this._resetButtons.push(reset);
         this._unbind.push(() => {
+            if (!node.isValid) return;
             node.off(Node.EventType.TOUCH_START, press);
             node.off(Node.EventType.TOUCH_END, release);
             node.off(Node.EventType.TOUCH_CANCEL, release);

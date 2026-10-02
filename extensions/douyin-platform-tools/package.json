@@ -1,0 +1,8 @@
+{
+  "name": "douyin-platform-tools",
+  "title": "抖音侧边栏与基础埋点",
+  "package_version": 2,
+  "version": "1.0.0",
+  "description": "在抖音引擎启动前监听来源，保留冷启动与热复访信息。",
+  "contributions": { "builder": "./builder.js" }
+}

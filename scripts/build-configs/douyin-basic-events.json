@@ -1,0 +1,15 @@
+{
+  "appId": "ttfe7b88c6600382a002",
+  "schemaVersion": 2,
+  "description": "后台事件注册清单，非平台官方导入文件。字段类型为字符串或数值。",
+  "commonFields": { "build_version": "string", "schema_version": "number", "is_test": "number" },
+  "events": [
+    { "name": "lobby_ready", "description": "冷启动后大厅操作入口首次建立", "fields": { "load_ms": "number", "source": "string" } },
+    { "name": "race_start", "description": "每局倒计时结束并进入出发阶段，仅本地玩家一次", "fields": { "mode": "string", "distance": "number", "character_id": "string", "play_type": "string", "test_type": "string" } },
+    { "name": "race_end", "description": "单机本地玩家触壁、最终成绩解析或主动退出，每局本地玩家一次；联机等待权威成绩", "fields": { "mode": "string", "distance": "number", "character_id": "string", "play_type": "string", "test_type": "string", "outcome": "string", "time_ms": "number", "placement": "number", "progress_percent": "number" } },
+    { "name": "race_again", "description": "已结束一局后触发原地重赛", "fields": { "mode": "string", "distance": "number", "character_id": "string", "play_type": "string", "test_type": "string" } },
+    { "name": "sidebar_guide_click", "description": "大厅侧边栏引导弹窗打开", "fields": { "entry": "string" } },
+    { "name": "sidebar_jump_result", "description": "跳转调用终态，仅表示跳转结果", "fields": { "entry": "string", "result": "string" } },
+    { "name": "sidebar_return", "description": "最新平台回调或冷启动参数满足真实侧边栏来源", "fields": { "source": "string", "scene": "string" } }
+  ]
+}

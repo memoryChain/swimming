@@ -50,12 +50,14 @@ import { CareerPrototypePanel } from './CareerPrototypePanel';
 import { setSoloRaceTicket } from '../progression/SoloRaceSession';
 import { setSoloRaceDistance } from '../core/GameBalance';
 import { getUILayer, UILayer } from './UILayers';
+import { platformEngagement } from '../platform/PlatformEngagement';
 
 export type PrepareRaceFlowCallbacks = {
     onStartRace: () => void;
     onOpenRoom: () => void;
     onAiDebug?: () => void;
     onOpenShop?: () => void;
+    onOpenSidebar?: () => void;
     onCharacterManagementChanged?: (active: boolean) => void;
     onQuickRacePageChanged?: (active: boolean) => void;
 };
@@ -130,6 +132,7 @@ export class PrepareRaceFlow {
     private _motion = new LobbyUiMotion();
     private _leaving = false;
     private readonly _overlayButtonStates = new Map<Button, boolean>();
+    private _offSidebarState: (() => void) | null = null;
     private _attributeTips: CharacterAttributeTips | null = null;
     private _hasShownReady = false;
 
@@ -206,6 +209,7 @@ export class PrepareRaceFlow {
         this.layoutPresentation();
         this._motion.enter(this._hasShownReady);
         this._hasShownReady = true;
+        platformEngagement()?.reportLobbyReady();
     }
 
     showCharacterManagement(): void {
@@ -279,6 +283,7 @@ export class PrepareRaceFlow {
     }
 
     dispose(): void {
+        this._offSidebarState?.(); this._offSidebarState = null;
         this._attributeTips?.dispose();
         this._attributeTips = null;
         this._motion.dispose();
@@ -310,6 +315,7 @@ export class PrepareRaceFlow {
     }
 
     private replaceContent(name: string): void {
+        this._offSidebarState?.(); this._offSidebarState = null;
         this._attributeTips?.hide();
         // 切换页面才替换结构；选择状态变化不进入这里，3D 预览单独保留。
         this._motion.dispose();
@@ -428,6 +434,22 @@ export class PrepareRaceFlow {
 
     private buildReadyCharacterPanel(parent: Node): void {
         parent = this._motion.group(parent, 'LobbyLeftMotion', -24);
+        const engagement = platformEngagement();
+        if (engagement && this._callbacks.onOpenSidebar) {
+            const entry = makeRaceTextureButton('SidebarEntry', parent,
+                RESOURCE_PATHS.avatarPickerUi.nicknameRow, 190, 54, -511, 218, 3);
+            const title = makeBoundLabel('Label', entry, '侧边栏', 22, DARK_TEXT, 164, 36, 0, 0);
+            styleProjectUiLabel(title, 'semibold', 30);
+            entry.active = false;
+            this._motion.bindButton(entry);
+            entry.on(Button.EventType.CLICK, () => {
+                if (!this._leaving && entry.isValid && entry.activeInHierarchy) this._callbacks.onOpenSidebar?.();
+            });
+            this._offSidebarState = engagement.subscribe(state => {
+                if (entry.isValid && entry.active !== state.supported) entry.active = state.supported;
+            });
+            void engagement.checkSidebar();
+        }
         makeRaceTextureSprite('ReadyCharacterPanel', parent, RESOURCE_PATHS.lobbyB.characterInfo, 233, 274, -506.5, 24, 2);
         this._readyName = makeBoundLabel('CharacterName', parent, '', 28, DARK_TEXT, 240, 40, -458, 147, Label.HorizontalAlign.LEFT);
         stylePsdTitleLabel(this._readyName, 36);

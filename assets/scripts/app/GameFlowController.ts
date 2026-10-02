@@ -1,4 +1,6 @@
 import { Vec3 } from 'cc';
+import { platformEngagement } from '../platform/PlatformEngagement';
+import { RaceAnalyticsTracker, type RaceAnalyticsContext } from '../platform/DouyinEngagement';
 import { isSurfaceRaceCameraRiseReady, RaceCameraDirector, RaceCameraMode, RaceCameraSnapshot } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
@@ -24,6 +26,7 @@ function netSide(type: StrokeType): NetInputSide {
 }
 
 export type GameFlowRefs = {
+    analyticsContext?: () => RaceAnalyticsContext;
     raceManager: RaceManager;
     playerSwimmer: Swimmer;
     aiSwimmers: Swimmer[];
@@ -84,9 +87,15 @@ export class GameFlowController {
     private _aiDivesStarted = false;
     private readonly _playerUpperBodyWorldPosition = new Vec3();
 
-    constructor(private readonly _refs: GameFlowRefs) {}
+    private readonly _analytics: RaceAnalyticsTracker | null;
+
+    constructor(private readonly _refs: GameFlowRefs) {
+        const service = platformEngagement();
+        this._analytics = service ? new RaceAnalyticsTracker((event, fields) => service.report(event, fields)) : null;
+    }
 
     startGame() {
+        this._analytics?.reset();
         this._finishPresentationVersion += 1;
         this._finishViewElapsed = -1;
         this._pendingFinishPresentation = null;
@@ -123,6 +132,7 @@ export class GameFlowController {
     }
 
     restartGame() {
+        this._analytics?.again();
         this._refs.debug('restartGame');
         this.stopAllAi();
         // Leave the awards state before rebuilding the race. Exiting AWARDS
@@ -298,6 +308,7 @@ export class GameFlowController {
                 this._refs.raceCameraDirector.resetCountdownTimers();
             }
             if (state === GameState.DIVING) {
+                if (this._analytics && this._refs.analyticsContext) this._analytics.start(this._refs.analyticsContext());
                 this._divingElapsed = 0;
                 this._refs.uiFlow.showGo();
                 this.startAiDivesAtGo();
@@ -331,6 +342,9 @@ export class GameFlowController {
             this._refs.debug(`finish ${result.name} place=${result.placement} time=${result.time.toFixed(2)}`);
             this._refs.showFinishRank(result);
             if (result.isPlayer) {
+                if (this._analytics && this._refs.analyticsContext?.().play_type === 'local') {
+                    this._analytics.end('completed', result.time, result.placement, this._refs.playerSwimmer?.distance ?? 0);
+                }
                 this._finishViewElapsed = 0;
                 this.setCameraFollowAi(false);
                 this._refs.onPlayerCameraRestored?.();
@@ -361,6 +375,9 @@ export class GameFlowController {
                 // Networked race: the host's authoritative time (adopted into playerRow)
                 // is the shared truth, so both screens show the same headline result.
                 const finalPlayerTime = playerRow && playerRow.time > 0 ? playerRow.time : playerTime;
+                const outcome = playerRow?.quit ? 'quit' : playerRow?.eliminated ? 'eliminated'
+                    : playerRow?.finished ? 'completed' : 'dnf';
+                this._analytics?.end(outcome, finalPlayerTime, finalPlacement, this._refs.playerSwimmer?.distance ?? 0);
                 // Progression uses the authoritative (net-resolved) placement/time so
                 // the XP reward matches the result the player actually sees.
                 const progressionResult = await this._refs.awardProgression({
@@ -404,6 +421,11 @@ export class GameFlowController {
                 this.commitDive(this._diveChargePower, 'countdown-end auto');
             }
         };
+    }
+
+    /** 仅明确点击退出时调用；场景销毁或杀进程不能冒充主动退出。 */
+    recordPlayerExit(): void {
+        this._analytics?.end('quit', this._refs.raceManager?.elapsedSeconds ?? 0, 0, this._refs.playerSwimmer?.distance ?? 0);
     }
 
     clearRaceManagerCallbacks() {
