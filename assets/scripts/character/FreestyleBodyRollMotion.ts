@@ -9,6 +9,10 @@ export const FREESTYLE_BODY_ROLL_TUNING = {
     fadeSeconds: 0.10,
     maxSignalSpeed: 10,
     idleGraceSeconds: 0.12,
+    // 只收敛实验中的出水回臂，不改变已经确认的转体幅度与节奏。
+    recoveryHeightScale: 0.75,
+    recoverySideScale: 0.85,
+    recoveryElbowBendDegrees: 20,
 };
 
 const TAU = Math.PI * 2;

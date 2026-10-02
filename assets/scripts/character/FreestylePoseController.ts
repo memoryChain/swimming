@@ -1515,6 +1515,19 @@ export class FreestylePoseController {
         const side = arm === this._leftArm ? 1 : -1;
         if (butterfly) sampleButterflyArm(cycle / (Math.PI * 2), this._proneUpperDirection, this._proneForeDirection);
         else sampleProneFreestyleArm(cycle, this._proneUpperDirection, this._proneForeDirection);
+        if (!butterfly) {
+            const recovery = this.bodyRollRecoveryWeight(cycle);
+            if (recovery > 0) {
+                const sideScale = lerp(1, FREESTYLE_BODY_ROLL_TUNING.recoverySideScale, recovery);
+                this._proneUpperDirection.x *= sideScale;
+                this._proneForeDirection.x *= sideScale;
+                if (this._proneUpperDirection.z < 0) {
+                    this._proneUpperDirection.z *= lerp(1, FREESTYLE_BODY_ROLL_TUNING.recoveryHeightScale, recovery);
+                }
+                Vec3.normalize(this._proneUpperDirection, this._proneUpperDirection);
+                Vec3.normalize(this._proneForeDirection, this._proneForeDirection);
+            }
+        }
         const reach = Math.max(0, this._proneUpperDirection.y);
         const extension = butterfly ? butterflyExtension(cycle / (Math.PI * 2)) : proneFreestyleExtensionWeight(cycle);
         // 前伸先上举肩带，再求解大臂；只转大臂会在横展的肩头形成 U 型拐角。
@@ -1544,6 +1557,13 @@ export class FreestylePoseController {
             this.blendSurfaceBone(foreArm, this._surfaceForeRotation, weight);
             this.blendSurfaceBone(hand, this._surfaceHandRotation, weight);
         }
+    }
+
+    /** 实验侧倾时收小回臂；真实划水相位的后半程出水，入水前完全恢复。 */
+    private bodyRollRecoveryWeight(cycle: number): number {
+        if (this._bodyRollTestWeight <= 0) return 0;
+        const phase = positiveMod(cycle, Math.PI * 2) / (Math.PI * 2);
+        return this._bodyRollTestWeight * smoothPulse(phase, 0.50, 0.64, 0.82, 0.98);
     }
 
     private setProneArmDirection(direction: Vec3, side: number) {
@@ -1676,6 +1696,9 @@ export class FreestylePoseController {
         const wheel = -normalized * Math.PI * 2;
         const c = Math.cos(wheel);
         const s = Math.sin(wheel);
+        const recoveryWeight = this.bodyRollRecoveryWeight(cycle);
+        const recoverySideScale = lerp(1, FREESTYLE_BODY_ROLL_TUNING.recoverySideScale, recoveryWeight);
+        const recoveryHeightScale = lerp(1, FREESTYLE_BODY_ROLL_TUNING.recoveryHeightScale, recoveryWeight);
         const armPower = 0.92 + Math.min(2, Math.max(0.8, power)) * 0.08;
         const forwardReach = smoothRange(c, 0.20, 0.96);
         const forwardSideClearance = MOTION_TUNING.forwardArmSideClearance;
@@ -1687,7 +1710,8 @@ export class FreestylePoseController {
         const shoulderLift = lerp(-1 - 2 * c, -7.2, forwardReach) * armPower;
         const shoulderOpen = side * lerp(6, 1.2, forwardReach) * armPower;
         const shoulderRoll = side * lerp(2, 0.35, forwardReach) * armPower;
-        const elbowStraight = lerp(-6 + 2 * c, 0.2, forwardReach) * armPower;
+        const elbowStraight = lerp(-6 + 2 * c, 0.2, forwardReach) * armPower
+            - FREESTYLE_BODY_ROLL_TUNING.recoveryElbowBendDegrees * recoveryWeight;
         const foreArmOpen = side * lerp(3, 0.15, forwardReach) * armPower;
         const foreArmRoll = side * lerp(2, 0.1, forwardReach) * armPower;
         const handNeutral = lerp(-2 * c, -0.1, forwardReach) * armPower;
@@ -1721,9 +1745,9 @@ export class FreestylePoseController {
             this.applyBoneOffset(shoulder, shoulderLift, shoulderOpen, shoulderRoll);
         }
         this._tmpDirection.set(
-            side * sideClearance + this._tmpMovementForwardRoot.x * c,
+            side * sideClearance * recoverySideScale + this._tmpMovementForwardRoot.x * c,
             this._tmpMovementForwardRoot.y * c,
-            s + this._tmpMovementForwardRoot.z * c,
+            s * recoveryHeightScale + this._tmpMovementForwardRoot.z * c,
         );
         Vec3.normalize(this._tmpDirection, this._tmpDirection);
         this.rotateBodyRollArmTarget(this._tmpDirection);

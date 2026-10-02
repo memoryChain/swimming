@@ -110,6 +110,43 @@ for(const file of ['MuscleMan.glb','CartonSwimmer5.glb']) test(`${file}：倾斜
 });
 
 let replay;
+for(const file of SWIMMER_MODEL_FILES) test(`${file}：回臂收敛保留转肩及水下划水，降低手部峰值且不过度折肘`,()=>{
+    const {r,parent}=rigFor(file),old=rigFor(file),m=new FreestyleBodyRollMotion();
+    // 仅关闭新的回臂校正；两份骨架仍使用相同的已认可转体，比较实际关节轨迹。
+    old.r.pose.bodyRollRecoveryWeight=()=>0;
+    replay??=replayBreathingInput({fps:30,seconds:8});
+    let oldPeak=-Infinity,newPeak=-Infinity;
+    const body=rig=>JSON.stringify([rig.pose.root,rig.pose._hips,rig.pose._torso,rig.pose._head]
+        .map(n=>[n.getWorldPosition(new Vec3()),n.rotation]));
+    for(const f of replay) {
+        const projection=Math.cos(f.roll)*Math.cos(f.pitch);
+        m.update(f.dt,f.left,f.right,f.surface,projection,f.pitch,f.rollSpeed,f.pitchSpeed);
+        for(const [rig,p] of [[r,parent],[old.r,old.parent]]) {
+            p.rotation.set(...f.rotation);rig.pose.setMovementHeadingRadians(f.heading);
+            rig.pose.setMovementPitchRadians(f.pitch);rig.pose.setSurfaceBodyUpProjection(projection);
+            const drive=Math.max(.85,Math.min(1.45,.9+f.speed*.16));
+            present(rig,f.left,f.right,m.weight,m.roll,drive);
+        }
+        assert.equal(body(r),body(old.r),'手臂调整不得改变整身、胸肩、头部轨迹');
+        for(const [side,cycle] of [['left',f.left],['right',f.right]]) {
+            const phase=((cycle/TAU)%1+1)%1;
+            const arm=r.pose[`_${side}Arm`].getWorldPosition(new Vec3()),elbow=r.pose[`_${side}ForeArm`].getWorldPosition(new Vec3()),hand=r.pose[`_${side}Hand`].getWorldPosition(new Vec3());
+            const oldArm=old.r.pose[`_${side}Arm`].getWorldPosition(new Vec3()),oldHand=old.r.pose[`_${side}Hand`].getWorldPosition(new Vec3());
+            if(phase<=.5||phase>=.98) {
+                assert.ok(Vec3.distance(hand,oldHand)<1e-7,'水下划水及完整前伸保持原轨迹');
+            } else {
+                const u=new Vec3(),v=new Vec3();Vec3.subtract(u,elbow,arm);Vec3.subtract(v,hand,elbow);
+                const length=Vec3.len(u)+Vec3.len(v);Vec3.normalize(u,u);Vec3.normalize(v,v);
+                const bend=Math.acos(Math.max(-1,Math.min(1,Vec3.dot(u,v))))*180/Math.PI;
+                assert.ok(bend<115,`回臂肘内角不得小于65度：${bend}`);
+                assert.ok(Vec3.distance(hand,arm)>length*.52,'手腕不得折回肩头');
+                oldPeak=Math.max(oldPeak,oldHand.y-oldArm.y);newPeak=Math.max(newPeak,hand.y-arm.y);
+            }
+        }
+    }
+    assert.ok(newPeak<oldPeak-.001,`实际回臂抬手峰值应降低：${oldPeak} -> ${newPeak}`);
+});
+
 for(const file of SWIMMER_MODEL_FILES) test(`${file}：真实输入肩腋和肘部形变检查`,()=>{
     const {r,parent}=rigFor(file),m=new FreestyleBodyRollMotion();
     const volume=shoulderVolumeSampler(r),baseStrain=elbowStrainSampler(r,file),turnStrain=elbowStrainSampler(r,file);

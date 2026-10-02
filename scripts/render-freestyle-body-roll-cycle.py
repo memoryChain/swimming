@@ -67,6 +67,16 @@ def main():
     if PREVIOUS:
         review = review.replace('下排：原游姿', '下排：上一版骨盆与胸肩转体').replace('上排：转体实验', '上排：整个模型侧倾')
         review = review.replace('第一轮实验', '整个模型侧倾对照')
+    if '--recovery' in sys.argv:
+        if not PREVIOUS:
+            raise ValueError('回臂对照必须使用 --previous 和已认可转体版本的导出')
+        review = review.replace('下排：上一版骨盆与胸肩转体', '下排：原回臂').replace('上排：整个模型侧倾', '上排：收敛回臂')
+        review = review.replace('整个模型侧倾对照', '保留转肩，收敛回臂')
+        review = review.replace('先让划水具有连续的胸肩侧转，再决定是否叠加换气。这一版暂不播放旧换气动作。',
+                                '两排转肩幅度与时序完全相同，只比较回臂时手的抬高、外摆与屈肘。暂不播放旧换气动作。')
+        review = review.replace('重点看肩线和背部是否随左右划水连续变化，骨盆是否小幅跟随，头是否保持稳定。肌肉男原本已有转体，本版统一时序与关节配合；其他角色增加胸肩与骨盆联动，不以“所有角度都更大”作为验收标准。',
+                                '重点看手是否更贴近身体回到前方，以及出水、回臂、入水能否连续衔接。肌肉男保留原高肘曲线；深潜先锋等角色增加适度屈肘，收小直臂甩出的幅度。')
+        review = review.replace('实验目录', '当前自由泳分支')
     (OUT / 'index.html').write_text(review, encoding='utf-8')
 
 
