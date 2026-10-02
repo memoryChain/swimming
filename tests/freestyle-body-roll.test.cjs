@@ -55,7 +55,7 @@ for(const mode of ['player','ai']) for(const fps of [30,60]) test(`${mode} ${fps
     }
 });
 
-for(const file of SWIMMER_MODEL_FILES) test(`${file}：胸肩48°、骨盆32°、头部稳定及多次切换完整恢复`,()=>{
+for(const file of SWIMMER_MODEL_FILES) test(`${file}：模型48°、胸肩56°、髋部枢轴固定及多次切换完整恢复`,()=>{
     const {r,parent}=rigFor(file);
     for(const direction of [1,-1]) {
         parent.setRotationFromEuler(0,direction>0?0:180,0);r.pose.setMovementDirection(direction);
@@ -63,17 +63,49 @@ for(const file of SWIMMER_MODEL_FILES) test(`${file}：胸肩48°、骨盆32°�
         present(r,l,rh,-1,0);const baseline=snapshot(r);
         present(r,l,rh,1,0);
         const chest=r.pose._torso.getWorldRotation(new Quat()),hip=r.pose._hips.getWorldRotation(new Quat()),head=r.pose._head.getWorldRotation(new Quat());
+        const model=r.pose.root.getWorldRotation(new Quat()),pivot=r.pose._hips.getWorldPosition(new Vec3());
+        const hipLocal=JSON.stringify(r.pose._hips.rotation),physical=JSON.stringify([parent.rotation,parent.position,r.wrapper.rotation,r.wrapper.position]);
         for(const sign of [-1,1]) {
             present(r,l,rh,1,sign);
-            assert.ok(Math.abs(angle(chest,r.pose._torso.getWorldRotation(new Quat()))-48)<.1);
-            assert.ok(Math.abs(angle(hip,r.pose._hips.getWorldRotation(new Quat()))-32)<.1);
-            assert.ok(angle(head,r.pose._head.getWorldRotation(new Quat()))<3,'头不能随着肩膀甩动');
+            assert.ok(Math.abs(angle(model,r.pose.root.getWorldRotation(new Quat()))-48)<.1,'整个骨架显示根确实侧倾');
+            assert.ok(Math.abs(angle(chest,r.pose._torso.getWorldRotation(new Quat()))-56)<.1);
+            assert.ok(Math.abs(angle(hip,r.pose._hips.getWorldRotation(new Quat()))-48)<.1);
+            assert.equal(JSON.stringify(r.pose._hips.rotation),hipLocal,'髋部不再追加局部扭转');
+            assert.ok(Vec3.distance(pivot,r.pose._hips.getWorldPosition(new Vec3()))<1e-5,'不得绕模型脚底公转或抬离水面');
+            assert.equal(JSON.stringify([parent.rotation,parent.position,r.wrapper.rotation,r.wrapper.position]),physical,'外层物理节点与模型安装节点不变');
+            const headAngle=angle(head,r.pose._head.getWorldRotation(new Quat()));
+            assert.ok(headAngle>8&&headAngle<12,'头部小幅跟随，不能完全锁死或随着肩膀大幅甩动');
             const peak=snapshot(r);for(let n=0;n<20;n++)present(r,l,rh,1,sign);
             assert.equal(snapshot(r),peak,'不得累积旋转');
             present(r,l,rh,-1,0);assert.equal(snapshot(r),baseline,'退出恢复所有基础骨骼');
             present(r,l,rh,1,sign);r.pose.setBodyRollTestPose(-1);r.pose.applyButterflyPose(.65,1,0);
             present(r,l,rh,-1,0);assert.equal(snapshot(r),baseline,'蝶泳接管后无残留');
         }
+    }
+});
+
+for(const file of ['MuscleMan.glb','CartonSwimmer5.glb']) test(`${file}：倾斜外层与不同缩放下枢轴稳定，踩水衔接与原路径一致`,()=>{
+    const {r,parent}=rigFor(file);
+    parent.setRotationFromEuler(23,137,-31);parent.setPosition(7,2,-4);
+    r.pose.setMovementHeadingRadians(.55);r.pose.setMovementPitchRadians(.2);
+    const originalScale=r.wrapper.scale.x;
+    for(const scale of [.85,1.25]) {
+        r.wrapper.scale.set(originalScale*scale,originalScale*scale,originalScale*scale);
+        for(const weight of [.25,.5,1]) {
+            present(r,.64*TAU,.14*TAU,weight,0);
+            const pivot=r.pose._hips.getWorldPosition(new Vec3()),rotation=r.pose.root.getWorldRotation(new Quat());
+            present(r,.64*TAU,.14*TAU,weight,1);
+            assert.ok(Vec3.distance(pivot,r.pose._hips.getWorldPosition(new Vec3()))<1e-5);
+            assert.ok(Math.abs(angle(rotation,r.pose.root.getWorldRotation(new Quat()))-48*weight)<.01);
+        }
+        // 比较相同的自由泳→踩水→自由泳路径，隔离原踩水姿态对其余骨骼的影响。
+        present(r,1,2,-1,0);
+        for(const weight of [.1,.5,1])r.pose.applyFreestyleTreadBlendPose(1,2,0,Math.PI,0,1,1,1,0,weight);
+        present(r,1,2,-1,0);const baseline=snapshot(r);
+        present(r,1,2,1,1);
+        r.pose.setBodyRollTestPose(-1);
+        for(const weight of [.1,.5,1])r.pose.applyFreestyleTreadBlendPose(1,2,0,Math.PI,0,1,1,1,0,weight);
+        present(r,1,2,-1,0);assert.equal(snapshot(r),baseline);
     }
 });
 

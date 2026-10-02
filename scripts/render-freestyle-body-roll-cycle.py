@@ -65,8 +65,8 @@ def main():
                         str(OUT / f'{view}.mp4')], check=True)
     review = (ROOT / 'scripts/templates/freestyle-body-roll-review.html').read_text(encoding='utf-8')
     if PREVIOUS:
-        review = review.replace('下排：原游姿', '下排：上一版转体（32°／16°）').replace('上排：转体实验', '上排：增强转体（48°／32°）')
-        review = review.replace('第一轮实验', '增强转体对照')
+        review = review.replace('下排：原游姿', '下排：上一版骨盆与胸肩转体').replace('上排：转体实验', '上排：整个模型侧倾')
+        review = review.replace('第一轮实验', '整个模型侧倾对照')
     (OUT / 'index.html').write_text(review, encoding='utf-8')
 
 

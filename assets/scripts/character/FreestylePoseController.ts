@@ -103,8 +103,10 @@ const SAMPLED_STANDING_MAX_UPRIGHT_CORRECTION_DEGREES = 7;
 export class FreestylePoseController {
     private _bodyRollTestWeight = -1;
     private _bodyRollTestSignal = 0;
-    private _bodyRollTestHipAngle = 0;
-    private _bodyRollApplied = false;
+    private _bodyRollTestModelAngle = 0;
+    private readonly _bodyRollPivotBefore = new Vec3();
+    private readonly _bodyRollPivotAfter = new Vec3();
+    private readonly _bodyRollRootPosition = new Vec3();
 
     /** -1 保留原动作；实验只替换视觉转体，权重由真实姿态准入决定。 */
     setBodyRollTestPose(weight: number, signal = 0): void {
@@ -386,8 +388,7 @@ export class FreestylePoseController {
     }
 
     restoreBasePose() {
-        this._bodyRollApplied = false;
-        this._bodyRollTestHipAngle = 0;
+        this._bodyRollTestModelAngle = 0;
         this._butterflyApplied = false;
         this._breathingBodyApplied = false;
         this._collisionLimp.reset();
@@ -538,11 +539,8 @@ export class FreestylePoseController {
     }
 
     applyFreestylePose(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, upperBodyPower: number, armPower: number, kickPower: number) {
-        if (this._bodyRollApplied) {
-            this.applyBoneOffset(this._hips, 0, 0, 0);
-            this._bodyRollApplied = false;
-        }
-        this._bodyRollTestHipAngle = 0;
+        this._bodyRollTestModelAngle = FREESTYLE_BODY_ROLL_TUNING.modelDegrees
+            * this._bodyRollTestSignal * Math.max(0, this._bodyRollTestWeight);
         if (this._breathingBodyApplied) {
             this.applyBoneOffset(this._hips, 0, 0, 0);
             this._breathingBodyApplied = false;
@@ -558,12 +556,6 @@ export class FreestylePoseController {
             smoothPulse(rightPhase, 0.48, 0.64, 0.82, 0.99), this._proneFreestyleWeight)
             * (1 - Math.max(0, this._bodyRollTestWeight));
         this.applyFreestyleRootMotion(leftArmCycle, rightArmCycle, leftKickCycle, rightKickCycle, bodyPhase, rightBreath);
-        if (this._bodyRollTestWeight > 0) {
-            this._bodyRollTestHipAngle = FREESTYLE_BODY_ROLL_TUNING.pelvisDegrees
-                * this._bodyRollTestSignal * this._bodyRollTestWeight;
-            this.applyWorldAxisRoll(this._hips, this._bodyRollTestHipAngle);
-            this._bodyRollApplied = true;
-        }
         this.applyUpperBodyRoll(
             this.armReachSignal(leftArmCycle, rightArmCycle),
             upperBodyPower,
@@ -575,7 +567,22 @@ export class FreestylePoseController {
         this.applySurfaceArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(rightArmCycle), armPower);
         this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, leftKickCycle, kickPower);
         this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, rightKickCycle, kickPower);
+        this.applyBodyRollModelTilt();
         if (this._bodyRollTestWeight < 0) this.applyBreathingBodyTurn();
+    }
+
+    /** 完成局部划水后，绕髋部所在的游进长轴侧倾整个可见模型。 */
+    private applyBodyRollModelTilt(): void {
+        if (this._bodyRollTestModelAngle === 0 || !this.root || !this._hips) return;
+        // 仅修改骨架显示根，不写 Swimmer 的物理节点；固定髋部避免绕脚底公转。
+        this._hips.getWorldPosition(this._bodyRollPivotBefore);
+        if (this.root.parent) this.root.parent.inverseTransformPoint(this._bodyRollPivotBefore, this._bodyRollPivotBefore);
+        this.applyWorldAxisRoll(this.root, this._bodyRollTestModelAngle);
+        this._hips.getWorldPosition(this._bodyRollPivotAfter);
+        if (this.root.parent) this.root.parent.inverseTransformPoint(this._bodyRollPivotAfter, this._bodyRollPivotAfter);
+        Vec3.subtract(this._bodyRollRootPosition, this._bodyRollPivotBefore, this._bodyRollPivotAfter);
+        Vec3.add(this._bodyRollRootPosition, this.root.position, this._bodyRollRootPosition);
+        this.root.setPosition(this._bodyRollRootPosition);
     }
 
     private applyBreathingBodyTurn(): void {
@@ -1554,7 +1561,8 @@ export class FreestylePoseController {
         if (this._bodyRollTestWeight <= 0) return;
         this.movementForwardInRoot(this._tmpMovementForwardRoot);
         Quat.fromAxisAngle(this._tmpAxisRotation, this._tmpMovementForwardRoot,
-            FREESTYLE_BODY_ROLL_TUNING.chestDegrees * this._bodyRollTestSignal * this._bodyRollTestWeight * Math.PI / 180);
+            (FREESTYLE_BODY_ROLL_TUNING.chestDegrees - FREESTYLE_BODY_ROLL_TUNING.modelDegrees)
+                * this._bodyRollTestSignal * this._bodyRollTestWeight * Math.PI / 180);
         Vec3.transformQuat(direction, direction, this._tmpAxisRotation);
     }
 
@@ -1592,7 +1600,7 @@ export class FreestylePoseController {
         Vec3.normalize(this._tmpDirection, this._tmpDirection);
         // 前伸肩带随胸廓侧转，不能再把肩头反向锁回根节点的水平面。
         Quat.fromAxisAngle(this._tmpAxisRotation, this._tmpMovementForwardRoot,
-            (this._proneChestRoll + this._bodyRollTestHipAngle) * Math.PI / 180);
+            this._proneChestRoll * Math.PI / 180);
         Vec3.transformQuat(this._tmpDirection, this._tmpDirection, this._tmpAxisRotation);
         this.applyBoneDirectionFromRoot(shoulder, arm, this._tmpDirection);
         if (weight < 1) this.blendSurfaceBone(shoulder, this._reachShoulderRotation, weight);
@@ -2637,7 +2645,7 @@ export class FreestylePoseController {
         this._proneChestRoll = proneRoll * clamp(MOTION_TUNING.proneChestRollDegrees, 0, 45)
             * Math.min(1.2, Math.max(0, power)) * proneWeight;
         if (this._bodyRollTestWeight > 0) {
-            const extraChest = FREESTYLE_BODY_ROLL_TUNING.chestDegrees - FREESTYLE_BODY_ROLL_TUNING.pelvisDegrees;
+            const extraChest = FREESTYLE_BODY_ROLL_TUNING.chestDegrees - FREESTYLE_BODY_ROLL_TUNING.modelDegrees;
             this._proneChestRoll = lerp(this._proneChestRoll,
                 extraChest * this._bodyRollTestSignal, this._bodyRollTestWeight);
         }
@@ -2653,7 +2661,7 @@ export class FreestylePoseController {
         if (proneWeight > 0.000001 || this._bodyRollTestWeight > 0) {
             // 不换气时头颈抵消胸廓侧转；右侧换气时逐渐允许头跟随肩膀。
             const counterRoll = lerp(-this._proneChestRoll * lerp(0.85, 0.25, headBreathRatio),
-                -(this._proneChestRoll + this._bodyRollTestHipAngle) * FREESTYLE_BODY_ROLL_TUNING.headStability,
+                -(this._proneChestRoll + this._bodyRollTestModelAngle) * FREESTYLE_BODY_ROLL_TUNING.headStability,
                 Math.max(0, this._bodyRollTestWeight));
             this.applyWorldAxisRoll(this._neck, counterRoll * 0.65);
             this.applyWorldAxisRoll(this._head, counterRoll * 0.35);

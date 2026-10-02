@@ -5,13 +5,14 @@ const before = process.argv.includes('--before');
 const baselineRef = process.argv.find(arg => arg.startsWith('--baseline-ref='))?.slice('--baseline-ref='.length);
 if (baselineRef) {
     if (before) throw new Error('历史转体对照不能同时关闭转体');
-    // 保留相同骨骼求解及输入，仅从指定提交读取上一版的转体参数与时序。
-    const source = require('node:child_process').execFileSync('git',
-        ['show', `${baselineRef}:assets/scripts/character/FreestyleBodyRollMotion.ts`],
-        {cwd:path.resolve(__dirname,'..')});
+    // 使用同一组输入，成对载入该提交的骨骼求解及转体时序，避免跨版本叠加。
+    const sources = new Map(['FreestyleBodyRollMotion.ts','FreestylePoseController.ts'].map(name => [name,
+        require('node:child_process').execFileSync('git',
+            ['show', `${baselineRef}:assets/scripts/character/${name}`], {cwd:path.resolve(__dirname,'..')})]));
     const read = fs.readFileSync;
     fs.readFileSync = function(file, options) {
-        if (String(file).replaceAll('\\','/').endsWith('/character/FreestyleBodyRollMotion.ts'))
+        const source = sources.get(path.basename(String(file)));
+        if (source && String(file).replaceAll('\\','/').includes('/character/'))
             return typeof options === 'string' || options?.encoding ? source.toString(typeof options === 'string' ? options : options.encoding) : source;
         return read.call(this,file,options);
     };

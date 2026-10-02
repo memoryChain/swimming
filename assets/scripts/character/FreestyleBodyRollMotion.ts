@@ -1,9 +1,10 @@
 /** 仅用于本地动作实验：真实左右划水驱动身体侧转，不产生输入或推进。 */
 export const FREESTYLE_BODY_ROLL_TUNING = {
-    // 夸张表现由骨盆带动；胸廓相对骨盆仍只多16°，避免靠拧腰放大动作。
-    chestDegrees: 48,
-    pelvisDegrees: 32,
-    headStability: 0.94,
+    // 主侧倾由完整可见模型承担，胸廓只补8°，不再单独拧骨盆。
+    chestDegrees: 56,
+    modelDegrees: 48,
+    // 允许头部小幅顺势侧倾，避免把整身侧转全压回颈肩。
+    headStability: 0.80,
     responseSeconds: 0.045,
     fadeSeconds: 0.10,
     maxSignalSpeed: 10,
