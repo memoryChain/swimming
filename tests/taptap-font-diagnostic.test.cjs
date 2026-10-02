@@ -41,5 +41,33 @@ test('字体诊断保留原加载/赋值/激活结果，隐藏页面不读取像
     for (let i = 0; i < 8; i++) label.onEnable();
     assert.equal(timers.length, 9); assert.equal(enables, 9);
     assert.ok(logs.some(line => line.includes('"nonTransparent":1')));
+    assert.ok(logs.some(line => line.includes('"strongAlpha":1')));
     assert.ok(logs.some(line => line.includes('"system":false')));
+});
+
+test('极低透明度底色不当作可见字形，并分别输出小行避免手机日志截断', () => {
+    const logs = [], timers = [];
+    class Label { onEnable() {} }
+    class UITransform {}
+    const api = {};
+    vm.runInNewContext(fs.readFileSync('scripts/templates/taptap-font-diagnostic.js','utf8'), {
+        exports:api,console:{log:line=>logs.push(line)},setTimeout:fn=>timers.push(fn)
+    });
+    api.install({Label,UITransform});
+    const page={name:'CareerEventPage',isValid:true,activeInHierarchy:true,children:[],getComponent:()=>null};
+    for(let i=0;i<2;i++) {
+        const label=new Label();
+        const node={name:i===0?'PageTitle':'PageSubtitle',parent:page,activeInHierarchy:true,children:[],getComponent:T=>T===Label?label:{width:2,height:1}};
+        label.node=node;label.string='测试';
+        label.assemblerData={canvas:{width:2,height:1},context:{font:'36px ShuiMasterUISemiBold',getImageData:()=>({data:new Uint8Array([0,0,0,1,0,0,0,1])})}};
+        page.children.push(node);
+        if(i===0)label.onEnable();
+    }
+    timers[0]();
+    const rows=logs.filter(line=>line.startsWith('[TapFont] label ')).map(line=>JSON.parse(line.slice('[TapFont] label '.length)));
+    assert.equal(rows.length,2);
+    assert.equal(rows[0].label.canvas.nonTransparent,2);
+    assert.equal(rows[0].label.canvas.strongAlpha,0);
+    assert.equal(rows[0].label.canvas.maxAlpha,1);
+    assert.equal(rows[0].label.canvas.contextFont,'36px ShuiMasterUISemiBold');
 });

@@ -464,6 +464,33 @@ TapTap CLI 插件执行上传和开发包创建前均已 dry-run，执行后回�
 
 **下一步：**后台初始化完成后，先核对小游戏实际支持的客户端或服务端通道与应用标识，再登记四项事件和属性，试通一个测试事件并核对后台写入，然后一次游玩验证完整四事件链。当前官方小游戏文档只确认基础看板，未找到可直接类比 `tt.reportAnalytics` 的已验证客户端接口；通用 TapDB 服务端接口文档不能直接证明小游戏客户端受支持。[小游戏数据看板](https://developer.taptap.cn/minigameapidoc/tap-operation/operation/basic-operation/operation-dashboard/)、[TapDB 服务端事件](https://developer.taptap.cn/docs/sdk/tapdb/sdk/server-side-integration/)。如后台持续初始化，应向平台确认开通状态及小游戏接入方式，不盲目部署其他服务或引入原生 SDK。此阻塞不影响已准备的事件字典与本地采集，不能将本轮标为“与抖音一样后台验证通过”。
 
+### 7.2.5 首次进入快速比赛漏字：字体族对照包 0.0.11（2026-10-02）
+
+**当前结论：尚未确认修复，等待首次进入页面的真机结果。** 用户接受先处理首次漏字，再将验证过的调整纳入正常构建。此次未更改玩法、联网同步、启动等待或页面生命周期。
+
+证据与边界：
+
+- `vconsole-log(3).txt` 中，Regular 与 SemiBold 的 `tap.loadFont` 都返回 `ShuiMaster UI`；本地 Creator 3.8.8 的 TTF 渲染器通过 `Font._nativeAsset` 字体族字符串选择字体。两个实际字重在此接口层未获得独立名称，存在选字体歧义，但尚不能证明它就是首次漏字的唯一原因。
+- 同份日志首次进入 `CareerEventPage` 时，标题文本长度、节点和纹理尺寸正常，并已有 GPU 纹理；这些只能排除部分空值情况，不能证明文字已正常呈现。
+- Cocos 的 `text-processing.ts` 在绘字前铺极低透明度底色，因此旧诊断的 `nonTransparent` 全画布像素计数不能证明有字形。新诊断增加 `strongAlpha`（alpha≥128）、`maxAlpha` 和 `contextFont`，每个 Label 单独输出以避免手机日志截断。检测仍限前三次页面进入、三个延迟采样点、前两个 Label 的像素；不逐帧采样，也不强制刷新字体。
+
+实施：
+
+- `scripts/prepare-taptap-fonts.py` 仅接受本项目 `build` 下的小游戏输出目录，给两份衍生字体分别命名 `ShuiMasterUIRegular`、`ShuiMasterUISemiBold`。除名称表及文件校验和外，其他字体表逐字节校验不变，保留真实字重、字形和授权文本。
+- 不修改 `assets` 下源字体、`.meta`、字库生成清单或抖音产物。固定 fontTools 环境沿用 `pnpm fonts:setup` 所建环境。
+- `node scripts/create-taptap-font-family-build.cjs` 从冻结的 0.0.10 基线生成 `build/TapFontFamily-0.0.11/game.zip`，校验基线 SHA256，拒绝覆盖已有实验目录。正常 Creator 构建钩子尚未启用字体实验，须先取得真机证据。
+- 0.0.11 保留 0.0.10 的四项基础事件与 `local_only` 模式；TapDB 后台入库仍未验证。
+
+自动验证：字体转换与拒绝错误目标共 2 项测试、字体诊断共 2 项测试通过；包内 JavaScript/JSON、Bundle 清单、ZIP CRC 和体积审计通过。相对 0.0.10，897 个文件一致，只改 2 份字体和 5 份版本/诊断配置，无新增或删除。没有修改 TypeScript 运行时代码。
+
+交付记录：
+
+- 包版本 `0.0.11`，17,231,922 字节；SHA256 `7177935e6ba74cee91956be21d36fa92fe8c14447f1be1ee10ad0cb9ae8884a8`。
+- 经 TapTap CLI 插件上传成功：artifact `23347`，task `lc1ah8gyowhdkdlnjfln6ijzrx5cc27b`，开发包 `257918`；回读确认 `stage=dev`。没有提审或正式发布。
+- 自测二维码：`build/TapFontFamily-0.0.11/test-qr.png`；本地产物报告：同目录 `receipt.json`、`startup-audit.json`、`upload-receipt.json`（构建产物不入 Git）。
+
+最小真机步骤：结束 TapTap 进程后扫码一次，直接进入快速比赛，观察标题、距离、规则及开始按钮文字是否首次可见，不需要先打一局。若仍漏字，导出 All 日志；比较新字体族是否实际生效，以及 `strongAlpha` 是零还是有明显字形。之后再决定调查宿主绘字时序还是纹理上传/显示，不依据缺字现象直接添加延迟或强制刷新。
+
 ### 7.3 首批事件字典（扩展候选；四项基础事件本地采集见 7.2.4）
 
 | 事件 | 触发时机与次数 | 主要字段 | 回答的问题 |

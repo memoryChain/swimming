@@ -6,7 +6,7 @@ var entries = 0;
 var knownFamilies = {};
 var records = 0;
 function log(stage, data) {
-    if (records++ >= 24) return;
+    if (records++ >= 100) return;
     console.log('[TapFont] ' + stage + ' ' + JSON.stringify(data));
 }
 function pageOf(node) {
@@ -25,9 +25,15 @@ function canvasPixels(label) {
         var width = canvas.width, height = canvas.height;
         if (!width || !height || width * height > 512000) return 'skipped';
         var pixels = context.getImageData(0, 0, width, height).data;
-        var visible = 0;
-        for (var i = 3; i < pixels.length; i += 4) if (pixels[i]) visible++;
-        return { width: width, height: height, nonTransparent: visible };
+        var visible = 0, strong = 0, maxAlpha = 0;
+        for (var i = 3; i < pixels.length; i += 4) {
+            if (pixels[i]) visible++;
+            if (pixels[i] >= 128) strong++;
+            if (pixels[i] > maxAlpha) maxAlpha = pixels[i];
+        }
+        // Cocos 先铺极低 alpha 底色；只数 alpha>0 会把整张空画布误判为有字。
+        return { width: width, height: height, nonTransparent: visible, strongAlpha: strong,
+            maxAlpha: maxAlpha, contextFont: String(context.font || '') };
     } catch (error) { return String(error); }
 }
 function snapshot(root, entry, delay, cc) {
@@ -54,7 +60,7 @@ function snapshot(root, entry, delay, cc) {
         for (var i = 0; i < node.children.length; i++) visit(node.children[i]);
     }
     visit(root);
-    log('page', { entry: entry, delayMs: delay, labels: labels });
+    labels.forEach(function (label, index) { log('label', { entry: entry, delayMs: delay, index: index, label: label }); });
 }
 exports.install = function (cc) {
     if (installed) return;
