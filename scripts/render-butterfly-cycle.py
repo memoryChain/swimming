@@ -1,5 +1,7 @@
 """专用后台场景渲染连续蝶泳，水面线用于判断穿水，非实机效果。"""
 from pathlib import Path
+import argparse
+import sys
 import bpy
 from mathutils import Vector
 
@@ -7,11 +9,18 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / '.cache' / 'butterfly-cycle'
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', default='MuscleMan.glb')
+    args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])
+    # 输入必须来自同一轮运行时导出；不同角色分目录，避免覆盖对照样片。
+    model = Path(args.model).name
+    output = OUT if model == 'MuscleMan.glb' else OUT / Path(model).stem
+    output.mkdir(parents=True, exist_ok=True)
     for obj in list(bpy.data.objects):
         bpy.data.objects.remove(obj, do_unlink=True)
     scene = bpy.context.scene
     scene.render.fps = 30
-    bpy.ops.import_scene.gltf(filepath=str(OUT / 'MuscleMan.glb'))
+    bpy.ops.import_scene.gltf(filepath=str(OUT / model))
     scene.render.engine = 'CYCLES'
     scene.cycles.samples = 8
     scene.cycles.use_denoising = True
@@ -38,11 +47,11 @@ def main():
     camera.data.type='ORTHO'
     camera.data.ortho_scale=2.65
     scene.camera = camera
-    bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'butterfly-cycle.blend'))
+    bpy.ops.wm.save_as_mainfile(filepath=str(output / 'butterfly-cycle.blend'))
     for view, location in [('side',(.85,-5,.38)),('race',(2.5,-3,2.5))]:
         camera.location = location
         camera.rotation_euler=(Vector((.85,0,.03))-camera.location).to_track_quat('-Z','Y').to_euler()
-        target=OUT/view
+        target=output/view
         target.mkdir(exist_ok=True)
         for frame in range(32):
             scene.frame_set(frame)
