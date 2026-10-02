@@ -886,8 +886,16 @@ export class Swimmer extends Component {
         return true;
     }
 
-    clearForcedLaunch(resetId = false): void {
+    /** 被打断的半圈不能成为后续每次划水的起点；落水与权威结束共用复位。 */
+    private finishGeyserLaunch(): void {
+        if (!this._forcedLaunch) return;
         this._forcedLaunch = null;
+        this._motor.resetScriptedVisualMotion();
+        this.cartoonRig?.setGeyserLimbLag(this._geyserPose.forward, this._geyserPose.side, false);
+    }
+
+    clearForcedLaunch(resetId = false): void {
+        this.finishGeyserLaunch();
         this._forcedLaunchAge = 0;
         this._forcedLaunchGrace = 0;
         this._forcedLaunchEdge = 0;
@@ -917,7 +925,7 @@ export class Swimmer extends Component {
             const slot = this._forcedLaunchHitId % 1000 - state.lane - 1;
             const bit = 1 << (Math.floor(slot / 128) * 10 + (slot % 128) / 8);
             // 权威已记得旧飞行且进入下一次命中，替换落后的本地阶段。
-            if (state.cores & bit) this._forcedLaunch = null;
+            if (state.cores & bit) this.finishGeyserLaunch();
         }
         // 先判断本地是否已经消费，再合并账本。已落水的 owner 不因旧活动快照重新起飞。
         if (state.start && age < state.start.duration) {
@@ -931,7 +939,7 @@ export class Swimmer extends Component {
             const slot = this._forcedLaunchHitId % 1000 - state.lane - 1;
             const bit = 1 << (Math.floor(slot / 128) * 10 + (slot % 128) / 8);
             if ((state.cores & bit) && (!state.start || age >= state.start.duration)) {
-                this._forcedLaunch = null;
+                this.finishGeyserLaunch();
                 this.node.setPosition(this.node.position.x, this._courseLayout.swimY, this.node.position.z);
             }
         }
@@ -1329,7 +1337,7 @@ export class Swimmer extends Component {
             this.updateGeyserLanding();
             this.updateMovementSpeed(phaseXBeforeStep, phaseZBeforeStep, dt);
             if (sample.done || distance >= courseEnd - 0.05) {
-                this._forcedLaunch = null;
+                this.finishGeyserLaunch();
                 this._forcedLaunchGrace = this.geyserTuning.rehitGraceSeconds;
                 this.node.setPosition(this.node.position.x, this._courseLayout.swimY, this.node.position.z);
                 this._geyserLandingPlayed = true;

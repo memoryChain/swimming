@@ -81,6 +81,7 @@ function recoveryQuitFixture() {
         resumeAfterEntertainmentHit(distance) { this.distance = distance; swimmer.racing = true; swimmer.respawns++; } };
     swimmer.eliminate = method(swimmerFile, 'Swimmer', 'eliminate');
     swimmer.clearForcedLaunch = method(swimmerFile, 'Swimmer', 'clearForcedLaunch');
+    swimmer.finishGeyserLaunch = method(swimmerFile, 'Swimmer', 'finishGeyserLaunch');
     swimmer.syncEntertainmentRecoveryBodyVisibility = method(swimmerFile, 'Swimmer', 'syncEntertainmentRecoveryBodyVisibility');
     swimmer.respawnAfterEntertainmentHit = method(swimmerFile, 'Swimmer', 'respawnAfterEntertainmentHit', { Tween: { stopAllByTarget() {} } });
     const race = {

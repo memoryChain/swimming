@@ -14,7 +14,7 @@ const names = ['makeStrokeQualityResult','updatePerfectComboIdle','tryDolphinJum
     'beginButterfly','releaseButterfly','cancelButterfly','butterflyPhaseReady','butterflyPoseAllowed',
     'canContinueButterfly','interruptButterflyIfNeeded','isButterflyRecoveryLocked','stepSimulation',
     'distance','rhythmStats','beginEntertainmentKnockout','respawnAfterEntertainmentHit','endEntertainmentInvulnerability',
-    'resetEntertainmentKnockoutPresentation','syncEntertainmentRecoveryBodyVisibility','clearForcedLaunch',
+    'resetEntertainmentKnockoutPresentation','syncEntertainmentRecoveryBodyVisibility','clearForcedLaunch','finishGeyserLaunch',
     'geyserHitEligible','applyGeyserHit','geyserBodyScale','sampleGeyserBody','emitGeyserContact',
     'restoreGeyserReaction','updateGeyserReaction','updateGeyserLanding',
     'canRideGiantWave','clearGiantWave','sampleGiantWave',

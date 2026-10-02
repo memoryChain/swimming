@@ -21,12 +21,14 @@ const cls = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text 
 // 执行真正的泳者资格、命中和清理方法，避免替身把“擦边吞腾空”错误隐藏掉。
 const methods = ['geyserHitEligible', 'applyGeyserHit', 'clearForcedLaunch', 'snapshotGeyserLane', 'restoreGeyserLane',
     'sampleGeyserBody', 'geyserBodyScale', 'geyserReactionStart', 'emitGeyserContact', 'restoreGeyserReaction',
-    'updateGeyserReaction', 'updateGeyserLanding']
+    'updateGeyserReaction', 'updateGeyserLanding', 'finishGeyserLaunch', 'stepSimulation']
     .map(name => cls.members.find(n => n.name?.getText(source) === name).getText(source)).join('\n');
 const Subject = vm.runInNewContext(ts.transpileModule(`class Subject { ${methods} }; Subject`, {
     compilerOptions: { target: ts.ScriptTarget.ES2020 },
 }).outputText, { GEYSER_TUNING: rules.GEYSER_TUNING, getRaceDistance: () => 200,
-    ...reactionModel, StrokeType: { LEFT: 0, RIGHT: 1 } });
+    ...reactionModel,
+    ...h.load(path.join(h.root, 'assets/scripts/swimmer/ForcedLaunchModel.ts')),
+    StrokeType: { LEFT: 0, RIGHT: 1 } });
 
 function fixture(direction = 1, intensity = 1, networked = false, options = {}) {
     const course = { startX: direction > 0 ? 0 : 50, finishX: direction > 0 ? 50 : 0,
@@ -47,6 +49,7 @@ function fixture(direction = 1, intensity = 1, networked = false, options = {}) 
             collisionPitchRadians: 0, axialRollRadians: 0, collisionPitchAngularVelocity: 0,
             axialRollAngularVelocity: 0, leftArmCycle: 0, rightArmCycle: 0,
             clearTurtleTow() {},
+            resetScriptedVisualMotion() { this.visualResets = (this.visualResets ?? 0) + 1; this.leftArmCycle = this.rightArmCycle = 0; },
             correctHeading(heading) { this.heading = heading; },
             setForcedLaunchPosition(_d, _l, speed) { this.currentSpeed = speed; this.slows++; },
             applyCollisionPitchImpulse() {}, beginForcedLaunch() { this.starts++; } },
@@ -406,4 +409,89 @@ test('擦边升级沿用当前倾角和残余角速度，接触水花随倾斜�
     assert.ok(Math.abs(events[0][0] - (Math.cos(.6) * .65 + Math.sin(.6) * Math.sin(.4) * .15)) < 1e-9);
     assert.ok(Math.abs(events[0][2] - Math.cos(.4) * .15) < 1e-9);
     assert.equal(events[0][1], .2);
+});
+
+test('半途划水受喷保持空中手臂，真实落水后复位且下一划回到完整相位', () => {
+    const { SwimmerMotor } = h.load(path.join(h.root, 'assets/scripts/swimmer/SwimmerMotor.ts'));
+    const { StrokeType } = h.load(path.join(h.root, 'assets/scripts/core/GameConstants.ts'));
+    const rigFile = ts.createSourceFile('CartoonSwimmerRig.ts', fs.readFileSync(path.join(h.root,
+        'assets/scripts/entity/CartoonSwimmerRig.ts'), 'utf8'), ts.ScriptTarget.Latest, true);
+    const rigClass = rigFile.statements.find(n => ts.isClassDeclaration(n) && n.name.text === 'CartoonSwimmerRig');
+    const cycleMethod = rigClass.members.find(n => n.name?.getText(rigFile) === 'updateVisualArmCycles').getText(rigFile);
+    const declarations = rigFile.statements.filter(n => ts.isFunctionDeclaration(n)
+        && ['isArmCycleBoundary', 'positiveMod'].includes(n.name.text)).map(n => n.getText(rigFile)).join('\n');
+    const constants = rigFile.statements.filter(n => ts.isVariableStatement(n)
+        && n.declarationList.declarations.some(d => ['ARM_CYCLE_AMOUNT', 'ARM_CYCLE_BOUNDARY_EPSILON',
+            'VISUAL_BODY_UP_HYSTERESIS'].includes(d.name.getText(rigFile)))).map(n => n.getText(rigFile)).join('\n');
+    const Pose = vm.runInNewContext(ts.transpileModule(`${constants}\n${declarations}\nclass Pose { ${cycleMethod} }; Pose`,
+        { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText);
+    for (const fps of [15, 30, 60, 120]) for (const isAI of [false, true]) for (const steps of [1, 2, 3]) {
+        const s = fixture().s, motor = new SwimmerMotor(), pose = new Pose();
+        Object.assign(pose, { _hasVisualArmCycles: false, _visualArmCycleDirection: 1 });
+        s.motor = s._motor = motor;
+        motor.startRace(0, 3);
+        motor.recordStroke(StrokeType.LEFT); motor.recordStroke(StrokeType.RIGHT);
+        for (let i = 0; i < steps; i++) motor.update(1 / fps, { isAI });
+        const left = motor.leftArmCycle, right = motor.rightArmCycle;
+        assert.ok(left > 0 && left < Math.PI * 2);
+        pose.updateVisualArmCycles(left, right, 1);
+        s.applyGeyserHit(1001, 2);
+        assert.equal(motor.leftArmCycle, left, '起飞保留受击瞬间手臂');
+        assert.equal(motor.rightArmCycle, right);
+        s._ultimate = { setAbilityGainScale() {}, tick() {} };
+        s._forcedLaunchSample = { distance: 0, lateral: 0, y: 0, speed: 0, done: false };
+        s._courseLayout.clampSwimWorldX = x => x;
+        s._courseLayout.currentCourseEndDistance = () => 50;
+        s.updatePerfectComboIdle = s.updateMovementSpeed = () => {};
+        s.applyCoursePosition = distance => { s.distance = distance; s.node.position.x = distance; };
+        s.updateBodyMotion = () => pose.updateVisualArmCycles(motor.leftArmCycle, motor.rightArmCycle, 1);
+        const sequence = motor.armStrokeSequence;
+        for (let i = 0; i < fps * 2 && s._forcedLaunch; i++) s.stepSimulation(1 / fps);
+        assert.equal(s._forcedLaunch, null);
+        assert.equal(motor.leftArmCycle, 0);
+        assert.equal(motor.rightArmCycle, 0);
+        assert.equal(motor.armStrokeSequence, sequence, '复位不结算新划水');
+        s.updateBodyMotion();
+        assert.equal(pose._visualLeftArmCycle, 0, '渲染相位缓存也随复位重基准');
+        assert.equal(pose._visualRightArmCycle, 0);
+        motor.recordStroke(StrokeType.LEFT);
+        for (let i = 0; i < fps * 2; i++) {
+            motor.update(1 / fps, { isAI }); s.updateBodyMotion();
+        }
+        assert.ok(Math.abs(motor.leftArmCycle - Math.PI * 2) < 1e-8, '下一划结束回到完整一圈');
+        assert.ok(Math.abs(pose._visualLeftArmCycle - Math.PI * 2) < 1e-8);
+        assert.equal(motor.rightArmCycle, 0);
+    }
+});
+
+test('权威结束与取消只复位一次，重复旧快照不擦掉落水后的新划水', () => {
+    const host = fixture().s, guest = fixture().s;
+    host.applyGeyserHit(1001, 2);
+    guest.restoreGeyserLane(1, host.snapshotGeyserLane(1, 0), 0);
+    guest.motor.leftArmCycle = 1.3; guest.motor.rightArmCycle = .7;
+    host.finishGeyserLaunch();
+    const completed = host.snapshotGeyserLane(1, 0);
+    guest.restoreGeyserLane(1, completed, 0);
+    assert.equal(guest.motor.visualResets, 1);
+    assert.equal(guest.motor.leftArmCycle, 0);
+    guest.motor.leftArmCycle = .4;
+    guest.restoreGeyserLane(1, completed, .1);
+    guest.clearForcedLaunch();
+    assert.equal(guest.motor.leftArmCycle, .4);
+    assert.equal(guest.motor.visualResets, 1);
+    guest.applyGeyserHit(2001, 2);
+    guest.clearForcedLaunch();
+    assert.equal(guest.motor.visualResets, 2);
+    assert.equal(guest.motor.leftArmCycle, 0);
+});
+
+test('擦边没有接管腾空，不重置正在进行的手臂相位', () => {
+    const s = fixture().s;
+    s.motor.leftArmCycle = 1.2; s.motor.rightArmCycle = .6;
+    s.applyGeyserHit(1001, 1);
+    s.finishGeyserLaunch();
+    s.clearForcedLaunch();
+    assert.equal(s.motor.leftArmCycle, 1.2);
+    assert.equal(s.motor.rightArmCycle, .6);
+    assert.equal(s.motor.visualResets ?? 0, 0);
 });

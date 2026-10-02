@@ -162,7 +162,7 @@ const obstacleResults = [200, 400].flatMap(distance => [3, 5].flatMap(grade =>
 
 const Subject = extractClass('entity/Swimmer.ts', 'Swimmer', ['geyserHitEligible', 'applyGeyserHit',
     'clearForcedLaunch', 'snapshotGeyserLane', 'restoreGeyserLane', 'isCollisionActive', 'isSharkTargetable',
-    'sampleGeyserBody', 'geyserBodyScale', 'emitGeyserContact', 'restoreGeyserReaction'], {
+    'sampleGeyserBody', 'geyserBodyScale', 'emitGeyserContact', 'restoreGeyserReaction', 'finishGeyserLaunch'], {
     getRaceDistance: () => 200, StrokeType: { LEFT: 0, RIGHT: 1 },
     ...load('swimmer/GeyserReactionModel.ts'),
 });
@@ -181,6 +181,7 @@ function swimmerFixture() {
             collisionPitchRadians: 0, axialRollRadians: 0, collisionPitchAngularVelocity: 0,
             axialRollAngularVelocity: 0, leftArmCycle: 0, rightArmCycle: 0,
             clearTurtleTow() {}, correctHeading(v) { this.heading = v; },
+            resetScriptedVisualMotion() {},
             starts: 0, setForcedLaunchPosition(_d, _l, speed) { this.currentSpeed = speed; },
             applyCollisionPitchImpulse() {}, beginForcedLaunch() { this.starts++; } } });
     s.node.setPosition = (x, y, z) => Object.assign(s.node.position, { x, y, z });
