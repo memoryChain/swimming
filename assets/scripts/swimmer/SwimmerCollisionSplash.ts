@@ -25,6 +25,7 @@ type CollisionSplashSlot = {
     normalScale: number;
     verticalScale: number;
     residualScale: number;
+    surface: boolean;
 };
 
 type ColorTuple = readonly [number, number, number, number];
@@ -105,6 +106,7 @@ export class SwimmerCollisionSplashPool {
                 normalScale: 1,
                 verticalScale: 1,
                 residualScale: 1,
+                surface: true,
             });
         }
     }
@@ -118,6 +120,8 @@ export class SwimmerCollisionSplashPool {
         flowZ: number,
         tangentialSpeed: number,
         magnitude: number,
+        worldY = this.waterY + WATER_SURFACE_OFFSET,
+        surface = true,
     ): boolean {
         if (this.disposed || !this.worldRoot?.isValid) return false;
         const tier = collisionSplashTierForImpact(magnitude, this.mode);
@@ -128,6 +132,7 @@ export class SwimmerCollisionSplashPool {
         slot.duration = (tier === COLLISION_SPLASH_TIER.STRONG ? STRONG_SECONDS : MEDIUM_SECONDS)
             + (this.mode === COLLISION_SPLASH_MODE.ENTERTAINMENT ? ENTERTAINMENT_HOLD_SECONDS : 0);
         slot.remaining = slot.duration;
+        slot.surface = surface;
         slot.elapsed = 0;
         const slideBlend = clamp01(tangentialSpeed / 4);
         slot.impactEnd = tier === COLLISION_SPLASH_TIER.STRONG
@@ -147,7 +152,7 @@ export class SwimmerCollisionSplashPool {
         slot.residualScale = visualScale
             * (tier === COLLISION_SPLASH_TIER.STRONG ? 1 : 0.82)
             * (1 + slideBlend * 0.06);
-        slot.root.setWorldPosition(worldX, this.waterY + WATER_SURFACE_OFFSET, worldZ);
+        slot.root.setWorldPosition(worldX, worldY, worldZ);
         // local +Z 沿两人中心连线，local +X 是被挤出的切线方向。若双方有共同
         // 前进速度，让略强的一侧尽量落在后方；无明确流向时使用世界轴规范化，
         // 避免交换泳者遍历顺序后整片水花翻转。
@@ -171,6 +176,16 @@ export class SwimmerCollisionSplashPool {
         }
         this.applyPhase(slot);
         return true;
+    }
+
+    /** 复用四槽共享水花；空中接触保留真实高度，不产生悬空水面余波。 */
+    playGeyser(x: number, y: number, z: number, yaw: number, strength: number, landing: boolean): boolean {
+        if (this.disposed || this.activeCount >= POOL_SIZE) return false;
+        // 深水命中只保留原喷口气泡，禁止水下出现清晰的空中水片。
+        if (!landing && y < this.waterY - .12) return false;
+        return this.play(x, z, -Math.sin(yaw), Math.cos(yaw), Math.cos(yaw), Math.sin(yaw),
+            landing ? 1 : 3, landing ? 2.8 : Math.max(.95, 1.8 * strength),
+            landing ? this.waterY + WATER_SURFACE_OFFSET : Math.max(y, this.waterY + .025), landing);
     }
 
     update(dt: number): void {
@@ -251,7 +266,7 @@ export class SwimmerCollisionSplashPool {
             slot.impactNode.active = false;
         }
 
-        if (elapsed >= slot.residualStart) {
+        if (slot.surface && elapsed >= slot.residualStart) {
             if (!slot.residualStarted) {
                 slot.residualStarted = true;
                 slot.residualNode.active = true;

@@ -583,6 +583,14 @@ export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: '海底喷泉',
         controls: [
+            control('geyser.pitchImpulseMaxDegPerSec', '头尾受力强度', '头胸或腿部命中造成的俯仰冲量。', () => GEYSER_TUNING.pitchImpulseMaxDegPerSec, v => GEYSER_TUNING.pitchImpulseMaxDegPerSec = v, 10, 20, 200, 0, ' °/s'),
+            control('geyser.rollImpulseMaxDegPerSec', '侧面受力强度', '身体偏侧命中造成的侧倾冲量。', () => GEYSER_TUNING.rollImpulseMaxDegPerSec, v => GEYSER_TUNING.rollImpulseMaxDegPerSec = v, 10, 20, 160, 0, ' °/s'),
+            control('geyser.pitchMaxDegrees', '俯仰增量上限', '限制喷泉额外造成的头翘或腿翘。', () => GEYSER_TUNING.pitchMaxDegrees, v => GEYSER_TUNING.pitchMaxDegrees = v, 5, 10, 65, 0, ' °'),
+            control('geyser.rollMaxDegrees', '侧倾增量上限', '限制喷泉额外造成的左右倾斜。', () => GEYSER_TUNING.rollMaxDegrees, v => GEYSER_TUNING.rollMaxDegrees = v, 5, 5, 50, 0, ' °'),
+            control('geyser.rotationDamping', '倾斜惯性衰减', '越大越快停止继续倾斜，不追加速度惩罚。', () => GEYSER_TUNING.rotationDamping, v => GEYSER_TUNING.rotationDamping = v, .25, .5, 6, 2),
+            control('geyser.grazeTiltMaxDegrees', '擦边轻摆上限', '手脚轻触与外围擦中只产生有限轻摆。', () => GEYSER_TUNING.grazeTiltMaxDegrees, v => GEYSER_TUNING.grazeTiltMaxDegrees = v, 1, 2, 15, 0, ' °'),
+            control('geyser.bodyHitLiftMinScale', '局部命中抬升下限', '身体覆盖较少时的最低腾空比例。', () => GEYSER_TUNING.bodyHitLiftMinScale, v => GEYSER_TUNING.bodyHitLiftMinScale = v, .05, .5, 1, 2),
+            control('geyser.landingSettleSeconds', '落水余摆时间', '恢复游姿的表现时间，不延长操作锁。', () => GEYSER_TUNING.landingSettleSeconds, v => GEYSER_TUNING.landingSettleSeconds = v, .05, .1, .6, 2, ' s'),
             control('geyser.largeRadiusScale', '大喷泉范围倍率', '大口核心、擦边和水花的横向倍率。', () => GEYSER_TUNING.largeRadiusScale, v => GEYSER_TUNING.largeRadiusScale = v, 0.05, 1.1, 2, 2),
             control('geyser.largePeakHeightScale', '大喷泉腾空倍率', '仅提高人物腾空峰值，减速比例保持一致。', () => GEYSER_TUNING.largePeakHeightScale, v => GEYSER_TUNING.largePeakHeightScale = v, 0.05, 1, 2, 2),
             control('geyser.largeFlightExtraSeconds', '大喷泉额外腾空', '在水面或水下起飞时长上增加少量时间。', () => GEYSER_TUNING.largeFlightExtraSeconds, v => GEYSER_TUNING.largeFlightExtraSeconds = v, 0.05, 0, 0.3, 2, ' s'),

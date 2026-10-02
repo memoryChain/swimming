@@ -71,6 +71,7 @@ function recoveryQuitFixture() {
     const raceFile = 'assets/scripts/core/RaceManager.ts';
     const gameFile = 'assets/scripts/core/GameManager.ts';
     const swimmer = {
+        _geyserPose: { weight: 0, forward: 0, side: 0 },
         node: { active: true }, racing: true, respawns: 0,
         _startPosition: { z: 0 }, _phases: { clearFlipTurnPhase() {}, clearDiveUnderwaterPhase() {} },
         stopRace() { this.racing = false; }, resetEntertainmentKnockoutPresentation() {},
@@ -246,6 +247,31 @@ function hostSnapshotSender(pos = 0) {
     return new NetRaceController({ raceId: RACE_ID, localIsHost: true, localPos: pos,
         seed: 7, members: [{ pos: 0 }, { pos: 1 }, { pos: 2 }] });
 }
+
+test('八人喷泉擦边升级核心按可靠队列分帧，带身份前缀不超限且无漏发', () => {
+    const host = hostSnapshotSender(); frames.length = 0;
+    try {
+        host._eventEpochs[3] = 999999;
+        const expected = [];
+        for (const strength of [1, 2]) for (let lane = 0; lane < 8; lane++) {
+            const hitId = 999999000 + lane + 1;
+            const reaction = { hitId, strength, duration: strength === 2 ? 1.3 : .25,
+                pitch: -1.555, roll: -3.111, pitchVelocity: -3.555, rollVelocity: -3.888,
+                along: -1.1, side: -.2, up: -.5 };
+            const start = strength === 2 ? { distance: 399.99, lateral: -10.5, y: -1.5, surfaceY: .408,
+                speed: 49, heading: -1, duration: 1.3, peakHeight: 1.8, entryScale: .75, exitScale: .6 } : null;
+            host.enqueueGeyserHit(hitId, lane, strength, 86399, start, reaction);
+            expected.push([hitId, strength]);
+        }
+        for (let i = 0; i < 12; i++) host.tick(.04);
+        assert.equal(host._authoritativeEvents.length, 0);
+        assert.ok(frames.length > 1);
+        for (const frame of frames) assert.ok(Buffer.byteLength(frame) <= 1536);
+        const events = frames.flatMap(frame => decodeInputFrame(body(frame)).events);
+        assert.deepEqual(events.map(e => [e.geyserHitId, e.geyserStrength]), expected);
+        assert.ok(events.every(e => e.geyserReaction && e.geyserReaction.hitId === e.geyserHitId));
+    } finally { host.dispose(); }
+});
 
 test('海龟提前到达场景的旧状态在切主时清除，新主仍可恢复同一航次', () => {
     const { encodeTurtleBusPacket } = load('assets/scripts/net/NetTurtleBusSnapshot.ts');

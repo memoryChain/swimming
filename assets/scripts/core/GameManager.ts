@@ -1767,8 +1767,17 @@ export class GameManager extends Component {
 
     private setupEntertainmentMode() {
         const geyserTuning = geyserTuningForRace(!!this._netSession);
-        if (this._playerSwimmer) this._playerSwimmer.geyserTuning = geyserTuning;
-        for (const swimmer of this._aiSwimmers) swimmer.geyserTuning = geyserTuning;
+        const bindGeyser = (swimmer: Swimmer) => {
+            swimmer.geyserTuning = geyserTuning;
+            swimmer.onGeyserSplash = (x, y, z, yaw, strength, landing) => {
+                // 满池保留已在飞行的反馈；远处装饰优先省略，真实受力不受影响。
+                if (swimmer !== this._playerSwimmer && this._playerSwimmer
+                    && Math.abs(x - this._playerSwimmer.node.position.x) > 18) return;
+                this._collisionWaterSplashes?.playGeyser(x, y, z, yaw, strength, landing);
+            };
+        };
+        if (this._playerSwimmer) bindGeyser(this._playerSwimmer);
+        for (const swimmer of this._aiSwimmers) bindGeyser(swimmer);
         this._geyserNetWorld = null;
         this._pendingGeyserNetState = null;
         this._debugEntertainmentProfiles = null;
@@ -1899,12 +1908,12 @@ export class GameManager extends Component {
             this._pendingTurtleBusState = state;
             this.applyPendingTurtleBusNetState();
         });
-        this._netRaceController?.setGeyserHitListener((hitId, lane, strength, elapsedSeconds, start) => {
+        this._netRaceController?.setGeyserHitListener((hitId, lane, strength, elapsedSeconds, start, reaction) => {
             const currentSerial = this._entertainmentDirector?.snapshot().activationSerial ?? 0;
             if (Math.floor(hitId / 1000) !== currentSerial) return;
             const late = elapsedSeconds === undefined ? 0
                 : Math.max(0, (this._raceManager?.elapsedSeconds ?? elapsedSeconds) - elapsedSeconds);
-            if (this.swimmerForLane(lane)?.applyGeyserHit(hitId, strength, late, start, true)) {
+            if (this.swimmerForLane(lane)?.applyGeyserHit(hitId, strength, late, start, true, false, undefined, reaction)) {
                 this.showGeyserHitFeedback(lane, strength);
             }
         });
@@ -2657,10 +2666,10 @@ export class GameManager extends Component {
         const serial = serialOverride ?? this._entertainmentDirector?.snapshot().activationSerial ?? 1;
         this._geyserBrawl = new GeyserBrawlController(this._worldRoot, COURSE_LAYOUT,
             swimmers, getSharedRandomSeed(), serial, intensity, anchorDistance,
-            (lane, hitId, strength, _age, start) => {
+            (lane, hitId, strength, _age, start, reaction, late = 0) => {
                 this.showGeyserHitFeedback(lane, strength);
                 this._netRaceController?.enqueueGeyserHit(
-                    hitId, lane, strength, this._raceManager?.elapsedSeconds ?? 0, start);
+                    hitId, lane, strength, Math.max(0, (this._raceManager?.elapsedSeconds ?? 0) - late), start, reaction);
             }, geyserTuningForRace(!!this._netSession), {
                 waitForAuthority: !!this._netSession && !this._netRaceController?.isHost,
                 dangers: collectGeyserDangers(distance => COURSE_LAYOUT.distanceToWorldX(distance),

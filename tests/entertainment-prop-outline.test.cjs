@@ -45,7 +45,8 @@ test('水炮本体与轮廓共用两次绘制，回弹和重复进出不新增�
 test('水炮离线合并保持原几何和其他道具不变，轮廓沿法线外扩且反向绕序',()=>{
     const {build,WIDTH,INK}=require('../art/water-play-obstacles/build_cannon_merged.cjs');
     const {water,text}=build(),source=JSON.parse(fs.readFileSync('art/water-play-obstacles/geometry.json','utf8'));
-    assert.equal(fs.readFileSync('assets/scripts/core/WaterPlayObstacleGeometry.ts','utf8'),text);
+    // Git 在 Windows 检出为 CRLF；比较生成内容，不把换行转换误报成几何变化。
+    assert.equal(fs.readFileSync('assets/scripts/core/WaterPlayObstacleGeometry.ts','utf8').replace(/\r\n/g,'\n'),text.replace(/\r\n/g,'\n'));
     assert.deepEqual(water.SprayBuoy,source.SprayBuoy);assert.deepEqual(water.CannonWaterBall,source.CannonWaterBall);
     const {outline,CANNON_OUTLINE_POLICIES}=require('../art/entertainment-outlines/build_geometry.cjs');
     for(const [name,base]of Object.entries(source.WaterBallCannon)){

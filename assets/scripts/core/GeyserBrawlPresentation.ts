@@ -83,17 +83,21 @@ export class GeyserBrawlPresentation {
                 const pressure = clamp01(local / warning);
                 active(view.jet, false);
                 active(view.foam, true);
-                const swell = 0.7 + pressure * 0.3;
-                scale(view.foam, swell * radius, 0.2 + pressure * 0.45, swell * radius);
+                // 外沿从预警开始就覆盖危险半径，只让鼓包在高度上蓄压。
+                const swell = .18 + pressure * .42 + .045 * pressure * Math.sin(local * 9 + view.yaw);
+                scale(view.foam, radius, swell, radius);
                 position(view.foam, 0, this.foamY, 0);
                 for (let group = 0; group < 2; group++) {
                     const bubbleAge = local - group * 0.35;
                     const node = view.drops[group];
                     active(node, bubbleAge >= 0);
                     if (bubbleAge < 0) continue;
-                    const rise = (bubbleAge % 0.82) / 0.82;
+                    const bubbleLife = .82 + group * .11;
+                    const rise = (bubbleAge % bubbleLife) / bubbleLife;
+                    // 回收前后不可见，避免一批气泡从水面瞬移回池底。
+                    const envelope = Math.min(1, rise / .12, (1 - rise) / .14);
                     const spread = (0.35 + rise * 0.35) * radius;
-                    scale(node, spread, 0.38 + pressure * 0.2, spread);
+                    scale(node, spread * envelope, (.38 + pressure * .2) * envelope, spread * envelope);
                     position(node, 0.04 * Math.sin(local * 7 + group), -1.25 + rise * 1.16, 0);
                 }
                 continue;
@@ -108,18 +112,20 @@ export class GeyserBrawlPresentation {
                 -1.4 - release * 0.16 + 2.7 * lift * (1 - release * 0.4) - this.waterlineY) * heightScale;
             active(view.jet, exposedHeight > 0.015 && release < 0.7);
             if (view.jet.active) {
-                const width = (1 + 0.035 * Math.sin(burstAge * 21 + view.yaw)) * (1 - release * 0.7) * radius;
-                scale(view.jet, width, exposedHeight, width);
+                const phase = burstAge * (vent.size === 'large' ? 7.6 : 10) + view.yaw * .0174533 + pulse * 1.7;
+                const width = (1 + .065 * Math.sin(phase)) * (1 - release * .7) * radius;
+                scale(view.jet, width, exposedHeight, (1 + .05 * Math.sin(phase + 1.6)) * (1 - release * .7) * radius);
+                view.jet.setRotationFromEuler(0, view.yaw + 3.5 * Math.sin(phase * .7), 0);
                 position(view.jet, 0, this.waterlineY, 0);
             }
             active(view.foam, true);
             const tail = clamp01((releaseAge - tuning.fallingSeconds) / FOAM_TAIL_SECONDS);
             const ripple = 1 + 0.18 * release + 0.18 * tail;
-            scale(view.foam, ripple * radius, (0.8 + 0.08 * Math.sin(burstAge * 16)) * (1 - tail), ripple * radius);
+            scale(view.foam, ripple * radius, (.7 + .14 * Math.sin(burstAge * 8 + view.yaw)) * (1 - tail), ripple * radius);
             position(view.foam, 0, this.foamY - tail * 0.09, 0);
             for (let group = 0; group < 2; group++) {
                 const node = view.drops[group];
-                const first = 0.09 + group * 0.32;
+                const first = tuning.burstRiseSeconds + .025 + group * .32;
                 const emissionAge = Math.min(burstAge, tuning.burstSeconds - 0.001);
                 const emission = first + Math.floor((emissionAge - first) / DROP_INTERVAL) * DROP_INTERVAL;
                 const flightAge = burstAge - emission;
@@ -235,21 +241,22 @@ function buildWaterJet(waterlineY: number): Geometry {
             }
         }
     }
-    const cap = vertex(g, 0, 0.965, 0, WHITE);
+    const cap = vertex(g, 0, 0.965, 0, PALE);
     for (let side = 0; side < sides; side++) g.indices.push(cap, 5 * sides + side, 5 * sides + (side + 1) % sides);
     for (let petal = 0; petal < 8; petal++) {
         const angle = petal / 8 * Math.PI * 2 + 0.07 * Math.sin(petal * 3);
         const base = g.positions.length / 3;
-        const length = 0.66 + 0.18 * Math.sin(petal * 2.2);
+        const length = 0.65 + .22 * Math.sin(petal * 2.2);
         for (let step = 0; step < 6; step++) {
             const t = step / 5;
             const radius = 0.23 + length * t;
             const y = 0.85 + (0.12 + 0.045 * Math.sin(petal * 1.8)) * Math.sin(t * Math.PI)
                 - (0.04 + 0.09 * (petal % 3) / 2) * t;
-            const halfWidth = (0.13 + 0.1 * Math.sin(t * Math.PI)) * (1 - t * 0.82);
+            const halfWidth = (.1 + .08 * Math.sin(t * Math.PI)) * (1 - t * .86)
+                * (.85 + .15 * Math.cos(petal * 2.1));
             for (const sign of [-1, 1]) vertex(g,
                 Math.cos(angle) * radius - Math.sin(angle) * halfWidth * sign, y,
-                Math.sin(angle) * radius + Math.cos(angle) * halfWidth * sign, step >= 2 ? WHITE : PALE);
+                Math.sin(angle) * radius + Math.cos(angle) * halfWidth * sign, step >= 3 && petal % 3 !== 0 ? WHITE : PALE);
             if (step > 0) quad(g, base + step * 2 - 2, base + step * 2 - 1, base + step * 2 + 1, base + step * 2);
         }
     }

@@ -141,6 +141,11 @@ export class SwimmerRacePhases {
         return this._dolphinFlightPitch;
     }
 
+    /** 外力接管时继承海豚空中的真实姿态，避免先摆正再受喷。 */
+    dolphinFlightRollRadians(): number {
+        return this._dolphinBaseAxialRoll + this._dolphinRollAngle;
+    }
+
     get isDiveGlidePoseActive(): boolean {
         return this._diveGlidePoseActive;
     }

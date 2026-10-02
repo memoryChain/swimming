@@ -3,6 +3,29 @@ const assert = require('node:assert/strict');
 const { createGeyserPresentationHarness } = require('./helpers/geyser-presentation-harness.cjs');
 const vent = [{ id: 0, x: 0, z: 0, offsetSeconds: 0 }];
 
+test('人物接触水花保留空中高度，深水不画水片，四槽满时不截断已有反馈', () => {
+    const h = createGeyserPresentationHarness(1);
+    h.cc.gfx.PrimitiveMode = { TRIANGLE_LIST: 0 };
+    h.Node.prototype.setParent = function(parent) { parent.addChild(this); };
+    h.Node.prototype.setWorldPosition = function(x,y,z) { this.setPosition(x,y,z); };
+    const { SwimmerCollisionSplashPool } = h.load(require('node:path').resolve(__dirname,'../assets/scripts/swimmer/SwimmerCollisionSplash.ts'));
+    const pool = new SwimmerCollisionSplashPool(h.root,.055,1,'entertainment');
+    assert.equal(pool.playGeyser(1,-.5,2,0,.7,false),false);
+    for(let i=0;i<4;i++) assert.equal(pool.playGeyser(i,1.2,2,0,.35,false),true);
+    assert.equal(pool.playGeyser(9,1,9,0,.7,false),false);
+    const roots = h.nodes.filter(n=>/^SwimmerCollisionSplash_\d$/.test(n.name));
+    assert.ok(roots.every(n=>Math.abs(n.position.y-1.2)<1e-6));
+    pool.update(.24);
+    assert.ok(h.nodes.filter(n=>n.name.endsWith('_Residual')).every(n=>!n.active));
+    pool.update(.5); assert.ok(roots.every(n=>!n.active));
+    assert.ok(pool.playGeyser(4,9,2,0,.85,true));
+    assert.ok(Math.abs(roots[0].position.y-.09)<1e-6);
+    pool.update(.25);assert.ok(h.nodes.some(n=>n.name.endsWith('_Residual')&&n.active));
+    const counts=h.budget();
+    for(let i=0;i<20;i++){pool.reset();pool.playGeyser(1,1,2,0,.7,false);pool.update(1);}
+    assert.deepEqual(h.budget(),counts);pool.dispose();pool.dispose();
+});
+
 test('大口扩大水面轮廓与水上高度，不移动水线、不增加网格和渲染组件', () => {
     for (const waterY of [0,.055,.18]) {
         const small = createGeyserPresentationHarness(1,waterY), large = createGeyserPresentationHarness(1,waterY);
@@ -58,11 +81,11 @@ test('水冠喷出后碎水按弧线落下，水柱先消散，泡沫最后结�
     const h = createGeyserPresentationHarness(1);
     h.visual.update(vent, 1.7, 1);
     assert.ok(h.snapshot().some(n => n.name === 'WaterJetAndCrown'));
-    h.visual.update(vent, 2.15, 1);
+    h.visual.update(vent, 2.23, 1);
     assert.ok(h.snapshot().find(n => n.name === 'BubblesAndDropsA').matrix[13] < 0.4);
-    h.visual.update(vent, 2.2, 1);
+    h.visual.update(vent, 2.28, 1);
     assert.ok(!h.snapshot().some(n => n.name === 'BubblesAndDropsA'));
-    h.visual.update(vent, 2.25, 1);
+    h.visual.update(vent, 2.34, 1);
     assert.ok(h.snapshot().find(n => n.name === 'BubblesAndDropsA').matrix[13] > 1);
     h.visual.update(vent, 2.47, 1);
     const high = h.snapshot().find(n => n.name === 'BubblesAndDropsA');

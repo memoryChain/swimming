@@ -161,17 +161,26 @@ const obstacleResults = [200, 400].flatMap(distance => [3, 5].flatMap(grade =>
     [true, false].map(gated => auditObstacleWaves(6, distance, grade, 2.5, gated))));
 
 const Subject = extractClass('entity/Swimmer.ts', 'Swimmer', ['geyserHitEligible', 'applyGeyserHit',
-    'clearForcedLaunch', 'snapshotGeyserLane', 'restoreGeyserLane', 'isCollisionActive', 'isSharkTargetable'], {
+    'clearForcedLaunch', 'snapshotGeyserLane', 'restoreGeyserLane', 'isCollisionActive', 'isSharkTargetable',
+    'sampleGeyserBody', 'geyserBodyScale', 'emitGeyserContact', 'restoreGeyserReaction'], {
     getRaceDistance: () => 200, StrokeType: { LEFT: 0, RIGHT: 1 },
+    ...load('swimmer/GeyserReactionModel.ts'),
 });
 function swimmerFixture() {
     const s = new Subject();
     Object.assign(s, { distance: 20, node: { active: true, position: { x: 20, y: 0, z: 0 } },
         _entertainmentKnocked: false, _entertainmentInvulnerable: false,
         _geyserHits: new geyser.GeyserHitLedger(), geyserTuning: geyser.GEYSER_TUNING,
-        _forcedLaunch: null, _forcedLaunchGrace: 0, _forcedLaunchEdge: 0, _phases: {},
-        _courseLayout: { swimY: 0, distanceToCurrentCourseEnd: () => 30 }, clearGiantWave() {},
+        _geyserPose: { pitch: 0, roll: 0, weight: 0, forward: 0, side: 0 },
+        _geyserBodyScratch: {}, _startPosition: { z: 0 }, _geyserReaction: null, _geyserReactionAge: 0,
+        _forcedLaunch: null, _forcedLaunchGrace: 0, _forcedLaunchEdge: 0,
+        _phases: { diveRecoveryLean: () => 0, dolphinRollResidualRadians: () => 0 },
+        _courseLayout: { swimY: 0, distanceToCurrentCourseEnd: () => 30,
+            distanceToWorldX: d => d, finishDirectionAtDistance: () => 1 }, clearGiantWave() {},
         _motor: { isRacing: true, lateralOffset: 0, currentSpeed: 3, heading: 0, ability: { depth: 0 },
+            collisionPitchRadians: 0, axialRollRadians: 0, collisionPitchAngularVelocity: 0,
+            axialRollAngularVelocity: 0, leftArmCycle: 0, rightArmCycle: 0,
+            clearTurtleTow() {}, correctHeading(v) { this.heading = v; },
             starts: 0, setForcedLaunchPosition(_d, _l, speed) { this.currentSpeed = speed; },
             applyCollisionPitchImpulse() {}, beginForcedLaunch() { this.starts++; } } });
     s.node.setPosition = (x, y, z) => Object.assign(s.node.position, { x, y, z });

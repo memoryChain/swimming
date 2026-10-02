@@ -3,7 +3,52 @@ import assert from 'node:assert/strict';
 import Codec from '../assets/scripts/net/NetGeyserSnapshot.ts';
 import Snapshot from '../assets/scripts/net/NetRaceSnapshot.ts';
 import Protocol from '../assets/scripts/net/NetRaceProtocol.ts';
+import Input from '../assets/scripts/net/NetRaceInput.ts';
 const { encodeGeyserPacket, decodeGeyserPacket } = Codec;
+
+function reaction(hitId, strength = 2, age = .4) {
+    return { start: { hitId, strength, duration: strength === 2 ? 1.2 : .25,
+        pitch: -.875, roll: -2.945, pitchVelocity: -3.141, rollVelocity: -2.765,
+        along: -1.555, side: -.765, up: -.555 }, age };
+}
+
+test('八人受击姿态与完整轨迹满载仍在 GY 及可靠帧预算内，两个通道同源恢复', () => {
+    const source = state(999999);
+    for (const lane of source.lanes) lane.reaction = reaction(lane.hitId);
+    const packet = encodeGeyserPacket(7, Number.MAX_SAFE_INTEGER, source);
+    assert.ok(packet, '带姿态的八人 GY 不得被编码器静默丢弃');
+    assert.deepEqual(decodeGeyserPacket(packet).state, source);
+    assert.ok(Buffer.byteLength(Protocol.raceMessagePrefix('7.zzzzzzzzzzz') + packet) <= 1536);
+    for (const lane of source.lanes) {
+        const event = { kind: Input.NetInputKind.GeyserHit, geyserHitId: lane.hitId,
+            targetLane: lane.lane, geyserStrength: 2, geyserReaction: lane.reaction.start,
+            geyserDistance: 320, geyserLateral: -10, geyserY: -1.5, geyserSpeed: 3.4,
+            geyserHeading: -.4, geyserSurfaceY: 0, geyserDuration: 1.2,
+            geyserPeakHeight: 1.2, geyserEntryScale: .75, geyserExitScale: .6,
+            eventEpoch: 999999, effectTime: 180.25 };
+        const encoded = Input.encodeInputFrame(7, [event]);
+        assert.deepEqual(Input.decodeInputFrame(encoded).events[0], event);
+    }
+});
+
+test('无起飞的轻触和已经落水的余摆可恢复，错误反应身份和跨泳道数据被拒绝', () => {
+    const source = state();
+    for (const lane of source.lanes) {
+        lane.reaction = reaction(lane.hitId, lane.lane % 2 ? 2 : 1, lane.lane % 2 ? 1.3 : .1);
+        lane.start = null; lane.hitId = 0; lane.launchAge = 0;
+    }
+    assert.deepEqual(decodeGeyserPacket(encodeGeyserPacket(0, 1, source)).state, source);
+    for (const change of [
+        s => s.lanes[0].reaction.start.hitId++,
+        s => s.lanes[0].reaction.start.hitId += 1000,
+        s => s.lanes[0].reaction.start.pitchVelocity = 100,
+        s => s.lanes[0].reaction.age = 10,
+        s => s.lanes[0].edges = 0,
+    ]) {
+        const invalid = structuredClone(source); change(invalid);
+        assert.equal(encodeGeyserPacket(0, 1, invalid), '');
+    }
+});
 
 function state(serial = 1) {
     return { world: { serial, intensity: 5, anchorDistance: 320, age: 12.3, stoppedAt: 11.2, active: true, largeVentMask: 273 },

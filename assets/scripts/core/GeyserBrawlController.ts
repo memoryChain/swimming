@@ -1,13 +1,15 @@
 import type { Node } from 'cc';
 import type { Swimmer } from '../entity/Swimmer';
 import type { ForcedLaunchStart } from '../swimmer/ForcedLaunchModel';
+import { emptyGeyserBodyPose, emptyGeyserContact, sampleGeyserBodyContact, geyserBodyClearance } from '../swimmer/GeyserBodyContact';
+import type { GeyserReactionStart } from '../swimmer/GeyserReactionModel';
 import type { GeyserWorldState } from '../net/NetGeyserSnapshot';
 import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
-import { GEYSER_TUNING, geyserBurstHeight, geyserBurstOverlap, geyserPhaseAt, geyserSpec, geyserPulseStart, geyserHitId,
-    geyserSweptHit, planGeyserVents, type GeyserHitStrength,
+import { GEYSER_TUNING, geyserBurstOverlap, geyserPhaseAt, geyserSpec, geyserPulseStart, geyserHitId,
+    planGeyserVents, type GeyserHitStrength,
     type GeyserTuning, type GeyserIntensity, type GeyserVent } from './GeyserBrawlRules';
 import { GeyserBrawlPresentation } from './GeyserBrawlPresentation';
-import { applyGeyserSizes, geyserLargeMask, geyserRadiusScale, geyserWarningSeconds, geyserJetTop, geyserPulseIndex } from './GeyserBrawlRules';
+import { applyGeyserSizes, geyserLargeMask, geyserRadiusScale, geyserWarningSeconds, geyserPulseIndex } from './GeyserBrawlRules';
 import { selectGeyserLargeMask, type GeyserDanger, type GeyserSafetyResult } from './GeyserBrawlSafety';
 
 /** 喷口时钟和权威命中；画面从相同时钟重建，不参与判定。 */
@@ -17,8 +19,12 @@ export class GeyserBrawlController {
     private sizesReady: boolean;
     readonly spec;
     private readonly visual: GeyserBrawlPresentation;
-    private readonly previousX: Float32Array;
-    private readonly previousZ: Float32Array;
+    private readonly previousDistance: Float64Array;
+    private readonly previousLateral: Float64Array;
+    private readonly previousBodies;
+    private readonly currentBody = emptyGeyserBodyPose();
+    private readonly contact = emptyGeyserContact();
+    private readonly bestContact = emptyGeyserContact();
     private age = 0;
     private stoppedAt = Number.POSITIVE_INFINITY;
     private authoritative = true;
@@ -28,7 +34,7 @@ export class GeyserBrawlController {
         private readonly serial: number, readonly intensity: GeyserIntensity,
         private readonly anchorDistance: number,
         private readonly onHit?: (lane: number, hitId: number, strength: 1 | 2,
-            age: number, start: ForcedLaunchStart | null) => void,
+            age: number, start: ForcedLaunchStart | null, reaction?: GeyserReactionStart | null, lateSeconds?: number) => void,
         private readonly tuning: GeyserTuning = GEYSER_TUNING,
         options: { waitForAuthority?: boolean; dangers?: readonly GeyserDanger[] } = {},
     ) {
@@ -49,17 +55,19 @@ export class GeyserBrawlController {
         const racers = swimmers.filter(s => s?.motor.isRacing && s.node.active).map(s => {
             const x = course.distanceToWorldX(s!.distance);
             const step = course.distanceToWorldX(s!.distance + 0.5) - x;
-            return { x, z: s!.startPosition.z + s!.motor.lateralOffset,
+            s!.sampleGeyserBody(this.currentBody);
+            return { x: this.currentBody.x, z: this.currentBody.z,
                 speed: Math.max(0, s!.motor.currentSpeed) * Math.abs(step * 2),
                 direction: Math.sign(step) || course.direction, heading: s!.motor.heading,
-                turnRate: s!.motor.headingTurnRate || 0, roll: s!.netAxialRoll || 0 };
+                turnRate: s!.motor.headingTurnRate || 0, roll: s!.netAxialRoll || 0, bodyScale: s!.geyserBodyScale };
         });
         this.safety = this.sizesReady ? selectGeyserLargeMask(seed, serial, intensity, this.vents,
             course.poolWidth * 0.5, racers, options.dangers ?? [], tuning)
             : { mask: 0, rejectedSpace: 0, rejectedRoute: 0 };
         this._vents = applyGeyserSizes(this.vents, this.safety.mask, this.spec.largeCount > 0);
-        this.previousX = new Float32Array(swimmers.length);
-        this.previousZ = new Float32Array(swimmers.length);
+        this.previousDistance = new Float64Array(swimmers.length);
+        this.previousLateral = new Float64Array(swimmers.length);
+        this.previousBodies = swimmers.map(() => emptyGeyserBodyPose());
         this.capturePositions();
         this.visual = new GeyserBrawlPresentation(parent, course.swimY, this.spec.ventCount, course.waterY);
     }
@@ -117,9 +125,10 @@ export class GeyserBrawlController {
 
     targetZForAi(swimmer: Swimmer | null): number | null {
         if (!swimmer || !this.sizesReady || this.isDone || swimmer.isForcedLaunchActive) return null;
-        const x = this.course.distanceToWorldX(swimmer.distance);
-        const z = swimmer.node.position.z;
-        const direction = Math.sign(this.course.distanceToWorldX(swimmer.distance + 0.5) - x) || 1;
+        const rootX = this.course.distanceToWorldX(swimmer.distance);
+        const direction = Math.sign(this.course.distanceToWorldX(swimmer.distance + 0.5) - rootX) || 1;
+        swimmer.sampleGeyserBody(this.currentBody);
+        const x = this.currentBody.x, z = this.currentBody.z;
         let nearest = 8;
         let target: number | null = null;
         for (const vent of this.vents) {
@@ -128,7 +137,8 @@ export class GeyserBrawlController {
             if (phase !== 'warning' && phase !== 'burst') continue;
             if ((vent.x - x) * direction < -0.5) continue;
             const distance = Math.abs(x - vent.x);
-            const clearance = this.tuning.edgeRadius * geyserRadiusScale(vent, this.tuning) + 1;
+            const clearance = this.tuning.edgeRadius * geyserRadiusScale(vent, this.tuning)
+                - .2 + geyserBodyClearance(swimmer.motor.heading, swimmer.geyserBodyScale) + .65;
             if (distance >= nearest || Math.abs(z - vent.z) > clearance) continue;
             nearest = distance;
             const away = z >= vent.z ? 1 : -1;
@@ -155,8 +165,9 @@ export class GeyserBrawlController {
         for (let lane = 0; lane < this.swimmers.length; lane++) {
             const swimmer = this.swimmers[lane];
             if (!swimmer) continue;
-            this.previousX[lane] = this.course.distanceToWorldX(swimmer.distance);
-            this.previousZ[lane] = swimmer.startPosition.z + swimmer.motor.lateralOffset;
+            this.previousDistance[lane] = swimmer.distance;
+            this.previousLateral[lane] = swimmer.motor.lateralOffset;
+            swimmer.sampleGeyserBody(this.previousBodies[lane]);
         }
     }
 
@@ -165,8 +176,12 @@ export class GeyserBrawlController {
         for (let lane = 0; lane < this.swimmers.length; lane++) {
             const swimmer = this.swimmers[lane];
             if (!swimmer?.geyserHitEligible) continue;
-            const toX = this.course.distanceToWorldX(swimmer.distance);
-            const toZ = swimmer.startPosition.z + swimmer.motor.lateralOffset;
+            swimmer.sampleGeyserBody(this.currentBody);
+            if (swimmer.netCatchingUp) {
+                Object.assign(this.previousBodies[lane], this.currentBody);
+                this.previousDistance[lane] = swimmer.distance;
+                this.previousLateral[lane] = swimmer.motor.lateralOffset;
+            }
             let best: GeyserHitStrength = 0;
             let bestId = -1;
             let bestLarge = false;
@@ -177,32 +192,37 @@ export class GeyserBrawlController {
                     const burstStart = geyserPulseStart(vent, pulse, this.tuning) + geyserWarningSeconds(vent, this.tuning);
                     const overlapStart = Math.max(fromAge, burstStart);
                     const overlapEnd = Math.min(toAge, burstStart + this.tuning.burstSeconds);
-                    const mid = Math.max(overlapStart,
-                        Math.min(overlapEnd, burstStart + this.tuning.burstRiseSeconds));
-                    const height = geyserBurstHeight(vent, pulse, mid, this.tuning);
-                    const topY = geyserJetTop(vent, height, this.course.swimY,
-                        this.course.waterY ?? this.course.swimY + 0.055, this.tuning);
-                    if (swimmer.node.position.y > topY + 0.35) continue;
-                    const span = Math.max(0.00001, toAge - fromAge);
-                    const fromX = this.previousX[lane], fromZ = this.previousZ[lane];
-                    const displacementSq = (toX - fromX) ** 2 + (toZ - fromZ) ** 2;
-                    // A network correction is not a physical traverse through every vent between two positions.
-                    const startRatio = displacementSq > 16 ? 1 : (overlapStart - fromAge) / span;
-                    const endRatio = displacementSq > 16 ? 1 : (overlapEnd - fromAge) / span;
-                    const strength = geyserSweptHit(vent,
-                        fromX + (toX - fromX) * startRatio,
-                        fromZ + (toZ - fromZ) * startRatio,
-                        fromX + (toX - fromX) * endRatio,
-                        fromZ + (toZ - fromZ) * endRatio, this.tuning);
+                    const strength = sampleGeyserBodyContact(vent, pulse, this.previousBodies[lane],
+                        this.currentBody, fromAge, toAge, overlapStart, overlapEnd,
+                        this.course.swimY, this.course.waterY ?? this.course.swimY + .055,
+                        this.contact, this.tuning).strength;
                     if (strength > best || (strength > 0 && strength === best && !bestLarge && vent.size === 'large')) {
                         best = strength;
                         bestLarge = vent.size === 'large';
                         bestId = geyserHitId(this.serial, pulse, vent.id, lane);
+                        Object.assign(this.bestContact, this.contact);
                     }
                 }
             }
-            if (best && bestId > 0 && swimmer.applyGeyserHit(bestId, best, 0, undefined, false, bestLarge)) {
-                this.onHit?.(lane, bestId, best, toAge, swimmer.forcedLaunchStart);
+            if (best && bestId > 0) {
+                const late = Math.max(0, toAge - this.bestContact.time);
+                const teleported = Math.hypot(this.currentBody.x - this.previousBodies[lane].x,
+                    this.currentBody.z - this.previousBodies[lane].z) > 4;
+                const ratio = teleported ? 1 : Math.max(0, Math.min(1, (this.bestContact.time - fromAge) / (toAge - fromAge)));
+                const hitY = swimmer.node.position.y;
+                const start: ForcedLaunchStart | undefined = best === 2 ? {
+                    distance: this.previousDistance[lane] + (swimmer.distance - this.previousDistance[lane]) * ratio,
+                    lateral: this.previousLateral[lane] + (swimmer.motor.lateralOffset - this.previousLateral[lane]) * ratio,
+                    y: hitY, surfaceY: this.course.swimY, speed: swimmer.motor.currentSpeed,
+                    heading: this.course.finishDirectionAtDistance(swimmer.distance) > 0 ? this.currentBody.yaw : Math.PI - this.currentBody.yaw,
+                    duration: (hitY < this.course.swimY - .08 ? this.tuning.submergedFlightSeconds : this.tuning.flightSeconds)
+                        + (bestLarge ? this.tuning.largeFlightExtraSeconds : 0),
+                    peakHeight: this.tuning.peakHeight * (bestLarge ? this.tuning.largePeakHeightScale : 1)
+                        * (this.tuning.bodyHitLiftMinScale + (1 - this.tuning.bodyHitLiftMinScale) * this.bestContact.coverage),
+                    entryScale: this.tuning.entrySpeedScale, exitScale: this.tuning.exitSpeedScale,
+                } : undefined;
+                if (swimmer.applyGeyserHit(bestId, best, late, start, false, bestLarge, this.bestContact))
+                    this.onHit?.(lane, bestId, best, toAge, swimmer.forcedLaunchStart, swimmer.geyserReactionStart, late);
             }
         }
     }

@@ -1,4 +1,6 @@
 import type { ForcedLaunchStart } from '../swimmer/ForcedLaunchModel';
+import type { GeyserReactionSnapshot } from '../swimmer/GeyserReactionModel';
+import { encodeGeyserReaction, decodeGeyserReaction } from './GeyserReactionCodec';
 import { geyserSpec, geyserTuningForRace, geyserCycleSeconds, type GeyserIntensity } from '../core/GeyserBrawlRules';
 
 export type GeyserWorldState = Readonly<{
@@ -8,6 +10,7 @@ export type GeyserWorldState = Readonly<{
 export type GeyserLaneState = Readonly<{
     lane: number; edges: number; cores: number; grace: number; edge: number;
     hitId: number; launchAge: number; start: ForcedLaunchStart | null;
+    reaction?: GeyserReactionSnapshot;
 }>;
 export type NetGeyserState = Readonly<{
     world: GeyserWorldState; raceElapsed: number; lanes: readonly GeyserLaneState[];
@@ -34,7 +37,8 @@ export function encodeGeyserPacket(hostPos: number, sequence: number, state: Net
         const s = l.start;
         return base + (s ? '~' + pack([s.distance * 100, s.lateral * 1000, s.y * 1000,
             s.surfaceY * 1000, s.speed * 100, s.heading * 1000, s.duration * 1000,
-            s.peakHeight * 1000, s.entryScale * 1000, s.exitScale * 1000]) : '');
+            s.peakHeight * 1000, s.entryScale * 1000, s.exitScale * 1000]) : (l.reaction ? '~' : ''))
+            + (l.reaction ? '~' + encodeGeyserReaction(l.reaction) : '');
     }).join(';');
     const packet = 'GY|' + header + '|' + lanes;
     return decodeGeyserPacket(packet) ? packet : '';
@@ -73,7 +77,7 @@ export function decodeGeyserPacket(packet: string): NetGeyserPacket | null {
     let seen = 0;
     for (const row of rows) {
         const fields = row.split('~');
-        if (fields.length > 2) return null;
+        if (fields.length > 3) return null;
         const v = unpack(fields[0], 7);
         if (!v) return null;
         const [lane, edges, cores, grace, edge, hitId, launchAge] = v;
@@ -83,7 +87,7 @@ export function decodeGeyserPacket(packet: string): NetGeyserPacket | null {
             || hitId < 0 || launchAge < 0 || launchAge > 10000) return null;
         seen |= 1 << lane;
         let start: ForcedLaunchStart | null = null;
-        if (fields.length === 2) {
+        if (fields[1]) {
             const s = unpack(fields[1], 10);
             if (!s) return null;
             const [distance, lateral, y, surface, speed, heading, duration, peak, entry, exit] = s;
@@ -99,8 +103,18 @@ export function decodeGeyserPacket(packet: string): NetGeyserPacket | null {
                 surfaceY: surface / 1000, speed: speed / 100, heading: heading / 1000,
                 duration: duration / 1000, peakHeight: peak / 1000, entryScale: entry / 1000, exitScale: exit / 1000 };
         } else if (hitId !== 0 || launchAge !== 0) return null;
+        const reaction = fields.length === 3 ? decodeGeyserReaction(fields[2]) : null;
+        if (fields.length === 3) {
+            if (!reaction) return null;
+            const slot = reaction.start.hitId - serial * 1000 - lane - 1;
+            const pulse = Math.floor(slot / 128), vent = (slot % 128) / 8;
+            if (pulse < 0 || pulse > 2 || !Number.isInteger(vent) || vent < 0 || vent > 9
+                || !((reaction.start.strength === 2 ? cores : edges) & (1 << (pulse * 10 + vent)))
+                || (start && (reaction.start.hitId !== hitId || reaction.start.strength !== 2
+                    || Math.abs(reaction.start.duration - start.duration) > .001))) return null;
+        }
         lanes.push({ lane, edges, cores, grace: grace / 1000, edge: edge / 1000,
-            hitId, launchAge: launchAge / 1000, start });
+            hitId, launchAge: launchAge / 1000, start, ...(reaction ? { reaction } : {}) });
     }
     return { hostPos, sequence, state: {
         world: { serial, intensity: intensity as GeyserIntensity, anchorDistance: anchor / 100,

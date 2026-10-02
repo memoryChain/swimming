@@ -1,4 +1,6 @@
 import { encodeGiantWaveSuffix, decodeGiantWaveCode } from './NetGiantWaveCodec';
+import { encodeGeyserReaction, decodeGeyserReaction } from './GeyserReactionCodec';
+import type { GeyserReactionStart } from '../swimmer/GeyserReactionModel';
 import { encodeDraftingState, draftingCode } from './NetDraftingCodec';
 import { encodeCharacterAbility, decodeCharacterAbility } from './NetCharacterAbilityCodec';
 import { encodeCollisionSoftness, decodeCollisionSoftness } from './NetCollisionSoftnessCodec';
@@ -124,6 +126,7 @@ export interface NetInputEvent {
     geyserPeakHeight?: number;
     geyserEntryScale?: number;
     geyserExitScale?: number;
+    geyserReaction?: GeyserReactionStart;
 }
 
 export interface DecodedInputFrame {
@@ -196,7 +199,7 @@ function encodeEventBody(event: NetInputEvent): string {
             return `${NetInputKind.GeyserHit}${Math.max(0, Math.floor(event.geyserHitId ?? 0))},${Math.max(0, Math.floor(event.targetLane ?? 0))},${event.geyserStrength === 2 ? 2 : 1}`
                 + (event.geyserStrength === 2 && event.geyserDistance !== undefined
                     ? `,${Math.round(event.geyserDistance * 100)},${Math.round((event.geyserLateral ?? 0) * 1000)},${Math.round((event.geyserY ?? 0) * 1000)},${Math.round((event.geyserSpeed ?? 0) * 100)},${Math.round((event.geyserHeading ?? 0) * 1000)},${Math.round((event.geyserSurfaceY ?? 0) * 1000)},${Math.round((event.geyserDuration ?? 1) * 1000)},${Math.round((event.geyserPeakHeight ?? 1.2) * 1000)},${Math.round((event.geyserEntryScale ?? 0.75) * 1000)},${Math.round((event.geyserExitScale ?? 0.6) * 1000)}`
-                    : '');
+                    : '') + (event.geyserReaction ? ':' + encodeGeyserReaction({ start: event.geyserReaction, age: 0 }) : '');
         case NetInputKind.DiveRelease: {
             const power = Math.max(0, Math.min(POWER_SCALE, Math.round((event.power ?? 0) * POWER_SCALE)));
             if (Number.isFinite(event.launchSpeed) && (event.launchSpeed ?? -1) >= 0) {
@@ -371,13 +374,19 @@ function decodeToken(token: string): NetInputEvent | null {
                 : null;
         }
         case NetInputKind.GeyserHit: {
-            const values = token.slice(1).split(',').map(value => parseInt(value, 10));
+            const segments = token.slice(1).split(':');
+            if (segments.length > 2 || !/^\d+(?:,-?\d+)*$/.test(segments[0])) return null;
+            const values = segments[0].split(',').map(Number);
+            const reaction = segments.length === 2 ? decodeGeyserReaction(segments[1]) : null;
+            if (segments.length === 2 && (!reaction || reaction.start.hitId !== values[0]
+                || reaction.start.strength !== values[2] || reaction.age !== 0)) return null;
             return (values.length === 3 || values.length === 13) && values[0] > 0 && values[1] >= 0
                 && (values[2] === 1 || values[2] === 2)
                 && (values.length === 3 ? values[2] === 1 : (values[2] === 2 && values[3] >= 0 && values[6] >= 0
                     && values[9] > 0 && values[10] >= 0 && values[11] >= 0 && values[12] >= 0))
                 && values.every(Number.isSafeInteger)
                 ? { kind, geyserHitId: values[0], targetLane: values[1], geyserStrength: values[2],
+                    ...(reaction ? { geyserReaction: reaction.start } : {}),
                     ...(values.length === 13 ? {
                         geyserDistance: values[3] / 100, geyserLateral: values[4] / 1000,
                         geyserY: values[5] / 1000, geyserSpeed: values[6] / 100,

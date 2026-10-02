@@ -1,11 +1,13 @@
 import { SeededRandom } from './SharedRNG';
 import { STEERING_TUNING } from './SteeringTuning';
+import { GEYSER_BODY_REACH } from '../swimmer/GeyserBodyContact';
 import { applyGeyserSizes, geyserBurstOverlap, geyserRadiusScale, geyserSpec, geyserCycleSeconds,
     type GeyserIntensity, type GeyserTuning, type GeyserVent } from './GeyserBrawlRules';
 
 export type GeyserDanger = Readonly<{ x: number; z: number; radius: number }>;
 export type GeyserRouteRacer = Readonly<{
     x: number; z: number; speed: number; direction: number; heading: number; turnRate: number; roll: number;
+    bodyScale?: number;
 }>;
 export type GeyserSafetyResult = Readonly<{ mask: number; rejectedSpace: number; rejectedRoute: number }>;
 
@@ -13,6 +15,18 @@ function swept(x: number, z: number, nx: number, nz: number, cx: number, cz: num
     const dx = nx - x, dz = nz - z, length = dx * dx + dz * dz;
     const t = length > 1e-8 ? Math.max(0, Math.min(1, ((cx - x) * dx + (cz - z) * dz) / length)) : 0;
     return (x + dx * t - cx) ** 2 + (z + dz * t - cz) ** 2 < radius * radius;
+}
+
+/** 与身体判定相同的纵向包络，预检略留余量；侧身和转向不能只避开根节点。 */
+function bodySwept(x: number, z: number, nx: number, nz: number, heading: number,
+    direction: number, scale: number, vent: GeyserVent, radius: number): boolean {
+    const dx = direction * Math.cos(heading), dz = Math.sin(heading);
+    for (let part = -1; part <= 1; part++) {
+        const offset = part * GEYSER_BODY_REACH * .78 * scale;
+        if (swept(x + dx * offset, z + dz * offset, nx + dx * offset, nz + dz * offset,
+            vent.x, vent.z, radius - .2 + .25 * scale)) return true;
+    }
+    return false;
 }
 
 /** 只在生成时做有界连续轨迹检查。使用实际转向配置、当前惯性和侧滚，不允许瞬时换道。 */
@@ -50,7 +64,7 @@ export function geyserRouteAvailable(racer: GeyserRouteRacer, vents: readonly Ge
             if (!safe) break;
             for (const vent of vents) {
                 const radius = tuning.edgeRadius * geyserRadiusScale(vent, tuning) + 0.18;
-                if (!swept(x, z, nx, nz, vent.x, vent.z, radius)) continue;
+                if (!bodySwept(x, z, nx, nz, heading, racer.direction, racer.bodyScale ?? 1, vent, radius)) continue;
                 for (let pulse = 0; pulse < pulseCount; pulse++) {
                     if (geyserBurstOverlap(vent, pulse, time, time + 0.1, tuning) > 0) { safe = false; break; }
                 }
@@ -86,7 +100,8 @@ export function geyserRouteAvailable(racer: GeyserRouteRacer, vents: readonly Ge
                 }
                 if (!safe) break;
                 for (const vent of vents) {
-                    if (!swept(x, z, nx, nz, vent.x, vent.z, tuning.edgeRadius * geyserRadiusScale(vent, tuning) + 0.18)) continue;
+                    if (!bodySwept(x, z, nx, nz, heading, racer.direction, racer.bodyScale ?? 1,
+                        vent, tuning.edgeRadius * geyserRadiusScale(vent, tuning) + .18)) continue;
                     for (let pulse = 0; pulse < pulseCount; pulse++) {
                         if (geyserBurstOverlap(vent, pulse, now, now + dt, tuning) > 0) { safe = false; break; }
                     }

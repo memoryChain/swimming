@@ -1,8 +1,9 @@
 const path = require('node:path');
 const { createHarness } = require('./cocos-math-harness.cjs');
 
-function createGeyserPresentationHarness(count = 10, waterY = 0.055) {
-    const h = createHarness(), nodes = [], meshes = [], materials = [];
+function createGeyserPresentationHarness(count = 10, waterY = 0.055, sourceFile) {
+    const dependencies = {};
+    const h = createHarness(dependencies), nodes = [], meshes = [], materials = [];
     class Node extends h.Node {
         _active = true; layer = 1; components = [];
         constructor(name) { super(); this.name = name; nodes.push(this); }
@@ -20,8 +21,9 @@ function createGeyserPresentationHarness(count = 10, waterY = 0.055) {
     Object.assign(h.cc, { Node, Mesh, Material, MeshRenderer,
         Color: class { constructor(r,g,b,a) { Object.assign(this,{r,g,b,a}); } },
         gfx: { CullMode: { NONE: 0 } }, utils: { createMesh: g => new Mesh(g) } });
-    const { GeyserBrawlPresentation } = h.load(path.join(h.root, 'assets/scripts/core/GeyserBrawlPresentation.ts'));
     const rules = h.load(path.join(h.root, 'assets/scripts/core/GeyserBrawlRules.ts'));
+    dependencies['./GeyserBrawlRules'] = rules;
+    const { GeyserBrawlPresentation } = h.load(sourceFile || path.join(h.root, 'assets/scripts/core/GeyserBrawlPresentation.ts'));
     const root = new Node('World');
     const visual = new GeyserBrawlPresentation(root, 0, count, waterY);
     const visible = node => node.active && (!node.parent || visible(node.parent));

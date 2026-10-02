@@ -29,6 +29,14 @@ export const GEYSER_TUNING = {
     largeFlightExtraSeconds: 0.1,
     largeWarningLeadSeconds: 0.3,
     largeJetHeightScale: 1.5,
+    pitchImpulseMaxDegPerSec: 120,
+    rollImpulseMaxDegPerSec: 80,
+    pitchMaxDegrees: 50,
+    rollMaxDegrees: 35,
+    rotationDamping: 2.5,
+    grazeTiltMaxDegrees: 10,
+    bodyHitLiftMinScale: 0.75,
+    landingSettleSeconds: 0.35,
 };
 
 export type GeyserTuning = Readonly<typeof GEYSER_TUNING>;

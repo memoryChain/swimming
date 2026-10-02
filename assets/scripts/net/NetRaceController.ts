@@ -1,3 +1,4 @@
+import type { GeyserReactionStart } from '../swimmer/GeyserReactionModel';
 // Networked-race frame-sync controller.
 //
 // STEP 2 · slice 1 (current): real per-frame INPUT capture + verification. Each
@@ -182,7 +183,7 @@ export class NetRaceController {
     private _cannonLaunchListener: ((strikeId: number, targetDistance: number, targetZ: number, warningSeconds: number, revision: number) => void) | null = null;
     private _cannonImpactListener: ((strikeId: number, hitMask: number, knockedLane: number, knockedDistance: number, revision: number, targetZ?: number, elapsedSeconds?: number) => void) | null = null;
     private _geyserHitListener: ((hitId: number, lane: number, strength: 1 | 2,
-        elapsedSeconds?: number, start?: ForcedLaunchStart | null) => void) | null = null;
+        elapsedSeconds?: number, start?: ForcedLaunchStart | null, reaction?: GeyserReactionStart | null) => void) | null = null;
     private _cannonStateListener: ((state: NetCannonState) => void) | null = null;
     private _entertainmentKnockdownListener: ((lane: number, reason: number, distance: number, revision: number) => void) | null = null;
     private _recoveryStateListener: ((state: NetEntertainmentRecoveryState) => void) | null = null;
@@ -469,11 +470,12 @@ export class NetRaceController {
     }
 
     enqueueGeyserHit(hitId: number, lane: number, strength: 1 | 2,
-        elapsedSeconds: number, start: ForcedLaunchStart | null): void {
+        elapsedSeconds: number, start: ForcedLaunchStart | null, reaction?: GeyserReactionStart | null): void {
         if (!this._isHost || this._disposed) return;
         const event: NetInputEvent = { kind: NetInputKind.GeyserHit,
             eventEpoch: this._eventEpochs[3], effectTime: elapsedSeconds,
             geyserHitId: hitId, targetLane: lane, geyserStrength: strength,
+            ...(reaction ? { geyserReaction: reaction } : {}),
             ...(start ? { geyserDistance: start.distance, geyserLateral: start.lateral,
                 geyserY: start.y, geyserSpeed: start.speed, geyserHeading: start.heading,
                 geyserSurfaceY: start.surfaceY, geyserDuration: start.duration,
@@ -484,7 +486,7 @@ export class NetRaceController {
     }
 
     setGeyserHitListener(listener: ((hitId: number, lane: number, strength: 1 | 2,
-        elapsedSeconds?: number, start?: ForcedLaunchStart | null) => void) | null): void {
+        elapsedSeconds?: number, start?: ForcedLaunchStart | null, reaction?: GeyserReactionStart | null) => void) | null): void {
         this._geyserHitListener = listener;
         if (listener) this.flushDeferredGameplayEvents();
     }
@@ -1249,7 +1251,17 @@ export class NetRaceController {
             // its own position so peers can reliably catch up to it.
             const events: NetInputEvent[] = drainNetInput();
             if (this._isHost && this._authoritativeEvents.length > 0) {
-                events.push(...this._authoritativeEvents.splice(0, this._authoritativeEvents.length));
+                // 八人喷泉姿态可能同帧产生；按队列顺序分帧，保留擦边→核心升级。
+                let count = 0;
+                while (count < this._authoritativeEvents.length) {
+                    events.push(this._authoritativeEvents[count]);
+                    const size = encodeInputFrame(this._session.localPos, events, selfPos,
+                        selfPos ? this._ownerStateSeq + 1 : -1, this._sentFrames).length
+                        + this._racePrefix.length + (this.broadcastSyncRequired ? BROADCAST_INPUT_TAG.length : 0);
+                    if (size > 1536) { events.pop(); break; }
+                    count++;
+                }
+                if (count) this._authoritativeEvents.splice(0, count);
             }
             if (!this.broadcastSyncRequired) {
                 // Fully frame-synced room: input + self-position ride the reliable
@@ -1498,7 +1510,7 @@ export class NetRaceController {
                     exitScale: event.geyserExitScale ?? 0.6,
                 };
                 this._geyserHitListener?.(event.geyserHitId, event.targetLane,
-                    event.geyserStrength, event.effectTime, start);
+                    event.geyserStrength, event.effectTime, start, event.geyserReaction);
             } else if (event.kind === NetInputKind.MineRelayArm) {
                 if (event.mineRoundId === undefined || event.mineCarrierLane === undefined
                     || event.fuseSeconds === undefined || event.revision === undefined) continue;

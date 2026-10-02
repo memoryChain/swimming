@@ -10,6 +10,8 @@ const h = createHarness({ './GeyserBrawlPresentation': {
 } });
 const rules = h.load(path.join(h.root, 'assets/scripts/core/GeyserBrawlRules.ts'));
 const { GeyserBrawlController } = h.load(path.join(h.root, 'assets/scripts/core/GeyserBrawlController.ts'));
+const reactionModel = h.load(path.join(h.root, 'assets/scripts/swimmer/GeyserReactionModel.ts'));
+const bodyModel = h.load(path.join(h.root, 'assets/scripts/swimmer/GeyserBodyContact.ts'));
 const tsPath = process.env.TYPESCRIPT_PATH || process.env.PATH.split(path.delimiter)
     .map(p => path.resolve(p, '../typescript/lib/typescript.js')).find(p => fs.existsSync(p));
 const ts = require(tsPath);
@@ -17,28 +19,40 @@ const source = ts.createSourceFile('Swimmer.ts', fs.readFileSync(path.join(h.roo
     'assets/scripts/entity/Swimmer.ts'), 'utf8'), ts.ScriptTarget.Latest, true);
 const cls = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text === 'Swimmer');
 // 执行真正的泳者资格、命中和清理方法，避免替身把“擦边吞腾空”错误隐藏掉。
-const methods = ['geyserHitEligible', 'applyGeyserHit', 'clearForcedLaunch', 'snapshotGeyserLane', 'restoreGeyserLane']
+const methods = ['geyserHitEligible', 'applyGeyserHit', 'clearForcedLaunch', 'snapshotGeyserLane', 'restoreGeyserLane',
+    'sampleGeyserBody', 'geyserBodyScale', 'geyserReactionStart', 'emitGeyserContact', 'restoreGeyserReaction',
+    'updateGeyserReaction', 'updateGeyserLanding']
     .map(name => cls.members.find(n => n.name?.getText(source) === name).getText(source)).join('\n');
 const Subject = vm.runInNewContext(ts.transpileModule(`class Subject { ${methods} }; Subject`, {
     compilerOptions: { target: ts.ScriptTarget.ES2020 },
 }).outputText, { GEYSER_TUNING: rules.GEYSER_TUNING, getRaceDistance: () => 200,
-    StrokeType: { LEFT: 0, RIGHT: 1 } });
+    ...reactionModel, StrokeType: { LEFT: 0, RIGHT: 1 } });
 
 function fixture(direction = 1, intensity = 1, networked = false, options = {}) {
     const course = { startX: direction > 0 ? 0 : 50, finishX: direction > 0 ? 50 : 0,
-        swimY: 0, poolWidth: 21, direction,
+        swimY: 0, waterY: .055, poolWidth: 21, direction,
+        finishDirectionAtDistance() { return direction; },
         distanceToWorldX(d) { return this.startX + direction * d; },
         distanceToCurrentCourseEnd(d) { return 50 - d; } };
     const s = new Subject();
     Object.assign(s, { distance: 0, startPosition: { z: 0 }, node: { active: true, position: { y: 0, z: 0 } },
         _geyserHits: new rules.GeyserHitLedger(), _forcedLaunch: null,
-        _forcedLaunchGrace: 0, _forcedLaunchEdge: 0, _phases: {}, _courseLayout: course,
+        _forcedLaunchGrace: 0, _forcedLaunchEdge: 0,
+        _geyserPose: { pitch: 0, roll: 0, weight: 0, forward: 0, side: 0 },
+        _geyserReaction: null, _geyserReactionAge: 0,
+        _geyserBodyScratch: bodyModel.emptyGeyserBodyPose(),
+        _phases: { diveRecoveryLean: () => 0, dolphinRollResidualRadians: () => 0 }, _courseLayout: course,
         clearGiantWave() {},
         _motor: { isRacing: true, lateralOffset: 0, currentSpeed: 3, heading: 0, starts: 0, slows: 0,
+            collisionPitchRadians: 0, axialRollRadians: 0, collisionPitchAngularVelocity: 0,
+            axialRollAngularVelocity: 0, leftArmCycle: 0, rightArmCycle: 0,
+            clearTurtleTow() {},
+            correctHeading(heading) { this.heading = heading; },
             setForcedLaunchPosition(_d, _l, speed) { this.currentSpeed = speed; this.slows++; },
             applyCollisionPitchImpulse() {}, beginForcedLaunch() { this.starts++; } },
     });
     s.motor = s._motor;
+    s._startPosition = s.startPosition;
     s.node.setPosition = (x, y, z) => Object.assign(s.node.position, { x, y, z });
     const hits = [];
     const controller = new GeyserBrawlController({}, course, [s], 1927, 1, intensity, 0,
@@ -55,7 +69,7 @@ test('同一步大小口核心重叠时选择大口，后续同轮不重复腾�
     s.distance=6;
     controller.update(1.95);
     assert.equal(hits[0]?.id,1009);
-    assert.ok(Math.abs(s._forcedLaunch.peakHeight-1.8)<1e-8);
+    assert.ok(s._forcedLaunch.peakHeight >= 1.35 && s._forcedLaunch.peakHeight <= 1.8);
     controller.update(.1);
     assert.equal(s.motor.starts,1);
 });
@@ -93,7 +107,7 @@ test('大口范围连续扫掠能腾空，正反向及不同帧率一致', () =>
             controller.update(1/fps);
         }
         assert.ok(hits.some(h => h.strength === 2));
-        assert.ok(Math.abs(s._forcedLaunch.peakHeight - 1.8) < 1e-8);
+        assert.ok(s._forcedLaunch.peakHeight >= 1.35 && s._forcedLaunch.peakHeight <= 1.8);
         assert.equal(s.motor.starts, 1);
     }
 });
@@ -154,7 +168,8 @@ test('正常游速从外圈连续游入中心，正反向和不同帧率都能�
             controller.update(1 / fps);
         }
         assert.equal(hits.at(-1)?.strength, 2, `${direction}/${fps}/${speed}`);
-        if (speed <= 3) assert.deepEqual(hits.map(hit => hit.strength), [1, 2]);
+        // 头胸提前进入核心时可以直接起飞；若经过擦边仍必须能升级。
+        assert.ok(hits.length >= 1 && hits.length <= 2);
         if (hits.length === 2) assert.equal(hits[0].id, hits[1].id);
         assert.equal(s.motor.starts, 1);
         assert.equal(s.motor.slows, hits.length - 1);
@@ -323,4 +338,62 @@ test('权威进入下一口腾空时替换落后阶段，未知的新本地命�
     guest.restoreGeyserLane(1, old, 0);
     assert.equal(guest._forcedLaunchHitId, 1009);
     assert.equal(guest.motor.starts, 2);
+});
+
+test('轻触快照补一次减速和姿态，可靠事件重发不重复；过期核心只恢复余摆', () => {
+    const host = fixture().s, guest = fixture().s;
+    const hit = { strength: 1, along: .8, side: .1, up: 0, coverage: .1, time: 0, region: 0 };
+    host.applyGeyserHit(1001, 1, 0, null, false, false, hit);
+    host.updateGeyserReaction(.1);
+    const state = host.snapshotGeyserLane(1, 0);
+    guest.restoreGeyserLane(1, state, .05);
+    assert.equal(guest.motor.slows, 1);
+    assert.ok(guest._geyserPose.pitch > 0);
+    assert.equal(guest.applyGeyserHit(1001, 1, .15, null, true, false, undefined, state.reaction.start), false);
+    guest.restoreGeyserLane(1, state, .06);
+    assert.equal(guest.motor.slows, 1);
+    const core = reactionModel.createGeyserReaction(1009, 2, 1, 0, 0, 0, 0, hit);
+    const other = fixture().s;
+    assert.equal(other.applyGeyserHit(1009, 2, 1.1, null, true, false, undefined, core), false);
+    assert.equal(other.motor.starts, 0);
+    assert.ok(other._geyserPose.weight > 0);
+    other.updateGeyserReaction(.3);
+    assert.equal(other._geyserPose.weight, 0);
+    assert.equal(other._geyserReaction, null);
+});
+
+test('下降首个身体部位接水只发一次水花，初始水下和上升不触发', () => {
+    const s = fixture().s, events = [];
+    s.onGeyserSplash = (...args) => events.push(args);
+    s._geyserLandingPlayed = false; s._geyserLandingArmed = false;
+    s._geyserPose.pitch = .45; s._geyserPose.roll = -.2;
+    for (const y of [-.5, 0, .3, 1.3, 1.6, 1.2, .8, .3, 0, -.1]) {
+        s.node.position.y = y; s.updateGeyserLanding();
+    }
+    assert.equal(events.length, 1);
+    assert.equal(events[0][1], .055);
+    assert.equal(events[0][5], true);
+    assert.ok(events[0][0] < 0, '头翘时腿先入水，落点应在髋部后方');
+    s.clearForcedLaunch();
+    assert.equal(s._geyserPose.weight, 0);
+    assert.equal(s._geyserLandingPlayed, true);
+});
+
+test('擦边升级沿用当前倾角和残余角速度，接触水花随倾斜身体定位', () => {
+    const s = fixture().s;
+    const hit = { strength: 1, along: .65, side: .15, up: .2, coverage: .4, time: 0, region: 0 };
+    s.applyGeyserHit(1001, 1, 0, null, false, false, hit);
+    s.updateGeyserReaction(.1);
+    const pitch = s._geyserPose.pitch;
+    const velocity = s._geyserReaction.pitchVelocity * Math.exp(-s.geyserTuning.rotationDamping * .1);
+    s.applyGeyserHit(1001, 2, 0, null, false, false, hit);
+    assert.ok(Math.abs(s._geyserReaction.pitch - pitch) < 1e-9);
+    assert.ok(Math.abs(s._geyserReaction.pitchVelocity - (velocity * .25 + 120 * Math.PI / 180)) < 1e-9);
+    const events = [];
+    s.onGeyserSplash = (...args) => events.push(args);
+    const start = { ...s._geyserReaction, pitch: .6, roll: .4, along: .65, side: .15, up: .2 };
+    s.emitGeyserContact(start, .7);
+    assert.ok(Math.abs(events[0][0] - (Math.cos(.6) * .65 + Math.sin(.6) * Math.sin(.4) * .15)) < 1e-9);
+    assert.ok(Math.abs(events[0][2] - Math.cos(.4) * .15) < 1e-9);
+    assert.equal(events[0][1], .2);
 });

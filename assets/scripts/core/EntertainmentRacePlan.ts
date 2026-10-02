@@ -41,7 +41,7 @@ export type EntertainmentSupplyBudget = Readonly<{
 
 export type EntertainmentRacePlan = Readonly<{
     version: 1;
-    balanceVersion: 8;
+    balanceVersion: 9;
     identity: number;
     seed: number;
     raceDistance: 200 | 400;
@@ -187,7 +187,7 @@ export function buildEntertainmentRacePlan(seed: number, distance: number,
     const supplyWaves = longRace ? numbers.supplyWaves400 : numbers.supplyWaves200;
     const plan = {
         version: 1,
-        balanceVersion: 8,
+        balanceVersion: 9,
         seed: safeSeed,
         raceDistance,
         grade,
