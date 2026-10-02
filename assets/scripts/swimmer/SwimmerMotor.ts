@@ -1,7 +1,7 @@
 import { CONDITION_BALANCE } from '../core/ConditionBalance';
 import { BUTTERFLY_TUNING, butterflyDepthAllowsStroke, butterflyPoseAllowsStroke } from '../core/ButterflyTuning';
 import { ButterflyStroke } from './ButterflyStroke';
-import { ButterflyPhysicsIntegrator, ButterflyPropulsion } from './ButterflyPropulsion';
+import { ButterflyKickCarry, ButterflyPhysicsIntegrator, ButterflyPropulsion } from './ButterflyPropulsion';
 import { CharacterAbilityState } from './CharacterAbilityState';
 import { abilityValue, CharacterAbilityId } from '../core/CharacterAbilityConfig';
 import { StrokeHeartRateModel } from '../condition/StrokeHeartRateModel';
@@ -119,6 +119,7 @@ export class SwimmerMotor {
     private _butterflyGoodPropulsionScale = 0.95;
     private _butterflyPulse: ButterflyPropulsion | null = null;
     private _butterflyPhysics: ButterflyPhysicsIntegrator | null = null;
+    private _butterflyKickCarry: ButterflyKickCarry | null = null;
     private _butterflyPulseEnabled = false;
     private _butterflyPulseSeconds = 0.2;
     private _butterflyPulseBudgetScale = 1;
@@ -132,6 +133,7 @@ export class SwimmerMotor {
         if (!enabled) this._butterflyPreviewRequested = false;
         this._butterflyPulse = enabled ? this._butterflyPulse ?? new ButterflyPropulsion() : null;
         this._butterflyPhysics = enabled ? this._butterflyPhysics ?? new ButterflyPhysicsIntegrator() : null;
+        this._butterflyKickCarry = enabled ? this._butterflyKickCarry ?? new ButterflyKickCarry() : null;
     }
 
     /** 兼容现有测试工具；运行时能力不依赖测试场配置。 */
@@ -158,6 +160,14 @@ export class SwimmerMotor {
         // 只移除自身划水的转向分量；水流及池壁施加的转向继续作用。
         this._headingTurnRate = this._externalHeadingTurnRate;
         this._leftStrokeHeld = this._rightStrokeHeld = false;
+        // 仅成功起划消费真实腿频；余量不回写腿频，也不继承上次余量。
+        if (BUTTERFLY_TUNING.kickCarryScale > 0 && this._butterflyKickCarry) {
+            this.updateKickCadence();
+            this._butterflyKickCarry.start(
+                Math.min(this._kickCadenceHz, SWIMMER_BALANCE.kickCadenceMaxHz),
+                BUTTERFLY_TUNING.kickCarryScale, Math.min(BUTTERFLY_TUNING.kickCarrySeconds, this.butterfly.duration),
+            );
+        } else this._butterflyKickCarry?.reset();
         this._kickCadenceHz = 0; this._lastKickTapClock = -1;
         this._leftKickMotionRemaining = this._rightKickMotionRemaining = 0;
         this._butterflyCost = Math.max(0, CONDITION_BALANCE.energy.drainPerStroke) * BUTTERFLY_TUNING.energyScale
@@ -194,6 +204,7 @@ export class SwimmerMotor {
     }
 
     cancelButterfly(preserveRecovery = true) {
+        this._butterflyKickCarry?.reset();
         this._butterflyPreviewRequested = false;
         const beat = this.butterfly;
         if (beat?.active) this._butterflyInterruptionVersion++;
@@ -736,9 +747,20 @@ export class SwimmerMotor {
             strokeAcceleration *= propulsionScale;
             kickAcceleration *= propulsionScale;
         }
+        // 推进余量与真实腿频取较大值；身体稳定、动画和能力仍只读原腿频。
+        const kickCarry = this._butterflyKickCarry?.active ? this._butterflyKickCarry : null;
+        if (kickCarry) {
+            kickCarry.prepareFrame(
+                kickAcceleration,
+                SWIMMER_BALANCE.kickAccelPerHz * propulsionScale
+                    * (this.ability.id === 'powerKick' ? abilityValue('legKickAcceleration', 0.1, 3) : 1),
+                SWIMMER_BALANCE.kickMaxSpeed * (this.ability.id === 'powerKick' ? abilityValue('legKickSpeed', 0.1, 2) : 1),
+                SWIMMER_BALANCE.kickCeilingBand,
+            );
+        }
         const next = butterflyStep ? this._butterflyPhysics!.step(this._physics, this._butterflyPulse!,
             this._currentSpeed, dt, strokeAcceleration, kickAcceleration, this._speedCapBonus,
-            this._glidePhaseActive ? this._glideDrag : 0, this._environmentDrag, propulsionScale, timeoutDelay)
+            this._glidePhaseActive ? this._glideDrag : 0, this._environmentDrag, propulsionScale, timeoutDelay, kickCarry)
             : this._physics.step(
             {
                 currentSpeed: this._currentSpeed,

@@ -112,6 +112,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('butterfly.timeoutProgress', '按住超时点', '超过该进度自动失误，须松手重新开始。', () => BUTTERFLY_TUNING.timeoutProgress, v => BUTTERFLY_TUNING.timeoutProgress = v, 0.01, 0.4, 0.75, 2),
             control('butterfly.propulsionScale', '整拍推进倍率', '相对单臂推进的测试倍率，不是正式平衡值。', () => BUTTERFLY_TUNING.propulsionScale, v => BUTTERFLY_TUNING.propulsionScale = v, 0.1, 0.5, 3, 1),
             control('butterfly.goodPropulsionScale', '良好推进系数', '仅调整蝶泳良好评价的质量推进，不改变基础推进、计费或蓄气；下次起划生效。', () => BUTTERFLY_TUNING.goodPropulsionScale, v => BUTTERFLY_TUNING.goodPropulsionScale = v, 0.05, 0, 1, 2),
+            control('butterfly.kickCarryScale', '踢腿推进衔接', '0关闭；可对照0.25或0.50。仅延续真实补腿的推进，不增加身体稳定；下次起划生效。', () => BUTTERFLY_TUNING.kickCarryScale, v => BUTTERFLY_TUNING.kickCarryScale = v, 0.05, 0, 1, 2),
+            control('butterfly.kickCarrySeconds', '踢腿衔接时长', '推进余量在该时间内衰减至零；0关闭，下次起划生效。', () => BUTTERFLY_TUNING.kickCarrySeconds, v => BUTTERFLY_TUNING.kickCarrySeconds = v, 0.05, 0, 0.5, 2, ' s'),
             control('butterfly.energyScale', '整拍体力倍率', '整拍结算一次体力，下次起划生效。', () => BUTTERFLY_TUNING.energyScale, v => BUTTERFLY_TUNING.energyScale = v, 0.1, 0.5, 3, 1),
             control('butterfly.ultimateGainScale', '整拍蓄气倍率', '仅影响基础划水蓄气，连击奖励不翻倍，下次起划生效。', () => BUTTERFLY_TUNING.ultimateGainScale, v => BUTTERFLY_TUNING.ultimateGainScale = v, 0.1, 0.5, 3, 1),
             control('butterfly.pulseEnabled', '集中发力开关', '1 为集中发力，0 对照原有推进；下次起划生效。', () => BUTTERFLY_TUNING.pulseEnabled, v => BUTTERFLY_TUNING.pulseEnabled = v, 1, 0, 1, 0),

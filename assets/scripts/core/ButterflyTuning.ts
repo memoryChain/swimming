@@ -11,6 +11,8 @@ export const BUTTERFLY_TUNING = {
     timeoutProgress: 0.60,
     propulsionScale: 2.5,
     goodPropulsionScale: 0.95,
+    kickCarryScale: 0,
+    kickCarrySeconds: 0.30,
     energyScale: 2,
     ultimateGainScale: 2,
     pulseEnabled: 1,

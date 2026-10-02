@@ -87,6 +87,20 @@ test('蝶泳独立GOOD系数可保存重载，旧配置默认0.95且不覆盖自
     assert.equal(item.get(), .95); assert.equal(free.get(), .6);
 });
 
+test('蝶泳踢腿衔接默认关闭，两个参数可保存重载且旧配置安全回退', () => {
+    const h=setup();h.tuning.loadSavedTuningAsync(()=>{});
+    const scale=h.controls.get('butterfly.kickCarryScale'),seconds=h.controls.get('butterfly.kickCarrySeconds');
+    assert.equal(scale.get(),0);assert.equal(seconds.get(),.3);
+    for(const value of [.25,.5]){
+        scale.set(value);seconds.set(.2);assert.equal(h.tuning.saveCurrentTuning().ok,true);
+        scale.set(0);seconds.set(0);h.tuning.loadSavedTuningAsync(()=>{});
+        assert.equal(scale.get(),value);assert.equal(seconds.get(),.2);
+    }
+    h.saved.clear();delete h.project.values['butterfly.kickCarryScale'];delete h.project.values['butterfly.kickCarrySeconds'];
+    h.tuning.resetTuningToDefaults();h.tuning.loadSavedTuningAsync(()=>{});
+    assert.equal(scale.get(),0);assert.equal(seconds.get(),.3);
+});
+
 test('蝶泳甜区收束进度可保存重载，旧配置缺字段时使用默认值', () => {
     const h = setup(); h.tuning.loadSavedTuningAsync(() => {});
     const item = h.controls.get('butterfly.windowTransitionEndProgress');
