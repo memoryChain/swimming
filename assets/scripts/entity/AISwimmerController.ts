@@ -160,13 +160,7 @@ export class AISwimmerController extends Component {
         if (this._decisionClock >= this.intelligence.decisionSeconds || this._decisions === 0) {
             this.observe();
             this.planner.decide(this._observation, this.bossOrder?.style ?? AI_CHARACTER_STRATEGIES[this.characterId], this.intelligence, this._decisionClock);
-            if (this.bossOrder && !this.remoteDriven) {
-                if (!this.bossOrder.allowJump) this.planner.wantsJump = false;
-                if (this.bossOrder.preferKick && !this._observation.collisionRecoveryNeeded
-                    && this._observation.raceDistance - this._observation.distance > 30) {
-                    this.planner.action = 'save'; this.planner.reason = 'budget'; this.planner.wantsJump = false;
-                }
-            }
+            if (this.bossOrder) this.applyBossOrder();
             this._decisionClock = 0;
             this._decisions++;
         }
@@ -205,6 +199,26 @@ export class AISwimmerController extends Component {
         }
         this._timer -= dt;
         if (this._timer <= 0) this.beginPress();
+    }
+
+    private applyBossOrder(): void {
+        const order = this.bossOrder, s = this._observation;
+        if (!order.allowJump) this.planner.wantsJump = false;
+        if (s.collisionRecoveryNeeded || this.planner.reason === 'heart' || this.planner.reason === 'exhausted') return;
+        if (order.preferKick && s.raceDistance - s.distance > 30) {
+            this.planner.action = 'save'; this.planner.reason = 'budget'; this.planner.wantsJump = false;
+            return;
+        }
+        if (order.targetSpeed === null || order.targetDistance === null || s.raceDistance - s.distance <= 25) return;
+        // 配速只决定何时用手划或踢腿。追赶不能忽略心率、体力预算或接触恢复。
+        const lateralWork = order.targetZ !== null && Math.abs(order.targetZ - this.swimmer.node.position.z) > 0.8;
+        const ahead = s.distance > order.targetDistance + 0.6 || s.speed > order.targetSpeed + 0.25;
+        if (ahead && !(lateralWork && this._clock - this._lastStrokeStart > 1)) {
+            this.planner.action = 'save'; this.planner.reason = 'pace'; this.planner.wantsJump = false;
+        } else if ((s.speed < order.targetSpeed - 0.25 || lateralWork)
+            && this.planner.reason !== 'contact' && (s.infiniteStamina || s.energy >= this.planner.desiredEnergy - this.intelligence.budgetTolerance)) {
+            this.planner.action = 'swim'; this.planner.reason = 'pace';
+        }
     }
 
     private observe() {
@@ -379,6 +393,16 @@ export class AISwimmerController extends Component {
             if (!this._safeAware) this._safeAware = randomFloat() < discipline * (this._safeWarning ? 1 : 0.5);
             if (this._safeAware) targetZ = clamp(b.node.position.z, this._safeMinZ + 0.22, this._safeMaxZ - 0.22);
         }
+        if (this.bossOrder && targetZ !== null && this._safeMinZ === null) {
+            // 队形换位需要保持一段真实斜游。旧逻辑一偏航就回正，远处队员永远到不了集合点。
+            const delta = targetZ - b.node.position.z;
+            const desired = clamp(delta * 0.12, -0.48, 0.48);
+            const predicted = b.netHeading + b.netHeadingTurnRate * 0.3;
+            if (Math.abs(desired - predicted) < 0.08) return this._nextSide;
+            if (Math.abs(delta) < 0.35 || Math.abs(b.steeringHeadingRatio) > 0.7) return b.correctiveStrokeSide();
+            const sign = desired > predicted ? 1 : -1;
+            return sign === (b.raceDirection >= 0 ? 1 : -1) ? StrokeType.LEFT : StrokeType.RIGHT;
+        }
         if (Math.abs(b.steeringHeadingRatio) > 0.18) {
             return randomFloat() < discipline ? b.correctiveStrokeSide() : this._nextSide;
         }
@@ -396,7 +420,9 @@ export class AISwimmerController extends Component {
             sprintReserve: this.planner.sprintReserve, energy: this.condition?.energy ?? this.energyTotal,
             heartRate: this.swimmer?.heartRate ?? 80, decisions: this._decisions,
             swimSeconds: this._swimSeconds, kickSeconds: this._kickSeconds, jumps: this._jumps,
-            bossPhase: this.bossOrder?.phase ?? '', bossRole: this.bossOrder?.role ?? '' };
+            bossPhase: this.bossOrder?.phase ?? '', bossRole: this.bossOrder?.role ?? '',
+            teamTask: this.bossOrder?.task ?? '', teamPartner: this.bossOrder?.partnerSlot ?? -1,
+            teamTargetDistance: this.bossOrder?.targetDistance ?? null };
     }
 }
 

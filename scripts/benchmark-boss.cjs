@@ -23,6 +23,10 @@ for (let i = 0; i < h.BOSS_AI_PRESETS.length; i++) {
     console.log(JSON.stringify({ id: preset.id, races: rows.length, dnf: rows.filter(r => !r.finished).length,
         qualified: rows.filter(r => r.qualified).length, meanPlace: rows.reduce((n, r) => n + r.placement, 0) / rows.length,
         pressureRaces: rows.filter(r => r.closePressureSeconds > 0).length,
+        teamEngagements: rows.reduce((n, r) => n + r.engagements, 0),
+        handoffs: rows.reduce((n, r) => n + r.handoffs, 0),
+        pairedPressureSeconds: rows.reduce((n, r) => n + r.pairedPressureSeconds, 0),
+        divePassSeconds: rows.reduce((n, r) => n + r.divePassSeconds, 0),
         contactBreaks: rows.reduce((n, r) => n + r.contactBreaks, 0), maxStall: Math.max(...rows.map(r => r.longestStall)) }));
 }
 const output = option('output', '.cache/boss-benchmark.json');

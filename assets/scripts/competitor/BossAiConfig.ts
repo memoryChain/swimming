@@ -6,54 +6,64 @@ import type { AiRosterEntry } from './CompetitorConfig';
 export type BossPolicy = 'muscle' | 'duel' | 'dive' | 'endurance' | 'wall' | 'combo' | 'allstar';
 export type BossRole = 'leader' | 'guard' | 'diver' | 'hopper' | 'wall' | 'pace' | 'chaser';
 export interface BossSlot { characterId: PlayerCharacterId; level: number; skill: AiIntelligenceId; role: BossRole; name: string; }
+export interface BossTeamTactics {
+    joinRange: number; assemblySeconds: number; releaseSeconds: number;
+    stagingWidth: number; reserveWidth: number; forwardGap: number; paceResponse: number;
+    wallAssemblyRange: number; wallPressRange: number;
+}
 export interface BossPreset {
     id: string; name: string; policy: BossPolicy; mode: RaceDifficulty; distance: 200 | 400;
     qualifyPlace: number; hint: string; roster: readonly BossSlot[];
     pressureCount: number; prepareSeconds: number; pressSeconds: number; restSeconds: number;
+    team: Readonly<BossTeamTactics>;
 }
 const slot = (characterId: PlayerCharacterId, level: number, skill: AiIntelligenceId, role: BossRole, name: string): BossSlot =>
     ({ characterId, level, skill, role, name });
+const MUSCLE_TEAM_NAMES = ['铁臂阿彪', '磐石大山', '钢肩阿宽', '举铁老杜', '杠铃小满', '大力阿岳', '巨掌阿壮'] as const;
 const muscles = (advanced: boolean): BossSlot[] => Array.from({ length: 7 }, (_, i) =>
     slot('muscleMan', advanced ? 30 : i === 0 ? 5 : i < 3 ? 4 : 3,
         advanced ? 'expert' : i === 0 ? 'normal' : i < 3 ? 'rookie' : 'learner',
-        i === 0 ? 'leader' : 'guard', i === 0 ? '铁臂队长' : `铁臂队员${i}`));
+        i === 0 ? 'leader' : 'guard', MUSCLE_TEAM_NAMES[i]));
 const preset = (id: string, name: string, policy: BossPolicy, distance: 200 | 400, qualifyPlace: number,
     hint: string, roster: readonly BossSlot[], pressureCount = 1): BossPreset => ({
     id, name, policy, distance, qualifyPlace, hint, roster, pressureCount,
     mode: policy === 'duel' || policy === 'combo' ? 'beginner' : distance === 400 ? 'championship' : 'competitive',
     prepareSeconds: pressureCount > 1 ? 0.6 : 0.8, pressSeconds: pressureCount > 1 ? 3 : 2,
     restSeconds: pressureCount > 1 ? 4 : 6,
+    team: { joinRange: 18, assemblySeconds: 10, releaseSeconds: 2,
+        stagingWidth: 1.9, reserveWidth: 3.8, forwardGap: 1.6, paceResponse: 0.55,
+        wallAssemblyRange: 35, wallPressRange: 22 },
 });
 
 /** 仅供AI调试体验；生涯、快速赛、好友房均不读取此表。 */
 export const BOSS_AI_PRESETS: readonly BossPreset[] = [
-    preset('club-muscles', '七兄弟会', 'muscle', 200, 4, '轮流卡位，抓住换班空隙；前四为体验达标。', muscles(false)),
-    preset('city-ninja', '忍者试刀', 'duel', 200, 1, '精准宿敌，稳住心率，把余力留到最后。', [slot('cartonSwimmer10', 10, 'skilled', 'leader', '静水忍者')], 0),
-    preset('region-dive', '潜航穿插', 'dive', 200, 3, '潜水与小跳交替穿行，利用水面空隙；前三达标。', [
-        slot('cartonSwimmer13', 16, 'expert', 'leader', '深水队长'), slot('cartonSwimmer13', 14, 'skilled', 'diver', '潜航左翼'),
-        slot('cartonSwimmer13', 14, 'skilled', 'diver', '潜航右翼'), slot('cartonSwimmer8', 14, 'skilled', 'hopper', '跳跃先锋'),
-        slot('cartonSwimmer8', 13, 'skilled', 'hopper', '跳跃侧翼'), slot('cartonSwimmer9', 12, 'normal', 'pace', '平衡队员'),
-        slot('cartonSwimmer16', 12, 'normal', 'pace', '水面队员'),
+    preset('club-muscles', '铁臂兄弟团', 'muscle', 200, 4, '阿彪带队轮流卡位。抓住交班空隙，从空侧穿过去。', muscles(false)),
+    preset('city-ninja', '静水擂台', 'duel', 200, 1, '无痕每一划都讲究时机。稳住自己的节奏，把余力留到最后。', [slot('cartonSwimmer10', 10, 'skilled', 'leader', '静水无痕')], 0),
+    preset('region-dive', '深蓝穿梭团', 'dive', 200, 3, '老鲨带潜水哥开路，阿跃和阿跳趁机穿行。看准水面空隙，别跟着扎堆。', [
+        slot('cartonSwimmer13', 16, 'expert', 'leader', '深蓝老鲨'), slot('cartonSwimmer13', 14, 'skilled', 'diver', '气泡阿潜'),
+        slot('cartonSwimmer13', 14, 'skilled', 'diver', '小潜艇'), slot('cartonSwimmer8', 14, 'skilled', 'hopper', '弹簧阿跃'),
+        slot('cartonSwimmer8', 13, 'skilled', 'hopper', '浪花阿跳'), slot('cartonSwimmer9', 12, 'normal', 'pace', '猫步桃桃'),
+        slot('cartonSwimmer16', 12, 'normal', 'pace', '霓虹小柚'),
     ], 0),
-    preset('region-endurance', '四百米呼吸课', 'endurance', 400, 1, '教练稳配速，机甲轮换卡线，前半程留余力。', [
-        slot('cartonSwimmer11', 17, 'expert', 'leader', '呼吸教练'), slot('cartonSwimmer15', 16, 'skilled', 'guard', '巡航机甲甲'),
-        slot('cartonSwimmer15', 16, 'skilled', 'guard', '巡航机甲乙'), slot('cartonSwimmer5', 14, 'normal', 'pace', '踢腿队员甲'),
-        slot('cartonSwimmer5', 14, 'normal', 'pace', '踢腿队员乙'), slot('cartonSwimmer6', 14, 'normal', 'pace', '稳游队员甲'),
-        slot('cartonSwimmer6', 14, 'normal', 'pace', '稳游队员乙'),
+    preset('region-endurance', '不打烊泳队', 'endurance', 400, 1, '老秦慢拍领游，两位机甲轮流接班。前半程省些力，后半程再争先。', [
+        slot('cartonSwimmer11', 17, 'expert', 'leader', '慢拍老秦'), slot('cartonSwimmer15', 16, 'skilled', 'guard', '铁罐阿周'),
+        slot('cartonSwimmer15', 16, 'skilled', 'guard', '铆钉小洛'), slot('cartonSwimmer5', 14, 'normal', 'pace', '长腿可可'),
+        slot('cartonSwimmer5', 14, 'normal', 'pace', '踏浪小晴'), slot('cartonSwimmer6', 14, 'normal', 'pace', '小夏同学'),
+        slot('cartonSwimmer6', 14, 'normal', 'pace', '水花小米'),
     ]),
-    preset('master-wall', '折返双雄', 'wall', 200, 3, '飞毛腿出墙追击，超级腿掩护；池段中段追回。', [
-        slot('cartonSwimmer12', 24, 'expert', 'leader', '蹬墙主将'), slot('cartonSwimmer12', 23, 'expert', 'wall', '折返侧翼甲'),
-        slot('cartonSwimmer12', 22, 'expert', 'wall', '折返侧翼乙'), slot('cartonSwimmer5', 23, 'expert', 'guard', '长腿护卫'),
-        slot('cartonSwimmer5', 20, 'normal', 'pace', '踢腿队员'), slot('cartonSwimmer9', 20, 'normal', 'pace', '平衡队员'),
-        slot('cartonSwimmer6', 21, 'skilled', 'pace', '稳游队员'),
-    ]),
-    preset('master-combo', '风火对决', 'combo', 400, 1, '风火轮保护连击，抓住失误与恢复的追赶机会。', [slot('cartonSwimmer14', 25, 'expert', 'leader', '风火宿敌')], 0),
-    preset('champion-muscles', '七兄弟会·换班围堵', 'muscle', 200, 3, '专家队轮流夹击，最多两名主动配合；前三达标。', muscles(true), 2),
-    preset('champion-allstar', '全明星决战', 'allstar', 400, 1, '争位、折返、潜航与末程追逐组成战术接力。', [
-        slot('cartonSwimmer16', 30, 'expert', 'leader', '赛博领队'), slot('muscleMan', 30, 'expert', 'guard', '铁臂护卫'),
-        slot('cartonSwimmer12', 30, 'expert', 'wall', '折返王牌'), slot('cartonSwimmer13', 30, 'expert', 'diver', '潜航王牌'),
-        slot('cartonSwimmer15', 30, 'expert', 'guard', '巡航王牌'), slot('cartonSwimmer10', 30, 'expert', 'chaser', '精准王牌'),
-        slot('cartonSwimmer14', 30, 'expert', 'chaser', '连击王牌'),
+    preset('master-wall', '池壁弹射队', 'wall', 200, 3, '阿飞一蹬墙就来劲，侧翼还会替他让路。池段中间，是你追回来的机会。', [
+        slot('cartonSwimmer12', 24, 'expert', 'leader', '弹射阿飞'), slot('cartonSwimmer12', 23, 'expert', 'wall', '回旋小林'),
+        slot('cartonSwimmer12', 22, 'expert', 'wall', '追浪阿迅'), slot('cartonSwimmer5', 23, 'expert', 'guard', '长腿可可'),
+        slot('cartonSwimmer5', 20, 'normal', 'pace', '踏浪小晴'), slot('cartonSwimmer9', 20, 'normal', 'pace', '猫步桃桃'),
+        slot('cartonSwimmer6', 21, 'skilled', 'pace', '小夏同学'),
+    ], 2),
+    preset('master-combo', '风火不掉拍', 'combo', 400, 1, '阿焰越划越顺。守住自己的节奏，趁他掉拍或放慢时追上去。', [slot('cartonSwimmer14', 25, 'expert', 'leader', '追风阿焰')], 0),
+    preset('champion-muscles', '铁臂团·返场', 'muscle', 200, 3, '阿彪和老队友们回来认真游了。前卫封路、侧翼接应，找准交班空隙突围。', muscles(true), 2),
+    preset('champion-allstar', '浪尖邀请赛', 'allstar', 400, 1, '小柚召集了熟悉的老对手。卡位、潜航和出墙轮番配合，抢下最后的头名。', [
+        slot('cartonSwimmer16', 30, 'expert', 'leader', '霓虹小柚'), slot('muscleMan', 30, 'expert', 'guard', MUSCLE_TEAM_NAMES[0]),
+        slot('cartonSwimmer12', 30, 'expert', 'wall', '弹射阿飞'), slot('cartonSwimmer13', 30, 'expert', 'diver', '深蓝老鲨'),
+        slot('cartonSwimmer15', 30, 'expert', 'guard', '铁罐阿周'), slot('cartonSwimmer10', 30, 'expert', 'chaser', '静水无痕'),
+        slot('cartonSwimmer14', 30, 'expert', 'chaser', '追风阿焰'),
     ], 2),
 ];
 export function findBossPreset(id: string | null | undefined): BossPreset | null {

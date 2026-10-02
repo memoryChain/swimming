@@ -42,7 +42,8 @@ function createBossHarness() {
         for (; seconds < 600 && times.some(t => t === null); seconds += dt) {
             director.update(dt);
             let concurrent = 0;
-            for (let i = 0; i < team.length; i++) if (director.orders[i].phase === '协作争位') {
+            for (let i = 0; i < team.length; i++) if (director.phase === 'press'
+                && (director.orders[i].task === 'intercept' || director.orders[i].task === 'cover')) {
                 concurrent++;
                 if (Math.abs(team[i].body.node.position.x - player.body.node.position.x) < 2.5
                     && Math.abs(team[i].body.node.position.z - player.body.node.position.z) < 2.1) closePressureFrames++;
@@ -75,6 +76,10 @@ function createBossHarness() {
             aiDnf: times.slice(1).filter(t => t === null).length,
             pressureSamples: director.pressureSamples, pressureBySlot: [...director.pressureBySlot],
             contactBreaks: director.contactBreaks, diveDecisions: director.diveDecisions,
+            assemblies: director.assemblies, engagements: director.engagements, handoffs: director.handoffs,
+            abortedAssemblies: director.abortedAssemblies, formationSamples: director.formationSamples,
+            pairedPressureSeconds: director.pairedPressureSamples * .25, divePassSeconds: director.divePassSamples * .25,
+            assignmentBySlot: [...director.assignmentBySlot],
             closePressureSeconds: closePressureFrames * dt, maxConcurrent, longestStall,
             playerContacts: stats[0].contacts, playerEnergy: player.condition.energy,
             team: team.map((r, i) => ({ character: r.ai.characterId, seconds: times[i + 1],
