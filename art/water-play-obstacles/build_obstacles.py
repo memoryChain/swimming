@@ -1,6 +1,6 @@
 """E1 确定性作者配方；后台构建两份可编辑源、运行时模型和同源轻量回退。"""
 from pathlib import Path
-import sys,json,math,shutil,argparse
+import sys,json,math,shutil,argparse,subprocess
 import bpy
 from mathutils import Vector
 SOURCE=Path(__file__).resolve().parent
@@ -98,10 +98,8 @@ def main():
         bpy.ops.wm.save_as_mainfile(filepath=str(SOURCE/(name+'.blend')))
     (SOURCE/'geometry.json').write_text(json.dumps(fallback,separators=(',',':')),encoding='utf-8')
     (SOURCE/'asset-audit.json').write_text(json.dumps(reports,indent=2,ensure_ascii=False),encoding='utf-8')
-    # 顶点色不透明、一次性固定网格。回退与 GLB 共用作者数据，不生成第二套造型。
-    text='// 由 art/water-play-obstacles/build_obstacles.py 生成；不要手改。\n'
-    text+='export const WATER_PLAY_GEOMETRY = '+json.dumps(fallback,separators=(',',':'))+';\n'
-    (ROOT/'assets/scripts/core/WaterPlayObstacleGeometry.ts').write_text(text,encoding='utf-8')
+    # 水炮从同源数据离线合并细轮廓；其他道具仍直接使用作者数据。
+    subprocess.run(['node',str(SOURCE/'build_cannon_merged.cjs')],check=True,cwd=ROOT)
     print(json.dumps(reports))
 
 if __name__=='__main__':main()

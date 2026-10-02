@@ -39,7 +39,7 @@ class Node {
     setParent(parent) { this.parent = parent; parent.children.push(this); }
     setWorldPosition(x, y, z) { this.position.set(x, y, z); }
     setPosition() {} setScale() {} setRotationFromEuler() {}
-    addComponent(Type) { const value = new Type(); this.components.push(value); return value; }
+    addComponent(Type) { const value = new Type(); value.node = this; this.components.push(value); return value; }
     getComponent(Type) { return this.components.find(value => value instanceof Type); }
     destroy() { this.isValid = false; this.active = false; }
 }
@@ -181,15 +181,17 @@ test('连续换肤并触发发光后只更新当前实例，渲染器独立释�
 
 function cannonFixture(entertainment) {
     const h = require('./helpers/water-play-harness.cjs').fixture('cannon');
+    const { EntertainmentEventId } = h.load(path.join(h.root, 'assets/scripts/core/EntertainmentModeDirector.ts'));
     const CannonBrawlPresentation = h.p.constructor;
     h.p.dispose();
     const course = { startX: 0, finishX: 50, poolWidth: 20, waterY: 0, swimPosition: (x, z) => ({ x, z }) };
     const Fixture = method('assets/scripts/core/GameManager.ts', 'GameManager', 'ensureCannonBrawlPresentation', {
-        CannonBrawlPresentation, COURSE_LAYOUT: course, isEntertainmentBrawlMode: () => entertainment,
+        CannonBrawlPresentation, COURSE_LAYOUT: course, isEntertainmentBrawlMode: () => entertainment, EntertainmentEventId,
     });
     const manager = new Fixture();
     manager._worldRoot = new h.Node();
     manager.entertainmentWaterSplashes = () => null;
+    manager.debugEntertainmentProfile = () => null;
     const presentation = manager.ensureCannonBrawlPresentation();
     assert.equal(manager.ensureCannonBrawlPresentation(), presentation);
     return { presentation, parent: manager._worldRoot };
@@ -252,11 +254,12 @@ function cannonRecoveryFixture(freshController = false) {
     let restarts = 0;
     Object.assign(manager, {
         _entertainmentDirector: guest, _cannonBrawlPresentation: presentation, _cannonPreviewPending: false,
-        _cannonBrawl: freshController ? null : { restart() { restarts++; } }, _raceManager: {},
+        _cannonBrawl: freshController ? null : { restart() { restarts++; }, cancelPendingStrikesAfterCurrent() {} }, _raceManager: {},
         _cannonBrawlHud: { reset() {}, hide() {} },
         _entertainmentEventBanner: { hideEvent() {}, showDirectorEvent() {} },
         entertainmentAnchorDistance: event => guest.anchorDistanceForEvent(event),
         entertainmentCannonStrikeTriggers: () => [],
+        debugEntertainmentProfile: () => null,
         ensureCannonBrawlPresentation: () => presentation,
         setupCannonBrawl: Setup.prototype.setupCannonBrawl,
         activateEntertainmentEvent(event, ...args) {

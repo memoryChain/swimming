@@ -1,0 +1,15 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>娱乐道具细描边对照</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#173244;color:#effaff;font:16px/1.65 system-ui}main{max-width:1440px;margin:auto;padding:24px}h1{margin:0;font-size:26px}p,small{color:#bddae4}.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}canvas{width:100%;display:block;border-radius:12px}label{display:inline-block;margin:10px 20px 10px 0}select{padding:8px}input{vertical-align:middle}strong{display:block;margin:8px 0}nav{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}button{background:#244c63;border:1px solid #49768b;color:white;padding:10px 16px;border-radius:8px;cursor:pointer;font:inherit}button.active{background:#087b93;border-color:#6bdaec}@media(max-width:700px){main{padding:14px}.pair{grid-template-columns:1fr}}</style>
+<main><h1>娱乐道具 · 细描边前后对照</h1><p>沿用海龟的深蓝灰色，让主要轮廓稍微清楚一点；所有道具保持原来的配色。</p><nav id="models"></nav><p id="note"></p>
+<label>角度 <input id="angle" type="range" min="-180" max="180" value="35"></label><label>视角 <select id="height"><option value="0.5">侧前方</option><option value="1.5">俯视</option><option value="0.08">接近平视</option></select></label><label>尺寸 <select id="size"><option value="1">近景检查</option><option value="2.5">缩小看轮廓</option></select></label>
+<div class="pair"><div><strong>原版 · 无描边</strong><canvas id="before" width="1100" height="780"></canvas></div><div><strong>新版 · 细深蓝灰轮廓</strong><canvas id="after" width="1100" height="780"></canvas></div></div><p id="budget"></p>
+<small>独立 WebGL 对照，读取当前正式模型与轮廓数据，采用法线外扩、深度测试和背面绘制。它不是引擎或真机截图，不模拟正式水面、灯光、骨骼动画和手机成本；各道具分别放大到合适取景，不代表世界尺寸相同。</small></main>
+<script>const DATA=/*__DATA__*/;
+/*__RENDERER__*/
+const renderers=['before','after'].map(renderer);let selected=0;
+DATA.forEach((m,i)=>{const b=document.createElement('button');b.textContent=m.name;b.onclick=()=>{selected=i;draw()};$('models').append(b)});
+function draw(){const m=DATA[selected],a=+$('angle').value*Math.PI/180,d=m.size*2.4*+$('size').value,eye=[m.center[0]+Math.sin(a)*d,m.center[1]+d*+$('height').value,m.center[2]+Math.cos(a)*d];
+renderers.forEach((r,i)=>{r.begin(eye,m.center);m.parts.forEach(p=>r.draw(p.base));if(i)m.parts.forEach(p=>r.draw(p.shell,m.width,[12/255,24/255,32/255,1]))});
+$('note').textContent=m.note;$('budget').textContent='每个可见实例、每个镜头：额外 '+m.draws+' 次绘制，'+m.triangles+' 个三角面。';[...$('models').children].forEach((b,i)=>b.classList.toggle('active',i===selected));window.reviewErrors=renderers.map(r=>r.gl.getError())}
+for(const id of ['angle','height','size'])$(id).addEventListener('input',draw);window.setReview=(model,angle=35,height=.5,size=1)=>{selected=model;$('angle').value=angle;$('height').value=height;$('size').value=size;draw()};draw();
+</script></html>

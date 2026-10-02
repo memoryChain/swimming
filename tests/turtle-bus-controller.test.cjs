@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createHarness } = require('./helpers/cocos-math-harness.cjs');
 
-const harness = createHarness();
+const harness = createHarness({ './RaceBundleLoader': { loadRaceAsset: (_path, _type, done) => done(null, null) } });
 class FakeNode extends harness.Node {
     constructor(name) {
         super();
@@ -770,6 +770,7 @@ test('四个泳圈前侧均不推人；本体浮起后泳圈才依次上浮',()=
 test('真实划水、翻滚蹬墙与水下滑行后，选手仍能抢到池端发出的空圈',()=>{
     const {createAiHarness}=require('./helpers/ai-race-harness.cjs');
     const h=createAiHarness();
+    h.cc.assetManager = { getBundle: () => ({ load: (_path, _type, done) => done(null, null) }) };
     Object.assign(h.cc,{Node:FakeNode,MeshRenderer:FakeRenderer,Material:FakeMaterial,Color:FakeColor,
         primitives:harness.cc.primitives,utils:harness.cc.utils});
     const RealBus=h.load('core/TurtleBusController').TurtleBusController;

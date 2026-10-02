@@ -1,4 +1,5 @@
 import { Color, gfx, instantiate, Material, Mesh, MeshRenderer, Node, Prefab, primitives, utils, Vec3 } from 'cc';
+import { EntertainmentPropOutline } from './EntertainmentPropOutline';
 import { PlayerConditionModel } from '../condition/PlayerConditionModel';
 import { AiConditionModel } from '../condition/AiConditionModel';
 import { Swimmer } from '../entity/Swimmer';
@@ -122,6 +123,7 @@ type ModelBuildJob = {
 
 /** 心跳苏打玩法的独立规则控制器；GameManager 只负责传入泳者和网络事件。 */
 export class StimulantBrawlController {
+    private readonly outline = new EntertainmentPropOutline(2);
     private readonly items: ItemState[];
     private revision = 0;
     // 世界回收位图与本端效果结算独立，快照抢先不能吞掉领取收益。
@@ -459,6 +461,7 @@ export class StimulantBrawlController {
 
     dispose(): void {
         this.disposed = true;
+        this.outline.dispose();
         this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.STIMULANT);
         for (let lane = 0; lane < this.laneLayout.laneCount; lane++) {
             this.pickupRacers[lane]?.swimmer.clearStimulantReaction();
@@ -555,6 +558,9 @@ export class StimulantBrawlController {
             node.setWorldPosition(item.x, item.baseY, item.z);
             node.setScale(ITEM_MODEL_SCALE, ITEM_MODEL_SCALE, ITEM_MODEL_SCALE);
             item.node = node;
+            // 只描实体瓶壳；光柱、闪电和雪花标识不增加描边。
+            const body = node.getComponent(MeshRenderer) ?? node.getComponentInChildren(MeshRenderer);
+            if (body) this.outline.attachStatic(body.node, job.kind === 'calm-slush' ? 'Slush' : 'Soda');
             if (node.active) {
                 if (item.visualLanded) this.applyFloatingPresentation(item);
                 else this.applyThrowPresentation(item);

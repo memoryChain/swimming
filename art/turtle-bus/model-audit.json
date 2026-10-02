@@ -2,6 +2,110 @@
   "triangles": 3972,
   "drawCalls": 13,
   "materials": 1,
+  "outline": {
+    "triangles": 700,
+    "drawCalls": 5,
+    "materials": 1,
+    "newEffects": 0
+  },
+  "paletteColorSpace": "sRGB",
+  "exportColorSpace": "linear",
+  "palette": {
+    "shell": [
+      0.0775,
+      0.46,
+      0.307,
+      1
+    ],
+    "scute": [
+      0.136,
+      0.64,
+      0.388,
+      1
+    ],
+    "light": [
+      0.291,
+      0.75,
+      0.462,
+      1
+    ],
+    "seam": [
+      0.0505,
+      0.28,
+      0.19,
+      1
+    ],
+    "rim": [
+      0.9,
+      0.97,
+      1,
+      1
+    ],
+    "skin": [
+      0.341,
+      0.8,
+      0.467,
+      1
+    ],
+    "skin_dark": [
+      0.115,
+      0.43,
+      0.259,
+      1
+    ],
+    "belly": [
+      0.9,
+      0.97,
+      1,
+      1
+    ],
+    "eye": [
+      0.015,
+      0.06,
+      0.055,
+      1
+    ],
+    "glint": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "orange": [
+      1,
+      0.38,
+      0.035,
+      1
+    ],
+    "white": [
+      0.9,
+      0.97,
+      1,
+      1
+    ],
+    "grip": [
+      0.035,
+      0.18,
+      0.32,
+      1
+    ],
+    "strap": [
+      0.04,
+      0.38,
+      0.82,
+      1
+    ],
+    "rope": [
+      0.78,
+      0.86,
+      0.91,
+      1
+    ]
+  },
+  "faceShadeRange": [
+    0.65,
+    1.0
+  ],
   "turtleBounds": [
     [
       -1.559999942779541,
@@ -12,14 +116,14 @@
       1.8432819843292236
     ],
     [
-      -0.10000000149011612,
-      0.6447241902351379
+      -0.09000000357627869,
+      0.6397241353988647
     ]
   ],
   "turtleDimensions": [
     3.29,
     3.6866,
-    0.7447
+    0.7297
   ],
   "handleFootSurfaceDistances": [
     0.005698,
@@ -27,6 +131,79 @@
     0.013841,
     0.005698
   ],
+  "turtleInterfaces": {
+    "neckRootSignedGap": -0.159784,
+    "finRoots": {
+      "frontLeft": [
+        {
+          "degrees": -9,
+          "embeddedRootVertices": 3,
+          "maxOverlap": 0.11877
+        },
+        {
+          "degrees": 0,
+          "embeddedRootVertices": 3,
+          "maxOverlap": 0.119828
+        },
+        {
+          "degrees": 9,
+          "embeddedRootVertices": 2,
+          "maxOverlap": 0.120643
+        }
+      ],
+      "frontRight": [
+        {
+          "degrees": -9,
+          "embeddedRootVertices": 2,
+          "maxOverlap": 0.120643
+        },
+        {
+          "degrees": 0,
+          "embeddedRootVertices": 3,
+          "maxOverlap": 0.119828
+        },
+        {
+          "degrees": 9,
+          "embeddedRootVertices": 3,
+          "maxOverlap": 0.11877
+        }
+      ],
+      "rearLeft": [
+        {
+          "degrees": -5,
+          "embeddedRootVertices": 4,
+          "maxOverlap": 0.087203
+        },
+        {
+          "degrees": 0,
+          "embeddedRootVertices": 5,
+          "maxOverlap": 0.079862
+        },
+        {
+          "degrees": 5,
+          "embeddedRootVertices": 5,
+          "maxOverlap": 0.072503
+        }
+      ],
+      "rearRight": [
+        {
+          "degrees": -5,
+          "embeddedRootVertices": 5,
+          "maxOverlap": 0.072503
+        },
+        {
+          "degrees": 0,
+          "embeddedRootVertices": 5,
+          "maxOverlap": 0.079862
+        },
+        {
+          "degrees": 5,
+          "embeddedRootVertices": 4,
+          "maxOverlap": 0.087203
+        }
+      ]
+    }
+  },
   "layout": {
     "ringForward": [
       -2.85,
@@ -55,63 +232,71 @@
   "parts": {
     "Carapace_Continuous_Rim_Plastron": {
       "closed": true,
-      "volume": 1.529939
+      "volume": 1.517957
     },
     "Shell_Seam": {
       "closed": true,
-      "volume": 0.000381
+      "volume": 0.000169
     },
     "Shell_Seam.001": {
       "closed": true,
-      "volume": 0.000377
+      "volume": 0.000168
     },
     "Shell_Seam.002": {
       "closed": true,
-      "volume": 0.000397
+      "volume": 0.000176
     },
     "Shell_Longitudinal_Seam": {
       "closed": true,
-      "volume": 0.000476
+      "volume": 0.000212
     },
     "Shell_Longitudinal_Seam.001": {
       "closed": true,
-      "volume": 0.000477
+      "volume": 0.000212
     },
     "Head_Continuous_Neck_Beak": {
       "closed": true,
-      "volume": 0.163119
+      "volume": 0.173463
     },
     "Upper_Eyelid": {
       "closed": true,
-      "volume": 0.000109
+      "volume": 0.000122
     },
     "Inset_Eye": {
       "closed": true,
-      "volume": 4e-05
+      "volume": 7.8e-05
     },
     "Eye_Glint": {
       "closed": true,
-      "volume": 1e-06
+      "volume": 2e-06
     },
     "Small_Smile": {
       "closed": true,
-      "volume": 4.1e-05
+      "volume": 5.5e-05
     },
-    "Upper_Eyelid.001": {
-      "closed": true,
-      "volume": 0.00011
-    },
-    "Inset_Eye.001": {
-      "closed": true,
-      "volume": 4e-05
-    },
-    "Eye_Glint.001": {
+    "Nostril": {
       "closed": true,
       "volume": 1e-06
     },
+    "Upper_Eyelid.001": {
+      "closed": true,
+      "volume": 0.000123
+    },
+    "Inset_Eye.001": {
+      "closed": true,
+      "volume": 7.3e-05
+    },
+    "Eye_Glint.001": {
+      "closed": true,
+      "volume": 2e-06
+    },
     "Small_Smile.001": {
       "closed": true,
-      "volume": 4.1e-05
+      "volume": 5.5e-05
+    },
+    "Nostril.001": {
+      "closed": true,
+      "volume": 1e-06
     },
     "Tail": {
       "closed": true,
@@ -119,19 +304,19 @@
     },
     "frontLeft": {
       "closed": true,
-      "volume": 0.054722
+      "volume": 0.045363
     },
     "frontRight": {
       "closed": true,
-      "volume": 0.054722
+      "volume": 0.045363
     },
     "rearLeft": {
       "closed": true,
-      "volume": 0.019447
+      "volume": 0.016257
     },
     "rearRight": {
       "closed": true,
-      "volume": 0.019447
+      "volume": 0.016257
     },
     "Soft_Harness": {
       "closed": true,

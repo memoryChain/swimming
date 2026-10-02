@@ -3,10 +3,10 @@ const {createHarness}=require('./cocos-math-harness.cjs');
 const path=require('node:path');
 const fs=require('node:fs');
 function fixture(kind='buoy', count=2) {
-    const pending=[],splashes=[],nodes=[],meshes=[],materials=[];
+    const pending=[],outlinePending=[],splashes=[],nodes=[],meshes=[],materials=[];
     const loader={loadSwimmerPrefab:(cb,candidates)=>pending.push({cb,candidates}),setLayerRecursive:()=>{},findNode:(n,name)=>n.name===name?n:n.children.map(c=>loader.findNode(c,name)).find(Boolean)||null};
     const core={};
-    const h=createHarness({'../core':core,'../character/CharacterModelLoader':loader,'./EntertainmentWaterSplash':{
+    const h=createHarness({'./RaceBundleLoader':{loadRaceAsset:(_p,_t,done)=>outlinePending.push(done)},'../core':core,'../character/CharacterModelLoader':loader,'./EntertainmentWaterSplash':{
         ENTERTAINMENT_SPLASH_OWNER:{CANNON:'cannon',MINEFIELD:'minefield'},
         ENTERTAINMENT_SPLASH_PROFILE:{EXPLOSION:'explosion',HEAVY_ENTRY:'heavy-entry'},
     }});
@@ -27,10 +27,10 @@ function fixture(kind='buoy', count=2) {
         setWorldPosition(x,y,z){super.setWorldPosition(typeof x==='number'?new h.Vec3(x,y,z):x);this.writes++}
         destroy(){this.isValid=false;this.children.forEach(n=>n.destroy())}
     }
-    class Material{constructor(){materials.push(this)}initialize(){}setProperty(){}destroy(){this.destroyed=true}}
+    class Material{constructor(){materials.push(this)}initialize(options){this.options=options}setProperty(){}destroy(){this.destroyed=true}}
     class MeshRenderer{setMaterial(m){this.material=m}}
     class Color{constructor(r,g,b,a){Object.assign(this,{r,g,b,a})}static WHITE=new Color(255,255,255,255)}
-    Object.assign(h.cc,{Node,Material,MeshRenderer,Color,gfx:{CullMode:{NONE:0}},
+    Object.assign(h.cc,{Node,Material,MeshRenderer,Color,gfx:{CullMode:{NONE:0,BACK:2}},
         utils:{createMesh:g=>{const mesh={geometry:g,destroy(){this.destroyed=true}};meshes.push(mesh);return mesh}},
         primitives:{sphere},
         instantiate:prefab=>{const imported=new Node('imported');for(const name of prefab.waterBall?['WaterBallSurface']:kind==='buoy'?['BuoyBody','BuoyBalloon']:['CannonBase','CannonNozzle']){const n=new Node(name);n.setParent(imported);n.addComponent(MeshRenderer).mesh={imported:true,name}}return imported},
@@ -42,7 +42,7 @@ function fixture(kind='buoy', count=2) {
     const C=h.load(path.join(h.root,'assets/scripts/core/'+type+'.ts'))[type];
     const p=kind==='buoy'?new C(world,course,count,pool):new C(world,course,pool,true);
     const states=Array.from({length:count},(_,id)=>({id,generation:0,active:true,armed:true,courseX:10+id*10,lateral:id*3}));
-    return {...h,Node,p,world,course,pool,states,nodes,meshes,materials,pending,splashes,
+    return {...h,Node,p,world,course,pool,states,nodes,meshes,materials,pending,outlinePending,splashes,
         ready:(error=null)=>{const request=pending.shift();request.cb(error,error?null:{prefab:{waterBall:request.candidates[0].includes('CannonWaterBall')}})},
         snapshot:()=>nodes.filter(n=>n.isValid&&n.active&&n.components.length&&active(n)).map(n=>({name:n.name,geometry:n.components[0].mesh.geometry,matrix:Array.from(h.Mat4.toArray([],n.worldMatrix))})),
     };

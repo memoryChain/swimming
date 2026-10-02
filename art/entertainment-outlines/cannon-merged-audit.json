@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-02",
+  "scope": "仅水炮合并描边，其他道具维持独立轮廓",
+  "perInstancePerCamera": {
+    "drawsBefore": 4,
+    "drawsAfter": 2,
+    "trianglesBefore": 2588,
+    "trianglesAfter": 2588,
+    "materialsBefore": 2,
+    "materialsAfter": 1
+  },
+  "offlineReview": {
+    "renderer": "独立 WebGL，非 Creator 或真机",
+    "canvasSize": [900, 650],
+    "samples": 288,
+    "poses": 4,
+    "angles": 12,
+    "heights": 3,
+    "sizes": 2,
+    "observedDraws": [4, 2],
+    "webglErrors": 0,
+    "pixelDifferenceThreshold": 2,
+    "samplesExceedingThreshold": 7,
+    "maxPixelsExceedingThresholdPerSample": 1,
+    "maxChangedPercent": 0.00017094017094017094
+  },
+  "checks": {
+    "typescript": "5.4.5 通过",
+    "entertainmentTests": 358,
+    "performanceLifecycleTests": 19,
+    "outlineTestsAfterRemovingDuplicateData": 7,
+    "generatedGeometryFresh": true
+  },
+  "pending": ["正式场景水线和外物遮挡", "主镜头与画中画", "iOS／Android 微信帧耗与实际包体"]
+}

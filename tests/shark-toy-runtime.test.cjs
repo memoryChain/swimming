@@ -2,7 +2,8 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {createHarness}=require('./helpers/cocos-math-harness.cjs');
 function setup(){
-    const h=createHarness(); h.cc.AnimationClip={WrapMode:{Normal:1,Loop:2}};
+    const h=createHarness({'./RaceBundleLoader':{loadRaceAsset:(_p,_t,done)=>done(null,null)}}); h.cc.AnimationClip={WrapMode:{Normal:1,Loop:2}};
+    h.Node.prototype.getComponentsInChildren=()=>[];
     Object.defineProperty(h.Node.prototype,'activeInHierarchy',{get(){return this.active!==false && (!this.parent || this.parent.activeInHierarchy);}});
     const tuning=h.load(path.join(h.root,'assets/scripts/entity/SharkTuning.ts'));
     const {SharkArtPresentation,sharkContactClipTime}=h.load(path.join(h.root,'assets/scripts/core/SharkArtPresentation.ts'));

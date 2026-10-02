@@ -1,0 +1,20 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>水炮描边合并对照</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#173244;color:#effaff;font:16px/1.65 system-ui}main{max-width:1440px;margin:auto;padding:24px}h1{margin:0;font-size:26px}p,small{color:#bddae4}.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}canvas{width:100%;display:block;border-radius:12px}label{display:inline-block;margin:10px 20px 10px 0}select{padding:8px}input{vertical-align:middle}strong{display:block;margin:8px 0}@media(max-width:700px){main{padding:14px}.pair{grid-template-columns:1fr}}</style>
+<main><h1>水炮 · 保留细描边，减少绘制次数</h1><p>同一机位、同一姿态；左侧是原来的独立描边，右侧把描边合入底座与炮管。</p>
+<label>动作 <select id="pose"></select></label><label>角度 <input id="angle" type="range" min="-180" max="180" value="35"></label><label>视角 <select id="height"><option value="0.5">侧前方</option><option value="1.5">俯视</option><option value="0.08">接近平视</option></select></label><label>尺寸 <select id="size"><option value="1">近景检查</option><option value="2.5">缩小看轮廓</option></select></label>
+<div class="pair"><div><strong>当前独立描边 · 每台 4 次绘制</strong><canvas id="before" width="900" height="650"></canvas></div><div><strong>合并描边 · 每台 2 次绘制</strong><canvas id="after" width="900" height="650"></canvas></div></div><p id="budget"></p>
+<small>独立 WebGL 离线对照，使用正式几何和真实水炮动作采样，并按当前 Cocos 材质的颜色转换检查。不是引擎或手机截图，不模拟水面、后处理和真机性能。两版三角面数相同。</small></main>
+<script>const DATA=/*__DATA__*/;
+/*__RENDERER__*/
+const renderers=['before','after'].map(renderer);
+const counts=[0,0];renderers.forEach((r,i)=>{const drawElements=r.gl.drawElements.bind(r.gl);r.gl.drawElements=(...args)=>{counts[i]++;drawElements(...args)}});
+DATA.frames.forEach((f,i)=>{const option=document.createElement('option');option.value=i;option.textContent=f.name;$('pose').append(option)});
+function draw(){const f=DATA.frames[+$('pose').value],a=+$('angle').value*Math.PI/180,d=6.2*+$('size').value,target=[0,.9,0],eye=[Math.sin(a)*d,target[1]+d*+$('height').value,Math.cos(a)*d];
+counts.fill(0);renderers.forEach((r,i)=>{r.begin(eye,target);if(i)f.parts.forEach(p=>r.draw(p.merged));else {f.parts.forEach(p=>r.draw(p.base));f.parts.forEach(p=>r.draw(p.shell,DATA.width,DATA.ink))}});
+$('budget').textContent='每台、每个镜头：4 → 2 次绘制；三角面保持 2588。当前炮管仰角 '+f.pitch.toFixed(1)+'°。';window.reviewErrors=renderers.map(r=>r.gl.getError());window.reviewDraws=[...counts]}
+for(const id of ['pose','angle','height','size'])$(id).addEventListener('input',draw);
+window.setReview=(pose=0,angle=35,height=.5,size=1)=>{$('pose').value=pose;$('angle').value=angle;$('height').value=height;$('size').value=size;draw()};
+window.measureDifference=()=>{const arrays=renderers.map(r=>{const b=new Uint8Array(900*650*4);r.gl.readPixels(0,0,900,650,r.gl.RGBA,r.gl.UNSIGNED_BYTE,b);return b});let changed=0,delta=0,max=0;
+for(let i=0;i<arrays[0].length;i+=4){let pixel=0;for(let k=0;k<3;k++){const d=Math.abs(arrays[0][i+k]-arrays[1][i+k]);pixel=Math.max(pixel,d);delta+=d}if(pixel>2)changed++;max=Math.max(max,pixel)}
+return {changedPixels:changed,changedPercent:changed/(900*650)*100,meanChannelDelta:delta/(900*650*3),maxChannelDelta:max,draws:[...counts],errors:renderers.map(r=>r.gl.getError())}};
+draw();</script></html>

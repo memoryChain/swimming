@@ -4,6 +4,10 @@ import bpy
 import bmesh
 from mathutils import Vector
 
+def srgb_to_linear(value):
+    """作者色板按屏幕 sRGB 填写；Blender 材质和运行时顶点色保存线性值。"""
+    return value/12.92 if value<=.04045 else ((value+.055)/1.055)**2.4
+
 class MeshBuilder:
     def __init__(self, palette):
         old=bpy.data.collections.get('TurtleBusAuthoring')
@@ -15,7 +19,8 @@ class MeshBuilder:
         self.materials={}
         for name,color in palette.items():
             mat=bpy.data.materials.get('TB_'+name) or bpy.data.materials.new('TB_'+name)
-            mat.diffuse_color=color;self.materials[name]=mat
+            mat.diffuse_color=tuple(srgb_to_linear(v) for v in color[:3])+(color[3],)
+            self.materials[name]=mat
 
     def mesh(self,name,vertices,faces,colors,group,origin=(0,0,0)):
         mesh=bpy.data.meshes.new(name);mesh.from_pydata(vertices,[],faces)

@@ -3,6 +3,7 @@ import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { TURTLE_BUS_GEOMETRY } from './TurtleBusGeometry';
 import { TURTLE_BUS_LAYOUT as L } from './TurtleBusLayout';
 import { TURTLE_BUS_CONFIG, turtleBusPositionAt, turtleBusUnloadingAge, type TurtleBusDirection } from './TurtleBusRules';
+import { TurtleBusOutline } from './TurtleBusOutline';
 
 /** Blender 网格共享实例；四鳍绕肩根摆动，空圈逐个下潜，绳端始终连住系绳眼。 */
 export class TurtleBusVisual {
@@ -13,6 +14,7 @@ export class TurtleBusVisual {
     private readonly ropes: Node[] = [];
     private readonly meshes: Mesh[] = [];
     private readonly material = new Material();
+    private readonly outline: TurtleBusOutline;
     private readonly anchor = new Vec3();
     private readonly end = new Vec3();
     private readonly vector = new Vec3();
@@ -36,6 +38,7 @@ export class TurtleBusVisual {
             this.ropes.push(this.add('TowRope' + i, ropeMesh, this.node));
         }
         this.hide();
+        this.outline = new TurtleBusOutline(this.node, [this.body, ...this.fins]);
     }
 
     update(age: number, direction: TurtleBusDirection, routeZ: number, startOffset = TURTLE_BUS_CONFIG.startOffset as number,
@@ -84,7 +87,8 @@ export class TurtleBusVisual {
     ringWorld(ring: number, out: Vec3): void { this.rings[ring].getWorldPosition(out); }
     hide(): void { if (this.node.active) this.node.active = false; }
     reset(): void { this.hide(); this.lastSample = -1; }
-    dispose(): void { this.node.destroy(); for (const mesh of this.meshes) mesh.destroy(); this.material.destroy(); }
+    setOutlineVisible(visible: boolean): void { this.outline.setVisible(visible); }
+    dispose(): void { this.outline.dispose(); this.node.destroy(); for (const mesh of this.meshes) mesh.destroy(); this.material.destroy(); }
     private smooth(value: number): number { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); }
     private mesh(data: typeof TURTLE_BUS_GEOMETRY.body): Mesh {
         const mesh = utils.createMesh(data); this.meshes.push(mesh); return mesh;

@@ -3,6 +3,7 @@ import type { SharkController } from '../entity/SharkController';
 import { SHARK_TUNING, SharkState } from '../entity/SharkTuning';
 import { SHARK_MODEL_PRESENTATION } from './ResourcePaths';
 import { SHARK_FALLBACK_GEOMETRY } from './SharkFallbackGeometry';
+import { EntertainmentPropOutline } from './EntertainmentPropOutline';
 
 const SAMPLE_INTERVAL = 1 / 24;
 const AUTHORED_CONTACT_SECONDS = 0.09;
@@ -33,6 +34,8 @@ export class SharkArtPresentation {
     private fallbackRoot: Node | null = null;
     private fallbackMesh: Mesh | null = null;
     private fallbackMaterial: Material | null = null;
+    private fallbackOutline: EntertainmentPropOutline | null = null;
+    private modelOutline: EntertainmentPropOutline | null = null;
     private contactYaw = 0;
     private contactAdvance = 0;
     private lastVisualYaw = Number.NaN;
@@ -53,10 +56,14 @@ export class SharkArtPresentation {
         const renderer = root.addComponent(MeshRenderer);
         renderer.mesh = this.fallbackMesh;
         renderer.setMaterial(this.fallbackMaterial, 0);
+        this.fallbackOutline = new EntertainmentPropOutline(2);
+        this.fallbackOutline.attachStatic(root, 'SharkFallback');
         return root;
     }
 
     releaseFallback(): void {
+        this.fallbackOutline?.dispose();
+        this.fallbackOutline = null;
         if (this.fallbackRoot?.isValid) this.fallbackRoot.destroy();
         this.fallbackRoot = null;
         this.fallbackMesh?.destroy();
@@ -67,6 +74,11 @@ export class SharkArtPresentation {
 
     bind(model: Node, animation: SkeletalAnimation | null, shark: SharkController): void {
         if (this.disposed || !model.isValid) return;
+        if (this.model !== model) {
+            this.modelOutline?.dispose();
+            this.modelOutline = new EntertainmentPropOutline(2);
+            this.modelOutline.attachSharkModel(model);
+        }
         this.model = model;
         this.animation = animation;
         this.lastVisualYaw = Number.NaN;
@@ -97,6 +109,8 @@ export class SharkArtPresentation {
         if (this.disposed) return;
         this.reset();
         this.releaseFallback();
+        this.modelOutline?.dispose();
+        this.modelOutline = null;
         this.disposed = true;
         this.animation = null;
         this.model = null;

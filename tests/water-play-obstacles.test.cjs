@@ -9,12 +9,12 @@ test('精修水球同源多色且保持单网格，晚加载不重置飞行、�
     assert.equal(ball.children.length,1);assert.equal(g.indices.length/3,720);
     assert.ok(new Set(g.colors.map((v,i)=>i%4===0?g.colors.slice(i,i+3).join(','):null)).size>50);
     assert.ok(Math.max(...g.colors.filter((v,i)=>i%4===0))>.7,'水球有可辨识高光');
-    const position={...ball.worldPosition};f.ready();f.ready();
+    const position={...ball.worldPosition};assert.equal(f.pending.length,1);f.ready();
     assert.equal(f.p.projectileNode,ball);assert.deepEqual({...ball.worldPosition},position);
     assert.ok(surface.components[0].mesh.imported);assert.equal(f.materials.length,3);
-    const exit=fixture('cannon');exit.p.showLaunch(launch);exit.p.beginExit();exit.ready();exit.ready();assert.equal(exit.p.projectileNode,null);
-    const dead=fixture('cannon');dead.p.dispose();const count=dead.nodes.length;dead.ready();dead.ready();assert.equal(dead.nodes.length,count);assert.ok(dead.meshes.every(m=>m.destroyed));
-    const failed=fixture('cannon');failed.ready();failed.ready(new Error('离线'));assert.equal(failed.p.projectile.children[0].components[0].mesh.geometry.indices.length/3,720);
+    const exit=fixture('cannon');exit.p.showLaunch(launch);exit.p.beginExit();exit.ready();assert.equal(exit.p.projectileNode,null);
+    const dead=fixture('cannon');dead.p.dispose();const count=dead.nodes.length;dead.ready();assert.equal(dead.nodes.length,count);assert.ok(dead.meshes.every(m=>m.destroyed));
+    const failed=fixture('cannon');failed.ready(new Error('离线'));assert.equal(failed.p.projectile.children[0].components[0].mesh.geometry.indices.length/3,720);
 });
 
 test('水炮飞行和落水停留只排除本相机顶棚，退出恢复且主画面建筑不变',()=>{
