@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const { directEntry } = require('../scripts/create-taptap-direct-start-build.cjs');
+const { instrumentEntry } = require('../scripts/create-taptap-lifecycle-build.cjs');
 const template = fs.readFileSync('scripts/templates/taptap-guarded-entry.js', 'utf8');
 
 async function run(source, options = {}) {
@@ -25,7 +26,8 @@ async function run(source, options = {}) {
     const modules = {
         './tap-startup-guard': { create() { return boot; }, noopEvents() { return {}; } },
         './tap-startup-diagnostic': { ready() {} }, './tap-font-diagnostic': { install() {} },
-        './tap-event-test': { install() {} }, './tap-event-config.json': {},
+        './tap-event-test': { install(root, config) { calls.push('event-install:' + config.version); } }, './tap-event-config.json': {},
+        './tap-lifecycle-diagnostic': { install(root) { root.__swimmingTapLife = { attachHost() {}, attachEngine() {} }; } },
         './web-adapter': {}, './engine-adapter': {}, 'src/polyfills.bundle.js': {}, 'src/system.bundle.js': {},
         'src/import-map.js': { default: {} }, './first-screen': {
             start() { return options.noSplashFrame ? new Promise(() => {}) : Promise.resolve(); },
@@ -40,6 +42,7 @@ async function run(source, options = {}) {
         canvas: { width: 851, height: 393 }, window: { devicePixelRatio: 2.75 },
         System: { warmup() {}, import(name) { calls.push('import:' + name); return Promise.resolve(name === 'cc' ? cc : { Application }); } },
         require(name) {
+            if (options.noJsonModule && name.endsWith('.json')) throw new Error('宿主不注册 JSON 模块');
             if (options.eventFailure && name === './tap-event-test') throw new Error('模拟统计模块安装失败');
             assert.ok(name in modules, '未知入口依赖：' + name); calls.push('require:' + name); return modules[name];
         }
@@ -83,4 +86,14 @@ test('引擎失败仍终止启动并记录原异常，统计模块失败不妨�
 test('源入口不匹配或重复转换时拒绝继续', () => {
     assert.throws(() => directEntry(template.replace('first-screen-import', 'changed')), /锚点变化/);
     assert.throws(() => directEntry(directEntry(template)), /锚点变化/);
+});
+
+test('JSON 模块不可 require 时，新入口仍安装事件诊断并运行引擎', async () => {
+    const old = await run(directEntry(template), { noJsonModule: true });
+    assert.ok(!old.calls.some(x => x.startsWith('event-install:')));
+    const source = instrumentEntry(directEntry(template));
+    const fixed = await run(source, { noJsonModule: true });
+    assert.ok(fixed.calls.includes('event-install:0.0.9'));
+    assert.ok(fixed.calls.includes('engine-run'));
+    assert.throws(() => instrumentEntry(source), /锚点变化/);
 });
