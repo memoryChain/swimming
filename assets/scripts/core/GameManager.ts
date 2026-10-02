@@ -4439,7 +4439,7 @@ export class GameManager extends Component {
         this._aiSwimmers.splice(0, this._aiSwimmers.length, ...competitors.aiSwimmers);
         this._aiConditions.splice(0, this._aiConditions.length, ...this._aiSwimmers.map(() => new AiConditionModel()));
         for (let i = 0; i < this._aiSwimmers.length; i++) {
-            this._aiSwimmers[i].enableFreestyleBreathingTest(this._butterflyTestMode);
+            this._aiSwimmers[i].enableFreestyleBodyRollTest(this._butterflyTestMode);
             this._aiControllers[i].bindCondition(this._aiConditions[i]);
             this.bindDolphinEnergyCost(this._aiSwimmers[i], this._aiConditions[i]);
         }

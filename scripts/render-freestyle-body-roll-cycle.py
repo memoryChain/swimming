@@ -1,0 +1,69 @@
+"""独立后台渲染两种真实角色的基础转体连续对照，不访问 Creator。"""
+from pathlib import Path
+import sys
+import shutil
+import subprocess
+import bpy
+from mathutils import Vector
+
+ROOT = Path(__file__).resolve().parents[1]
+MODE = 'ai' if '--ai' in sys.argv else 'player'
+OUT = ROOT / '.cache' / f'freestyle-body-roll-runtime-{MODE}'
+
+
+def main():
+    for obj in list(bpy.data.objects):
+        bpy.data.objects.remove(obj, do_unlink=True)
+    scene = bpy.context.scene
+    scene.render.fps = 30
+    for col, model in enumerate(['MuscleMan.glb', 'CartonSwimmer13.glb']):
+        for row, folder in enumerate([f'freestyle-body-roll-runtime-{MODE}-before', f'freestyle-body-roll-runtime-{MODE}']):
+            # 动画根节点有自己的位置轨道，排列偏移交给独立父节点，避免播放后重叠。
+            layout = bpy.data.objects.new(f'PreviewLayout_{col}_{row}', None)
+            scene.collection.objects.link(layout)
+            layout.location = (col * 3.7, row * 2.2, 0)
+            before = set(bpy.data.objects)
+            bpy.ops.import_scene.gltf(filepath=str(ROOT / '.cache' / folder / model))
+            for obj in set(bpy.data.objects) - before:
+                if obj.parent is None:
+                    obj.parent = layout
+    scene.render.engine = 'CYCLES'
+    scene.cycles.samples = 4
+    scene.cycles.use_denoising = True
+    scene.render.resolution_x = 800
+    scene.render.resolution_y = 450
+    scene.render.resolution_percentage = 100
+    scene.render.image_settings.file_format = 'PNG'
+    scene.world.color = (.5, .5, .5)
+    scene.view_settings.view_transform = 'Standard'
+    bpy.ops.object.light_add(type='AREA', location=(3, -4, 8))
+    bpy.context.object.data.energy = 1000
+    bpy.context.object.data.size = 8
+    bpy.ops.object.camera_add()
+    camera = bpy.context.object
+    camera.data.type = 'ORTHO'
+    camera.data.ortho_scale = 7.6
+    scene.camera = camera
+    views = [('oblique', (2.7, -7, 8)), ('side', (2.7, -8, 3.0))]
+    if '--oblique-only' in sys.argv:
+        views = views[:1]
+    elif '--side-only' in sys.argv:
+        views = views[1:]
+    for view, position in views:
+        camera.location = position
+        camera.rotation_euler = (Vector((2.7, 1.1, 0)) - camera.location).to_track_quat('-Z', 'Y').to_euler()
+        target = OUT / view
+        target.mkdir(exist_ok=True)
+        for i in range(120):
+            scene.frame_set(i)
+            scene.render.filepath = str(target / f'{i:03}.png')
+            bpy.ops.render.render(write_still=True)
+        subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y',
+                        '-framerate', '30', '-i', str(target / '%03d.png'),
+                        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20',
+                        str(OUT / f'{view}.mp4')], check=True)
+    shutil.copyfile(ROOT / 'scripts/templates/freestyle-body-roll-review.html', OUT / 'index.html')
+
+
+if __name__ == '__main__':
+    main()

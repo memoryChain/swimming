@@ -132,16 +132,16 @@ test('实际模型入口仅在蝶泳测试分配状态，特殊动作阻止启�
     const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
     const decl = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text === 'CartoonSwimmerRig');
     const method = decl.members.find(n => n.name?.getText(source) === 'updateFreestyleFromMotor').getText(source);
-    const context = { FreestyleBreathingMotion, permitsFreestyleBreathing, interruptsFreestyleBreathing, FREESTYLE_POSE_TUNING: { armForwardCycleOffset: 0 } };
+    const context = { FreestyleBodyRollMotion: load(path.join(root, 'assets/scripts/character/FreestyleBodyRollMotion.ts')).FreestyleBodyRollMotion, FREESTYLE_POSE_TUNING: { armForwardCycleOffset: 0 } };
     const code = ts.transpileModule(`class Rig {${method}}; globalThis.Rig = Rig;`,
         { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
     vm.runInNewContext(code, context);
     const rig = new context.Rig();
     let presented = -1, mode = -1;
     Object.assign(rig, {
-        _breathingTest: null, _loaded: false, _butterflyPoseWeight: 0, _treadWaterWeight: 0,
+        _bodyRollTest: null, _loaded: false, _butterflyPoseWeight: 0, _treadWaterWeight: 0,
         _pose: { setMovementHeadingRadians() {}, setMovementPitchRadians() {}, setSurfaceBodyUpProjection() {},
-            setBreathingTestWeight(v) { mode = v; } },
+            setBodyRollTestPose(v) { mode = v; } },
         consumeThrottledMotionDt: dt => dt,
         updateVisualArmCycles(l, r) { this._visualLeftArmCycle = l; this._visualRightArmCycle = r; },
         updateFreestyle() { presented = mode; },
@@ -149,7 +149,7 @@ test('实际模型入口仅在蝶泳测试分配状态，特殊动作阻止启�
     const motor = { butterfly: null, rightArmCycle: 0, leftArmCycle: 0, currentSpeed: 2,
         axialRollAngularVelocity: 0, collisionPitchAngularVelocity: 0 };
     rig.updateFreestyleFromMotor(1 / 60, motor, 1, 0, 0, 1, true);
-    assert.equal(rig._breathingTest, null); assert.equal(presented, -1);
+    assert.equal(rig._bodyRollTest, null); assert.equal(presented, -1);
     motor.butterfly = { active: false, progress: -1 };
     let peak = 0;
     for (let i = 0; i < 120; i++) {
@@ -161,19 +161,19 @@ test('实际模型入口仅在蝶泳测试分配状态，特殊动作阻止启�
     for (let i = 120; i < 360; i++) {
         motor.rightArmCycle = i / 60 * TAU;
         rig.updateFreestyleFromMotor(1 / 60, motor, 1, 0, 0, 1, false, true);
-        if (i >= 132) assert.equal(presented, 0);
+        if (i >= 180) assert.equal(presented, 0);
     }
     // 八人模式 AI 只启用表现，完全不创建蝶泳玩法状态。
     motor.butterfly = null;
-    rig._breathingTest.reset();
+    rig._bodyRollTest.reset();
     peak = 0;
     for (let i = 0; i < 120; i++) {
         motor.rightArmCycle = i / 60 * TAU;
         rig.updateFreestyleFromMotor(1 / 60, motor, 1, 0, 0, 1, true, true);
         peak = Math.max(peak, presented); assert.equal(mode, -1);
     }
-    assert.ok(peak > 0.95, '八人测试的自由泳 AI 也会换气');
-    assert.equal(motor.butterfly, null, '换气不开放 AI 蝶泳输入');
+    assert.ok(peak > 0.95, '八人测试的自由泳 AI 也会转体');
+    assert.equal(motor.butterfly, null, '转体不开放 AI 蝶泳输入');
 });
 
 function sample(rig, phase, weight) {
