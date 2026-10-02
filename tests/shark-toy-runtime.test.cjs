@@ -21,6 +21,66 @@ function setup(){
       huntOpeningGraceSeconds:0,x:0,z:0,facingX:1,facingZ:0,targetLane:0,knockedLane:0,huntIndex:0});
     return {...h,...tuning,SharkArtPresentation,sharkContactClipTime,animation,node,swimmer,hits,shark,art,model,snapshot};
 }
+
+test('玩具鲨追逐转弯有上限，30/60/120Hz同向转弯轨迹一致且快照接管不瞬时掉头',()=>{
+    const ends=[];
+    for(const fps of [30,60,120]){
+        const h=setup();Object.assign(h.shark._opts.course,{poolStartX:-25,poolFinishX:25});
+        h.swimmer.node.setPosition(0,0,12);
+        h.shark.applyAuthoritativeState(h.snapshot(h.SharkState.HUNT,1,8));
+        let old=0;
+        for(let i=0;i<fps;i++){
+            h.shark.tick(1/fps);
+            const s=h.shark.snapshot(), angle=Math.atan2(s.facingZ,s.facingX);
+            assert.ok(Math.abs(angle-old)<=120*Math.PI/180/fps+1e-6,'单步不能超过转向上限');
+            old=angle;
+        }
+        assert.ok(h.node.position.x>1,'先沿原方向前进，再转向；不能横向瞬移到追逐方向');
+        ends.push({x:h.node.position.x,z:h.node.position.z});
+        const migrated=setup();Object.assign(migrated.shark._opts.course,{poolStartX:-25,poolFinishX:25});
+        migrated.swimmer.node.setPosition(0,0,12);
+        migrated.shark.applyAuthoritativeState(h.shark.snapshot());
+        migrated.shark.tick(1/fps);h.shark.tick(1/fps);
+        assert.ok(Math.abs(migrated.node.position.x-h.node.position.x)<1e-6);
+        assert.ok(Math.abs(migrated.node.position.z-h.node.position.z)<1e-6);
+    }
+    assert.ok(Math.hypot(ends[0].x-ends[2].x,ends[0].z-ends[2].z)<.15);
+});
+
+test('追逐保留已公开目标，失去资格后才选新目标且不重置朝向',()=>{
+    const h=setup();Object.assign(h.shark._opts.course,{poolStartX:-25,poolFinishX:25});
+    h.swimmer.node.setPosition(12,0,0);
+    const other={node:new h.Node(),isSharkTargetable:true};other.node.setPosition(0,0,-4);
+    h.shark._opts.swimmers=()=>[h.swimmer,other];
+    h.shark.applyAuthoritativeState(h.snapshot(h.SharkState.HUNT,1,8));
+    h.shark.tick(.1);assert.equal(h.shark.target,h.swimmer);
+    h.swimmer.isSharkTargetable=false;
+    h.shark.tick(.5);assert.equal(h.shark.target,other);
+    const s=h.shark.snapshot();assert.ok(Math.atan2(s.facingZ,s.facingX)>-Math.PI/2);
+});
+
+test('侧向移动轨迹获得转弯应对时间，私人转向设置不能改变联机固定规则',()=>{
+    const simulate=(fps,instant=false,networked=false)=>{
+        const h=setup();
+        h.SHARK_TUNING.huntTurnDegreesPerSecond=instant?36000:120;
+        const {SharkController}=h.load(path.join(h.root,'assets/scripts/entity/SharkController.ts'));
+        let time=0,hitAt=null;
+        const shark=new SharkController({...h.shark._opts,networked,onKnockDown:()=>{hitAt=time;}});
+        Object.assign(shark._opts.course,{poolStartX:-25,poolFinishX:25,poolWidth:40});
+        h.swimmer.node.setPosition(0,0,2);shark.applyAuthoritativeState(h.snapshot(h.SharkState.HUNT,1,8));
+        for(let i=1;i<=fps*3;i++){
+            time=i/fps;h.swimmer.node.setPosition(0,0,2+2.5*time);shark.tick(1/fps);
+            if(hitAt!==null)break;
+        }
+        return hitAt;
+    };
+    for(const fps of [30,60,120]){
+        const limited=simulate(fps),instant=simulate(fps,true);
+        assert.ok(limited!==null && instant!==null);
+        assert.ok(limited-instant>.8,'受限转弯给出额外应对时间，不只是外观慢转');
+    }
+    assert.equal(simulate(60,true,true),simulate(60,false,true));
+});
 test('分段映射在默认与有效调参下都对齐真实接触，不改时长',()=>{
     const h=setup();for(const [d,a]of [[.38,.09],[.7,.18],[.2,0],[.2,.2]]){
         const at=h.sharkContactClipTime(a,d,a);
@@ -156,6 +216,38 @@ function methods(h,file,names,scope={}){
     const js=ts.transpileModule('class Probe {\n'+members+'\n}',{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
     return new Function(...Object.keys(scope),js+';return Probe;')(...Object.values(scope));
 }
+
+test('水球普通解除不冒充冲线，真实管理器只为已完赛者播放冲线反馈',()=>{
+    const h=setup(), messages=[];
+    const Probe=methods(h,'assets/scripts/core/GameManager.ts',['handleMineRelayResolution'],{
+        isEntertainmentBrawlMode:()=>true,getRaceDistance:()=>200,LANE_LAYOUT:{laneCount:8}});
+    const p=new Probe(), camera={finish:0,clear:0};
+    Object.assign(p,{_mineRelayBrawl:{isLatestResolution:()=>true},_mineRelayPresentation:{showResolution(){}},
+        _eventPictureInPicture:{showTimedBombResolution(){camera.finish++;},clearTimedBombTracking(){camera.clear++;}},
+        swimmerForLane:()=>h.swimmer,_raceManager:{hasSwimmerFinished:()=>false},_playerLaneIndex:0,
+        _entertainmentEventBanner:{showPersonal:(message)=>messages.push(message)}});
+    const event={carrierLane:0,exploded:false};
+    p.handleMineRelayResolution(event,false);
+    assert.deepEqual(messages,['水球已解除']);assert.equal(camera.finish,0);assert.equal(camera.clear,1);
+    h.swimmer.distance=200;p.handleMineRelayResolution(event,false);
+    assert.equal(messages[1],'成功带球冲线');assert.equal(camera.finish,1);
+});
+
+test('水球状态条复用原组件，暂停、恢复与隐藏后重入不遗留暂停文字',()=>{
+    const contents=[];const h=createHarness({'./EntertainmentStatusStrip':{EntertainmentStatusStrip:class{
+        constructor(){this.root=new h.Node();}setContent(...args){contents.push(args);}
+        hide(){}reset(){}dispose(){}
+    }}});
+    h.cc.view={getVisibleSize:()=>({width:1290,height:720}),on(){},off(){}};
+    const {MineRelayBrawlHud}=h.load(path.join(h.root,'assets/scripts/ui/MineRelayBrawlHud.ts'));
+    const hud=new MineRelayBrawlHud(new h.Node(),1290,720);
+    hud.updateValues(0,0,7.9,false,1,true,true);
+    assert.equal(contents.at(-1)[1],'计时暂停');
+    hud.updateValues(0,0,7.9,false,1,true,false);
+    assert.equal(contents.at(-1)[1],'7.9秒');assert.match(contents.at(-1)[0],/贴近对手/);
+    hud.hide();hud.updateValues(1,0,.7,true,1,true,true);
+    assert.match(contents.at(-1)[0],/携带者恢复中/);hud.dispose();
+});
 test('真实管理器结果去重、B1 接线、旧局水花回调和过期演出隔离',()=>{
     const h=setup();h.shark.applyAuthoritativeState(h.snapshot(6,3,.29));
     const Recovery=h.load(path.join(h.root,'assets/scripts/core/EntertainmentRecoveryController.ts'));

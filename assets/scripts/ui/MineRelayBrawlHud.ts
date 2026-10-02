@@ -55,6 +55,7 @@ export class MineRelayBrawlHud {
         locked: boolean,
         remainingRounds: number,
         showCompletion = true,
+        paused = false,
     ): void {
         let message: string;
         let value: string;
@@ -77,6 +78,11 @@ export class MineRelayBrawlHud {
                 tone = locked ? 'danger' : 'warning';
             }
             value = `${seconds}秒`;
+            if (paused) {
+                message = carrierLane === playerLane ? '水球保留 · 恢复后继续' : '携带者恢复中 · 水球保留';
+                value = '计时暂停';
+                tone = 'normal';
+            }
         } else if (remainingRounds > 0) {
             message = '下一轮水球待命';
             value = `${remainingRounds}轮`;

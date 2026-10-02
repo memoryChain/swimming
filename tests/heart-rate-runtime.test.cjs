@@ -8,6 +8,23 @@ const { SwimmerMotor } = load('swimmer/SwimmerMotor');
 const { StrokeType, Rating } = load('core/GameConstants');
 const near = (a,b,e=1e-9) => assert.ok(Math.abs(a-b)<e, `${a} != ${b}`);
 
+test('喷泉、抓圈与重击取消旧划水后，松手无额外判定，新按下能重新开始',()=>{
+    for(const kind of ['geyser','turtle','knocked'])for(const fps of [30,60,120]){
+        const m=new SwimmerMotor();m.onArmStrokeStarted=()=>{};m.startRace(20,2);
+        m.setStrokeHeld(StrokeType.LEFT,true,.2);m.recordStroke(StrokeType.LEFT);
+        m.update(1/fps,{isAI:false});
+        const before=m.armStrokeSequence;
+        if(kind==='geyser')m.beginForcedLaunch();
+        else if(kind==='turtle')m.beginTurtleGrip();
+        else {m.suspendForEntertainmentKnockout();m.resumeAfterEntertainmentHit(20,0);}
+        assert.equal(m.activeStrokeReleaseProgress(StrokeType.LEFT),-1);
+        assert.equal(m.setStrokeHeld(StrokeType.LEFT,false),null);
+        m.update(1/fps,{isAI:false});assert.equal(m.armStrokeSequence,before);
+        m.setStrokeHeld(StrokeType.RIGHT,true,.2);m.recordStroke(StrokeType.RIGHT);
+        m.update(1/fps,{isAI:false});assert.ok(m.armStrokeSequence>before);
+    }
+});
+
 test('划频采样按实际开始计数，8～12秒达到明显压力，停止后自然恢复', () => {
     const model = new StrokeHeartRateModel();
     let first140 = null;

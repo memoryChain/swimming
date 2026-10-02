@@ -495,6 +495,10 @@ test('timed bomb arm, transfer, resolution and active state round-trip across bo
     };
     const snapshot = decodeRaceSnapshot(encodeRaceSnapshot(0, [entry()], null, null, null, state));
     assert.deepEqual(snapshot.mineRelay, state);
+    const paused = { ...state, paused: true };
+    const encoded = encodeRaceSnapshot(0, [entry()], null, null, null, paused);
+    assert.deepEqual(decodeRaceSnapshot(encoded).mineRelay, paused);
+    assert.ok(encoded.length <= encodeRaceSnapshot(0, [entry()], null, null, null, state).length + 1);
 });
 
 test('legacy S| and P| payloads keep safe sentinel defaults', () => {

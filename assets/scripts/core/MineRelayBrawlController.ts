@@ -8,6 +8,9 @@ import { SeededRandom } from './SharedRNG';
 
 export type MineRelayRacerState = {
     active: boolean;
+    /** 临时受控／恢复保护不是离场；携带者保留水球并暂停，其他人不可接球。 */
+    recovering?: boolean;
+    speed?: number;
     finished: boolean;
     distance: number;
     lateral: number;
@@ -40,6 +43,7 @@ export type MineRelayResolution = {
 };
 
 export type MineRelayState = {
+    paused?: boolean;
     revision: number;
     completedRoundMask: number;
     explodedRoundMask: number;
@@ -114,6 +118,7 @@ export class MineRelayBrawlController {
     private activeArm: MineRelayArm | null = null;
     private armedRoundCount = 0;
     private remainingSeconds = 0;
+    private paused = false;
     private transferCooldownSeconds = 0;
     private returnProtectionSeconds = 0;
     private recoverySeconds = 0;
@@ -142,6 +147,7 @@ export class MineRelayBrawlController {
     }
 
     reset(): void {
+        this.paused = false;
         this.revision = 0;
         this.completedRoundMask = 0;
         this.explodedRoundMask = 0;
@@ -190,16 +196,28 @@ export class MineRelayBrawlController {
             const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
             this.recoverySeconds = Math.max(0, this.recoverySeconds - step);
             if (this.activeArm) {
+                const carrier = this.racerForLane(this.activeArm.carrierLane);
+                if (authoritative) {
+                    if (!carrier?.active || carrier.finished) {
+                        this.resolveActiveRound(false);
+                        return;
+                    }
+                    const paused = carrier.recovering === true;
+                    if (paused !== this.paused) {
+                        this.paused = paused;
+                        this.revision++;
+                        this.resetAssistedPass();
+                        if (!paused) this.transferCooldownSeconds = Math.max(this.transferCooldownSeconds,
+                            MINE_RELAY_TUNING.initialTransferCooldownSeconds);
+                    }
+                }
+                // 访客可提前冻结已知受控状态，恢复须等权威暂停位解除，避免倒计时先跑掉。
+                if (this.paused || (!authoritative && carrier?.recovering)) return;
                 const cooldownBeforeStep = this.transferCooldownSeconds;
                 this.remainingSeconds = Math.max(0, this.remainingSeconds - step);
                 this.transferCooldownSeconds = Math.max(0, this.transferCooldownSeconds - step);
                 this.returnProtectionSeconds = Math.max(0, this.returnProtectionSeconds - step);
                 if (!authoritative) return;
-                const carrier = this.racerForLane(this.activeArm.carrierLane);
-                if (!carrier?.active || carrier.finished) {
-                    this.resolveActiveRound(false);
-                    return;
-                }
                 if (this.remainingSeconds <= 0) {
                     this.resolveActiveRound(true);
                     return;
@@ -236,6 +254,7 @@ export class MineRelayBrawlController {
             const carrierLane = this.pickStarterLane(roundId);
             if (carrierLane < 0) {
                 this.completedRoundMask |= 1 << roundId;
+                this.revision++;
                 return;
             }
             const arm: MineRelayArm = {
@@ -257,6 +276,7 @@ export class MineRelayBrawlController {
             || (this.completedRoundMask & (1 << event.roundId)) !== 0) return false;
         this.revision = event.revision;
         this.activeArm = { ...event };
+        this.paused = false;
         this.armedRoundCount++;
         this.remainingSeconds = event.fuseSeconds;
         this.transferCooldownSeconds = MINE_RELAY_TUNING.initialTransferCooldownSeconds;
@@ -276,6 +296,7 @@ export class MineRelayBrawlController {
         this.revision = event.revision;
         this.previousCarrierLane = event.fromLane;
         this.activeArm = { ...this.activeArm, carrierLane: event.toLane, revision: event.revision };
+        this.paused = false;
         this.remainingSeconds = event.remainingSeconds;
         this.transferCooldownSeconds = MINE_RELAY_TUNING.transferCooldownSeconds;
         this.returnProtectionSeconds = MINE_RELAY_TUNING.returnProtectionSeconds;
@@ -307,6 +328,7 @@ export class MineRelayBrawlController {
         // 快照的完成账本与实际冲击分开去重；旧轮命中只补效果，不清新轮或重置冷却。
         if (!updateCurrent) return true;
         this.activeArm = null;
+        this.paused = false;
         this.remainingSeconds = 0;
         this.transferCooldownSeconds = 0;
         this.returnProtectionSeconds = 0;
@@ -339,6 +361,7 @@ export class MineRelayBrawlController {
         const previousReturnProtection = this.returnProtectionSeconds;
         const previousRecovery = this.recoverySeconds;
         const sameRevision = state.revision === this.revision;
+        this.paused = state.activeRoundId >= 0 && state.paused === true;
         const newlyExplodedMask = state.explodedRoundMask & ~this.appliedExplosionMask;
         this.revision = state.revision;
         this.completedRoundMask |= state.completedRoundMask;
@@ -372,6 +395,7 @@ export class MineRelayBrawlController {
                 : state.remainingSeconds;
         } else {
             this.activeArm = null;
+            this.paused = false;
             this.remainingSeconds = 0;
         }
         const activeChanged = previousRound !== (this.activeArm?.roundId ?? -1);
@@ -386,6 +410,7 @@ export class MineRelayBrawlController {
 
     snapshotState(): MineRelayState {
         return {
+            ...(this.paused ? { paused: true } : {}),
             revision: this.revision,
             completedRoundMask: this.completedRoundMask >>> 0,
             explodedRoundMask: this.explodedRoundMask >>> 0,
@@ -406,6 +431,8 @@ export class MineRelayBrawlController {
     currentRemainingSeconds(): number { return this.remainingSeconds; }
     startedRoundCount(): number { return this.armedRoundCount; }
     isLocked(): boolean { return !!this.activeArm && this.remainingSeconds <= MINE_RELAY_TUNING.lockSeconds; }
+
+    isPaused(): boolean { return !!this.activeArm && this.paused; }
     completedRoundCount(): number { return countBits(this.completedRoundMask, this.rounds.length); }
     remainingRoundCount(): number { return Math.max(0, this.rounds.length - this.completedRoundCount()); }
     resolvedCarrierLane(roundId: number): number {
@@ -418,7 +445,7 @@ export class MineRelayBrawlController {
         if (lane < 0 || lane >= this.laneCount) return null;
         const arm = this.activeArm;
         const racer = this.racerForLane(lane);
-        if (!arm || !racer?.active || racer.finished || this.isLocked()) return null;
+        if (!arm || !racer?.active || racer.finished || racer.recovering || this.paused || this.isLocked()) return null;
         const elapsed = this.rounds[arm.roundId].fuseSeconds - this.remainingSeconds;
         const clampedDiscipline = clamp(discipline, 0, 1);
         const reaction = MINE_RELAY_TUNING.aiReactionSlowSeconds
@@ -629,15 +656,14 @@ export class MineRelayBrawlController {
 
     private pickStarterLane(roundId: number): number {
         const skipLast = this.activeCount() > 1 && this.lastStarterLane >= 0;
-        let candidates = this.countStarterCandidates(skipLast, true);
-        const requireNearbyTarget = candidates > 0;
-        if (!requireNearbyTarget) candidates = this.countStarterCandidates(skipLast, false);
-        if (candidates <= 0) return skipLast && this.isEligibleLane(this.lastStarterLane) ? this.lastStarterLane : -1;
+        const candidates = this.countStarterCandidates(skipLast, true);
+        if (candidates <= 0) return skipLast && this.isEligibleLane(this.lastStarterLane)
+            && this.hasNearbyStarterTarget(this.lastStarterLane) ? this.lastStarterLane : -1;
         let pick = this.randomForRound(roundId).int(candidates);
         for (let lane = 0; lane < this.laneCount; lane++) {
             if (skipLast && lane === this.lastStarterLane) continue;
             if (!this.isEligibleLane(lane)) continue;
-            if (requireNearbyTarget && !this.hasNearbyStarterTarget(lane)) continue;
+            if (!this.hasNearbyStarterTarget(lane)) continue;
             if (pick-- === 0) return lane;
         }
         return -1;
@@ -661,9 +687,35 @@ export class MineRelayBrawlController {
             if (lane === carrierLane || !this.isEligibleLane(lane)) continue;
             const racer = this.racerForLane(lane)!;
             if (Math.abs(this.distanceToWorldX(racer.distance) - this.distanceToWorldX(carrier.distance)) <= MINE_RELAY_TUNING.starterNearbyAlongDistance
-                && Math.abs(racer.lateral - carrier.lateral) <= MINE_RELAY_TUNING.starterNearbyLateralDistance) {
+                && Math.abs(racer.lateral - carrier.lateral) <= MINE_RELAY_TUNING.starterNearbyLateralDistance
+                && this.starterCanApproach(carrier, racer)) {
                 return true;
             }
+        }
+        return false;
+    }
+
+    /** 发放前的保守接近估计；不扩大实际传球范围，不在比赛热路径建立轨迹数组。 */
+    private starterCanApproach(carrier: MineRelayRacerState, target: MineRelayRacerState): boolean {
+        if (!Number.isFinite(carrier.speed) || !Number.isFinite(target.speed)) return true;
+        const direction = this.directionAtDistance(carrier.distance);
+        const targetDirection = this.directionAtDistance(target.distance);
+        const x = this.distanceToWorldX(carrier.distance);
+        const scale = Math.max(0.01, Math.abs(this.distanceToWorldX(carrier.distance + 0.01) - x) / 0.01);
+        const relativeX = (this.distanceToWorldX(target.distance) - x) * direction;
+        const relativeSpeed = ((target.speed ?? 0) * targetDirection * direction - (carrier.speed ?? 0)) * scale;
+        const round = this.rounds[this.nextRoundId()];
+        const available = Math.max(0, (round?.fuseSeconds ?? 0) - MINE_RELAY_TUNING.lockSeconds
+            - MINE_RELAY_TUNING.initialTransferCooldownSeconds - MINE_RELAY_TUNING.assistedPassConfirmSeconds);
+        for (let time = 0; time <= available; time += 0.25) {
+            const ahead = relativeX + relativeSpeed * time;
+            const alongReachable = direction === targetDirection
+                ? ahead >= -MINE_RELAY_TUNING.transferBodyAlongRadius * 2
+                    && ahead <= MINE_RELAY_TUNING.assistedPassMaxAheadDistance
+                : Math.abs(ahead) <= MINE_RELAY_TUNING.transferBodyAlongRadius * 2;
+            const lateralReach = MINE_RELAY_TUNING.assistedPassLateralDistance
+                + Math.max(0.4, (carrier.speed ?? 0) * scale * 0.35) * time;
+            if (alongReachable && Math.abs(target.lateral - carrier.lateral) <= lateralReach) return true;
         }
         return false;
     }
@@ -692,6 +744,7 @@ export class MineRelayBrawlController {
     private isEligibleLane(lane: number): boolean {
         const racer = this.racerForLane(lane);
         return lane >= 0 && lane < this.laneCount && !!racer?.active && !racer.finished
+            && !racer.recovering
             && Number.isFinite(racer.distance) && Number.isFinite(racer.lateral);
     }
 
@@ -756,6 +809,7 @@ function isValidResolution(event: MineRelayResolution): boolean {
 
 function isValidState(state: MineRelayState): boolean {
     return !!state
+        && (state.paused === undefined || typeof state.paused === 'boolean')
         && Number.isSafeInteger(state.revision) && state.revision >= 0
         && Number.isSafeInteger(state.completedRoundMask) && state.completedRoundMask >= 0
         && Number.isSafeInteger(state.explodedRoundMask) && state.explodedRoundMask >= 0

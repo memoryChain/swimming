@@ -23,6 +23,7 @@ import { COLLISION_PITCH_TUNING } from './CollisionPitchTuning';
 import { COLLISION_SOFTNESS_TUNING } from './CollisionSoftnessTuning';
 import { STIMULANT_BRAWL_TUNING } from './StimulantBrawlRules';
 import { TURTLE_BUS_TUNING } from './TurtleBusRules';
+import { SHARK_TUNING } from '../entity/SharkTuning';
 import { WHIRLPOOL_BRAWL_TUNING, WHIRLPOOL_SUPER_TUNING } from './WhirlpoolBrawlRules';
 import { MINE_RELAY_TUNING } from './MineRelayBrawlController';
 import { MINEFIELD_TUNING } from './MinefieldBrawlController';
@@ -90,6 +91,13 @@ type TuningLoadCandidate = {
 };
 
 export const TUNING_GROUPS: TuningGroup[] = [
+    {
+        name: '玩具鲨追逐',
+        controls: [
+            control('shark.huntTurnDegreesPerSecond', '追逐转向速度', '每秒最大转向角。越低越容易通过变向甩开；下局生效，联机使用固定值。',
+                () => SHARK_TUNING.huntTurnDegreesPerSecond, v => SHARK_TUNING.huntTurnDegreesPerSecond = v, 10, 60, 240, 0, '°/s'),
+        ],
+    },
     {
         name: '蝶泳测试',
         controls: [

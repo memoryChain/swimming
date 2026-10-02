@@ -110,7 +110,8 @@
 // v124：代表段预算预留、障碍过期截止与海龟访客受击释放；计划 balanceVersion 6。
 // v125：短局场地优先、班车预选航段与失约替补；计划 balanceVersion 7。
 // v126：综合垃圾作为全程轻事件择空档投放，延后落点跟随当前进度；计划 balanceVersion 8。
-export const NET_RACE_PROTOCOL_VERSION = 126;
+// v127：水球恢复暂停位、可接近发放与玩具鲨有限转向／稳定目标。
+export const NET_RACE_PROTOCOL_VERSION = 127;
 
 let lastRaceStamp = 0;
 

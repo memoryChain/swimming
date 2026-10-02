@@ -129,6 +129,7 @@ export type NetEntertainmentRecoveryState = {
     lanes: readonly NetEntertainmentRecoveryLaneState[];
 };
 export type NetMineRelayState = {
+    paused?: boolean;
     revision: number;
     completedRoundMask: number;
     explodedRoundMask: number;
@@ -277,7 +278,9 @@ export function encodeRaceSnapshot(
     const mineCompletedMask = Math.max(0, Math.floor(mineRelay?.completedRoundMask ?? 0)).toString(16);
     const mineExplodedMask = Math.max(0, Math.floor(mineRelay?.explodedRoundMask ?? 0)).toString(16);
     const mineResolvedCarriers = Math.max(0, Math.floor(mineRelay?.resolvedCarrierLanesPacked ?? 0)).toString(16);
-    const mineActiveRound = Math.max(0, Math.floor((mineRelay?.activeRoundId ?? -1) + 1));
+    // 六轮编号用低四位，暂停位复用原槽，不增加快照字段。
+    const mineActiveRound = Math.max(0, Math.floor((mineRelay?.activeRoundId ?? -1) + 1))
+        + (mineRelay?.paused && (mineRelay.activeRoundId ?? -1) >= 0 ? 16 : 0);
     const mineCarrierLane = Math.max(0, Math.floor((mineRelay?.carrierLane ?? -1) + 1));
     const minePreviousCarrierLane = Math.max(0, Math.floor((mineRelay?.previousCarrierLane ?? -1) + 1));
     const mineLastStarterLane = Math.max(0, Math.floor((mineRelay?.lastStarterLane ?? -1) + 1));
@@ -480,11 +483,14 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
         cannonTargetZ: Number.isSafeInteger(cannonTargetZMm) ? cannonTargetZMm / 1000 : 0,
         cannonRemainingSeconds: Number.isSafeInteger(cannonRemainingMs) && cannonRemainingMs >= 0 ? cannonRemainingMs / 1000 : 0,
         mineRelay: {
+            ...(Number.isSafeInteger(mineActiveRound) && mineActiveRound > 16 && mineActiveRound < 32
+                ? { paused: true } : {}),
             revision: safeNonNegativeInteger(mineRevision),
             completedRoundMask: safeNonNegativeInteger(mineCompletedMask),
             explodedRoundMask: safeNonNegativeInteger(mineExplodedMask),
             resolvedCarrierLanesPacked: safeNonNegativeInteger(mineResolvedCarriers),
-            activeRoundId: Number.isSafeInteger(mineActiveRound) && mineActiveRound > 0 ? mineActiveRound - 1 : -1,
+            activeRoundId: Number.isSafeInteger(mineActiveRound) && mineActiveRound > 0 && mineActiveRound < 32
+                && (mineActiveRound & 15) > 0 ? (mineActiveRound & 15) - 1 : -1,
             carrierLane: Number.isSafeInteger(mineCarrierLane) && mineCarrierLane > 0 ? mineCarrierLane - 1 : -1,
             previousCarrierLane: Number.isSafeInteger(minePreviousCarrierLane) && minePreviousCarrierLane > 0 ? minePreviousCarrierLane - 1 : -1,
             lastStarterLane: Number.isSafeInteger(mineLastStarterLane) && mineLastStarterLane > 0 ? mineLastStarterLane - 1 : -1,

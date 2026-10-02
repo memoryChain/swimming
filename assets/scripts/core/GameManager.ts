@@ -3158,8 +3158,9 @@ export class GameManager extends Component {
             lane => {
                 const state = this._mineRelayRacerStates[lane];
                 const swimmer = this.swimmerForLane(lane);
-                state.active = !!swimmer?.node?.active
-                    && (this._entertainmentRecovery?.isDamageable(lane) ?? true);
+                state.active = !!swimmer?.node?.active;
+                state.recovering = !(this._entertainmentRecovery?.isDamageable(lane) ?? true);
+                state.speed = swimmer?.currentSpeed ?? 0;
                 state.finished = (this._raceManager?.hasSwimmerFinished(swimmer ?? null) ?? false)
                     || (swimmer?.distance ?? 0) >= getRaceDistance();
                 state.distance = swimmer?.distance ?? 0;
@@ -3298,6 +3299,7 @@ export class GameManager extends Component {
             controller.isLocked(),
             controller.remainingRoundCount(),
             !isEntertainmentBrawlMode(),
+            controller.isPaused(),
         );
     }
 
@@ -3377,15 +3379,15 @@ export class GameManager extends Component {
             }
         } else if (currentResolution) {
             this._mineRelayPresentation?.showResolution(false, null);
-            this._eventPictureInPicture?.showTimedBombResolution(
-                this.swimmerForLane(event.carrierLane)?.node ?? null,
-                event.carrierLane,
-                false,
-                event.carrierLane === this._playerLaneIndex,
-            );
+            const carrier = this.swimmerForLane(event.carrierLane);
+            const finished = !!carrier && ((this._raceManager?.hasSwimmerFinished(carrier) ?? false)
+                || carrier.distance >= getRaceDistance());
+            if (finished) this._eventPictureInPicture?.showTimedBombResolution(
+                carrier.node, event.carrierLane, false, event.carrierLane === this._playerLaneIndex);
+            else this._eventPictureInPicture?.clearTimedBombTracking();
             if (event.carrierLane === this._playerLaneIndex) {
-                this._entertainmentEventBanner.showPersonal('成功带球冲线', 'success', 1200);
-            } else if (!isEntertainmentBrawlMode()) {
+                this._entertainmentEventBanner.showPersonal(finished ? '成功带球冲线' : '水球已解除', 'success', 1200);
+            } else if (finished && !isEntertainmentBrawlMode()) {
                 this._entertainmentEventBanner.showEvent(
                     `${event.carrierLane + 1}号泳道成功带球冲线`,
                     'success',
@@ -3938,6 +3940,7 @@ export class GameManager extends Component {
             this.entertainmentWaterSplashes(),
         );
         this._shark = new SharkController({
+            networked: !!this._netSession,
             node: root,
             course: COURSE_LAYOUT,
             swimmers: () => this.activeSharkSwimmers(),

@@ -1,6 +1,6 @@
 import { Node } from 'cc';
 import type { Swimmer } from './Swimmer';
-import { SHARK_TUNING, SharkState } from './SharkTuning';
+import { SHARK_TUNING, SHARK_NET_TURN_DEGREES, SharkState } from './SharkTuning';
 import { SharkObstacleBiteTracker } from './SharkObstacleBiteTracker';
 import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 
@@ -42,6 +42,7 @@ export type SharkControllerOptions = {
     /** 五档测试在本局生效的绝对追逐速度倍率。 */
     huntSpeedScale?: number;
     huntSeconds?: number;
+    networked?: boolean;
     /** 最后一轮结束后继续低速巡游，作为场地残留。 */
     wanderAfterFinalHunt?: boolean;
 };
@@ -49,6 +50,7 @@ export type SharkControllerOptions = {
 // A single race-owned predator. It has no per-frame allocations and intentionally
 // has no knowledge of skill energy or UI. Those belong to the caller.
 export class SharkController {
+    private readonly huntTurnDegrees: number;
     private _state = SharkState.INACTIVE;
     private _raceElapsed = 0;
     private _remainingSeconds = 0;
@@ -76,6 +78,7 @@ export class SharkController {
     });
 
     constructor(private readonly _opts: SharkControllerOptions) {
+        this.huntTurnDegrees = _opts.networked ? SHARK_NET_TURN_DEGREES : SHARK_TUNING.huntTurnDegreesPerSecond;
         this._opts.node.active = false;
     }
 
@@ -235,7 +238,12 @@ export class SharkController {
             const distance = Math.sqrt(dx * dx + dz * dz);
             if (distance > 0.0001) {
                 const step = Math.min(distance, SHARK_TUNING.huntSpeed * (this._opts.huntSpeedScale ?? 1) * dt);
-                this.moveAndFace(dx / distance, dz / distance, step);
+                const angle = Math.atan2(this._facingZ, this._facingX);
+                const desired = Math.atan2(dz, dx);
+                const delta = Math.atan2(Math.sin(desired - angle), Math.cos(desired - angle));
+                const limit = Math.max(1, this.huntTurnDegrees) / RADIANS_TO_DEGREES * dt;
+                const next = angle + Math.max(-limit, Math.min(limit, delta));
+                this.moveAndFace(Math.cos(next), Math.sin(next), step);
             }
         }
         if (this._remainingSeconds <= 0) this.finishHunt();
@@ -437,6 +445,8 @@ export class SharkController {
     }
 
     private retarget(): void {
+        // 已公开的追逐目标保持到本轮结束或失去资格，不能每半秒换人并瞬时掉头。
+        if (this._state === SharkState.HUNT && this._target?.isSharkTargetable) return;
         const pos = this._opts.node.position;
         let nearest: Swimmer | null = null;
         let nearestDistanceSq = Number.POSITIVE_INFINITY;
@@ -453,7 +463,7 @@ export class SharkController {
         }
         if (this._target !== nearest) this._approachNotifiedTarget = null;
         this._target = nearest;
-        if (nearest) {
+        if (nearest && this._state !== SharkState.HUNT) {
             const targetPos = nearest.node.position;
             this.faceDirection(targetPos.x - pos.x, targetPos.z - pos.z);
         }

@@ -35,6 +35,84 @@ function putTogether(fixture, laneA, laneB) {
     fixture.racers[laneB].lateral = fixture.racers[laneA].lateral + 0.2;
 }
 
+test('携带者恢复暂停保留水球，重复快照与房主接管不解除或偷跑倒计时', () => {
+    const f = timedBombFixture();
+    f.controller.update(0, GameState.RACING, true);
+    const lane = f.controller.currentCarrierLane();
+    f.controller.update(.1, GameState.RACING, true);
+    const remaining = f.controller.currentRemainingSeconds();
+    const before = f.controller.snapshotState();
+    f.racers[lane].recovering = true;
+    f.controller.update(.1, GameState.RACING, true);
+    const paused = f.controller.snapshotState();
+    assert.equal(paused.paused, true);
+    assert.ok(paused.revision > before.revision);
+    for (let i = 0; i < 55; i++) f.controller.update(.1, GameState.RACING, true);
+    assert.equal(f.controller.currentRemainingSeconds(), remaining);
+    assert.equal(f.controller.currentCarrierLane(), lane);
+    assert.equal(f.resolutions.length, 0);
+    const replica = timedBombFixture();
+    replica.racers[lane].recovering = true;
+    replica.controller.applySnapshotState(paused);
+    replica.controller.update(1, GameState.RACING, false);
+    replica.controller.applySnapshotState(before);
+    assert.equal(replica.controller.isPaused(), true);
+    assert.equal(replica.controller.currentRemainingSeconds(), remaining);
+    replica.controller.update(1, GameState.RACING, true);
+    assert.equal(replica.controller.currentRemainingSeconds(), remaining);
+    replica.racers[lane].recovering = false;
+    replica.controller.update(.1, GameState.RACING, true);
+    assert.equal(replica.controller.isPaused(), false);
+    assert.ok(Math.abs(replica.controller.currentRemainingSeconds() - remaining + .1) < 1e-6);
+    assert.equal(replica.resolutions.length, 0);
+    f.controller.applySnapshotState(replica.controller.snapshotState());
+    f.controller.applySnapshotState(paused);
+    assert.equal(f.controller.isPaused(), false);
+});
+
+test('离场与冲线仍解除水球，保护中选手不能接球，分散人群不强行发放', () => {
+    for (const reason of ['active', 'finished']) {
+        const f = timedBombFixture();
+        f.controller.update(0, GameState.RACING, true);
+        const lane = f.controller.currentCarrierLane();
+        f.racers[lane][reason] = reason === 'finished';
+        f.controller.update(.1, GameState.RACING, true);
+        assert.equal(f.controller.currentCarrierLane(), -1);
+        assert.equal(f.resolutions.length, 1);
+        assert.equal(f.resolutions[0].exploded, false);
+    }
+    const f = timedBombFixture();
+    f.racers.forEach((r, i) => { r.distance = 24 + i * 12; r.recovering = i === 1; });
+    f.controller.update(0, GameState.RACING, true);
+    assert.equal(f.arms.length, 0);
+    assert.ok(f.controller.snapshotState().completedRoundMask & 1);
+    const contact = timedBombFixture();
+    contact.controller.update(0, GameState.RACING, true);
+    const carrier = contact.controller.currentCarrierLane();
+    const receiver = carrier === 0 ? 1 : 0;
+    contact.racers.forEach((r, i) => { r.active = i === carrier || i === receiver; });
+    putTogether(contact, carrier, receiver);
+    contact.racers[receiver].recovering = true;
+    contact.controller.update(MINE_RELAY_TUNING.initialTransferCooldownSeconds + .01, GameState.RACING, true);
+    assert.equal(contact.transfers.length, 0);
+    assert.equal(contact.controller.currentCarrierLane(), carrier);
+    contact.racers[receiver].recovering = false;
+    contact.controller.update(.01, GameState.RACING, true);
+    assert.equal(contact.controller.currentCarrierLane(), receiver);
+});
+
+test('同向速度相同且超出短传范围不会被当成可追目标，近身目标仍可发放', () => {
+    const f = timedBombFixture();
+    f.racers.forEach((r, i) => { r.active = i < 2; r.speed = 2.5; r.lateral = 0; r.distance = 24 + i * 4; });
+    f.controller.update(0, GameState.RACING, true);
+    assert.equal(f.arms.length, 0);
+    const close = timedBombFixture();
+    close.racers.forEach((r, i) => { r.active = i < 2; r.speed = 2.5; r.lateral = 0; r.distance = 24 + i * 2; });
+    close.controller.update(0, GameState.RACING, true);
+    assert.equal(close.arms.length, 1);
+    assert.equal(close.arms[0].carrierLane, 0);
+});
+
 function minefieldFixture(seed = 91, waveTriggerDistances = []) {
     const racers = Array.from({ length: 2 }, () => ({ active: true, finished: false, distance: 0, lateral: 0 }));
     const impacts = [];

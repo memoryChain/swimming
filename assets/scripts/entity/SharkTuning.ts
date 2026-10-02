@@ -22,6 +22,7 @@ export const SHARK_TUNING = {
     huntSeconds: 8,
     retargetSeconds: 0.5,
     huntSpeed: 4.5,
+    huntTurnDegreesPerSecond: 120,
     wanderSpeed: 1.2,
     collisionRadius: 1.1,
     collisionPushScale: 1.8,
@@ -44,3 +45,6 @@ export const SHARK_TUNING = {
     waterYOffset: -0.28,
     satiatedSinkOffset: -1.5,
 };
+
+/** 联机使用固定追逐转向，私人调参不改变房间规则。 */
+export const SHARK_NET_TURN_DEGREES = SHARK_TUNING.huntTurnDegreesPerSecond;
