@@ -4537,6 +4537,8 @@ export class GameManager extends Component {
         // Networked race: convert the lanes occupied by remote humans from AI to
         // network-driven bodies. Single-player leaves this untouched.
         this.wireRemoteSwimmers();
+        // 补给可能在 AI 延后创建前初始化；补齐 AI 和远端真人的公共拾取名单。
+        this._stimulantBrawl?.refreshRacers();
         if (this._aiDebugMode) this._aiDifficultyPanel.setVisible(true);
     }
 

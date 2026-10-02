@@ -113,7 +113,8 @@
 // v127：水球恢复暂停位、可接近发放与玩具鲨有限转向／稳定目标。
 // v128：喷泉身体部位受力、独立姿态恢复和可靠命中字段；计划 balanceVersion 9。
 // v129：补给／垃圾背景化，4档途中追加与可选场地换型；计划 balanceVersion 10。
-export const NET_RACE_PROTOCOL_VERSION = 129;
+// v130：补给名单在 AI／远端真人延后创建后补齐，恢复全员世界公共拾取。
+export const NET_RACE_PROTOCOL_VERSION = 130;
 
 let lastRaceStamp = 0;
 

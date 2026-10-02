@@ -152,7 +152,7 @@ export class StimulantBrawlController {
         seed: number,
         private readonly laneLayout: LaneLayout,
         private readonly course: RaceCourseLayout,
-        racerForLane: (lane: number) => Racer | null,
+        private readonly racerForLane: (lane: number) => Racer | null,
         private readonly resolveAuthoritatively: (pickup: StimulantPickup) => void,
         private readonly onPickup: (feedback: StimulantPickupFeedback) => void,
         private readonly onWaveApproach: (wave: number, kind: StimulantItemKind) => void,
@@ -169,9 +169,7 @@ export class StimulantBrawlController {
         this.pickupCurrentZ.fill(Number.NaN);
         this.pickupPreviousX.fill(Number.NaN);
         this.pickupPreviousZ.fill(Number.NaN);
-        for (let lane = 0; lane < laneLayout.laneCount; lane++) {
-            this.pickupRacers[lane] = racerForLane(lane);
-        }
+        this.refreshRacers();
         this.items = (schedule ?? buildStimulantSchedule(seed, laneLayout.laneCount, course.courseLength)).map(spawn => {
             const laneZ = laneLayout.centerZ(spawn.laneIndex) + spawn.lateralOffset;
             const p = course.swimPosition(spawn.distance, laneZ);
@@ -198,6 +196,21 @@ export class StimulantBrawlController {
         this.createProgramVisuals();
         this.createBeaconVisuals();
         this.loadModelVisuals();
+    }
+
+    /** AI 延后创建；阵容就位时补齐名单，不重建道具或拾取账本。 */
+    refreshRacers(): void {
+        if (this.disposed) return;
+        for (let lane = 0; lane < this.laneLayout.laneCount; lane++) {
+            const previous = this.pickupRacers[lane];
+            const next = this.racerForLane(lane);
+            if (previous?.swimmer === next?.swimmer && previous?.condition === next?.condition) continue;
+            this.pickupRacers[lane] = next;
+            this.pickupCurrentX[lane] = Number.NaN;
+            this.pickupCurrentZ[lane] = Number.NaN;
+            this.pickupPreviousX[lane] = Number.NaN;
+            this.pickupPreviousZ[lane] = Number.NaN;
+        }
     }
 
     startedItemCount(): number {
