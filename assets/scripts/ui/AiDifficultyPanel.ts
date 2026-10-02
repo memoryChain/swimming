@@ -62,6 +62,7 @@ export class AiDifficultyPanel {
         this._root = host;
         this._rowsHost = rowsHost;
         this._debugLabel = makeLabel('Decision', root, '', 16, uiColor(220, 235, 245)).getComponent(Label);
+        this._debugLabel.overflow = Label.Overflow.CLAMP; this._debugLabel.enableWrapText = false;
         this._debugLabel.node.getComponent(UITransform).setContentSize(PANEL_WIDTH - 24, 56);
         styleProjectUiLabel(this._debugLabel, 'regular', 24);
         this._debugLabel.node.active = false;
@@ -124,9 +125,11 @@ export class AiDifficultyPanel {
         if (this._debugClock < 0.2) return;
         this._debugClock = 0;
         const s = this._debugController.debugSnapshot();
-        const action = ACTION_LABELS[s.action];
-        const value = `${action}  预算 ${s.desiredEnergy.toFixed(0)}  冲刺预留 ${s.sprintReserve.toFixed(0)}\n`
-            + `踢腿 ${s.kickSeconds.toFixed(1)}秒  海豚跳 ${s.jumps}次`;
+        const action = s.bossPhase ? `${s.bossPhase} · ${ACTION_LABELS[s.action]}` : ACTION_LABELS[s.action];
+        const value = s.bossPhase
+            ? `${action}\n预算 ${s.desiredEnergy.toFixed(0)}  预留 ${s.sprintReserve.toFixed(0)}  踢腿 ${s.kickSeconds.toFixed(1)}秒  跳 ${s.jumps}次`
+            : `${action}  预算 ${s.desiredEnergy.toFixed(0)}  冲刺预留 ${s.sprintReserve.toFixed(0)}\n`
+                + `踢腿 ${s.kickSeconds.toFixed(1)}秒  海豚跳 ${s.jumps}次`;
         if (this._debugLabel.string !== value) this._debugLabel.string = value;
     }
 

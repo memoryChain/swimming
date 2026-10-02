@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const { createHarness } = require('./helpers/cocos-math-harness.cjs');
 
 function fixture() {
-    class Label { string = ''; static HorizontalAlign = { LEFT: 0, RIGHT: 1 }; }
+    class Label { string = ''; static Overflow = { SHRINK: 2, CLAMP: 1 }; static HorizontalAlign = { LEFT: 0, RIGHT: 1 }; }
     class UITransform { contentSize = { width: 0, height: 0 }; setContentSize(w, h) { this.width = w; this.height = h; this.contentSize = { width: w, height: h }; } }
     class BlockInputEvents {}
     class Graphics { clear() {} rect() {} fill() {} }
@@ -29,7 +29,7 @@ function fixture() {
     const makeUiNode = (name, parent) => { const n = new Node(name); n.addComponent(UITransform); n.layer = parent?.layer ?? 0; n.parent = parent; parent?.children.push(n); return n; };
     const makeLabel = (name, parent, text, size = 18) => { const n = makeUiNode(name, parent); n.addComponent(Label).string = text; n.getComponent(UITransform).setContentSize(620, size + 14); return n; };
     const makeRect = (name, parent, w, height) => { const n = makeUiNode(name, parent); n.addComponent(Graphics); n.getComponent(UITransform).setContentSize(w, height); return n; };
-    const makeButton = (name, parent, w, height, color, text) => { const n = makeRect(name, parent); n.getComponent(UITransform).setContentSize(w, height); makeLabel('Label', n, text); return n; };
+    const makeButton = (name, parent, w, height, color, text) => { const n = makeRect(name, parent); n.getComponent(UITransform).setContentSize(w, height); if (text) makeLabel('Label', n, text); return n; };
     const h = createHarness({ './RuntimeUiFactory': { makeUiNode, makeLabel, makeRect, makeButton, uiColor: (...values) => values },
         './ProjectUiFonts': { styleProjectUiLabel() {} } });
     const listeners = new Map();
@@ -93,11 +93,11 @@ test('真实登录入口保持弹窗专用层，面板居中适配，遮挡覆�
             assert.equal(dim.scale.x, width); assert.equal(dim.scale.y, height);
             assert.equal(overlay.getComponent(UITransform).contentSize.width, width);
             assert.ok(880 * panel.scale.x <= width - 48 + 1e-6);
-            assert.ok(620 * panel.scale.y <= height - 48 + 1e-6);
+            assert.ok(700 * panel.scale.y <= height - 48 + 1e-6);
             for (const child of panel.children) {
                 const size = child.getComponent(UITransform).contentSize;
                 assert.ok(Math.abs(child.x) + size.width / 2 <= 440, child.name);
-                assert.ok(Math.abs(child.y) + size.height / 2 <= 310, child.name);
+                assert.ok(Math.abs(child.y) + size.height / 2 <= 350, child.name);
             }
         }
         panel.getChildByName('Cancel').click();
@@ -200,4 +200,51 @@ test('AI面板默认收起，折叠零采样，展开立即显示当前对手且
     }
     p.setVisible(false); assert.equal(expand.activeInHierarchy, false);
     p.setVisible(true); assert.equal(expand.activeInHierarchy, true);
+});
+
+test('Boss入口反复换关与切回普通AI保持节点和监听，固定关仅启动一次且隐藏按钮无效', () => {
+    const { Node, Label, load } = fixture();
+    const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
+    const { getAiDebugSetup, resolveAiDebugBuildOptions } = load('core/GameLaunchOptions');
+    const { BOSS_AI_PRESETS } = load('competitor/BossAiConfig');
+    const root = new Node('root'); let starts = 0;
+    buildAiDebugSetupPicker(root, () => starts++, () => {});
+    const all = n => [n, ...n.children.flatMap(all)], initial = all(root), listeners = initial.map(n => n.events.size);
+    root.getChildByName('BossStart').click(); assert.equal(starts, 0);
+    const character = root.getChildByName('Character').getChildByName('Label').getComponent(Label).string;
+    for (let repeat = 0; repeat < 50; repeat++) {
+        root.getChildByName('DebugCategory').click();
+        assert.equal(root.getChildByName('Tier4').active, false);
+        root.getChildByName('Tier4').click(); assert.equal(starts, 0);
+        for (let i = 0; i < BOSS_AI_PRESETS.length; i++) {
+            const p = BOSS_AI_PRESETS[i];
+            assert.ok(root.getChildByName('BossPreset').getChildByName('Label').getComponent(Label).string.includes(p.name));
+            assert.ok(root.getChildByName('BossFacts').getComponent(Label).string.includes(`${p.distance}米`));
+            root.getChildByName('BossNext').click();
+        }
+        root.getChildByName('BossPrevious').click(); root.getChildByName('BossNext').click();
+        root.getChildByName('DebugCategory').click();
+        assert.equal(root.getChildByName('BossStart').active, false);
+        assert.equal(root.getChildByName('Character').getChildByName('Label').getComponent(Label).string, character);
+        assert.deepEqual(all(root), initial); assert.deepEqual(initial.map(n => n.events.size), listeners);
+    }
+    root.getChildByName('DebugCategory').click(); root.getChildByName('BossNext').click();
+    root.getChildByName('BossStart').click(); root.getChildByName('BossStart').click();
+    assert.equal(starts, 1); assert.equal(getAiDebugSetup().bossId, 'city-ninja');
+    const options = resolveAiDebugBuildOptions(getAiDebugSetup(), 4, .5);
+    assert.equal(options.fixedRoster[0].profile.characterId, 'cartonSwimmer10'); assert.equal(options.level, undefined);
+});
+
+test('Boss诊断同时保留战术与真实动作，使用两行固定文本框且不扩大面板', () => {
+    const { Node, load, Label } = fixture();
+    const { AiDifficultyPanel } = load('ui/AiDifficultyPanel');
+    const p = new AiDifficultyPanel(); p.build(new Node('root'), 1280, 720);
+    p.populate(Array.from({ length: 7 }, (_, lane) => ({ lane, name: '铁臂队员', difficulty: .95 })));
+    p.setDebugController({ debugSnapshot() { return { bossPhase: '协作争位', action: 'recover',
+        desiredEnergy: 180, sprintReserve: 30, kickSeconds: 100.5, jumps: 10 }; } });
+    p.setVisible(true); p.setCollapsed(false);
+    const lines = p._debugLabel.string.split('\n');
+    assert.equal(lines.length, 2); assert.ok(lines[0].includes('协作争位')); assert.ok(lines[0].includes('降心率'));
+    assert.ok(lines[1].includes('预算 180')); assert.ok(lines[1].includes('踢腿 100.5秒'));
+    assert.equal(p._debugLabel.overflow, Label.Overflow.CLAMP); assert.equal(p._debugLabel.enableWrapText, false);
 });

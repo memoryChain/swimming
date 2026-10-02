@@ -81,8 +81,10 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
             'AUTH', '账号验证失败，请重新进入游戏');
         return hash(`${appId}:${context.OPENID}`);
     }
-    function protocol(event) {
-        requireValue(event && event.protocol === CLOUD_PROTOCOL.version && event.rulesVersion === CLOUD_PROTOCOL.rulesVersion,
+    function protocol(event, allowLegacyReplay = false) {
+        requireValue(event && event.protocol === CLOUD_PROTOCOL.version
+            && (event.rulesVersion === CLOUD_PROTOCOL.rulesVersion
+                || (allowLegacyReplay && event.rulesVersion === 2 && event.action !== 'load')),
             'VERSION', '游戏版本已更新，请重新进入游戏');
         requireValue(event.data && typeof event.data === 'object' && !Array.isArray(event.data)
             && Buffer.byteLength(JSON.stringify(event)) <= 16000, 'INPUT', '请求参数无效');
@@ -182,7 +184,7 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
     async function player(event, context) {
         let playerId;
         try {
-            playerId = authenticate(context); protocol(event);
+            playerId = authenticate(context); protocol(event, true);
             requireValue(['load', 'identity', 'selection', 'appearance', 'level', 'career', 'tutorialComplete'].includes(event.action), 'FORBIDDEN', '不支持此存档操作');
             if (event.action !== 'load') validateMutation(event);
             const time = now();
@@ -212,6 +214,10 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
                             'TICKET', '比赛记录已失效');
                         return envelope(doc, previous.result);
                     }
+                    // 旧经济请求仅恢复已提交回执，或结算仍有效的旧票据；不能按新价格扣旧订单。
+                    if (event.rulesVersion === 2) requireValue(event.action === 'career' && event.data.type === 'settle'
+                        && doc.profile.career.pending && !doc.profile.career.pending.terms,
+                    'VERSION', '游戏版本已更新，请重新进入游戏');
                     requireValue(event.expectedRevision === doc.revision, 'CONFLICT', '存档已更新，请重试当前操作');
                     const result = applyPlayer(doc, event, time);
                     doc.revision++; doc.updatedAt = time;

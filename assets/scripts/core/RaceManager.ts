@@ -40,6 +40,7 @@ export class RaceManager extends Component {
     @property([Swimmer]) public aiSwimmers: Swimmer[] = [];
     public tutorialMode = false;
     @property public countdownSeconds = COUNTDOWN_SECONDS;
+    public finishGraceSeconds = FINISH_STRAGGLER_COUNTDOWN_SECONDS;
 
     public onCountdownTick: (value: number) => void = null;
     public onStateChange: (state: GameState) => void = null;
@@ -224,6 +225,9 @@ export class RaceManager extends Component {
         if (!this._playerFinished && playerDist >= getRaceDistance()) {
             this._playerFinished = true;
             this._playerFinishTime = this._raceTimer;
+            // 保护落后玩家的时间不变成获胜玩家的长等待；仅在本机触壁这一状态边沿缩短。
+            if (this._finishCountdownActive) this._finishCountdownTimer = Math.min(
+                this._finishCountdownTimer, FINISH_STRAGGLER_COUNTDOWN_SECONDS);
             this.playerSwimmer?.playFinishTouch();
             if (this.playerSwimmer) {
                 this.emitSwimmerFinished(this.playerSwimmer, this._raceTimer);
@@ -265,7 +269,8 @@ export class RaceManager extends Component {
 
     private startFinishCountdown() {
         this._finishCountdownActive = true;
-        this._finishCountdownTimer = FINISH_STRAGGLER_COUNTDOWN_SECONDS;
+        this._finishCountdownTimer = this._playerFinished
+            ? Math.min(this.finishGraceSeconds, FINISH_STRAGGLER_COUNTDOWN_SECONDS) : this.finishGraceSeconds;
         this._lastFinishCountdownValue = Math.ceil(this._finishCountdownTimer);
         this.onFinishCountdownTick?.(this._lastFinishCountdownValue);
     }

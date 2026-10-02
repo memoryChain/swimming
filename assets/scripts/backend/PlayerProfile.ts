@@ -189,12 +189,20 @@ function normalizeCareer(raw: Partial<CareerState> | undefined): CareerState {
         const cup = raw.cups?.[id];
         if (cup && typeof cup.id === 'string' && Number.isInteger(cup.tier) && cup.tier >= 0 && cup.tier <= 5
             && Number.isInteger(cup.round) && cup.round >= 0 && cup.round < cupRounds(cup.tier)
-            && ['active', 'won', 'lost'].indexOf(cup.state) >= 0 && Number.isFinite(cup.seed)) {
+            && ['active', 'won', 'passed', 'lost'].indexOf(cup.state) >= 0 && Number.isFinite(cup.seed)) {
             c.cups[id] = { ...cup, coins: Math.max(0, Number(cup.coins) || 0) };
         }
         const wins = raw.wins?.[id];
         if (Array.isArray(wins)) c.wins[id] = [...new Set(wins.filter(n => Number.isInteger(n) && n >= 0 && n <= 5))];
+        const clears = raw.clears?.[id] ?? c.wins[id];
+        if (Array.isArray(clears)) c.clears![id] = [...new Set(clears.filter(n => Number.isInteger(n) && n >= 0 && n <= 5))];
     }
+    c.firstClearPrizes = Array.isArray(raw.firstClearPrizes)
+        ? [...new Set(raw.firstClearPrizes.filter(n => Number.isInteger(n) && n >= 0 && n <= 5))] : [];
+    c.leagueStarts = Array.from({ length: 6 }, (_, i) => {
+        const count = raw.leagueStarts?.[i];
+        return typeof count === 'number' && Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+    });
     c.quick = { distance: raw.quick?.distance === 400 ? 400 : 200, rule: raw.quick?.rule === 'wild' ? 'wild' : 'standard' };
     // 中断后从杯赛当前轮重新开赛；已结算回执仍保留，不能因重启重复发放。
     c.receipts = Array.isArray(raw.receipts) ? raw.receipts.filter(r => r && typeof r.id === 'string' && Number.isFinite(r.coinsGained)).slice(-32) : [];

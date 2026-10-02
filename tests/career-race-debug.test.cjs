@@ -13,7 +13,7 @@ function fixture(dev = true) {
         cc: { Component, _decorator: { ccclass: noopDecorator, property: (...args) => args.length > 1 ? undefined : () => {} } },
         'cc/env': { DEV: dev },
         './GameConstants': { GameState },
-        './GameBalance': { getRaceDistance: () => 100, COUNTDOWN_SECONDS: 3 },
+        './GameBalance': { getRaceDistance: () => 100, COUNTDOWN_SECONDS: 3, FINISH_STRAGGLER_COUNTDOWN_SECONDS: 10 },
         './TimeScale': { scaledDelta: x => x },
         '../entity/Swimmer': { Swimmer: class {} },
         '../venue/VenueConfig': { DEFAULT_POOL_DEFINITION: {} },
@@ -46,6 +46,19 @@ test('倒计时、跳水、滑行、游泳均可指定所有名次；正常结�
         assert.equal(race.debugFinishWithPlacement(rank), false); race.stepSimulation(1);
         assert.equal(results.length, 1);
     }
+});
+
+test('生涯落后玩家保留90秒完赛窗口，玩家触壁后收敛到10秒，默认比赛仍10秒', () => {
+    const { race, swimmers } = fixture();
+    assert.equal(race.finishGraceSeconds, 10);
+    race.finishGraceSeconds = 90;
+    race.startFinishCountdown(); assert.equal(race._finishCountdownTimer, 90);
+    for (const swimmer of swimmers) swimmer.playFinishTouch = () => {};
+    race._state = GameState.RACING;
+    race.playerSwimmer.distance = 100;
+    race.updateRacing(.1);
+    assert.ok(race._finishCountdownTimer <= 10); assert.ok(race._finishCountdownTimer > 9);
+    race.startFinishCountdown(); assert.equal(race._finishCountdownTimer, 10);
 });
 test('非开发环境、赛前、赛后及无效名次不能改写成绩；重开清除调试结果', () => {
     const {race, results} = fixture();

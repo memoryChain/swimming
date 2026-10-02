@@ -14,12 +14,14 @@ export function normalizeCharacterLevel(level: unknown): number {
 }
 
 // Coin cost to advance from level `level` to `level + 1`.
-// 原型成长曲线：首级约两场，后续平滑递增；50金币取整便于阅读。
+// 前10级保留新人培养节奏，之后额外二次增长，让高等级培养主要由高段位收益支撑。
+// 50金币取整便于阅读；不按参赛角色等级压低任何比赛奖励。
 export function coinCostForLevel(level: number): number {
     if (level < 1 || level >= PROGRESSION_BALANCE.maxLevel) {
         return 0;
     }
-    return Math.round((500 + 250 * level + 30 * level * level) / 50) * 50;
+    const advancedLevels = Math.max(0, level - 10);
+    return Math.round((350 + 120 * level + 20 * level * level + 60 * advancedLevels * advancedLevels) / 50) * 50;
 }
 
 export const COIN_REWARDS = {

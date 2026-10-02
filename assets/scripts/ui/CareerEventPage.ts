@@ -60,6 +60,9 @@ export class CareerEventPage {
     private readonly leagueStart: CareerControl;
     private readonly cupStart: CareerControl;
     private readonly cupTitle: Label;
+    private readonly leagueDistance: Label;
+    private readonly leagueMode: Label;
+    private readonly leagueTitle: Label;
     private readonly rounds: RoundView[] = [];
     private readonly roundArrows: CareerImage[] = [];
     private readonly rulesButton: CareerControl;
@@ -165,10 +168,10 @@ export class CareerEventPage {
         const roundSurfaces = makeUiNode('CupRoundSurfaces', cup);
         this.tag(detail, '账号', '账号共享', 418, 326, 103, 36, ART.tagAccount);
         this.tag(cup, '角色', '角色专属', 848, 326, 106, 36, ART.tagCharacter);
-        careerLabel(detail, 'LeagueTitle', '联赛挑战', 420, 366, 320, 52, 38);
-        const modeNumber = careerLabel(detail, 'LeagueDistance', '200', 421, 420, 50, 30, 21, CAREER_MUTED);
+        this.leagueTitle = careerLabel(detail, 'LeagueTitle', '联赛挑战', 420, 366, 320, 52, 38);
+        const modeNumber = this.leagueDistance = careerLabel(detail, 'LeagueDistance', '200', 421, 420, 50, 30, 21, CAREER_MUTED);
         styleCurrencyNumberLabel(modeNumber, 28);
-        careerLabel(detail, 'LeagueMode', '米 · 狂野模式', 471, 420, 270, 30, 21, CAREER_MUTED);
+        this.leagueMode = careerLabel(detail, 'LeagueMode', '米 · 狂野模式', 471, 420, 270, 30, 21, CAREER_MUTED);
         const area = careerImage(detail, 'PointsArea', ART.panelWhite, 408, 463, 384, 115, false, true);
         careerColor(area.sprite, uiColor(229,244,253));
         careerLabel(detail, 'PointsHeading', '联赛积分', 427, 477, 150, 32, 20);
@@ -278,8 +281,8 @@ export class CareerEventPage {
         this.confirmNo.update('保留进度', !s.busy);
         showCareerNode(this.confirm, isCareer && s.confirmAbandon);
         this.refreshCareer(s);
-        careerText(this.rulesText, '• 顶部徽章可切换赛事；联赛与杯赛均为狂野模式。\n• 联赛前四名获得20 / 14 / 10 / 6积分，上限100分。\n• 本级满100分开放杯赛，夺冠晋级；最高级可重复挑战。\n• 前三级两轮，后三级三轮；三轮制决赛为400米。\n• 联赛进度账号共享；杯赛按角色保存，轮间可培养。\n• 回打旧联赛可获金币，不增加当前联赛积分。');
-        careerText(this.footer, s.status || (s.busy ? '正在保存并准备比赛…' : ''));
+        careerText(this.rulesText, '• 常规赛事均为八人，规则与距离按页面预告。\n• 完赛有金币与本级积分，满100分开杯赛。\n• 决赛：新秀前五、俱乐部前四晋级，后四级夺冠。\n• 杯赛每轮完赛有金币，每级首通奖仅领一次。\n• 积分账号共享，杯赛按角色保存并可轮间培养。\n• 高段位金币更多；回打旧联赛不增加当前积分。');
+        careerText(this.footer, s.status || (s.busy ? '正在保存并准备比赛…' : this.cupAction!.rewardHint));
         // refresh也会被积分、段位及存档事件调用；只在重新进入生涯时启动。
         if (!this.careerVisible) { this.careerVisible = true; this.motion.enter(false); }
     }
@@ -309,6 +312,9 @@ export class CareerEventPage {
         this.avatar.set(RESOURCE_PATHS.characterUi.portraits[s.characterId]);
         this.changeCharacter.update('更换', !s.busy && !!this.actions.characters);
         careerText(this.points, `${m.points}`); careerText(this.hint, m.hint);
+        careerText(this.leagueTitle, m.leagueEvent.name);
+        careerText(this.leagueDistance, `${m.leagueEvent.distance}`);
+        careerText(this.leagueMode, `米 · ${m.leagueEvent.rule === 'wild' ? '狂野' : '标准'} · ${m.leagueEvent.ai.opponentCount! + 1}人`);
         if (this.pointsValue !== m.points) {
             this.pointsValue = m.points;
             const width = Math.round(350 * m.points / 100);

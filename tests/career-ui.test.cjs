@@ -459,7 +459,7 @@ test('横向六级路线默认选中当前联赛，重复切换不重建节点�
     root.destroy();assert.equal(listeners.size,0);
 });
 
-test('联赛与杯赛按钮独立开赛，满积分仍可打联赛且均为狂野', async () => {
+test('联赛与杯赛按钮独立开赛，满积分仍可打联赛且新秀使用狂野赛程', async () => {
     for(const source of ['league','cup']) {
         reset();store.profile.career.points=100;const root=new Node('Root');let starts=0;
         const panel=warmPanel(root,()=>starts++,()=>{});panel.root.getChildByName('Action0').click();
@@ -712,7 +712,7 @@ test('六级两轮和三轮展示与规则一致，历史联赛、淘汰和最�
     for(let tier=0;tier<6;tier++){
         c.league=tier;c.points=80;
         let m=careerPageModel(c,ids[0],tier);assert.equal(m.action,'locked');assert.match(m.button,/20/);
-        assert.equal(m.rounds.length,tier>=3?3:2);assert.equal(m.rounds.at(-1).condition,'第一名夺冠');
+        assert.equal(m.rounds.length,tier>=3?3:2);assert.equal(m.rounds.at(-1).condition,tier === 0 ? '前五达标' : tier === 1 ? '前四达标' : '第一名夺冠');
         assert.equal(m.rounds.at(-1).distance,tier>=3?400:200);
         c.points=100;m=careerPageModel(c,ids[0],tier);assert.equal(m.action,'start');assert.equal(m.rounds[0].style,'current');
     }
@@ -962,4 +962,48 @@ test('生涯有限文字合批、底板分层保持两轮三轮位置与显隐�
         }
         assert.ok(find(page.root, 'CharacterAvatarClip').getComponent(Mask));
     } finally { host.destroy(); }
+});
+
+test('亚军达标显示晋级回顾并保留冠军区别，重打时恢复当前轮次，联赛预告与轮换一致', () => {
+    reset(); const c = store.profile.career;
+    c.league = 1; c.cups[ids[0]] = { id: 'passed', tier: 0, round: 1, seed: 1, coins: 1, state: 'passed' };
+    c.clears[ids[0]] = [0];
+    const { careerPageModel } = load('ui/CareerPageModel');
+    const review = careerPageModel(c, ids[0], 1, 0);
+    assert.equal(review.action, 'next'); assert.equal(review.won, false);
+    assert.equal(review.rounds.at(-1).status, '已达标');
+    c.cups[ids[0]].state = 'active'; c.cups[ids[0]].round = 0;
+    assert.equal(careerPageModel(c, ids[0], 0).rounds[0].style, 'current');
+    const root = new Node('Root'), panel = warmPanel(root, () => {}, () => {});
+    try {
+        c.league = 3; panel.open('career'); panel.tier = 3; panel.refresh();
+        const page = panel.page.root, count = descendants(page).length;
+        assert.equal(textOf(page, 'LeagueMode'), '米 · 狂野 · 8人');
+        c.leagueStarts[3] = 1; panel.refresh();
+        assert.equal(textOf(page, 'LeagueDistance'), '400');
+        assert.equal(textOf(page, 'LeagueMode'), '米 · 狂野 · 8人');
+        assert.match(textOf(page, 'EventStatus'), /金币 ×3.50/);
+        store.profile.characters[ids[0]].level = 30; panel.refresh();
+        assert.match(textOf(page, 'EventStatus'), /金币 ×3.50/, '高等级不降低所选段位倍率');
+        panel.tier = 0; panel.refresh();
+        assert.match(textOf(page, 'EventStatus'), /金币 ×1.00/);
+        c.league = 5; panel.tier = 5; panel.refresh();
+        assert.match(textOf(page, 'EventStatus'), /金币 ×7.50/);
+        assert.equal(descendants(page).length, count);
+    } finally { root.destroy(); }
+});
+
+test('在途旧少人票据按原人数与资格展示，新开八人比赛显示当前资格', () => {
+    reset(); const c = store.profile.career, id = ids[0]; c.points = 100;
+    c.cups[id] = { id: 'legacy', tier: 0, round: 0, seed: 1, coins: 0, state: 'active' };
+    c.pending = { id: 'legacy-race', source: 'cup', characterId: id, level: 1, distance: 200, rule: 'standard',
+        tier: 0, round: 0, seed: 1, cupId: 'legacy', ai: { minLevel: 1, maxLevel: 1, opponentCount: 3,
+            intelligence: ['learner', 'learner', 'learner'] }, terms: { qualifyPlace: 4 } };
+    const { careerPageModel } = load('ui/CareerPageModel');
+    assert.equal(careerPageModel(c, id, 0).rounds[0].condition, '完赛晋级');
+    c.cups[id].round = c.pending.round = 1; c.pending.ai.opponentCount = 2;
+    c.pending.terms.qualifyPlace = 2;
+    assert.equal(careerPageModel(c, id, 0).rounds[1].condition, '前二达标');
+    c.pending = null;
+    assert.equal(careerPageModel(c, id, 0).rounds[1].condition, '前五达标');
 });

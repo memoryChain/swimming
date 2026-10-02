@@ -13,11 +13,13 @@ export const DEFAULT_CAREER_CHARACTERS: readonly AiCharacterWeight[] = [
     { characterId: 'cartonSwimmer14', weight: 1 }, // 风火轮
     { characterId: 'cartonSwimmer15', weight: 1 }, // 机甲coser
     { characterId: 'muscleMan', weight: 1 }, // 肌肉男
+    { characterId: 'cartonSwimmer16', weight: 1 }, // 赛博少女
 ];
 
 /**
  * ai(最低等级, 最高等级, 行为难度列表, 可选的角色权重列表)。
  * 等级决定角色属性；下列难度只决定AI的操作与判断，不额外增加属性：
+ * - learner：启蒙。换手慢、误差更大，让初期练习获得稳定正反馈。
  * - rookie：新手。划水时机误差较大，动作间隔和决策间隔较长。
  * - normal：普通。节奏和判断比新手稳定，作为常规对手。
  * - skilled：高手。划水更准确，动作衔接更快，决策更及时。
@@ -35,58 +37,106 @@ function ai(minLevel: number, maxLevel: number, intelligence: readonly AiIntelli
     return { minLevel, maxLevel, intelligence, characterWeights, opponentCount: intelligence.length };
 }
 
+/** 初期避免复杂被动技能叠加；新手友好的阵容仍使用真实角色能力。 */
+export const LEARNER_CHARACTERS: readonly AiCharacterWeight[] = [
+    { characterId: 'cartonSwimmer16', weight: 4 },
+    { characterId: 'cartonSwimmer8', weight: 2 },
+    { characterId: 'cartonSwimmer9', weight: 1 },
+];
+export const CLUB_CHARACTERS: readonly AiCharacterWeight[] = [
+    { characterId: 'cartonSwimmer6', weight: 2 },
+    { characterId: 'cartonSwimmer8', weight: 2 },
+    { characterId: 'cartonSwimmer9', weight: 2 },
+    { characterId: 'cartonSwimmer11', weight: 1 },
+    { characterId: 'cartonSwimmer16', weight: 2 },
+];
+export const TECHNICAL_CHARACTERS: readonly AiCharacterWeight[] = [
+    { characterId: 'cartonSwimmer6', weight: 1 },
+    { characterId: 'cartonSwimmer10', weight: 3 },
+    { characterId: 'cartonSwimmer12', weight: 2 },
+    { characterId: 'cartonSwimmer14', weight: 2 },
+    { characterId: 'cartonSwimmer16', weight: 1 },
+];
+
 export interface CareerAiTier {
     league: AiEventConfig;
-    /** 顺序为预赛、决赛，或预赛、半决赛、决赛；每轮独立配置。 */
+    leagueAlternate: AiEventConfig;
     cup: readonly AiEventConfig[];
 }
 
-/** 索引与联赛等级一一对应。调整本表即可改变生涯AI，不影响快速比赛或好友房间。 */
+/** 常规赛均为八人，保留热闹的满场体验；难度由等级、操作档及资格控制，不按人数递增。 */
 export const CAREER_AI_EVENTS: readonly CareerAiTier[] = [
-    { // 1. 泳馆新秀
-        league: ai(1, 3, ['rookie', 'rookie', 'rookie', 'rookie', 'rookie', 'rookie', 'rookie']),
-        //league: ai(1, 3, ['extreme']),
+    { // 泳馆新秀：从满场狂野对抗开始，用弱AI与宽松资格保留新人正反馈。
+        league: ai(1, 1, ['learner', 'learner', 'learner', 'learner', 'learner', 'learner', 'learner'], LEARNER_CHARACTERS),
+        leagueAlternate: ai(1, 1, ['learner', 'learner', 'learner', 'learner', 'learner', 'learner', 'learner'], LEARNER_CHARACTERS),
         cup: [
-            ai(1, 3, ['rookie', 'rookie', 'rookie', 'rookie', 'rookie', 'rookie', 'rookie']), // 预赛
-            ai(1, 3, ['rookie', 'rookie', 'rookie', 'normal', 'rookie', 'rookie', 'rookie']), // 决赛
+            ai(1, 1, ['learner', 'learner', 'learner', 'learner', 'learner', 'learner', 'learner'], LEARNER_CHARACTERS),
+            ai(1, 2, ['learner', 'learner', 'learner', 'learner', 'learner', 'learner', 'rookie'], LEARNER_CHARACTERS),
         ],
     },
-    { // 2. 俱乐部选手
-        league: ai(4, 8, ['rookie', 'normal', 'normal', 'normal', 'rookie', 'normal', 'normal']),
+    { // 俱乐部选手：少数较强对手带来目标，更多弱对手提供超越反馈。
+        league: ai(2, 4, ['learner', 'learner', 'learner', 'learner', 'learner', 'rookie', 'rookie'], CLUB_CHARACTERS),
+        leagueAlternate: ai(2, 4, ['learner', 'learner', 'learner', 'learner', 'rookie', 'rookie', 'normal'], CLUB_CHARACTERS),
         cup: [
-            ai(4, 8, ['rookie', 'normal', 'normal', 'normal', 'rookie', 'normal', 'normal']), // 预赛
-            ai(4, 8, ['normal', 'normal', 'normal', 'skilled', 'normal', 'normal', 'normal']), // 决赛
+            ai(2, 4, ['learner', 'learner', 'learner', 'learner', 'rookie', 'rookie', 'rookie'], CLUB_CHARACTERS),
+            ai(3, 5, ['learner', 'learner', 'learner', 'learner', 'rookie', 'rookie', 'normal'], CLUB_CHARACTERS),
         ],
     },
-    { // 3. 城市精英
-        league: ai(9, 14, ['rookie', 'normal', 'normal', 'normal', 'rookie', 'normal', 'normal']),
+    { // 城市精英：稳定操作开始重要，决赛仍保留较弱陪跑。
+        league: ai(5, 9, ['rookie', 'rookie', 'rookie', 'rookie', 'normal', 'normal', 'normal']),
+        leagueAlternate: ai(5, 9, ['rookie', 'rookie', 'rookie', 'rookie', 'normal', 'normal', 'skilled'], TECHNICAL_CHARACTERS),
         cup: [
-            ai(9, 14, ['rookie', 'normal', 'normal', 'normal', 'rookie', 'normal', 'normal']), // 预赛
-            ai(9, 14, ['normal', 'normal', 'normal', 'skilled', 'normal', 'normal', 'normal']), // 决赛
+            ai(5, 9, ['rookie', 'rookie', 'rookie', 'normal', 'normal', 'normal', 'normal']),
+            ai(7, 11, ['rookie', 'rookie', 'rookie', 'rookie', 'normal', 'normal', 'skilled'], TECHNICAL_CHARACTERS),
         ],
     },
-    { // 4. 区域强者
-        league: ai(15, 20, ['normal', 'skilled', 'skilled', 'skilled', 'normal', 'skilled', 'skilled']),
+    { // 区域强者：长距离和强对手制造挑战，阵容仍保留普通档。
+        league: ai(10, 15, ['normal', 'normal', 'normal', 'skilled', 'skilled', 'skilled', 'skilled']),
+        leagueAlternate: ai(10, 15, ['normal', 'normal', 'normal', 'normal', 'skilled', 'skilled', 'skilled']),
         cup: [
-            ai(15, 20, ['normal', 'skilled', 'skilled', 'skilled', 'normal', 'skilled', 'skilled']), // 预赛
-            ai(15, 20, ['skilled', 'skilled', 'skilled', 'expert', 'skilled', 'skilled', 'skilled']), // 半决赛
-            ai(15, 20, ['skilled', 'skilled', 'skilled', 'expert', 'skilled', 'skilled', 'skilled']), // 决赛
+            ai(10, 15, ['normal', 'normal', 'normal', 'skilled', 'skilled', 'skilled', 'skilled']),
+            ai(12, 16, ['normal', 'normal', 'skilled', 'skilled', 'skilled', 'skilled', 'expert']),
+            ai(14, 17, ['normal', 'normal', 'normal', 'normal', 'skilled', 'skilled', 'expert'], TECHNICAL_CHARACTERS),
         ],
     },
-    { // 5. 全国大师
-        league: ai(21, 26, ['normal', 'skilled', 'skilled', 'skilled', 'normal', 'skilled', 'skilled']),
+    { // 全国大师：高手为主，专家数量逐轮增加。
+        league: ai(17, 23, ['skilled', 'skilled', 'skilled', 'skilled', 'skilled', 'expert', 'expert']),
+        leagueAlternate: ai(17, 23, ['normal', 'normal', 'skilled', 'skilled', 'skilled', 'expert', 'expert']),
         cup: [
-            ai(21, 26, ['normal', 'skilled', 'skilled', 'skilled', 'normal', 'skilled', 'skilled']), // 预赛
-            ai(21, 26, ['skilled', 'skilled', 'skilled', 'expert', 'skilled', 'skilled', 'skilled']), // 半决赛
-            ai(21, 26, ['skilled', 'skilled', 'skilled', 'expert', 'skilled', 'skilled', 'skilled']), // 决赛
+            ai(17, 23, ['skilled', 'skilled', 'skilled', 'skilled', 'skilled', 'expert', 'expert']),
+            ai(20, 24, ['normal', 'normal', 'skilled', 'skilled', 'expert', 'expert', 'expert']),
+            ai(22, 25, ['normal', 'normal', 'skilled', 'expert', 'expert', 'expert', 'expert']),
         ],
     },
-    { // 6. 冠军级
-        league: ai(27, 30, ['skilled', 'expert', 'expert', 'expert', 'skilled', 'expert', 'expert']),
+    { // 冠军级：满场高等级专家，正式生涯不用极限测试档。
+        league: ai(26, 30, ['skilled', 'skilled', 'expert', 'expert', 'expert', 'expert', 'expert']),
+        leagueAlternate: ai(26, 30, ['skilled', 'expert', 'expert', 'expert', 'expert', 'expert', 'expert']),
         cup: [
-            ai(27, 30, ['skilled', 'expert', 'expert', 'expert', 'skilled', 'expert', 'expert']), // 预赛
-            ai(27, 30, ['expert', 'expert', 'expert', 'expert', 'expert', 'expert', 'expert']), // 半决赛
-            ai(27, 30, ['expert', 'expert', 'expert', 'expert', 'expert', 'expert', 'expert']), // 决赛
+            ai(26, 30, ['skilled', 'skilled', 'expert', 'expert', 'expert', 'expert', 'expert']),
+            ai(28, 30, ['expert', 'expert', 'expert', 'expert', 'expert', 'expert', 'expert']),
+            ai(30, 30, ['expert', 'expert', 'expert', 'expert', 'expert', 'expert', 'expert']),
         ],
     },
 ];
+
+export const CAREER_SCHEDULE = [
+    { leagueNames: ['热身赛', '欢乐对抗'], leagueRules: ['wild', 'wild'], leagueDistances: [200, 200],
+        cupRules: ['wild', 'wild'], qualifyPlaces: [8, 5], winPoints: 30, finishPoints: 20, finishGrace: 90, factor: 1 },
+    { leagueNames: ['俱乐部对抗', '节奏挑战'], leagueRules: ['wild', 'standard'], leagueDistances: [200, 200],
+        cupRules: ['wild', 'wild'], qualifyPlaces: [6, 4], winPoints: 28, finishPoints: 12, finishGrace: 45, factor: 1.5 },
+    { leagueNames: ['城市对抗', '技术挑战'], leagueRules: ['wild', 'standard'], leagueDistances: [200, 200],
+        cupRules: ['wild', 'wild'], qualifyPlaces: [4, 1], winPoints: 26, finishPoints: 8, finishGrace: 20, factor: 2.3 },
+    { leagueNames: ['区域对抗', '耐力挑战'], leagueRules: ['wild', 'wild'], leagueDistances: [200, 400],
+        cupRules: ['wild', 'wild', 'wild'], qualifyPlaces: [5, 3, 1], winPoints: 24, finishPoints: 6, finishGrace: 15, factor: 3.5 },
+    { leagueNames: ['大师对抗', '长距离挑战'], leagueRules: ['wild', 'wild'], leagueDistances: [200, 400],
+        cupRules: ['wild', 'wild', 'wild'], qualifyPlaces: [4, 3, 1], winPoints: 24, finishPoints: 6, finishGrace: 12, factor: 5.2 },
+    { leagueNames: ['冠军对抗', '冠军耐力赛'], leagueRules: ['wild', 'wild'], leagueDistances: [200, 400],
+        cupRules: ['wild', 'wild', 'wild'], qualifyPlaces: [4, 3, 1], winPoints: 24, finishPoints: 6, finishGrace: 10, factor: 7.5 },
+] as const;
+
+/** 未来审核合并后接入可选支线，不替代晋级杯，也不阻塞主线。关闭槽位不会轮转或开赛。 */
+export const CAREER_OPTIONAL_EVENT_SLOTS = [
+    { id: 'club-items-intro', tier: 1, enabled: false, ruleSetId: 'items-intro', opponentCount: 7 },
+    { id: 'region-items-party', tier: 3, enabled: false, ruleSetId: 'items-party', opponentCount: 7 },
+    { id: 'champion-items-open', tier: 5, enabled: false, ruleSetId: 'items-open', opponentCount: 7 },
+] as const;

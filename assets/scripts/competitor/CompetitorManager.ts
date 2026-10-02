@@ -10,7 +10,7 @@ import { normalizeCharacterLevel } from '../progression/ProgressionBalance';
 import { shuffleInPlace } from '../core/SharedRNG';
 import { PlayerData } from '../backend/PlayerData';
 import { findPlayerCharacter, PlayerCharacterId, PLAYER_SKIN_TONES } from '../app/PlayerCharacterConfig';
-import { AICompetitorProfile, buildRandomizedAiRoster, getFixedSoloAiCount } from './CompetitorConfig';
+import { AICompetitorProfile, AiRosterEntry, buildRandomizedAiRoster, getFixedSoloAiCount } from './CompetitorConfig';
 import { SwimmerFactory } from './SwimmerFactory';
 
 export type CompetitorBuildOptions = {
@@ -34,6 +34,7 @@ export type AiBuildOptions = {
     difficultyOverride?: number;
     characterId?: PlayerCharacterId;
     level?: number;
+    fixedRoster?: readonly AiRosterEntry[];
 };
 
 export class CompetitorManager {
@@ -126,7 +127,8 @@ export class CompetitorManager {
         }
         // 单人生涯按难度列表对应的实际AI人数生成，不为玩家生成并丢弃一个难度名额。
         // 联机及旧配置仍按完整泳道生成，保持各端槽位映射一致。
-        const roster = buildRandomizedAiRoster(fixedSolo ? aiLanes.length : this._options.laneLayout.laneCount);
+        if (options?.fixedRoster && (!fixedSolo || options.fixedRoster.length !== aiLanes.length)) throw new Error('调试Boss阵容人数不一致');
+        const roster = options?.fixedRoster ?? buildRandomizedAiRoster(fixedSolo ? aiLanes.length : this._options.laneLayout.laneCount);
         const playerColorVariantId = defaultSwimmerColorVariant().id;
         const aiColorVariantIds = shuffledAiColorVariantIds(playerColorVariantId);
         const aiSkinColors = shuffledAiSkinColors();

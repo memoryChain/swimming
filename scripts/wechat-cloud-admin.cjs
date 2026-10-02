@@ -10,7 +10,7 @@ if (!/^[a-f0-9]{64}$/.test(input.data?.playerId || '')) throw Error('玩家 ID �
 if (input.action !== 'inspect' && (!Number.isSafeInteger(input.expectedRevision) || !input.data.reason)) {
     throw Error('修改必须携带从云端读取的版本号和原因');
 }
-const request = { ...input, protocol: 1, rulesVersion: 2,
+const request = { ...input, protocol: 1, rulesVersion: 3,
     writerId: 'admin-console', requestId: input.requestId || crypto.randomUUID() };
 const output = file + '.request.json';
 // 为同一操作保存固定 ID；命令再次执行不允许无意换一个新 ID 重复补偿。

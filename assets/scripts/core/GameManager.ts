@@ -44,6 +44,8 @@ import { ModelDebugFlowController } from '../app/ModelDebugFlowController';
 import { RuntimeSceneBuilder } from '../app/RuntimeSceneBuilder';
 import { StandardSkyboxApplier } from '../app/StandardSkyboxApplier';
 import { CompetitorManager } from '../competitor/CompetitorManager';
+import { findBossPreset } from '../competitor/BossAiConfig';
+import { BossAiDirector } from '../competitor/BossAiDirector';
 import { AIRaceObserver } from '../competitor/AIRaceObserver';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
@@ -171,6 +173,7 @@ export class GameManager extends Component {
     private readonly _raceContext = new RaceContext(this._playerCondition);
     private _aiController: AISwimmerController = null;
     private _aiControllers: AISwimmerController[] = [];
+    private _bossAiDirector: BossAiDirector | null = null;
     private _aiSwimmers: Swimmer[] = [];
     private readonly _laneLockdownRacers: Swimmer[] = [];
     // Reused each frame for the swimmer-vs-swimmer collision pass (no per-frame allocation).
@@ -478,6 +481,7 @@ export class GameManager extends Component {
         // Bullet-time: everything GameManager drives (camera, model debug, etc.)
         // runs on the scaled delta. Input classification stays on wall-clock.
         dt = scaledDelta(dt);
+        if (this._aiDebugMode && !this._netSession && !this._roomMode) this._bossAiDirector?.update(dt);
         this._awardsPresentation.update(dt);
         this._inputRouter?.tick();
         // Capture tick()-generated HeldOn/Stroke gestures before draining the network
@@ -789,6 +793,7 @@ export class GameManager extends Component {
             return;
         }
         if (this._aiDebugMode) this.selectAiCameraIndex(-1);
+        this._bossAiDirector?.reset();
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.resetStrokeInput();
         this.applyPlayerProgression();
@@ -878,6 +883,12 @@ export class GameManager extends Component {
             setSoloRaceTicket(null);
             setSoloRaceDistance(null);
             setSoloAiEvent(null);
+            const boss = this._aiDebugMode && !this._roomMode && !this._netSession ? findBossPreset(getAiDebugSetup().bossId) : null;
+            if (boss) {
+                setSoloRaceDistance(boss.distance);
+                setSoloAiEvent({ minLevel: 1, maxLevel: 30, opponentCount: boss.roster.length,
+                    intelligence: boss.roster.map(s => s.skill) });
+            }
         } else if (this._tutorialMode) {
             setSoloRaceTicket(null); setSoloRaceDistance(null); setSoloAiEvent(TUTORIAL_AI);
             reseedSharedRandom(20260928);
@@ -920,6 +931,10 @@ export class GameManager extends Component {
                     }
                     this._raceManager = this.node.getComponent(RaceManager) || this.node.addComponent(RaceManager);
                     this._raceManager.tutorialMode = this._tutorialMode;
+                    // 生涯完赛窗口来自票据；调试、房间和快速赛沿用原窗口。
+                    this._raceManager.finishGraceSeconds = !this._roomMode && !this._netSession
+                        && !this._aiDebugMode && !this._tutorialMode
+                        ? getSoloRaceTicket()?.terms?.finishGraceSeconds ?? 10 : 10;
                     this._raceManager.playerSwimmer = this._playerSwimmer;
                     this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
                     this._raceManager.aiSwimmers = this._aiSwimmers;
@@ -1473,7 +1488,7 @@ export class GameManager extends Component {
     }
 
     private buildDeferredAiSwimmers() {
-        if (this._aiDebugMode && !this._netSession) reseedSharedRandom(getAiDebugSetup().seed);
+        if (this._aiDebugMode && !this._netSession && !this._roomMode) reseedSharedRandom(getAiDebugSetup().seed);
         if (this._modelDebugFlow?.active) {
             this._aiController = null;
             this.debug('deferred AI swimmers skipped for model debug');
@@ -1490,7 +1505,7 @@ export class GameManager extends Component {
 
         const competitors = this.createCompetitorManager().buildAi(
             this._swimmersRoot,
-            this._aiDebugMode && !this._netSession
+            this._aiDebugMode && !this._netSession && !this._roomMode
                 ? resolveAiDebugBuildOptions(getAiDebugSetup(), this._primaryAiLaneIndex, this._aiDebugDifficulty)
                 : undefined,
         );
@@ -1520,6 +1535,9 @@ export class GameManager extends Component {
         for (const controller of this._aiControllers) {
             controller.raceObserver = raceObserver;
         }
+        const boss = this._aiDebugMode && !this._netSession && !this._roomMode ? findBossPreset(getAiDebugSetup().bossId) : null;
+        this._bossAiDirector = boss ? new BossAiDirector(boss, this._playerSwimmer, this._aiControllers) : null;
+        for (let i = 0; i < this._aiControllers.length; i++) this._aiControllers[i].bossOrder = this._bossAiDirector?.orders[i] ?? null;
         this._gameFlow?.refreshPreRaceShowcaseRoster();
         // 阵容在展示开始前一次性完整建立，远端真人映射完成后再等待最终模型。
         this.refreshPreRaceIntroRoster();
@@ -2234,7 +2252,12 @@ export class GameManager extends Component {
             hudRoster.push({ swimmer, avatarId });
         }
         this._uiController?.raceHudStatus?.setRoster(hudRoster);
-        this._preRaceIntroPanel.setRaceInfo(this._tutorialMode ? { event: '新手教学', format: '200 米教学', details: '单人标准模式 · 无时间限制', rule: '学会操作即可完成，不计生涯成绩' } : {
+        const boss = this._bossAiDirector?.preset;
+        this._preRaceIntroPanel.setRaceInfo(boss ? {
+            event: boss.name, format: `Boss 体验 · ${boss.distance}米`,
+            details: `${entries.length}人 · ${getRaceModeTitle()} · AI调试`,
+            rule: `${boss.qualifyPlace === 1 ? '冠军' : `前${boss.qualifyPlace}`}为体验目标；不计生涯成绩`,
+        } : this._tutorialMode ? { event: '新手教学', format: '200 米教学', details: '单人标准模式 · 无时间限制', rule: '学会操作即可完成，不计生涯成绩' } : {
             event: `${getRaceDistance()}米自由泳`,
             format: getRaceModeTitle(),
             details: `${entries.length}人竞速  ·  ${this._netSession ? '联机对战' : `${getRaceModeTitle()} · 角色AI`}`,
@@ -2561,7 +2584,7 @@ export class GameManager extends Component {
         }
         // 单机和联机都只在赛前倒计时重置AI，远端真人始终由owner管理。
         if (state === GameState.COUNTDOWN) {
-            if (this._aiDebugMode && !this._netSession) reseedSharedRandom(getAiDebugSetup().seed);
+            if (this._aiDebugMode && !this._netSession && !this._roomMode) reseedSharedRandom(getAiDebugSetup().seed);
             for (let i = 0; i < this._aiConditions.length; i++) {
                 if (!this._aiControllers[i]?.remoteDriven) {
                     this._aiConditions[i].reset();

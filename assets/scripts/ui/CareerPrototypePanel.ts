@@ -121,7 +121,7 @@ export class CareerPrototypePanel {
             this.tier = previous.source === 'quick' ? PlayerData.profile.career.league : previous.tier;
             const cup = PlayerData.profile.career.cups[previous.characterId];
             const receipt = PlayerData.profile.career.receipts.find(r => r.id === previous.id);
-            if (previous.source === 'cup' && cup?.state === 'won' && cup.tier === previous.tier
+            if (previous.source === 'cup' && (cup?.state === 'won' || cup?.state === 'passed') && cup.tier === previous.tier
                 && PlayerData.profile.career.league === previous.tier + 1 && receipt?.message.startsWith('晋级成功')) {
                 this.reviewCupTier = previous.tier;
                 this.reviewCharacterId = previous.characterId;

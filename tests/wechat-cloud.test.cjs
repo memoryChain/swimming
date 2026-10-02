@@ -149,7 +149,7 @@ test('重试同一升级只扣一次；两台设备的旧版本升级不覆盖�
     const request = h.request('level', { characterId, requestedLevels: 1 }, initial.revision);
     h.db.retry = true;
     const result = await h.player(request), repeat = await h.player(copy(request));
-    assert.equal(result.profile.coins, 9200); assert.equal(repeat.profile.coins, 9200);
+    assert.equal(result.profile.coins, 9500); assert.equal(repeat.profile.coins, 9500);
     assert.equal(result.revision, repeat.revision); assert.equal(result.profile.characters[characterId].level, 2);
     const changed = copy(request); changed.data.requestedLevels = 2;
     assert.equal((await h.player(changed)).code, 'REUSED_ID');
@@ -222,6 +222,67 @@ test('固定对手人数的联赛继续按票据人数校验', async () => {
     assert.equal((await h.player(h.request('career', { ...data, racerCount: wrong, placement: 1 }, started.revision))).code, 'INPUT');
     const result = await h.player(h.request('career', data, started.revision));
     assert.equal(result.ok, true, result.message); assert.equal(result.profile.career.pending, null);
+});
+
+test('云端八人新秀预赛垫底可晋级、决赛第五达标，首通幂等且伪造条款无效', async () => {
+    const h = harness(), initial = await h.load();
+    h.db.data.get(`players/${initial.playerId}`).profile.career.points = 100;
+    const pre = await h.player(h.request('career', { ...beginData, source: 'cup' }));
+    h.advance(90000);
+    assert.equal(pre.result.ticket.ai.opponentCount, 7);
+    assert.equal(pre.result.ticket.rule, 'wild');
+    const preliminary = await h.player(h.request('career', { ...settlement(pre.result.ticket), placement: 8 }, pre.revision));
+    assert.equal(preliminary.ok, true); assert.equal(preliminary.result.receipt.coinsGained, 320);
+    const final = await h.player(h.request('career', { ...beginData, source: 'cup' }, preliminary.revision));
+    assert.equal(final.result.ticket.rule, 'wild');
+    h.advance(90000);
+    const request = h.request('career', { ...settlement(final.result.ticket), placement: 5,
+        terms: { firstClearCoins: 9999999 } }, final.revision);
+    const result = await h.player(request);
+    assert.equal(result.ok, true, result.message);
+    assert.equal(result.profile.career.league, 1);
+    assert.equal(result.profile.career.cups[characterId].state, 'passed');
+    assert.equal(result.result.receipt.first, 600); assert.equal(result.result.receipt.podium, 0);
+    assert.equal(result.profile.coins, 1240);
+    assert.deepEqual(await h.player(copy(request)), result);
+});
+
+test('旧经济版本只接受有效旧票据补结算，不能新开赛或按新价格执行旧升级', async () => {
+    const h = harness(), initial = await h.compensate();
+    const refused = await h.player(h.request('level', { characterId, requestedLevels: 1 }, initial.revision, { rulesVersion: 2 }));
+    assert.equal(refused.code, 'VERSION'); assert.equal((await h.load()).profile.coins, 10000);
+    const start = await h.player(h.request('career', { ...beginData, source: 'league' }, initial.revision));
+    assert.equal((await h.player(h.request('career', settlement(start.result.ticket), start.revision, { rulesVersion: 2 }))).code, 'VERSION');
+    const doc = h.db.data.get(`players/${start.playerId}`);
+    delete doc.profile.career.pending.terms;
+    h.advance(90000);
+    const request = h.request('career', settlement(start.result.ticket), start.revision, { rulesVersion: 2 });
+    const settled = await h.player(request);
+    assert.equal(settled.ok, true, settled.message); assert.equal(settled.result.receipt.points, 20);
+    assert.deepEqual(await h.player(copy(request)), settled);
+    assert.equal((await h.player(h.request('career', beginData, settled.revision, { rulesVersion: 2 }))).code, 'VERSION');
+});
+
+test('云端按赛事段位发奖，高等级回打不减奖，高等级培养使用新成本', async () => {
+    const h = harness(), initial = await h.compensate(50000);
+    const profile = h.db.data.get(`players/${initial.playerId}`).profile;
+    profile.characters[characterId].level = 29; profile.career.league = 5;
+    const high = await h.player(h.request('career', { ...beginData, source: 'league', tier: 5 }, initial.revision));
+    assert.equal(high.ok, true); assert.equal(high.result.ticket.terms.factor, 7.5);
+    h.advance(90000);
+    const highResult = await h.player(h.request('career', settlement(high.result.ticket), high.revision));
+    assert.equal(highResult.result.receipt.coinsGained, 3600);
+    const low = await h.player(h.request('career', { ...beginData, source: 'league', tier: 0 }, highResult.revision));
+    assert.equal(low.result.ticket.terms.factor, 1);
+    h.advance(90000);
+    const lowResult = await h.player(h.request('career', settlement(low.result.ticket), low.revision));
+    assert.equal(lowResult.result.receipt.coinsGained, 480);
+    const request = h.request('level', { characterId, requestedLevels: 1 }, lowResult.revision);
+    const upgraded = await h.player(request);
+    assert.equal(upgraded.ok, true); assert.equal(upgraded.result.coinsSpent, 42300);
+    assert.equal(upgraded.profile.characters[characterId].level, 30);
+    assert.equal(upgraded.profile.coins, 11780);
+    assert.deepEqual(await h.player(copy(request)), upgraded);
 });
 
 test('管理员校验、审计、版本冲突、重试幂等、撤销管理修改且版本递增', async () => {
@@ -572,7 +633,7 @@ test('响应丢失自动重试只升级一次，原本地测试档保持不变',
     const original = JSON.stringify({ coins: 99999 }), storage = new Map([['swimming.player-profile', original]]);
     const c = client(h, storage); await c.backend.loadProfile(); c.drop(1);
     const result = await c.backend.spendCoinsForLevel(characterId, 1);
-    assert.equal(result.profile.coins, 9200); assert.equal(result.levelsGained, 1);
+    assert.equal(result.profile.coins, 9500); assert.equal(result.levelsGained, 1);
     assert.equal(storage.get('swimming.player-profile'), original);
     assert.equal([...storage.keys()].some(k => k.endsWith('.pending')), false);
 });
@@ -582,12 +643,12 @@ test('两次响应丢失后重启恢复原请求，云端故障不退回本地�
     await assert.rejects(c.backend.spendCoinsForLevel(characterId, 1));
     assert.equal([...c.storage.keys()].some(k => k.endsWith('.pending')), true);
     const restarted = client(h, c.storage), profile = await restarted.backend.loadProfile();
-    assert.equal(profile.coins, 9200); assert.equal(profile.characters[characterId].level, 2);
+    assert.equal(profile.coins, 9500); assert.equal(profile.characters[characterId].level, 2);
     // 玩家点击重试同一升级，应拿到恢复的结果，不再次扣钱。
     const retried = await restarted.backend.spendCoinsForLevel(characterId, 1);
-    assert.equal(retried.profile.coins, 9200);
+    assert.equal(retried.profile.coins, 9500);
     restarted.offline(true); await assert.rejects(restarted.backend.loadProfile());
-    assert.equal((await h.load()).profile.coins, 9200);
+    assert.equal((await h.load()).profile.coins, 9500);
 });
 
 test('先写持久化请求才发送；缺云环境不能悄悄创建本地经济档', async () => {
@@ -613,7 +674,7 @@ test('管理员改档后客户端旧请求冲突，重新读取恢复新值', as
     const h = harness(), c = client(h); await c.backend.loadProfile(); await h.compensate(5000);
     await assert.rejects(c.backend.spendCoinsForLevel(characterId, 1), error => error.code === 'CONFLICT');
     assert.equal((await c.backend.loadProfile()).coins, 5000);
-    assert.equal((await c.backend.spendCoinsForLevel(characterId, 1)).profile.coins, 4200);
+    assert.equal((await c.backend.spendCoinsForLevel(characterId, 1)).profile.coins, 4500);
 });
 
 
@@ -633,9 +694,9 @@ test('PlayerData 在云端响应丢失后恢复同一升级，不重新扣款，
     await data.load(); c.drop(2);
     await assert.rejects(data.spendCoinsForLevel(characterId, 1)); assert.equal(data.loaded, false);
     const retry = await data.spendCoinsForLevel(characterId, 1);
-    assert.equal(retry.levelsGained, 1); assert.equal(data.coins, 9200); assert.equal(data.loaded, true);
+    assert.equal(retry.levelsGained, 1); assert.equal(data.coins, 9500); assert.equal(data.loaded, true);
     c.offline(true); await data.load(true); assert.equal(data.loaded, false);
-    c.offline(false); await data.load(true); assert.equal(data.loaded, true); assert.equal(data.coins, 9200);
+    c.offline(false); await data.load(true); assert.equal(data.loaded, true); assert.equal(data.coins, 9500);
 });
 
 test('云端未知 schema 明确拒绝且不重置原档', async () => {

@@ -5,9 +5,10 @@ import { PLAYER_CHARACTER_DEFINITIONS } from '../app/PlayerCharacterConfig';
 import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
+import { BOSS_AI_PRESETS, findBossPreset } from '../competitor/BossAiConfig';
 
 const PANEL_WIDTH = 880;
-const PANEL_HEIGHT = 620;
+const PANEL_HEIGHT = 700;
 
 /** 保留 Popup 相机坐标系；全屏遮挡独立于面板缩放，窗口变化时才更新布局。 */
 export function mountAiDebugSetupPicker(parent: Node, start: (difficulty: number) => void, grantCoins: () => void): Node {
@@ -42,14 +43,19 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
     const setup = { ...getAiDebugSetup() };
     const modes: RaceDifficulty[] = ['beginner', 'competitive', 'championship'];
     let characterIndex = Math.max(0, PLAYER_CHARACTER_DEFINITIONS.findIndex(c => c.id === setup.characterId));
+    let bossIndex = Math.max(0, BOSS_AI_PRESETS.findIndex(p => p.id === setup.bossId));
+    let bossMode = !!findBossPreset(setup.bossId);
     makeRect('Back', root, PANEL_WIDTH, PANEL_HEIGHT, uiColor(13, 35, 61, 250));
-    makeLabel('Title', root, '角色 AI 测试', 28, uiColor(240, 250, 255)).setPosition(0, 266, 0);
-    makeLabel('Subtitle', root, '先设置阵容，再点击右侧智力档开始比赛', 18, uiColor(190, 210, 220)).setPosition(0, 225, 0);
+    makeLabel('Title', root, '角色 AI 测试', 28, uiColor(240, 250, 255)).setPosition(0, 310, 0);
+    const subtitle = makeLabel('Subtitle', root, '先设置阵容，再点击右侧智力档开始比赛', 18, uiColor(190, 210, 220)).getComponent(Label);
+    subtitle.node.setPosition(0, 276, 0);
     const button = (name: string, text: string, x: number, y: number, width: number, action: () => void) => {
         const node = makeButton(name, root, width, 48, uiColor(40, 96, 168, 240), text);
         node.setPosition(x, y, 0);
         node.on(Node.EventType.TOUCH_END, action);
-        return node.getChildByName('Label')?.getComponent(Label);
+        const label = node.getChildByName('Label')?.getComponent(Label);
+        if (label) { label.overflow = Label.Overflow.SHRINK; label.enableWrapText = false; }
+        return label;
     };
     const write = (label: Label | null, text: string) => { if (label && label.string !== text) label.string = text; };
     const mixed = () => setup.opponentCount === 7 && setup.mixedCharacters;
@@ -88,14 +94,63 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
         setup.seed = setup.seed === 20260913 ? 42 : setup.seed === 42 ? 12345 : 20260913;
         write(seed, `种子 ${setup.seed}`);
     });
-    makeLabel('Hint', root, '等级与智力应用于全部 AI，玩家使用自己的角色属性', 18, uiColor(190, 210, 220)).setPosition(0, -210, 0);
+    const hint = makeLabel('Hint', root, '等级与智力应用于全部 AI，玩家使用自己的角色属性', 18, uiColor(190, 210, 220)).getComponent(Label);
+    hint.node.setPosition(0, -210, 0);
     let launched = false;
-    AI_DEBUG_DIFFICULTY_TIERS.forEach((tier, i) => button(`Tier${i}`, tier.label, 210, 174 - i * 72, 290, () => {
-        if (launched) return;
+    AI_DEBUG_DIFFICULTY_TIERS.forEach((tier, i) => button(`Tier${i}`, tier.label, 210, 174 - i * 60, 290, () => {
+        if (launched || bossMode) return;
         launched = true;
+        setup.bossId = null;
         setAiDebugSetup(setup);
         start(tier.value);
     }));
+    const normalNames = ['Character', 'Level', 'LevelDown', 'LevelUp', 'OpponentCount', 'Roster', 'Mode',
+        ...AI_DEBUG_DIFFICULTY_TIERS.map((_, i) => `Tier${i}`)];
+    const normalNodes = normalNames.map(name => root.getChildByName(name));
+    const bossName = button('BossPreset', BOSS_AI_PRESETS[bossIndex].name, -195, 174, 360, () => changeBoss(1));
+    if (bossName) bossName.fontSize = 21;
+    button('BossPrevious', '上一关', -305, 112, 130, () => changeBoss(-1));
+    button('BossNext', '下一关', -85, 112, 130, () => changeBoss(1));
+    const bossInfo = makeLabel('BossInfo', root, '', 20, uiColor(240, 250, 255)).getComponent(Label);
+    bossInfo.node.setPosition(-195, 16, 0);
+    bossInfo.node.getComponent(UITransform).setContentSize(360, 128);
+    bossInfo.overflow = Label.Overflow.CLAMP; bossInfo.enableWrapText = true; bossInfo.lineHeight = 29;
+    const bossFacts = makeLabel('BossFacts', root, '', 19, uiColor(190, 210, 220)).getComponent(Label);
+    bossFacts.node.setPosition(-195, -88, 0);
+    bossFacts.node.getComponent(UITransform).setContentSize(370, 56);
+    bossFacts.overflow = Label.Overflow.CLAMP; bossFacts.enableWrapText = true;
+    button('BossStart', '开始 Boss 体验', 210, 174, 290, () => {
+        if (launched || !bossMode) return;
+        launched = true; setup.bossId = BOSS_AI_PRESETS[bossIndex].id;
+        setAiDebugSetup(setup); start(0.5);
+    });
+    const bossNote = makeLabel('BossNote', root, '每关有固定阵容与专属战术\n使用当前出场角色和养成\n可切换镜头观察队友配合\n不发奖励，不推进生涯', 19, uiColor(190, 210, 220)).getComponent(Label);
+    bossNote.node.setPosition(210, 18, 0);
+    bossNote.node.getComponent(UITransform).setContentSize(300, 170);
+    bossNote.overflow = Label.Overflow.CLAMP; bossNote.enableWrapText = true; bossNote.lineHeight = 32;
+    const bossNodes = ['BossPreset', 'BossPrevious', 'BossNext', 'BossInfo', 'BossFacts', 'BossStart', 'BossNote']
+        .map(name => root.getChildByName(name));
+    const active = (node: Node, value: boolean) => { if (node.active !== value) node.active = value; };
+    const updateBoss = () => {
+        const p = BOSS_AI_PRESETS[bossIndex];
+        write(bossName, `${bossIndex + 1}/${BOSS_AI_PRESETS.length} · ${p.name}`);
+        write(bossInfo, p.hint);
+        const min = Math.min(...p.roster.map(s => s.level)), max = Math.max(...p.roster.map(s => s.level));
+        write(bossFacts, `${p.roster.length + 1}人 · ${getRaceModeTitle(p.mode)} · ${p.distance}米\nAI ${min === max ? min : `${min}～${max}`}级 · ${p.qualifyPlace === 1 ? '冠军达标' : `前${p.qualifyPlace}达标`}`);
+    };
+    function changeBoss(delta: number) {
+        bossIndex = (bossIndex + delta + BOSS_AI_PRESETS.length) % BOSS_AI_PRESETS.length; updateBoss();
+    }
+    const category = button('DebugCategory', '测试类型', -195, 232, 360, () => { bossMode = !bossMode; updateCategory(); });
+    const updateCategory = () => {
+        for (const node of normalNodes) active(node, !bossMode);
+        for (const node of bossNodes) active(node, bossMode);
+        write(category, bossMode ? '测试类型：Boss 关卡' : '测试类型：普通 AI');
+        write(subtitle, bossMode ? '选择关卡，体验固定阵容与独立 AI 战术' : '先设置阵容，再点击右侧智力档开始比赛');
+        write(hint, bossMode ? '仅调试体验；生涯杯赛与联赛不加入这些关卡' : '等级与智力应用于全部 AI，玩家使用自己的角色属性');
+        updateBoss();
+    };
+    updateCategory();
     button('Cancel', '返回', -195, -266, 220, close);
     button('DebugCoins', '调试领取金币', 210, -266, 290, grantCoins);
     // 静态调试文案同样使用随包字体；只在挂载时应用，不在切换或比赛帧重复遍历。

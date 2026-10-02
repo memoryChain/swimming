@@ -44,7 +44,7 @@ function begin(p, source = 'league', id = a, tier = p.career.league, extra = {})
     assert.equal(r.ok, true, r.message); return r.ticket;
 }
 function finish(p, ticket, placement = 1, extra = {}) {
-    return executeCareer(p, { type: 'settle', ticketId: ticket.id, placement, racerCount: 8,
+    return executeCareer(p, { type: 'settle', ticketId: ticket.id, placement, racerCount: (ticket.ai.opponentCount ?? 7) + 1,
         finished: true, perfectCount: 80, goodCount: 10, missCount: 10, maxCombo: 80, time: 82, ...extra });
 }
 
@@ -60,12 +60,12 @@ test('旧存档保留金币和培养等级，已培养角色免重复签约', ()
 test('联赛进度账号共享，换未培养角色不降固定赛事难度', () => {
     const p = createDefaultProfile(); p.career.league = 3;
     const t = begin(p); finish(p, t, 2);
-    assert.equal(p.career.points, 14);
-    p.characters[b].level = 30;
+    assert.equal(p.career.points, 21);
+    p.characters[b].level = 30; p.career.leagueStarts[3] = 0;
     const t2 = begin(p, 'league', b);
-    assert.deepEqual(t.ai, t2.ai); assert.equal(p.career.points, 14);
-    finish(p, t2, 1); assert.equal(p.career.points, 34);
-    finish(p, begin(p, 'league', b, 0), 1); assert.equal(p.career.points, 34);
+    assert.deepEqual(t.ai, t2.ai); assert.equal(p.career.points, 21);
+    finish(p, t2, 1); assert.equal(p.career.points, 45);
+    finish(p, begin(p, 'league', b, 0), 1); assert.equal(p.career.points, 45);
 });
 
 test('杯赛角色独立，轮间升级立即生效，中断重新报名同轮不换难度或种子', () => {
@@ -80,8 +80,8 @@ test('杯赛角色独立，轮间升级立即生效，中断重新报名同轮�
     assert.equal(after.level, 20); assert.equal(before.seed, after.seed); assert.deepEqual(before.ai, after.ai);
     assert.equal(after.round, 1); assert.equal(p.career.cups[b].round, 0);
     const r = finish(p, after);
-    assert.equal(r.receipt.first, 0); assert.equal(r.receipt.podium, 0);
-    assert.equal(r.receipt.coinsGained, 60);
+    assert.equal(r.receipt.first, 600); assert.equal(r.receipt.podium, 300);
+    assert.equal(r.receipt.coinsGained, 1380);
     assert.equal(p.career.league, 1); assert.equal(p.career.points, 0);
     assert.ok(p.career.wins[a].indexOf(0) >= 0);
 });
@@ -91,7 +91,7 @@ test('不同角色重打杯赛不会重复领取账号首次奖励或重复晋�
     finish(p, begin(p, 'cup')); finish(p, begin(p, 'cup'));
     finish(p, begin(p, 'cup', b, 0));
     const r = finish(p, begin(p, 'cup', b, 0));
-    assert.equal(r.receipt.first, 0); assert.equal(r.receipt.podium, 0);
+    assert.equal(r.receipt.first, 0); assert.equal(r.receipt.podium, 300);
     assert.equal(p.career.league, 1); assert.equal(p.career.wins[b][0], 0);
 });
 
@@ -131,7 +131,7 @@ test('四种距离规则组合独立，好友来源拒绝奖励凭据', () => {
     setSoloRaceDistance(null); assert.equal(getRaceDistance(), 200);
 });
 
-test('奖励有上限、400米倍率准确、升级成本单调且低于旧总成本', () => {
+test('奖励有上限、400米倍率准确；前期便宜，高等级培养成本递增', () => {
     const input = { finished: true, placement: 1, racerCount: 8, perfectCount: 80, goodCount: 10, missCount: 10, maxCombo: 80 };
     assert.equal(calculateRaceCoins(input), 480);
     assert.equal(calculateRaceCoins({ ...input, distance: 400 }), 1056);
@@ -141,14 +141,39 @@ test('奖励有上限、400米倍率准确、升级成本单调且低于旧总�
         sum += coinCostForLevel(level);
         if (level > 1) assert.ok(coinCostForLevel(level) > coinCostForLevel(level - 1));
     }
-    assert.equal(coinCostForLevel(1), 800); assert.ok(sum < 537869); assert.equal(coinCostForLevel(30), 0);
+    assert.equal(coinCostForLevel(1), 500); assert.equal(coinCostForLevel(10), 3550);
+    assert.equal(coinCostForLevel(20), 16750); assert.equal(coinCostForLevel(29), 42300);
+    assert.equal(sum, 381650); assert.equal(coinCostForLevel(30), 0);
+});
+
+test('段位奖励与养成等级分离，高等级回打不减奖，高难度支撑高培养成本', () => {
+    const p = createDefaultProfile(); p.career.league = 5;
+    const rookie = begin(p, 'league', a, 0), rookieCoins = finish(p, rookie).receipt.coinsGained;
+    p.characters[a].level = 30;
+    const highLevelRookie = begin(p, 'league', a, 0);
+    assert.equal(highLevelRookie.terms.factor, rookie.terms.factor);
+    assert.equal(finish(p, highLevelRookie).receipt.coinsGained, rookieCoins);
+    const champion = begin(p, 'league', a, 5), championCoins = finish(p, champion).receipt.coinsGained;
+    assert.equal(championCoins, rookieCoins * 7.5);
+    const longRace = begin(p, 'league', a, 5); assert.equal(longRace.distance, 400);
+    assert.equal(finish(p, longRace).receipt.coinsGained, 7920);
+    assert.ok(coinCostForLevel(29) / rookieCoins > 80);
+    assert.ok(coinCostForLevel(29) / championCoins < 12);
+    for (let tier = 0, previous = 0; tier < 6; tier++) {
+        const factor = begin(p, 'league', a, tier).terms.factor;
+        assert.ok(factor > previous); previous = factor;
+    }
+    p.career.points = 100;
+    finish(p, begin(p, 'cup', a, 0));
+    const final = finish(p, begin(p, 'cup', a, 0));
+    assert.equal(final.receipt.podium, 300, '高等级角色仍按新秀正常冠军奖发放');
 });
 
 test('全部角色直接金币升级并持久化，写失败不能假成功', async () => {
     storage.clear(); const backend = new MockBackend();
     let p = await backend.loadProfile(); p.coins = 10000; await backend.saveProfile(p);
     const result = await backend.spendCoinsForLevel(a, 1);
-    assert.equal(result.levelsGained, 1); assert.equal(result.coinsSpent, 800);
+    assert.equal(result.levelsGained, 1); assert.equal(result.coinsSpent, 500);
     assert.equal((await backend.loadProfile()).characters[a].level, 2);
     writeFailure = true;
     try { assert.throws(() => backend.spendCoinsForLevel(b, 1)); }
@@ -190,29 +215,34 @@ test('角色选择与结算并发不覆盖金币，保存失败后下一次事�
     await data.load();
     const start = { type: 'begin', source: 'league', characterId: a, tier: 0, distance: 200, rule: 'standard', seed: 45 };
     const first = await data.executeCareer(start);
-    const result = { type: 'settle', ticketId: first.ticket.id, placement: 1, racerCount: 8, finished: true,
+    const result = { type: 'settle', ticketId: first.ticket.id, placement: 1, racerCount: first.ticket.ai.opponentCount + 1, finished: true,
         perfectCount: 80, goodCount: 10, missCount: 10, maxCombo: 80, time: 82 };
     await Promise.all([data.executeCareer(result), data.setCharacterSelection({ ...data.profile.characterSelection, characterId: b })]);
     assert.equal(data.coins, 480); assert.equal(data.profile.characterSelection.characterId, b);
     assert.equal(JSON.parse(storage.get('swimming.player-profile')).coins, 480);
     const next = await data.executeCareer(start);
     writeFailure = true;
-    try { await assert.rejects(data.executeCareer({ ...result, ticketId: next.ticket.id })); }
+    try { await assert.rejects(data.executeCareer({ ...result, ticketId: next.ticket.id, racerCount: next.ticket.ai.opponentCount + 1 })); }
     finally { writeFailure = false; }
     assert.equal(data.coins, 480);
     await data.executeCareer(start);
-    assert.equal(data.coins, 960); assert.equal(data.profile.career.points, 40);
+    assert.equal(data.coins, 960); assert.equal(data.profile.career.points, 60);
 });
 
 
-test('所有级别联赛和杯赛各轮固定狂野，快速比赛仍尊重玩家所选规则', () => {
+test('生涯赛程按级别与轮次配置，快速比赛仍尊重玩家所选规则', () => {
     assert.equal(createDefaultProfile().career.quick.rule, 'wild');
     for (let tier=0;tier<6;tier++) {
         const p=createDefaultProfile();p.career.league=tier;p.career.points=100;
         const league=begin(p,'league',a,tier,{rule:'standard'});
-        assert.equal(league.rule,'wild');finish(p,league);
+        assert.equal(league.ai.opponentCount, 7);
+        assert.equal(league.rule, 'wild');finish(p,league);
+        const alternate=begin(p,'league',a,tier);
+        assert.equal(alternate.ai.opponentCount, 7);
+        assert.equal(alternate.rule, tier === 1 || tier === 2 ? 'standard' : 'wild');finish(p,alternate);
         for(let round=0;round<cupRounds(tier);round++) {
             const cup=begin(p,'cup',a,tier,{rule:'standard'});
+            assert.equal(cup.ai.opponentCount,7);
             assert.equal(cup.rule,'wild');assert.equal(cup.round,round);finish(p,cup);
         }
     }
@@ -355,12 +385,107 @@ test('道具停留在配置阶段，旧签约和染色命令不产生交易', ()
     assert.ok(!PLAYER_COLOR_SCHEMES.some(c=>c.id==='cup-gold'));
 });
 
-test('杯赛仅冠军少量金币，不掉道具、不占用道具首奖，重复结算不重复发币', () => {
+test('杯赛每轮发完赛金币，冠军与账号首通奖独立，不掉道具，重复结算不重复发币', () => {
     const p=createDefaultProfile();p.career.points=100;
-    const preliminary=finish(p,begin(p,'cup'));assert.equal(preliminary.receipt.coinsGained,0);
+    const preliminary=finish(p,begin(p,'cup'));assert.equal(preliminary.receipt.coinsGained,480);
     const ticket=begin(p,'cup');ticket.cupRewards={championCoins:999,firstChampion:[{itemId:'sign_universal',count:5}],drops:[{itemId:'dye',count:50,weight:1}]};
-    const result=finish(p,ticket);assert.equal(result.receipt.coinsGained,60);
+    const result=finish(p,ticket);assert.equal(result.receipt.coinsGained,1380);
     assert.equal(result.receipt.items,undefined);assert.equal(p.inventory,undefined);
     assert.deepEqual(p.career.firstPrizes,[]);
     const coins=p.coins;finish(p,ticket);assert.equal(p.coins,coins);
+});
+
+test('新秀连续五次垫底完赛也开放晋级杯，未完赛无币无分，满分不溢出', () => {
+    const p = createDefaultProfile();
+    for (let i = 0; i < 5; i++) {
+        const ticket = begin(p), racers = ticket.ai.opponentCount + 1;
+        const result = finish(p, ticket, racers, { perfectCount: 0, maxCombo: 0 });
+        assert.equal(result.receipt.points, 20);
+        assert.ok(result.receipt.coinsGained >= 200);
+    }
+    assert.equal(p.career.points, 100); assert.equal(begin(p, 'cup').round, 0);
+    const fresh = createDefaultProfile(), ticket = begin(fresh);
+    const dnf = finish(fresh, ticket, 1, { finished: false, time: 0 });
+    assert.equal(dnf.receipt.coinsGained, 0); assert.equal(fresh.career.points, 0);
+    assert.match(dnf.receipt.message, /未完赛/);
+    p.career.points = 99; assert.equal(finish(p, begin(p)).receipt.points, 1);
+});
+
+test('积分按参赛比例归一，双人与满场的冠军和垫底奖励一致', () => {
+    const { leaguePointsFor } = load('progression/CareerRules');
+    for (let tier = 0; tier < 6; tier++) {
+        const p = createDefaultProfile(); p.career.league = tier;
+        const terms = begin(p).terms;
+        for (let count = 2; count <= 8; count++) {
+            assert.equal(leaguePointsFor(1, count, terms), terms.winPoints);
+            assert.equal(leaguePointsFor(count, count, terms), terms.finishPoints);
+            for (let rank = 2; rank <= count; rank++) assert.ok(
+                leaguePointsFor(rank, count, terms) <= leaguePointsFor(rank - 1, count, terms));
+        }
+    }
+});
+
+test('八人新秀前五与俱乐部前四达标但不记冠军，首通账号共享，低一名则失败', () => {
+    for (const [tier, preliminaryPlace, finalPlace, firstCoins, championCoins] of [[0, 8, 5, 600, 300], [1, 6, 4, 1200, 600]]) {
+        const p = createDefaultProfile(); p.career.league = tier; p.career.points = 100;
+        finish(p, begin(p, 'cup'), preliminaryPlace);
+        const result = finish(p, begin(p, 'cup'), finalPlace);
+        assert.equal(p.career.cups[a].state, 'passed'); assert.equal(p.career.league, tier + 1);
+        assert.equal(p.career.wins[a], undefined); assert.deepEqual(p.career.clears[a], [tier]);
+        assert.equal(result.receipt.first, firstCoins); assert.equal(result.receipt.podium, 0);
+        const restored = normalizeProfile(JSON.parse(JSON.stringify(p)));
+        assert.equal(restored.career.cups[a].state, 'passed');
+        finish(restored, begin(restored, 'cup', b, tier));
+        const second = finish(restored, begin(restored, 'cup', b, tier));
+        assert.equal(second.receipt.first, 0); assert.equal(second.receipt.podium, championCoins);
+        assert.deepEqual(restored.career.firstClearPrizes, [tier]);
+        assert.deepEqual(restored.career.firstPrizes, []);
+        const failed = createDefaultProfile(); failed.career.league = tier; failed.career.points = 100;
+        finish(failed, begin(failed, 'cup'), preliminaryPlace);
+        const loss = finish(failed, begin(failed, 'cup'), finalPlace + 1);
+        assert.equal(failed.career.cups[a].state, 'lost'); assert.equal(failed.career.league, tier);
+        assert.equal(loss.receipt.first, 0); assert.ok(loss.receipt.regular > 0);
+    }
+});
+
+test('杯赛淘汰保留本轮完赛收益和积分，区域决赛仍必须冠军', () => {
+    const p = createDefaultProfile(); p.career.league = 3; p.career.points = 100;
+    const failed = finish(p, begin(p, 'cup'), 6);
+    assert.ok(failed.receipt.coinsGained > 0); assert.equal(p.career.points, 100);
+    assert.equal(p.career.cups[a].coins, failed.receipt.coinsGained);
+    finish(p, begin(p, 'cup'), 5); finish(p, begin(p, 'cup'), 3);
+    const ticket = begin(p, 'cup'); assert.equal(ticket.ai.opponentCount, 7);
+    const final = finish(p, ticket, 2); assert.equal(p.career.cups[a].state, 'lost');
+    assert.equal(p.career.league, 3); assert.equal(final.receipt.first, 0);
+    assert.ok(final.receipt.coinsGained > 0);
+});
+
+test('联赛结算后轮换且存档恢复，重新开赛和换角色不跳过赛程，条款固定在票据', () => {
+    const p = createDefaultProfile(); p.career.league = 3;
+    const first = begin(p), restarted = begin(p, 'league', b);
+    assert.equal(first.terms.eventId, restarted.terms.eventId); assert.equal(restarted.distance, 200);
+    finish(p, restarted);
+    const restored = normalizeProfile(JSON.parse(JSON.stringify(p))), next = begin(restored);
+    assert.equal(next.distance, 400); assert.equal(next.ai.opponentCount, 7);
+    const { CAREER_SCHEDULE } = load('progression/CareerAiConfig');
+    const old = CAREER_SCHEDULE[3].winPoints;
+    try {
+        CAREER_SCHEDULE[3].winPoints = 999;
+        assert.equal(next.terms.winPoints, 24);
+        assert.equal(finish(restored, next).receipt.points, 24);
+    } finally { CAREER_SCHEDULE[3].winPoints = old; }
+});
+
+test('旧在途联赛与杯赛继续旧积分及冠军金币，既有冠军不重复领新首通', () => {
+    const p = createDefaultProfile();
+    const league = begin(p); delete league.terms;
+    league.ai.opponentCount = 7; league.ai.intelligence = Array(7).fill('rookie');
+    assert.equal(finish(p, league, 5).receipt.points, 0);
+    p.career.points = 100;
+    const pre = begin(p, 'cup'); delete pre.terms;
+    assert.equal(finish(p, pre).receipt.coinsGained, 0);
+    const final = begin(p, 'cup'); delete final.terms; final.championCoins = 60;
+    assert.equal(finish(p, final).receipt.coinsGained, 60);
+    finish(p, begin(p, 'cup', a, 0));
+    assert.equal(finish(p, begin(p, 'cup', a, 0)).receipt.first, 0);
 });

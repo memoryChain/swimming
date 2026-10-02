@@ -1,5 +1,7 @@
 import type { PlayerCharacterId } from '../app/PlayerCharacterConfig';
 import type { RaceDifficulty } from './GameBalance';
+import { findBossPreset, bossRoster } from '../competitor/BossAiConfig';
+import type { AiBuildOptions } from '../competitor/CompetitorManager';
 
 export type MainGameLaunchMode = 'race' | 'model-debug' | 'ai-debug' | 'underwater-debug';
 
@@ -10,6 +12,7 @@ export interface AiDebugSetup {
     seed: number;
     opponentCount: 1 | 7;
     mixedCharacters: boolean;
+    bossId?: string | null;
 }
 const pendingAiDebugSetup: AiDebugSetup = { characterId: 'cartonSwimmer6', level: 1, mode: 'beginner', seed: 20260913,
     opponentCount: 7, mixedCharacters: true };
@@ -21,10 +24,15 @@ export function setAiDebugSetup(setup: AiDebugSetup) {
     pendingAiDebugSetup.seed = setup.seed >>> 0;
     pendingAiDebugSetup.opponentCount = setup.opponentCount === 7 ? 7 : 1;
     pendingAiDebugSetup.mixedCharacters = setup.mixedCharacters === true;
+    const boss = findBossPreset(setup.bossId);
+    pendingAiDebugSetup.bossId = boss?.id ?? null;
+    if (boss) { pendingAiDebugSetup.mode = boss.mode; pendingAiDebugSetup.opponentCount = boss.roster.length === 1 ? 1 : 7; }
 }
 
-/** 只在本地 AI 测试赛使用；所有对手共用所选等级和智力，多角色沿用赛事随机阵容。 */
-export function resolveAiDebugBuildOptions(setup: Readonly<AiDebugSetup>, primaryLane: number, difficulty: number) {
+/** 只在本地AI测试赛使用；普通赛统一强度，Boss使用每个席位的固定角色与强度。 */
+export function resolveAiDebugBuildOptions(setup: Readonly<AiDebugSetup>, primaryLane: number, difficulty: number): AiBuildOptions {
+    const boss = findBossPreset(setup.bossId);
+    if (boss) return { soloLane: boss.roster.length === 1 ? primaryLane : undefined, fixedRoster: bossRoster(boss) };
     return {
         soloLane: setup.opponentCount === 1 ? primaryLane : undefined,
         difficultyOverride: difficulty,

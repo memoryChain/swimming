@@ -39,7 +39,7 @@
     "textures:fix": "node scripts/ui-texture-policy.cjs --fix",
     "textures:check": "node scripts/ui-texture-policy.cjs --check",
     "test:abilities": "npx --yes --package typescript@5.4.5 -c \"node --test tests/character-abilities.test.cjs tests/kick-dive-camera.test.cjs\"",
-    "test:ai": "npx --yes --package typescript@5.4.5 -c \"node --test tests/ai-race-strategy.test.cjs tests/ai-debug-ui.test.cjs tests/ai-dive-start.test.cjs\"",
+    "test:ai": "npx --yes --package typescript@5.4.5 -c \"node --test tests/ai-race-strategy.test.cjs tests/ai-debug-ui.test.cjs tests/ai-dive-start.test.cjs tests/boss-ai.test.cjs\"",
     "cloud:build": "npx --yes --package typescript@5.4.5 -c \"node scripts/build-wechat-cloud.cjs\"",
     "cloud:configure": "node scripts/configure-wechat-cloud.cjs",
     "cloud:admin": "node scripts/wechat-cloud-admin.cjs",
@@ -51,7 +51,8 @@
     "ui:atlases:sync": "node scripts/ui-atlas-policy.cjs --sync",
     "ui:atlases:fix": "node scripts/ui-atlas-policy.cjs --fix",
     "ui:atlases:check": "node scripts/ui-atlas-policy.cjs --check",
-    "test:ui-atlases": "npx --yes --package typescript@5.4.5 -c \"node --test tests/ui-atlases.test.cjs\""
+    "test:ui-atlases": "npx --yes --package typescript@5.4.5 -c \"node --test tests/ui-atlases.test.cjs\"",
+    "benchmark:boss": "npx --yes --package typescript@5.4.5 -c \"node scripts/benchmark-boss.cjs\""
   },
   "devDependencies": {
     "@cloudbase/cli": "3.8.4",

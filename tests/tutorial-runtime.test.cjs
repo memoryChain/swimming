@@ -237,7 +237,8 @@ test('场景入口拒绝把教学带入联机、房间或调试，普通单机�
         vm.runInNewContext(js,{module,consumeRoomMode:()=>room,consumeNetRaceSession:()=>net,
             consumeTutorialRequest:()=>{count++;return requested;},TUTORIAL_RUNTIME:state,TUTORIAL_AI:ai,
             setSoloRaceTicket(){},setSoloRaceDistance(){},setSoloAiEvent:v=>selectedAi=v,
-            getSoloRaceTicket:()=>ticket,reseedSharedRandom(){},NetRaceController:class{}});
+            getSoloRaceTicket:()=>ticket,reseedSharedRandom(){},NetRaceController:class{},
+            findBossPreset:()=>null,getAiDebugSetup:()=>({bossId:null})});
         const owner=new module.exports();owner._aiDebugMode=debug;owner.initializeRaceContext(allowed);
         return {owner,state,selectedAi,count};
     }

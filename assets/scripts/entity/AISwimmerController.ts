@@ -16,6 +16,7 @@ import { randomFloat, randomGaussian, randomRange } from '../core/SharedRNG';
 import { scaledDelta } from '../core/TimeScale';
 import { Swimmer } from './Swimmer';
 import { SWIMMER_COLLISION } from './SwimmerCollisionResolver';
+import type { BossAiOrder } from '../competitor/BossAiDirector';
 
 const { ccclass, property } = _decorator;
 type AiStrokePhase = 'gap' | 'press' | 'stroke';
@@ -31,6 +32,7 @@ export class AISwimmerController extends Component {
     public raceObserver: AIRaceObserver | null = null;
     public condition: AiConditionModel | null = null;
     public remoteDriven = false;
+    public bossOrder: BossAiOrder | null = null;
     public onDolphinJumpStarted: (() => void) | null = null;
     public onObservedPressChanged: ((side: StrokeType, pressed: boolean) => void) | null = null;
     isInputPressed(side: StrokeType): boolean {
@@ -157,7 +159,14 @@ export class AISwimmerController extends Component {
         this._decisionClock += dt;
         if (this._decisionClock >= this.intelligence.decisionSeconds || this._decisions === 0) {
             this.observe();
-            this.planner.decide(this._observation, AI_CHARACTER_STRATEGIES[this.characterId], this.intelligence, this._decisionClock);
+            this.planner.decide(this._observation, this.bossOrder?.style ?? AI_CHARACTER_STRATEGIES[this.characterId], this.intelligence, this._decisionClock);
+            if (this.bossOrder && !this.remoteDriven) {
+                if (!this.bossOrder.allowJump) this.planner.wantsJump = false;
+                if (this.bossOrder.preferKick && !this._observation.collisionRecoveryNeeded
+                    && this._observation.raceDistance - this._observation.distance > 30) {
+                    this.planner.action = 'save'; this.planner.reason = 'budget'; this.planner.wantsJump = false;
+                }
+            }
             this._decisionClock = 0;
             this._decisions++;
         }
@@ -229,7 +238,7 @@ export class AISwimmerController extends Component {
         s.closeRace = this.raceObserver?.hasCloseCompetitor(b, 3) ?? false;
         this._targetZ = null;
         if (nearby && this.intelligence.discipline >= 0.8) {
-            const style = AI_CHARACTER_STRATEGIES[this.characterId];
+            const style = this.bossOrder?.style ?? AI_CHARACTER_STRATEGIES[this.characterId];
             const z = b.node.position.z, otherZ = nearby.node.position.z;
             if (style.contest && s.energy > this.planner.sprintReserve && Math.abs(nearby.distance - b.distance) <= 2) {
                 this._targetZ = otherZ;
@@ -238,6 +247,11 @@ export class AISwimmerController extends Component {
                 const direction = z === otherZ ? (z > 0 ? -1 : 1) : Math.sign(z - otherZ);
                 this._targetZ = clamp(otherZ + direction * 1.5, -halfWidth + 0.8, halfWidth - 0.8);
             }
+        }
+        if (this.bossOrder && this.bossOrder.targetZ !== null && !this.remoteDriven
+            && !s.collisionRecoveryNeeded && isRaceSteeringEnabled()) {
+            // 团队指令仍受本角色反应与纪律限制；低智力可能错过协作窗口。
+            this._targetZ = randomFloat() < this.intelligence.discipline ? this.bossOrder.targetZ : null;
         }
     }
 
@@ -381,7 +395,8 @@ export class AISwimmerController extends Component {
             action: this.planner.action, reason: this.planner.reason, desiredEnergy: this.planner.desiredEnergy,
             sprintReserve: this.planner.sprintReserve, energy: this.condition?.energy ?? this.energyTotal,
             heartRate: this.swimmer?.heartRate ?? 80, decisions: this._decisions,
-            swimSeconds: this._swimSeconds, kickSeconds: this._kickSeconds, jumps: this._jumps };
+            swimSeconds: this._swimSeconds, kickSeconds: this._kickSeconds, jumps: this._jumps,
+            bossPhase: this.bossOrder?.phase ?? '', bossRole: this.bossOrder?.role ?? '' };
     }
 }
 

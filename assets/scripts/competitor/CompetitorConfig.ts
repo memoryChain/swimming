@@ -16,7 +16,7 @@ export type AICompetitorProfile = {
     difficulty: number;
 };
 
-export const AI_DEBUG_DIFFICULTY_TIERS = (['rookie', 'normal', 'skilled', 'expert', 'extreme'] as AiIntelligenceId[])
+export const AI_DEBUG_DIFFICULTY_TIERS = (['learner', 'rookie', 'normal', 'skilled', 'expert', 'extreme'] as AiIntelligenceId[])
     .map((id) => ({ label: AI_INTELLIGENCE[id].label, value: AI_INTELLIGENCE[id].value }));
 
 // 旧稳定 ID 继续服务保存的手感参数，角色和各智力的参数见 AiRaceConfig。

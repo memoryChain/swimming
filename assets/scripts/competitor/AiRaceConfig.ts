@@ -1,7 +1,7 @@
 import { PlayerCharacterId } from '../app/PlayerCharacterConfig';
 import { RaceDifficulty } from '../core/GameBalance';
 
-export type AiIntelligenceId = 'rookie' | 'normal' | 'skilled' | 'expert' | 'extreme';
+export type AiIntelligenceId = 'learner' | 'rookie' | 'normal' | 'skilled' | 'expert' | 'extreme';
 export interface AiIntelligence {
     id: AiIntelligenceId;
     label: string;
@@ -20,6 +20,8 @@ export interface AiIntelligence {
 // 智力只改变输入和判断。误差按动作圈比例，针对0.8按住速度重新校准；
 // 准确率由真实心率、角色窗口与30/60Hz输入产生，不直接指定判定结果。
 export const AI_INTELLIGENCE: Record<AiIntelligenceId, AiIntelligence> = {
+    // 生涯启蒙档：慢换手、较大松手误差；共享属性与判定不变，原有四档保持。
+    learner: { id: 'learner', label: '启蒙', value: 0.15, chargeMin: 0.2, chargeMax: 0.5, timingSigma: 0.22, gap: 0.55, kickHz: 2, decisionSeconds: 0.9, discipline: 0.55, budgetTolerance: 22, jumpDelay: 8 },
     rookie: { id: 'rookie', label: '新手', value: 0.3, chargeMin: 0.35, chargeMax: 0.72, timingSigma: 0.12, gap: 0.20, kickHz: 3, decisionSeconds: 0.6, discipline: 0.55, budgetTolerance: 18, jumpDelay: 5 },
     normal: { id: 'normal', label: '普通', value: 0.5, chargeMin: 0.62, chargeMax: 0.87, timingSigma: 0.078, gap: 0.12, kickHz: 4, decisionSeconds: 0.4, discipline: 0.8, budgetTolerance: 10, jumpDelay: 2.5 },
     skilled: { id: 'skilled', label: '高手', value: 0.75, chargeMin: 0.8, chargeMax: 0.96, timingSigma: 0.045, gap: 0.06, kickHz: 5, decisionSeconds: 0.25, discipline: 0.94, budgetTolerance: 5, jumpDelay: 1 },
@@ -29,7 +31,8 @@ export const AI_INTELLIGENCE: Record<AiIntelligenceId, AiIntelligence> = {
 
 export function intelligenceForDifficulty(value: number): AiIntelligence {
     return value >= 1 ? AI_INTELLIGENCE.extreme : value > 0.85 ? AI_INTELLIGENCE.expert
-        : value > 0.6 ? AI_INTELLIGENCE.skilled : value > 0.35 ? AI_INTELLIGENCE.normal : AI_INTELLIGENCE.rookie;
+        : value > 0.6 ? AI_INTELLIGENCE.skilled : value > 0.35 ? AI_INTELLIGENCE.normal
+        : value > 0.2 ? AI_INTELLIGENCE.rookie : AI_INTELLIGENCE.learner;
 }
 
 export interface AiCharacterStrategy {
