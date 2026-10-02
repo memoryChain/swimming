@@ -1,7 +1,8 @@
 /** 仅用于本地动作实验：真实左右划水驱动身体侧转，不产生输入或推进。 */
 export const FREESTYLE_BODY_ROLL_TUNING = {
-    chestDegrees: 32,
-    pelvisDegrees: 16,
+    // 夸张表现由骨盆带动；胸廓相对骨盆仍只多16°，避免靠拧腰放大动作。
+    chestDegrees: 48,
+    pelvisDegrees: 32,
     headStability: 0.94,
     responseSeconds: 0.045,
     fadeSeconds: 0.10,
@@ -18,7 +19,7 @@ function smooth(value: number, from: number, to: number): number {
 /** 从后推逐渐侧转，覆盖出水及回臂；前伸结束时回到中立，静止不会自行补划。 */
 export function freestyleRecoveryRoll(cycle: number): number {
     const phase = ((cycle / TAU) % 1 + 1) % 1;
-    return smooth(phase, 0.12, 0.50) * (1 - smooth(phase, 0.80, 1));
+    return smooth(phase, 0.08, 0.38) * (1 - smooth(phase, 0.82, 1));
 }
 
 export class FreestyleBodyRollMotion {

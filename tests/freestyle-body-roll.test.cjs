@@ -55,7 +55,7 @@ for(const mode of ['player','ai']) for(const fps of [30,60]) test(`${mode} ${fps
     }
 });
 
-for(const file of SWIMMER_MODEL_FILES) test(`${file}：胸肩32°、骨盆16°、头部稳定及多次切换完整恢复`,()=>{
+for(const file of SWIMMER_MODEL_FILES) test(`${file}：胸肩48°、骨盆32°、头部稳定及多次切换完整恢复`,()=>{
     const {r,parent}=rigFor(file);
     for(const direction of [1,-1]) {
         parent.setRotationFromEuler(0,direction>0?0:180,0);r.pose.setMovementDirection(direction);
@@ -65,8 +65,8 @@ for(const file of SWIMMER_MODEL_FILES) test(`${file}：胸肩32°、骨盆16°�
         const chest=r.pose._torso.getWorldRotation(new Quat()),hip=r.pose._hips.getWorldRotation(new Quat()),head=r.pose._head.getWorldRotation(new Quat());
         for(const sign of [-1,1]) {
             present(r,l,rh,1,sign);
-            assert.ok(Math.abs(angle(chest,r.pose._torso.getWorldRotation(new Quat()))-32)<.1);
-            assert.ok(Math.abs(angle(hip,r.pose._hips.getWorldRotation(new Quat()))-16)<.1);
+            assert.ok(Math.abs(angle(chest,r.pose._torso.getWorldRotation(new Quat()))-48)<.1);
+            assert.ok(Math.abs(angle(hip,r.pose._hips.getWorldRotation(new Quat()))-32)<.1);
             assert.ok(angle(head,r.pose._head.getWorldRotation(new Quat()))<3,'头不能随着肩膀甩动');
             const peak=snapshot(r);for(let n=0;n<20;n++)present(r,l,rh,1,sign);
             assert.equal(snapshot(r),peak,'不得累积旋转');

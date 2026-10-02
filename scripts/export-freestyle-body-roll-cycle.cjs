@@ -2,6 +2,20 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const before = process.argv.includes('--before');
+const baselineRef = process.argv.find(arg => arg.startsWith('--baseline-ref='))?.slice('--baseline-ref='.length);
+if (baselineRef) {
+    if (before) throw new Error('历史转体对照不能同时关闭转体');
+    // 保留相同骨骼求解及输入，仅从指定提交读取上一版的转体参数与时序。
+    const source = require('node:child_process').execFileSync('git',
+        ['show', `${baselineRef}:assets/scripts/character/FreestyleBodyRollMotion.ts`],
+        {cwd:path.resolve(__dirname,'..')});
+    const read = fs.readFileSync;
+    fs.readFileSync = function(file, options) {
+        if (String(file).replaceAll('\\','/').endsWith('/character/FreestyleBodyRollMotion.ts'))
+            return typeof options === 'string' || options?.encoding ? source.toString(typeof options === 'string' ? options : options.encoding) : source;
+        return read.call(this,file,options);
+    };
+}
 const { createRig, Node, root, load } = require('../tests/helpers/character-contact-harness.cjs');
 const { FreestyleBodyRollMotion } = load(path.join(root, 'assets/scripts/character/FreestyleBodyRollMotion.ts'));
 const { MOTION_TUNING } = load(path.join(root, 'assets/scripts/core/InputTuning.ts'));
@@ -12,7 +26,7 @@ for (const [key, value] of Object.entries(saved)) {
     if (key.startsWith('axialRoll.') && key.slice(10) in AXIAL_ROLL_TUNING) AXIAL_ROLL_TUNING[key.slice(10)] = value;
 }
 const mode = process.argv.includes('--ai') ? 'ai' : 'player';
-const out = path.join(root, `.cache/freestyle-body-roll-runtime-${mode}${before ? '-before' : ''}`);
+const out = path.join(root, `.cache/freestyle-body-roll-runtime-${mode}${baselineRef ? '-previous' : before ? '-before' : ''}`);
 fs.mkdirSync(out, { recursive: true });
 const trace = require('../tests/helpers/freestyle-breathing-replay.cjs').replayBreathingInput({mode,fps:30,seconds:7});
 // 选固定窗口，前后版本采用相同输入与时间，不放慢动画来延长换气。
@@ -71,5 +85,5 @@ for (const file of ['MuscleMan.glb', 'CartonSwimmer13.glb']) {
     const h = Buffer.alloc(20);h.writeUInt32LE(0x46546c67,0);h.writeUInt32LE(2,4);h.writeUInt32LE(28+padded.length+length,8);h.writeUInt32LE(padded.length,12);h.writeUInt32LE(0x4e4f534a,16);
     const b = Buffer.alloc(8);b.writeUInt32LE(length,0);b.writeUInt32LE(0x004e4942,4);
     fs.writeFileSync(path.join(out,file),Buffer.concat([h,padded,b,...parts]));
-    console.log(`${file}：已导出 ${mode} 真实输入、4秒正常速度${before ? '原游姿' : '转体实验'}`);
+    console.log(`${file}：已导出 ${mode} 真实输入、4秒正常速度${baselineRef ? `上一版转体 ${baselineRef}` : before ? '原游姿' : '转体实验'}`);
 }

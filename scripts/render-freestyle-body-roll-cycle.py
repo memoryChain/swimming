@@ -1,13 +1,13 @@
 """独立后台渲染两种真实角色的基础转体连续对照，不访问 Creator。"""
 from pathlib import Path
 import sys
-import shutil
 import subprocess
 import bpy
 from mathutils import Vector
 
 ROOT = Path(__file__).resolve().parents[1]
 MODE = 'ai' if '--ai' in sys.argv else 'player'
+PREVIOUS = '--previous' in sys.argv
 OUT = ROOT / '.cache' / f'freestyle-body-roll-runtime-{MODE}'
 
 
@@ -17,7 +17,8 @@ def main():
     scene = bpy.context.scene
     scene.render.fps = 30
     for col, model in enumerate(['MuscleMan.glb', 'CartonSwimmer13.glb']):
-        for row, folder in enumerate([f'freestyle-body-roll-runtime-{MODE}-before', f'freestyle-body-roll-runtime-{MODE}']):
+        baseline = 'previous' if PREVIOUS else 'before'
+        for row, folder in enumerate([f'freestyle-body-roll-runtime-{MODE}-{baseline}', f'freestyle-body-roll-runtime-{MODE}']):
             # 动画根节点有自己的位置轨道，排列偏移交给独立父节点，避免播放后重叠。
             layout = bpy.data.objects.new(f'PreviewLayout_{col}_{row}', None)
             scene.collection.objects.link(layout)
@@ -62,7 +63,11 @@ def main():
                         '-framerate', '30', '-i', str(target / '%03d.png'),
                         '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20',
                         str(OUT / f'{view}.mp4')], check=True)
-    shutil.copyfile(ROOT / 'scripts/templates/freestyle-body-roll-review.html', OUT / 'index.html')
+    review = (ROOT / 'scripts/templates/freestyle-body-roll-review.html').read_text(encoding='utf-8')
+    if PREVIOUS:
+        review = review.replace('下排：原游姿', '下排：上一版转体（32°／16°）').replace('上排：转体实验', '上排：增强转体（48°／32°）')
+        review = review.replace('第一轮实验', '增强转体对照')
+    (OUT / 'index.html').write_text(review, encoding='utf-8')
 
 
 if __name__ == '__main__':
