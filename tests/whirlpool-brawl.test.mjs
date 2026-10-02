@@ -376,11 +376,7 @@ test('漩涡美术层复用固定网格且不引入逐帧程序绘制或粒子�
     assert.match(controllerSource, /normal: createWhirlpoolVisualResourceSet\(false\)/);
     assert.match(controllerSource, /super: createWhirlpoolVisualResourceSet\(true\)/);
     assert.match(controllerSource, /const arms = superVariant \? 5 : 3/);
-    assert.match(controllerSource, /appendCoreSuctionRibbon/);
-    assert.match(controllerSource, /const suctionArms = superVariant \? 4 : 3/);
-    assert.match(controllerSource, /appendUnderwaterSuctionSpiral/);
-    assert.match(controllerSource, /const underwaterArms = superVariant \? 4 : 3/);
-    assert.match(controllerSource, /const underwaterSegments = superVariant \? 18 : 14/);
+    assert.match(controllerSource, /buildWhirlpoolFunnelGeometry/);
     assert.match(controllerSource, /visual\.core\.setScale\(coreScale, coreDepthScale, visual\.spin \* coreScale\)/);
     assert.match(controllerSource, /const CORE_ROTATION_SPEED_SCALE = 1\.12/);
     assert.match(controllerSource, /const CORE_ROTATION_BASE_DEGREES_PER_SECOND = 12/);

@@ -1,0 +1,40 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>漩涡薄漏斗与螺旋水流 · 离线审校</title>
+<style>body{margin:0;background:#132733;color:#d7edf5;font:15px system-ui}header{padding:16px}h1{font-size:21px;margin:0 0 8px}p{margin:8px 0;color:#a9c8d7}button{padding:8px 12px;margin:3px;border:1px solid #658391;border-radius:6px;background:#234553;color:white}canvas{width:100%;height:70vh;display:block}#status{white-space:pre-wrap}small{color:#92b6c7}</style>
+<header><h1>漩涡薄漏斗与螺旋水流 · 离线审校</h1><p>正式融合网格与着色器；简化泳池背景。不是游戏截图，也不代表真机性能。</p>
+<button onclick="cameraMode=0">斜俯视</button><button onclick="cameraMode=1">水下侧看</button><button onclick="cameraMode=2">正俯视</button><button onclick="large=!large">普通／超级</button><button onclick="spin=-spin">反向旋转</button><button onclick="paused=!paused">暂停／继续</button><button onclick="floorMode=(floorMode+1)%3">池底／暖底压力测试／蓝底</button><div id="status">正在校验 WebGL 着色器…</div></header><canvas id="view"></canvas>
+<script>
+/*__DATA__*/
+let cameraMode=0, large=false, spin=1, paused=false, clock=0, floorMode=0;
+const canvas=document.getElementById('view'),status=document.getElementById('status');
+const gl=canvas.getContext('webgl',{antialias:true,preserveDrawingBuffer:true});
+const result={programs:[],error:null};window.reviewResult=result;
+window.addEventListener('error',event=>{result.error=event.message;status.textContent='离线检查失败：'+event.message});
+try {
+if(!gl)throw Error('当前浏览器不支持 WebGL');
+function program(v,f){const p=gl.createProgram();for(const [kind,src] of [[gl.VERTEX_SHADER,v],[gl.FRAGMENT_SHADER,f]]){const s=gl.createShader(kind);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));gl.attachShader(p,s)}gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));return p}
+const programs={};for(const [name,effect] of Object.entries(DATA.effects)){const s=effect.shaders[0];const defines=s.defines.map(d=>'#define '+d.name+' '+(d.name==='CC_USE_FOG'?4:d.type==='number'?(d.range?.[0]||0):0)+'\n').join('');programs[name]=program(defines+s.glsl1.vert,defines+s.glsl1.frag);result.programs.push(name)}
+const funnel=programs.WhirlpoolFunnel;
+const backdrop=program('attribute vec3 a_position;uniform mat4 view,proj;varying vec3 pos;void main(){pos=a_position;gl_Position=proj*view*vec4(pos,1.);}',
+'precision highp float;varying vec3 pos;uniform float isWater;uniform vec3 floorColor;void main(){if(isWater>0.5){gl_FragColor=vec4(.13,.52,.64,.90);}else{vec2 cell=fract(pos.xz*2.);float line=step(.95,max(cell.x,cell.y));gl_FragColor=vec4(mix(floorColor,floorColor*.7,line),1.);}}');
+function buffer(data,target){const b=gl.createBuffer();gl.bindBuffer(target,b);gl.bufferData(target,target===gl.ELEMENT_ARRAY_BUFFER?new Uint16Array(data):new Float32Array(data),gl.STATIC_DRAW);return b}
+function mesh(g){return {p:buffer(g.positions,gl.ARRAY_BUFFER),n:buffer(g.normals||[],gl.ARRAY_BUFFER),uv:buffer(g.uvs||[],gl.ARRAY_BUFFER),c:buffer(g.colors||[],gl.ARRAY_BUFFER),i:buffer(g.indices,gl.ELEMENT_ARRAY_BUFFER),count:g.indices.length}}
+const meshes={normal:mesh(DATA.normal),super:mesh(DATA.super)};
+const plane=y=>mesh({positions:[-9,y,-9,9,y,-9,9,y,9,-9,y,9],indices:[0,1,2,0,2,3]});
+const floor=plane(-2.45),water=plane(0);
+function attr(p,name,b,size){const l=gl.getAttribLocation(p,name);if(l<0)return;gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.enableVertexAttribArray(l);gl.vertexAttribPointer(l,size,gl.FLOAT,false,0,0)}
+function uni(p,name,value){const l=gl.getUniformLocation(p,name);if(l===null)return;if(typeof value==='number')gl.uniform1f(l,value);else if(value.length===16)gl.uniformMatrix4fv(l,false,value);else gl['uniform'+value.length+'fv'](l,value)}
+function draw(p,m){attr(p,'a_position',m.p,3);if(p===funnel){attr(p,'a_normal',m.n,3);attr(p,'a_texCoord',m.uv,2);attr(p,'a_color',m.c,4)}gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,m.i);gl.drawElements(gl.TRIANGLES,m.count,gl.UNSIGNED_SHORT,0)}
+const norm=v=>{const n=Math.hypot(...v);return v.map(x=>x/n)},cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0);
+function look(eye,target){const z=norm(eye.map((v,i)=>v-target[i])),x=norm(cross([0,1,0],z)),y=cross(z,x);return [x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-dot(x,eye),-dot(y,eye),-dot(z,eye),1]}
+function perspective(aspect){const f=1/Math.tan(.65/2),near=.05,far=80;return [f/aspect,0,0,0,0,f,0,0,0,0,(far+near)/(near-far),-1,0,0,2*far*near/(near-far),0]}
+gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+let last=0;function frame(ms){const dt=Math.min(.05,(ms-last)/1000);last=ms;if(!paused)clock+=dt;canvas.width=Math.round(canvas.clientWidth*Math.min(2,devicePixelRatio));canvas.height=Math.round(canvas.clientHeight*Math.min(2,devicePixelRatio));gl.viewport(0,0,canvas.width,canvas.height);gl.clearColor(.08,.22,.29,1);gl.depthMask(true);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+const eye=cameraMode===1?[4,-1.0,5]:cameraMode===2?[0,9,.1]:[5,4.6,6];const v=look(eye,[0,-.50,0]),p=perspective(canvas.width/canvas.height);
+gl.useProgram(backdrop);uni(backdrop,'floorColor',floorMode===0?[118/255,202/255,174/255]:floorMode===1?[.85,.72,.30]:[.34,.53,.59]);uni(backdrop,'view',v);uni(backdrop,'proj',p);uni(backdrop,'isWater',0);gl.disable(gl.BLEND);gl.depthMask(true);draw(backdrop,floor);gl.enable(gl.BLEND);
+gl.useProgram(backdrop);gl.depthMask(false);uni(backdrop,'isWater',1);draw(backdrop,water);
+gl.useProgram(funnel);const a=-clock*(large?87:70)*Math.PI/180*spin,c=Math.cos(a),s=Math.sin(a);uni(funnel,'cc_matWorld',[c,0,-s,0,0,1,0,0,s*spin,0,c*spin,0,0,.037,0,1]);uni(funnel,'cc_matView',v);uni(funnel,'cc_matProj',p);uni(funnel,'cc_cameraPos',[...eye,1]);uni(funnel,'flowMotion',[clock,large?.60:.48,large?4:3,0]);draw(funnel,large?meshes.super:meshes.normal);
+const e=gl.getError();if(e!==gl.NO_ERROR)throw Error('WebGL 绘制错误 '+e);requestAnimationFrame(frame)}
+status.textContent='两个正式 Effect 的 WebGL 1 编译与链接通过；普通 '+DATA.normal.indices.length/3+' / 超级 '+DATA.super.indices.length/3+' 三角面。';requestAnimationFrame(frame);
+}catch(error){status.textContent='离线检查失败：'+error.message;result.error=error.message;throw error}
+</script></html>

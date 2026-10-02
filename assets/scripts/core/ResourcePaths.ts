@@ -437,6 +437,7 @@ export const RESOURCE_PATHS = {
     laneFloatCutoutEffect: 'effects/LaneFloatCutout',
     swimmerDynamicColorEffect: 'effects/SwimmerDynamicColor',
     toonPropEffect: 'effects/ToonProp',
+    whirlpoolFunnelEffect: 'effects/WhirlpoolFunnel',
     underwaterFloorEffect: 'effects/UnderwaterFloorTint',
     venueHeightShadeEffect: 'effects/VenueHeightShade',
     speedStarsUiPrefab: 'ui/SpeedStarsUI',

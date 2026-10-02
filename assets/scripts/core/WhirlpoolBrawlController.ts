@@ -1,5 +1,8 @@
-import { Color, gfx, Material, Mesh, MeshRenderer, Node, primitives, utils, Vec3 } from 'cc';
+import { Color, EffectAsset, gfx, Material, Mesh, MeshRenderer, Node, primitives, utils, Vec3, Vec4 } from 'cc';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
+import { buildWhirlpoolFunnelGeometry, WHIRLPOOL_SURFACE_OFFSET } from './WhirlpoolFunnelGeometry';
+import { loadRaceAsset } from './RaceBundleLoader';
+import { RESOURCE_PATHS } from './ResourcePaths';
 import {
     WHIRLPOOL_BRAWL_TUNING,
     WHIRLPOOL_SUPER_TUNING,
@@ -25,6 +28,8 @@ type Visual = {
     coreRotationDegrees: number;
     superVariant: boolean;
     activationEntranceElapsed: number;
+    coreRenderer: MeshRenderer;
+    funnelBound: boolean;
 };
 
 type WhirlpoolVisualResourceSet = {
@@ -34,6 +39,8 @@ type WhirlpoolVisualResourceSet = {
     flowMaterial: Material;
     coreMaterial: Material;
     afterglowBaseMaterial: Material;
+    funnelMaterial: Material | null;
+    flowMotion: Vec4;
 };
 
 export type WhirlpoolVisualResources = {
@@ -65,8 +72,6 @@ const MIN_VISIBLE_SCALE = 0.08;
 const AFTERGLOW_MAX_ALPHA = 138;
 const AFTERGLOW_COLOR = new Color(156, 235, 255, 0);
 const SUPER_AFTERGLOW_COLOR = new Color(145, 196, 255, 0);
-const UNDERWATER_SPIRAL_DEPTH = 1.35;
-const SUPER_UNDERWATER_SPIRAL_DEPTH = 1.75;
 
 /** 漩涡玩法的低开销表现与 AI 路线提示；物理作用由泳者模拟步中的纯规则计算。 */
 export class WhirlpoolBrawlController {
@@ -145,6 +150,8 @@ export class WhirlpoolBrawlController {
         const step = this.elapsed;
         this.elapsed = 0;
         this.clock += step;
+        let normalVisible = false;
+        let superVisible = false;
         for (const visual of this.visuals) {
             const ahead = visual.distance - distance;
             const distanceStrength = presentationStrength(ahead, visual.superVariant);
@@ -168,6 +175,14 @@ export class WhirlpoolBrawlController {
                 continue;
             }
 
+            const resources = visual.superVariant ? this.resources.super : this.resources.normal;
+            if (visual.superVariant) superVisible = true;
+            else normalVisible = true;
+            if (!visual.funnelBound && resources.funnelMaterial) {
+                visual.coreRenderer.setMaterial(resources.funnelMaterial, 0);
+                visual.funnelBound = true;
+            }
+
             // 核心先扰动、方向水带后展开；退场时顺序反转，让漩涡不再整体同时弹出或消失。
             const coreStrength = smooth01(strength / 0.58);
             const flowStrength = smooth01((strength - 0.12) / 0.88);
@@ -189,8 +204,9 @@ export class WhirlpoolBrawlController {
             visual.coreRotationDegrees = (visual.coreRotationDegrees
                 - visual.spin * coreRotationSpeed * step) % 360;
             setMirroredScale(visual.flow, flowScale, visual.spin);
-            // 水下螺旋与表面核心共用一个网格；Y 轴单独展开，避免入场时整根水柱突然出现。
+            // 水面细流保持贴水，薄漏斗与水下螺旋同步展开，不拉出实体水壁。
             visual.core.setScale(coreScale, coreDepthScale, visual.spin * coreScale);
+            visual.core.setPosition(0, 0.002 - WHIRLPOOL_SURFACE_OFFSET * (1 - coreDepthScale), 0);
             visual.flow.setRotationFromEuler(0, visual.flowRotationDegrees, 0);
             visual.core.setRotationFromEuler(0, visual.coreRotationDegrees, 0);
 
@@ -208,6 +224,15 @@ export class WhirlpoolBrawlController {
                 this.setAfterglowAlpha(visual, 0);
             }
         }
+        // 仅更新可见规格的共享时钟，隐藏期间不写材质；不逐涡创建材质或重建几何。
+        if (normalVisible) this.updateFunnelMaterial(this.resources.normal);
+        if (superVisible) this.updateFunnelMaterial(this.resources.super);
+    }
+
+    private updateFunnelMaterial(resources: WhirlpoolVisualResourceSet): void {
+        if (!resources.funnelMaterial) return;
+        resources.flowMotion.x = this.clock;
+        resources.funnelMaterial.setProperty('flowMotion', resources.flowMotion);
     }
 
     targetZForAi(distance: number, currentZ: number): number | null {
@@ -270,6 +295,8 @@ export class WhirlpoolBrawlController {
                 coreRotationDegrees: -phase * 31.4,
                 superVariant,
                 activationEntranceElapsed: -1,
+                coreRenderer: core.getComponent(MeshRenderer)!,
+                funnelBound: false,
             });
         }
     }
@@ -326,11 +353,25 @@ function createWhirlpoolMaterial(name: string): Material {
 
 /** 赛前一次性创建普通／超级两套固定资源，激活事件时只挂轻量节点和材质实例。 */
 export function createWhirlpoolVisualResources(): WhirlpoolVisualResources {
-    return {
+    const resources: WhirlpoolVisualResources = {
         normal: createWhirlpoolVisualResourceSet(false),
         super: createWhirlpoolVisualResourceSet(true),
         disposed: false,
     };
+    loadRaceAsset(RESOURCE_PATHS.whirlpoolFunnelEffect, EffectAsset, (error, effect) => {
+        if (resources.disposed) return;
+        if (error || !effect) {
+            console.warn('[Whirlpool] 水流材质加载失败，保留基础螺旋表现', error);
+            return;
+        }
+        for (const set of [resources.normal, resources.super]) {
+            const material = new Material();
+            material.initialize({ effectAsset: effect });
+            material.setProperty('flowMotion', set.flowMotion);
+            set.funnelMaterial = material;
+        }
+    });
+    return resources;
 }
 
 export function disposeWhirlpoolVisualResources(resources: WhirlpoolVisualResources | null): void {
@@ -343,6 +384,7 @@ export function disposeWhirlpoolVisualResources(resources: WhirlpoolVisualResour
         set.flowMaterial.destroy();
         set.coreMaterial.destroy();
         set.afterglowBaseMaterial.destroy();
+        set.funnelMaterial?.destroy();
     }
 }
 
@@ -355,6 +397,8 @@ function createWhirlpoolVisualResourceSet(superVariant: boolean): WhirlpoolVisua
         flowMaterial: createWhirlpoolMaterial(`${prefix}FlowSharedMaterial`),
         coreMaterial: createWhirlpoolMaterial(`${prefix}CoreSharedMaterial`),
         afterglowBaseMaterial: createWhirlpoolMaterial(`${prefix}AfterglowBaseMaterial`),
+        funnelMaterial: null,
+        flowMotion: new Vec4(0, superVariant ? 0.60 : 0.48, superVariant ? 4 : 3, 0),
     };
 }
 
@@ -418,156 +462,16 @@ function buildWhirlpoolFlowGeometry(superVariant = false): primitives.IGeometry 
 }
 
 function buildWhirlpoolCoreGeometry(superVariant = false): primitives.IGeometry {
-    const buffers: GeometryBuffers = { positions: [], colors: [], indices: [] };
-    const maxRadius = Math.max(1, WHIRLPOOL_BRAWL_TUNING.lateralRadius);
-    const coreRadius = maxRadius * WHIRLPOOL_BRAWL_TUNING.coreRadiusRatio
+    const coreRadius = Math.max(1, WHIRLPOOL_BRAWL_TUNING.lateralRadius)
+        * WHIRLPOOL_BRAWL_TUNING.coreRadiusRatio
         * (superVariant ? WHIRLPOOL_SUPER_TUNING.coreRadiusScale : 1);
-    const segments = 24;
-    const center = buffers.positions.length / 3;
-    buffers.positions.push(0, 0, 0);
-    pushColor(buffers.colors, superVariant ? 0.045 : 0.015, superVariant ? 0.035 : 0.12, superVariant ? 0.24 : 0.24, superVariant ? 0.94 : 0.88);
-    for (let segment = 0; segment <= segments; segment++) {
-        const angle = segment / segments * Math.PI * 2;
-        buffers.positions.push(Math.cos(angle) * coreRadius, 0, Math.sin(angle) * coreRadius);
-        pushColor(buffers.colors, superVariant ? 0.20 : 0.06, superVariant ? 0.22 : 0.38, superVariant ? 0.66 : 0.56, superVariant ? 0.30 : 0.18);
-    }
-    for (let segment = 0; segment < segments; segment++) {
-        buffers.indices.push(center, center + segment + 1, center + segment + 2);
-    }
-
-    // Bake inward-curving water lines into the existing core mesh so the eye
-    // reads as moving water instead of a static dark disc. This adds no node,
-    // material or draw call at runtime.
-    const suctionArms = superVariant ? 4 : 3;
-    const suctionSegments = superVariant ? 10 : 8;
-    for (let arm = 0; arm < suctionArms; arm++) {
-        appendCoreSuctionRibbon(
-            buffers,
-            coreRadius,
-            arm / suctionArms * Math.PI * 2,
-            suctionSegments,
-            superVariant,
-        );
-    }
-
-    // 将稀疏的倒锥螺旋直接烘进危险核心网格。它与水面核心共用节点、材质和绘制批次，
-    // 只增加少量顶点；向下逐渐收窄，让水下镜头也能读出吸入方向和旋向。
-    const underwaterDepth = superVariant ? SUPER_UNDERWATER_SPIRAL_DEPTH : UNDERWATER_SPIRAL_DEPTH;
-    const underwaterArms = superVariant ? 4 : 3;
-    const underwaterSegments = superVariant ? 18 : 14;
-    for (let arm = 0; arm < underwaterArms; arm++) {
-        appendUnderwaterSuctionSpiral(
-            buffers,
-            coreRadius,
-            arm / underwaterArms * Math.PI * 2,
-            underwaterSegments,
-            underwaterDepth,
-            superVariant,
-        );
-    }
-
-    // 破碎泡沫环让危险核心边界在比赛镜头下仍然可读，又避免一整圈白色贴纸感。
-    const dashCount = superVariant ? 14 : 10;
-    for (let dash = 0; dash < dashCount; dash++) {
-        const start = dash / dashCount * Math.PI * 2;
-        appendArcRibbon(buffers, coreRadius * 1.12, superVariant ? 0.17 : 0.13, start, start + (superVariant ? 0.28 : 0.34), 2,
-            superVariant ? 0.82 : 0.72, superVariant ? 0.90 : 0.96, 1, superVariant ? 0.72 : 0.58);
-    }
-    return finishGeometry(buffers, coreRadius * 1.35, -underwaterDepth - 0.08, 0.01);
-}
-
-function appendCoreSuctionRibbon(
-    buffers: GeometryBuffers,
-    coreRadius: number,
-    baseAngle: number,
-    segments: number,
-    superVariant: boolean,
-): void {
-    const base = buffers.positions.length / 3;
-    for (let segment = 0; segment <= segments; segment++) {
-        const t = segment / segments;
-        const radius = coreRadius * (0.10 + t * 0.78);
-        const angle = baseAngle + t * Math.PI * 0.92;
-        const halfWidth = coreRadius * (0.042 + t * 0.018);
-        const tangentX = -Math.sin(angle);
-        const tangentZ = Math.cos(angle);
-        const centerX = Math.cos(angle) * radius;
-        const centerZ = Math.sin(angle) * radius;
-        buffers.positions.push(
-            centerX - tangentX * halfWidth, 0.001, centerZ - tangentZ * halfWidth,
-            centerX + tangentX * halfWidth, 0.001, centerZ + tangentZ * halfWidth,
-        );
-        const centerEmphasis = 1 - t;
-        const alpha = 0.28 + centerEmphasis * (superVariant ? 0.46 : 0.38);
-        pushColor(
-            buffers.colors,
-            superVariant ? 0.48 : 0.34,
-            superVariant ? 0.66 : 0.82,
-            1,
-            alpha * 0.68,
-        );
-        pushColor(
-            buffers.colors,
-            superVariant ? 0.76 : 0.72,
-            superVariant ? 0.86 : 0.96,
-            1,
-            alpha,
-        );
-    }
-    for (let segment = 0; segment < segments; segment++) {
-        const lower = base + segment * 2;
-        buffers.indices.push(lower, lower + 2, lower + 1, lower + 1, lower + 2, lower + 3);
-    }
-}
-
-function appendUnderwaterSuctionSpiral(
-    buffers: GeometryBuffers,
-    coreRadius: number,
-    baseAngle: number,
-    segments: number,
-    depth: number,
-    superVariant: boolean,
-): void {
-    const base = buffers.positions.length / 3;
-    const turns = superVariant ? 3.4 : 3.0;
-    for (let segment = 0; segment <= segments; segment++) {
-        const t = segment / segments;
-        const taper = t * t * (3 - 2 * t);
-        const radius = coreRadius * (0.84 - taper * 0.70);
-        const angle = baseAngle + t * Math.PI * turns;
-        const halfWidth = coreRadius * (0.042 - t * 0.014);
-        const tangentX = -Math.sin(angle);
-        const tangentZ = Math.cos(angle);
-        const centerX = Math.cos(angle) * radius;
-        const centerZ = Math.sin(angle) * radius;
-        const y = -0.06 - depth * t;
-        buffers.positions.push(
-            centerX - tangentX * halfWidth, y, centerZ - tangentZ * halfWidth,
-            centerX + tangentX * halfWidth, y, centerZ + tangentZ * halfWidth,
-        );
-
-        // 两端压暗，中段保持清晰；避免水下形成一整块透明圆锥和高填充率叠色。
-        const middleFade = Math.sin(Math.PI * t);
-        const alpha = (0.05 + middleFade * (superVariant ? 0.34 : 0.29)) * (1 - t * 0.35);
-        pushColor(
-            buffers.colors,
-            superVariant ? 0.20 : 0.12,
-            superVariant ? 0.43 : 0.58,
-            superVariant ? 0.88 : 0.82,
-            alpha * 0.68,
-        );
-        pushColor(
-            buffers.colors,
-            superVariant ? 0.62 : 0.54,
-            superVariant ? 0.80 : 0.91,
-            1,
-            alpha,
-        );
-    }
-    for (let segment = 0; segment < segments; segment++) {
-        const lower = base + segment * 2;
-        buffers.indices.push(lower, lower + 2, lower + 1, lower + 1, lower + 2, lower + 3);
-    }
+    const geometry = buildWhirlpoolFunnelGeometry(coreRadius, superVariant);
+    return {
+        positions: geometry.positions, normals: geometry.normals,
+        uvs: geometry.uvs, colors: geometry.colors, indices: geometry.indices,
+        minPos: new Vec3(-geometry.radius, geometry.minY, -geometry.radius),
+        maxPos: new Vec3(geometry.radius, geometry.maxY, geometry.radius),
+    };
 }
 
 function buildWhirlpoolAfterglowGeometry(superVariant = false): primitives.IGeometry {
