@@ -135,7 +135,7 @@ function createRig(file, modelDirectory = process.env.CHARACTER_MODEL_DIRECTORY 
         if (count) Vec3.multiplyScalar(center, center, 1 / count);
         return { min, max, center };
     }
-    return { pose, soles, hands, wrapper, variant, exactY, renderers, fullHead, exactHandBounds, modelDirectory };
+    return { pose, soles, hands, wrapper, variant, exactY, renderers, fullHead, fullArms, exactHandBounds, modelDirectory };
 }
 
 // 动作回归跟随主干模型名册，新增角色会自动进入真实 GLB 检查。

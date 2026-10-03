@@ -395,6 +395,11 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
     }
 }
 
+/** 读取本次碰撞已确认的接触，避免分离后丢失贴身传球；普通比赛不额外计算。 */
+export function hasSwimmerCollisionContact(a: Swimmer | null, b: Swimmer | null): boolean {
+    return !!a && !!b && a !== b && findContact(a, b) >= 0;
+}
+
 // Knockback is a contact-begin impulse, not a force accumulated every render frame.
 // Keep a small release margin so numerical jitter around exactly 2*radius does not
 // repeatedly end/restart the same contact and award multiple energy bonuses.

@@ -10,11 +10,19 @@ function createBuoyHarness(seed=42,distance=200,ids=['cartonSwimmer6','cartonSwi
     function readPrefab(name){
         const file=path.join(path.resolve(__dirname,'../..'),'assets/race/items',name+'.glb'),bytes=fs.readFileSync(file),size=bytes.readUInt32LE(12);
         const doc=JSON.parse(bytes.subarray(20,20+size)),raw=bytes.subarray(28+size);
-        function accessor(index){const a=doc.accessors[index],v=doc.bufferViews[a.bufferView],count={SCALAR:1,VEC3:3,VEC4:4}[a.type],size={5126:4,5123:2,5121:1}[a.componentType],out=[];
+        function accessor(index){const a=doc.accessors[index],v=doc.bufferViews[a.bufferView],count={SCALAR:1,VEC2:2,VEC3:3,VEC4:4}[a.type],size={5126:4,5123:2,5121:1}[a.componentType],out=[];
             for(let i=0;i<a.count;i++)for(let j=0;j<count;j++){const at=(v.byteOffset||0)+(a.byteOffset||0)+i*(v.byteStride||size*count)+j*size;
                 const n=raw[a.componentType===5126?'readFloatLE':a.componentType===5123?'readUInt16LE':'readUInt8'](at);out.push(a.normalized?n/(a.componentType===5123?65535:255):n);}return out;}
         const nodes=doc.nodes.map(n=>({name:n.name,isValid:true,position:new h.Vec3(...(n.translation||[0,0,0])),rotation:new h.Quat(...(n.rotation||[0,0,0,1])),scale:new h.Vec3(...(n.scale||[1,1,1])),children:[],components:[]}));
-        doc.nodes.forEach((n,i)=>{if(n.mesh!==undefined){const p=doc.meshes[n.mesh].primitives[0],mesh=new h.cc.Mesh({positions:accessor(p.attributes.POSITION),colors:accessor(p.attributes.COLOR_0),indices:accessor(p.indices)});nodes[i].components.push({mesh});}
+        doc.nodes.forEach((n,i)=>{if(n.mesh!==undefined){const p=doc.meshes[n.mesh].primitives[0],mesh=new h.cc.Mesh({positions:accessor(p.attributes.POSITION),colors:accessor(p.attributes.COLOR_0),indices:accessor(p.indices)});let sharedMaterials=[];
+            if(name==='TimedWaterBalloon') {
+                const textureIndex=doc.materials[p.material].pbrMetallicRoughness.baseColorTexture.index;
+                const image=doc.images[doc.textures[textureIndex].source],view=doc.bufferViews[image.bufferView];
+                const texture=readPrefab.textures??=(new h.cc.Texture2D());
+                texture.bytes=raw.subarray(view.byteOffset||0,(view.byteOffset||0)+view.byteLength);
+                sharedMaterials=[{getProperty:key=>key==='albedoMap'?texture:undefined}];
+            }
+            nodes[i].components.push({mesh,sharedMaterials});}
             for(const child of n.children||[])nodes[i].children.push(nodes[child]);});
         const roots=doc.scenes[doc.scene||0].nodes;const root=nodes[roots[0]];
         root.getComponentsInChildren=function(){const all=[];function visit(n){all.push(...n.components);for(const c of n.children)visit(c);}visit(root);return all;};return {data:root};
@@ -22,6 +30,7 @@ function createBuoyHarness(seed=42,distance=200,ids=['cartonSwimmer6','cartonSwi
     const paths=h.loadModule('core/ResourcePaths').RESOURCE_PATHS;
     for(const p of Object.values(paths.sprayBuoy))prefabs.set(p,readPrefab(p.split('/').pop()));
     if(h.loadModule('entertainment/EntertainmentDebugPlan').buildCannonDebugPlan(mode,distance))for(const p of Object.values(paths.cannon))prefabs.set(p,readPrefab(p.split('/').pop()));
+    if(mode==='water-balloon')prefabs.set(paths.timedWaterBalloon,readPrefab('TimedWaterBalloon'));
     prefabs.set(paths.venueHeightShadeEffect,{});
     const a=createAiHarness();a.load('core/GameBalance').setSoloRaceDistance(distance);a.load('core/GameBalance').setRaceDifficulty('competitive');
     const {laneCenterZ}=a.load('venue/LaneLayout');
@@ -29,6 +38,18 @@ function createBuoyHarness(seed=42,distance=200,ids=['cartonSwimmer6','cartonSwi
     const actors=ids.map((id,index)=>a.create(id,5,.7,0,laneCenterZ(index,course)));
     // 浮圈父节点使用有完整生命周期的 Node，但身体与 Motor 使用真实实现。
     for(const actor of actors){const old=actor.body.node;actor.body.node=new h.Node('Swimmer');actor.body.node.setPosition(old.position);actor.body.node.emit=()=>{};}
+    if(mode==='water-balloon') {
+        const {createRig,SWIMMER_MODEL_FILES}=require('./character-contact-harness.cjs');
+        const {createTimedWaterBalloonMount}=h.loadModule('character/TimedWaterBalloonMount');
+        for(const [index,actor] of actors.entries()) {
+            const file=SWIMMER_MODEL_FILES.find(file=>file.slice(0,-4).toLowerCase()===ids[index].toLowerCase());
+            const model=createRig(file); model.wrapper.parent=actor.body.node;actor.body.node.children.push(model.wrapper);
+            model.wrapper.setRotationFromEuler(90,90,0);
+            const rig=actor.body.cartoonRig;rig.mount=null;rig.modelVariantId=model.variant.id;rig.model=model;
+            rig.prepareTimedWaterBalloonMount=()=>{if(!rig.mount?.isValid)rig.mount=createTimedWaterBalloonMount(model.wrapper,model.variant.id);return rig.mount;};
+            rig.releaseTimedWaterBalloonMount=()=>{rig.mount?.destroy();rig.mount=null;};
+        }
+    }
     const racers=actors.map((f,lane)=>({lane,swimmer:f.body,condition:f.condition,ai:f.ai}));
     const runtime=new (h.loadModule('app/EntertainmentRaceRuntime').EntertainmentRaceRuntime)(h.root,actors[0].body.courseLayout,mode,seed,distance,racers,{registerFloatingObject(n){layers.add(n);return()=>layers.delete(n);}});
     const state=a.load('core/GameConstants').GameState;

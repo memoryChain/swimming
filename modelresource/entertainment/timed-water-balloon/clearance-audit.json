@@ -1,0 +1,116 @@
+{
+  "bounds": {
+    "body": {
+      "min": [
+        -0.2814668118398456,
+        0.11972445993544449,
+        -0.27151768128225257
+      ],
+      "max": [
+        0.283970783559262,
+        0.7352387613858644,
+        0.2657163523444807
+      ]
+    },
+    "connector": {
+      "min": [
+        -0.013000000268221124,
+        -4.3163732712167345e-18,
+        -0.013000000268221082
+      ],
+      "max": [
+        0.0350000001490115,
+        0.1400000022114523,
+        0.01300000052207018
+      ]
+    }
+  },
+  "rows": [
+    {
+      "id": "muscleMan",
+      "headMinimum": 0.16999672988010114,
+      "armMinimum": 0.14136806976984997,
+      "samples": 56084,
+      "overlapSamples": 0
+    },
+    {
+      "id": "cartonSwimmer5",
+      "headMinimum": 0.05079004894944504,
+      "armMinimum": 0.0684217353340208,
+      "samples": 78736,
+      "overlapSamples": 0
+    },
+    {
+      "id": "cartonSwimmer6",
+      "headMinimum": 0.06792449940495555,
+      "armMinimum": 0.11092726934989536,
+      "samples": 62776,
+      "overlapSamples": 0
+    },
+    {
+      "id": "cartonSwimmer8",
+      "headMinimum": 0.11120384263419328,
+      "armMinimum": 0.12655027909536481,
+      "samples": 49364,
+      "overlapSamples": 0
+    },
+    {
+      "id": "cartonSwimmer9",
+      "headMinimum": 0.04353907066480715,
+      "armMinimum": 0.09097275842149345,
+      "samples": 77700,
+      "overlapSamples": 0
+    },
+    {
+      "id": "cartonSwimmer10",
+      "headMinimum": 0.11144688598943868,
+      "armMinimum": 0.13009499533377686,
+      "samples": 82712,
+      "overlapSamples": 0
+    },
+    {
+      "id": "cartonSwimmer11",
+      "headMinimum": 0.15006616152665692,
+      "armMinimum": 0.12630932604680623,
+      "samples": 50400,
+      "overlapSamples": 0
+    },
+    {
+      "id": "cartonSwimmer12",
+      "headMinimum": 0.0993140274005306,
+      "armMinimum": 0.12596585001063274,
+      "samples": 50904,
+      "overlapSamples": 0
+    },
+    {
+      "id": "cartonSwimmer13",
+      "headMinimum": 0.20561845721276512,
+      "armMinimum": 0.178113193401529,
+      "samples": 101108,
+      "overlapSamples": 0
+    },
+    {
+      "id": "cartonSwimmer14",
+      "headMinimum": 0.0969326267521322,
+      "armMinimum": 0.09119957703359069,
+      "samples": 79660,
+      "overlapSamples": 0
+    },
+    {
+      "id": "cartonSwimmer15",
+      "headMinimum": 0.12559318751651458,
+      "armMinimum": 0.14711343674331995,
+      "samples": 82936,
+      "overlapSamples": 0
+    },
+    {
+      "id": "cartonSwimmer16",
+      "headMinimum": 0.05790633666362106,
+      "armMinimum": 0.07056545340878205,
+      "samples": 57652,
+      "overlapSamples": 0
+    }
+  ],
+  "samples": 830032,
+  "overlapSamples": 0
+}

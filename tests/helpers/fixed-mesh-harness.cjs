@@ -7,10 +7,13 @@ function createFixedMeshHarness(externalModules = {}) {
     class Node extends h.Node {
         _active = true; layer = 1; components = [];
         constructor(name) { super(); this.name = name; nodes.push(this); }
+        get activeInHierarchy() { return this.active && (!this.parent || this.parent.activeInHierarchy); }
+        get worldRotation() { return this.getWorldRotation(new h.Quat()); }
         get active() { return this._active; }
         set active(value) { this._active = value; this.writes++; }
-        setParent(parent) { parent.addChild(this); }
+        setParent(parent) { if (parent.addChild) parent.addChild(this); else { this.parent=parent; parent.children.push(this); } }
         addChild(node) { node.parent = this; this.children.push(node); }
+        getComponentsInChildren(C) { return [...this.components.filter(c => c instanceof C), ...this.children.flatMap(n => n.getComponentsInChildren(C))]; }
         getComponent(C) { return this.components.find(c => c instanceof C) || null; }
         setWorldPosition(x,y,z) { super.setWorldPosition(typeof x === "number" ? new h.Vec3(x,y,z) : x); this.writes++; }
         addComponent(C) { const c = new C(); this.components.push(c); return c; }
@@ -19,9 +22,9 @@ function createFixedMeshHarness(externalModules = {}) {
         destroy() { this.isValid = false; for (const node of this.children) node.destroy(); }
     }
     class Mesh { constructor(g) { this.geometry = g; this.destroyCount = 0; meshes.push(this); } destroy() { this.destroyCount++; } }
-    class Material { copy(other) { this.config = other.config; } constructor() { materials.push(this); this.destroyCount = 0; this.writes = 0; } initialize(config) { this.config = config; } setProperty() { this.writes++; } destroy() { this.destroyCount++; } }
+    class Material { copy(other) { this.config = other.config; } constructor() { materials.push(this); this.destroyCount = 0; this.writes = 0; } initialize(config) { this.config = config; } setProperty(name,value) { (this.properties??={})[name]=value; this.writes++; } getProperty(name) { return this.properties?.[name]; } destroy() { this.destroyCount++; } }
     class MeshRenderer { sharedMaterials=[]; setMaterial(m,slot=0) { this.material = m; this.sharedMaterials[slot]=m; } }
-    Object.assign(h.cc, { Node, Mesh, Material, MeshRenderer, Prefab: class {},
+    Object.assign(h.cc, { Node, Mesh, Material, MeshRenderer, Prefab: class {}, Texture2D: class {},
         Color: class Color { static WHITE = new Color(255,255,255,255); constructor(r,g,b,a=255) { Object.assign(this,{r,g,b,a}); }
             clone() { return new Color(this.r,this.g,this.b,this.a); } },
         Vec4: class { constructor(x,y,z,w) { Object.assign(this,{x,y,z,w}); } }, EffectAsset: class {},
@@ -31,7 +34,7 @@ function createFixedMeshHarness(externalModules = {}) {
             const node = new Node(original.name);
             node.setPosition(original.position); node.setRotation(original.rotation); node.setScale(original.scale);
             for (const component of original.components || original.getComponentsInChildren(MeshRenderer)) {
-                const renderer = node.addComponent(MeshRenderer); renderer.mesh = component.mesh;
+                const renderer = node.addComponent(MeshRenderer); renderer.mesh = component.mesh; renderer.sharedMaterials = [...(component.sharedMaterials || [])];
             }
             for (const child of original.children) copy(child).setParent(node);
             return node;

@@ -1523,7 +1523,7 @@ export class GameManager extends Component {
                 ai: index >= 0 ? this._aiControllers[index] : null });
         }
         this._entertainmentRuntime = new EntertainmentRaceRuntime(this._worldRoot, COURSE_LAYOUT,
-            setup.entertainment, setup.seed, getRaceDistance(), racers, this._waterRefraction);
+            setup.entertainment, setup.seed, getRaceDistance(), racers, this._waterRefraction, this._raceHud);
         this._entertainmentRuntime.prepare(done);
     }
 

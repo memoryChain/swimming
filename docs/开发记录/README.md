@@ -89,3 +89,4 @@
 - [butterfly 第十四批：补齐巨浪五档测试](分支审查/2026-10-04-butterfly-第十四批巨浪五档.zh.md)
 - [butterfly 第十五批：双发炮击](分支审查/2026-10-04-butterfly-第十五批双发炮击.zh.md)
 - [butterfly 第十六批：补齐炮击一、二、三档](分支审查/2026-10-04-butterfly-第十六批炮击低档.zh.md)
+- [butterfly 第十七批：定时水球接力](分支审查/2026-10-04-butterfly-第十七批定时水球接力.zh.md)

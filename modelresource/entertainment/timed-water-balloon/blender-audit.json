@@ -1,0 +1,32 @@
+{
+  "source": {
+    "triangles": 696,
+    "meshes": 2,
+    "materials": 1,
+    "bodyHeightRange": [
+      0.12800000607967377,
+      0.5799999833106995
+    ],
+    "connectorHeightRange": [
+      0.0,
+      0.14000000059604645
+    ],
+    "contactOverlap": 0.01199999451637268
+  },
+  "runtime": {
+    "triangles": 696,
+    "meshes": 2,
+    "materials": 1,
+    "bodyHeightRange": [
+      0.12800000607967377,
+      0.5799999833106995
+    ],
+    "connectorHeightRange": [
+      0.0,
+      0.14000000059604645
+    ],
+    "contactOverlap": 0.01199999451637268
+  },
+  "bytes": 43724,
+  "sha256": "02720d6b71384f62d904003e8558534e4bbc7e46e8106075b863cb6c757a4287"
+}

@@ -109,6 +109,9 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
     const hint = makeLabel('Hint', root, '等级与智力应用于全部 AI，玩家使用自己的角色属性', 18, uiColor(190, 210, 220)).getComponent(Label);
     hint.node.setPosition(0, -210, 0);
     const updateHint = () => {
+        if (!bossMode && setup.entertainment === 'water-balloon') {
+            write(hint, '肩背携带水球，贴近对手转交；最后0.8秒锁定，时间到后爆开'); return;
+        }
         const cannonPlan = !bossMode ? buildCannonDebugPlan(setup.entertainment, getRaceDistance(setup.mode)) : null;
         if (cannonPlan) {
             write(hint, `最多 ${cannonPlan.triggers.length} 发，同一时间最多 ${cannonPlan.maxConcurrentLaunches} 颗水球${cannonPlan.minimumLaunchIntervalSeconds > 0 ? `，间隔至少 ${cannonPlan.minimumLaunchIntervalSeconds} 秒` : ''}；落点提前提醒`);

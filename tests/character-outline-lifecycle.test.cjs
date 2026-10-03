@@ -38,19 +38,19 @@ function harness({ delayed = false } = {}) {
     Object.assign(h.cc, { SkinnedMeshRenderer, Texture2D: class {}, SkeletalAnimation: class {} });
     const loader = h.loadModule('character/CharacterModelLoader');
     const { applyCharacterSkin } = h.loadModule('character/CharacterSkinApplier');
-    const variant = { id: 'test', candidates: ['test'], outlineWidth: 3 };
+    const variant = { id: 'cartonSwimmer6', candidates: ['test'], outlineWidth: 3 };
     const sourceFile = path.resolve(__dirname, '../assets/scripts/entity/CartoonSwimmerRig.ts');
     const source = ts.createSourceFile(sourceFile, fs.readFileSync(sourceFile, 'utf8'), ts.ScriptTarget.Latest, true);
     const cls = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text === 'CartoonSwimmerRig');
     const names = ['loadModelForCurrentVariant', 'clearLoadedModel', 'configureSkinnedRenderers',
         'applyLaneMaterials', 'setSkinnedRenderersEnabled', 'lateUpdate', 'setRecoveryBlinkVisible',
-        'setOutlineVisible', 'applyOutlineVisibility', 'outlineVisible'];
+        'setOutlineVisible', 'applyOutlineVisibility', 'outlineVisible', 'prepareTimedWaterBalloonMount', 'releaseTimedWaterBalloonMount'];
     const code = `class Subject { ${names.map(name => {
         const member = cls.members.find(n => n.name?.getText(source) === name);
         assert.ok(member, name); return member.getText(source);
     }).join('\n')} }`;
     function instantiate() {
-        const model = new h.Node('Model'); new h.Node('Armature').setParent(model);
+        const model = new h.Node('Model'); const armature = new h.Node('Armature'); armature.setParent(model); new h.Node('Spine02').setParent(armature);
         for (const name of ['Body', 'Cap']) {
             const skin = new h.Node(name); skin.setParent(model);
             const renderer = skin.addComponent(SkinnedMeshRenderer);
@@ -60,7 +60,7 @@ function harness({ delayed = false } = {}) {
         }
         return model;
     }
-    const globals = { ...loader, ...h.cc, applyCharacterSkin,
+    const globals = { ...loader, ...h.cc, applyCharacterSkin, ...h.loadModule('character/TimedWaterBalloonMount'),
         findSwimmerModelVariant: () => variant, defaultSwimmerModelVariant: () => variant,
         findSwimmerColorVariant: () => ({}), defaultSwimmerColorVariant: () => ({}),
         loadSwimmerPrefab: done => done(null, { prefab: {}, path: 'test' }), instantiate,
@@ -77,7 +77,7 @@ function harness({ delayed = false } = {}) {
             getHipWorldPosition: () => false, setBreaststrokeSamplesOverride() {}, setDivePrepPoseOverride() {} };
         const contact = () => ({ bind() {}, clear() {} });
         Object.assign(rig, { node: new h.Node('Swimmer'), _model: null, root: null, _pose: pose,
-            _modelLoadToken: 0, _modelVariantId: 'test', _sampledActionOverrideLoadToken: 0,
+            _modelLoadToken: 0, _modelVariantId: 'cartonSwimmer6', _waterBalloonMount: null, _waterBalloonMountRequested: false, _sampledActionOverrideLoadToken: 0,
             _sampledActionOverrides: new Map(), _skinnedRenderers: [], _outlineRenderers: [],
             _outlineRoot: null, _outlineVisible: true, _recoveryBlinkVisible: true,
             _loaded: false, _rendererRevealFramesRemaining: 0, _colorOverride: null,
@@ -202,4 +202,19 @@ test('同一模型重建描边时，延后销毁的旧根回调不能清掉新�
     assert.equal(changes.length, 1, '只有当前根的失败回调可以清空引用');
     assert.equal(rig._outlineRoot, null); assert.equal(rig._outlineRenderers.length, 0);
     destroy.call(oldRoot); rig.clearLoadedModel();
+});
+
+// 验证正式加载/卸载方法里的申请门禁，而非重新实现一个替身 API。
+test('普通角色不建水球挂点；申请后加载完成只创建一次，重绑和退出正确释放', () => {
+    const h = harness(), rig = h.createRig();
+    rig.loadModelForCurrentVariant(); assert.equal(rig._waterBalloonMount, null);
+    const model = rig._model, count = h.nodes.length;
+    const mount = rig.prepareTimedWaterBalloonMount(); assert.ok(mount?.isValid); assert.equal(mount.parent.name, 'Spine02');
+    for (let i=0;i<100;i++) assert.equal(rig.prepareTimedWaterBalloonMount(), mount);
+    assert.equal(h.nodes.length, count+1); assert.equal(rig._model,model);
+    rig.clearLoadedModel(); assert.equal(mount.isValid,false); assert.equal(rig._waterBalloonMount,null);
+    rig.loadModelForCurrentVariant(); const next=rig._waterBalloonMount; assert.ok(next?.isValid); assert.notEqual(next,mount);
+    rig.releaseTimedWaterBalloonMount(); assert.equal(next.isValid,false); assert.equal(rig._waterBalloonMount,null);
+    rig.clearLoadedModel(); rig.loadModelForCurrentVariant(); assert.equal(rig._waterBalloonMount,null);
+    const late=h.createRig(); assert.equal(late.prepareTimedWaterBalloonMount(),null);late.releaseTimedWaterBalloonMount();late.loadModelForCurrentVariant();assert.equal(late._waterBalloonMount,null);
 });

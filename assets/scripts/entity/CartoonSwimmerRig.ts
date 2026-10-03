@@ -1,3 +1,4 @@
+import { createTimedWaterBalloonMount } from '../character/TimedWaterBalloonMount';
 import type { RecoveryFloatPose } from '../character/RecoveryFloatPose';
 import { BUTTERFLY_PREVIEW_TUNING } from '../character/ButterflyMotion';
 import { FreestyleBodyRollMotion } from '../character/FreestyleBodyRollMotion';
@@ -421,6 +422,21 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private readonly _geyserBodyPivot = new Vec3();
     get geyserBodyPivot(): Readonly<Vec3> { return this._geyserBodyPivot; }
 
+    private _waterBalloonMount: Node | null = null;
+    private _waterBalloonMountRequested = false;
+    prepareTimedWaterBalloonMount(): Node | null {
+        this._waterBalloonMountRequested = true;
+        if (!this._waterBalloonMount?.isValid && this._model?.isValid) {
+            this._waterBalloonMount = createTimedWaterBalloonMount(this._model, this._modelVariantId);
+        }
+        return this._waterBalloonMount?.isValid ? this._waterBalloonMount : null;
+    }
+    releaseTimedWaterBalloonMount(): void {
+        this._waterBalloonMountRequested = false;
+        if (this._waterBalloonMount?.isValid) this._waterBalloonMount.destroy();
+        this._waterBalloonMount = null;
+    }
+
     get modelVariantId(): string {
         return this._modelVariantId;
     }
@@ -745,6 +761,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 this.refreshShowcaseAction();
                 this.loadSampledActionOverrides(variant, token);
                 this._loaded = true;
+                if (this._waterBalloonMountRequested) this.prepareTimedWaterBalloonMount();
                 this._modelLoading = false;
                 this.resetPose();
                 if (this._modelDebugMode) {
@@ -803,6 +820,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._model.destroy();
         }
         this._model = null;
+        this._waterBalloonMount = null;
     }
 
     private sampledDebugAction(actionId: SampledActionId): SampledActionMotion | null {

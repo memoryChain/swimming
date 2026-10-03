@@ -3,7 +3,7 @@ import type { GeyserIntensity } from './GeyserBrawlRules';
 import type { GiantWaveIntensity } from './GiantWaveRules';
 import { CANNON_BRAWL_TUNING } from '../core/EntertainmentBalance';
 import { CANNON_STRIKE_TRIGGERS } from './CannonBrawlController';
-export type EntertainmentDebugMode = 'none' | 'supplies' | 'debris' | 'supplies-debris' | 'whirlpool' | 'whirlpool-super' | 'geyser' | 'geyser-large' | 'geyser-three' | 'geyser-four' | 'geyser-five' | 'giant-wave-one' | 'giant-wave-two' | 'giant-wave' | 'giant-wave-four' | 'giant-wave-five' | 'light-mix' | 'spray-buoy' | 'cannon' | 'cannon-one' | 'cannon-two' | 'cannon-three' | 'cannon-four' | 'cannon-five';
+export type EntertainmentDebugMode = 'none' | 'supplies' | 'debris' | 'supplies-debris' | 'whirlpool' | 'whirlpool-super' | 'geyser' | 'geyser-large' | 'geyser-three' | 'geyser-four' | 'geyser-five' | 'giant-wave-one' | 'giant-wave-two' | 'giant-wave' | 'giant-wave-four' | 'giant-wave-five' | 'light-mix' | 'spray-buoy' | 'cannon' | 'cannon-one' | 'cannon-two' | 'cannon-three' | 'cannon-four' | 'cannon-five' | 'water-balloon';
 export const ENTERTAINMENT_DEBUG_CHOICES: readonly { id: EntertainmentDebugMode; label: string }[] = [
     { id: 'none', label: '关闭' },
     { id: 'supplies', label: '补给' },
@@ -28,10 +28,11 @@ export const ENTERTAINMENT_DEBUG_CHOICES: readonly { id: EntertainmentDebugMode;
     { id: 'cannon-three', label: '三档单发炮击' },
     { id: 'cannon-four', label: '四档双发炮击' },
     { id: 'cannon-five', label: '五档双发炮击' },
+    { id: 'water-balloon', label: '定时水球接力' },
     { id: 'light-mix', label: '低强度组合' },
 ];
 export function normalizeEntertainmentDebugMode(value: unknown): EntertainmentDebugMode {
-    return value === 'supplies' || value === 'debris' || value === 'supplies-debris' || value === 'whirlpool' || value === 'whirlpool-super' || value === 'geyser' || value === 'geyser-large' || value === 'geyser-three' || value === 'geyser-four' || value === 'geyser-five' || value === 'giant-wave-one' || value === 'giant-wave-two' || value === 'giant-wave' || value === 'giant-wave-four' || value === 'giant-wave-five' || value === 'light-mix' || value === 'spray-buoy' || value === 'cannon' || value === 'cannon-one' || value === 'cannon-two' || value === 'cannon-three' || value === 'cannon-four' || value === 'cannon-five' ? value : 'none';
+    return value === 'supplies' || value === 'debris' || value === 'supplies-debris' || value === 'whirlpool' || value === 'whirlpool-super' || value === 'geyser' || value === 'geyser-large' || value === 'geyser-three' || value === 'geyser-four' || value === 'geyser-five' || value === 'giant-wave-one' || value === 'giant-wave-two' || value === 'giant-wave' || value === 'giant-wave-four' || value === 'giant-wave-five' || value === 'light-mix' || value === 'spray-buoy' || value === 'cannon' || value === 'cannon-one' || value === 'cannon-two' || value === 'cannon-three' || value === 'cannon-four' || value === 'cannon-five' || value === 'water-balloon' ? value : 'none';
 }
 export type CannonDebugPlan = Readonly<{ maxConcurrentLaunches: 1 | 2; minimumLaunchIntervalSeconds: number; triggers: readonly number[] }>;
 /** 五档共用发数映射，调试入口与比赛计划不各自维护规格。 */
@@ -94,6 +95,7 @@ export function buildEntertainmentDebugPlan(mode: EntertainmentDebugMode, raceDi
     const giantWaveIntensity = entertainmentGiantWaveIntensity(mode);
     const cannonPlan = buildCannonDebugPlan(mode, raceDistance);
     return {
+        waterBalloon: mode === 'water-balloon',
         sprayBuoy: mode === 'spray-buoy',
         cannon: cannonPlan !== null,
         cannonPlan,

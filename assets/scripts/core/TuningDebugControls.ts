@@ -1,4 +1,4 @@
-import { CANNON_BRAWL_TUNING, ENTERTAINMENT_RECOVERY_TUNING, SPRAY_BUOY_TUNING, STIMULANT_BRAWL_TUNING, LITTER_BRAWL_TUNING, WHIRLPOOL_BRAWL_TUNING, GEYSER_TUNING, GIANT_WAVE_TUNING } from './EntertainmentBalance';
+import { MINE_RELAY_TUNING, CANNON_BRAWL_TUNING, ENTERTAINMENT_RECOVERY_TUNING, SPRAY_BUOY_TUNING, STIMULANT_BRAWL_TUNING, LITTER_BRAWL_TUNING, WHIRLPOOL_BRAWL_TUNING, GEYSER_TUNING, GIANT_WAVE_TUNING } from './EntertainmentBalance';
 import { CHARACTER_ABILITY_TUNING } from './CharacterAbilityConfig';
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
@@ -499,6 +499,9 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('entertainment.geyser.largeWarningLeadSeconds', '大喷泉提前提醒', '大喷口比小喷口更早冒气泡，默认提前0.3秒。', () => GEYSER_TUNING.largeWarningLeadSeconds, v => GEYSER_TUNING.largeWarningLeadSeconds = v, 0.05, 0.1, 0.6, 2, 's'),
             control('entertainment.sprayBuoy.driftAlongRadius', '浮标前后漂移范围', '只用于本地喷雾浮标测试，不改变普通赛。', () => SPRAY_BUOY_TUNING.driftAlongRadius, v => SPRAY_BUOY_TUNING.driftAlongRadius = v, .05, 0, 1, 2, 'm'),
             control('entertainment.sprayBuoy.driftLateralRadius', '浮标左右漂移范围', '只用于本地喷雾浮标测试。', () => SPRAY_BUOY_TUNING.driftLateralRadius, v => SPRAY_BUOY_TUNING.driftLateralRadius = v, .05, 0, 1, 2, 'm'),
+            control('entertainment.waterBalloon.lockSeconds', '水球锁定时长', '倒计时最后这段时间不能传球，只用于本地水球测试。', () => MINE_RELAY_TUNING.lockSeconds, v => MINE_RELAY_TUNING.lockSeconds = v, .05, .2, 2, 2, 's'),
+            control('entertainment.waterBalloon.transferCooldownSeconds', '水球转交间隔', '刚传球后需要等待，避免在挤靠时连续跳人。', () => MINE_RELAY_TUNING.transferCooldownSeconds, v => MINE_RELAY_TUNING.transferCooldownSeconds = v, .05, .22, 1.5, 2, 's'),
+            control('entertainment.waterBalloon.returnProtectionSeconds', '水球传回保护', '短时间不能传回上一名携带者。', () => MINE_RELAY_TUNING.returnProtectionSeconds, v => MINE_RELAY_TUNING.returnProtectionSeconds = v, .05, .45, 3, 2, 's'),
             control('entertainment.cannon.warningSeconds', '炮击落点提醒时长', '从发射到水球落下的时间；只用于本地炮击测试。', () => CANNON_BRAWL_TUNING.warningSeconds, v => CANNON_BRAWL_TUNING.warningSeconds = v, .05, .8, 3, 2, 's'),
             control('entertainment.cannon.oneMinimumIntervalSeconds', '一档炮击最短间隔', '同一时间最多一颗水球；每局开赛前固定间隔。', () => CANNON_BRAWL_TUNING.oneMinimumIntervalSeconds, v => CANNON_BRAWL_TUNING.oneMinimumIntervalSeconds = v, .05, .85, 4, 2, 's'),
             control('entertainment.cannon.twoMinimumIntervalSeconds', '二档炮击最短间隔', '同一时间最多一颗水球；每局开赛前固定间隔。', () => CANNON_BRAWL_TUNING.twoMinimumIntervalSeconds, v => CANNON_BRAWL_TUNING.twoMinimumIntervalSeconds = v, .05, .85, 4, 2, 's'),

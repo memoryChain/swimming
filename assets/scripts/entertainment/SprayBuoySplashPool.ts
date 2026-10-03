@@ -11,6 +11,7 @@ export type EntertainmentSplashProfile = typeof ENTERTAINMENT_SPLASH_PROFILE[key
 export const ENTERTAINMENT_SPLASH_OWNER = {
     MINEFIELD: 'minefield',
     CANNON: 'cannon',
+    TIMED_BOMB: 'timed-bomb',
 } as const;
 
 export type EntertainmentSplashOwner = typeof ENTERTAINMENT_SPLASH_OWNER[keyof typeof ENTERTAINMENT_SPLASH_OWNER];
