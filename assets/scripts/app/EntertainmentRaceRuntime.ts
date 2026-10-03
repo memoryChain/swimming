@@ -1,3 +1,4 @@
+import { CannonRaceController } from '../entertainment/CannonRaceController';
 import { SprayBuoyRaceController } from '../entertainment/SprayBuoyRaceController';
 import { GiantWaveRaceController } from '../entertainment/GiantWaveRaceController';
 import { EffectAsset, Mesh, Node, Prefab } from 'cc';
@@ -31,6 +32,9 @@ const SPRAY_SPLASH_PATHS = [RESOURCE_PATHS.sprayBuoy.entryBody, RESOURCE_PATHS.s
     RESOURCE_PATHS.sprayBuoy.splashBody, RESOURCE_PATHS.sprayBuoy.splashRing, RESOURCE_PATHS.sprayBuoy.splashCore] as const;
 const GEYSER_PATHS = [RESOURCE_PATHS.geyser.foam, RESOURCE_PATHS.geyser.jet, RESOURCE_PATHS.geyser.drops] as const;
 
+const CANNON_PATHS = [RESOURCE_PATHS.cannon.base, RESOURCE_PATHS.cannon.nozzle, RESOURCE_PATHS.cannon.ball, RESOURCE_PATHS.cannon.warning,
+    RESOURCE_PATHS.sprayBuoy.ring, RESOURCE_PATHS.sprayBuoy.splashBody, RESOURCE_PATHS.sprayBuoy.splashRing, RESOURCE_PATHS.sprayBuoy.splashCore] as const;
+
 export type EntertainmentRacerBinding = {
     lane: number;
     swimmer: Swimmer;
@@ -50,6 +54,8 @@ export class EntertainmentRaceRuntime {
     private readonly whirlpools: readonly WhirlpoolSpawn[];
     private whirlpoolPresentation: WhirlpoolRacePresentation | null = null;
     private readonly useSprayBuoy: boolean;
+    private readonly useCannon: boolean;
+    private cannon: CannonRaceController | null = null;
     private sprayBuoy: SprayBuoyRaceController | null = null;
     private geyser: GeyserRaceController | null = null;
     private giantWave: GiantWaveRaceController | null = null;
@@ -73,7 +79,7 @@ export class EntertainmentRaceRuntime {
         const centers = Array.from({ length: course.laneCount }, (_, lane) => laneCenterZ(lane, course));
         const plan = buildEntertainmentDebugPlan(mode, raceDistance, seed);
         this.light = plan.light; this.whirlpoolActive = !this.light;
-        this.useSprayBuoy = plan.sprayBuoy;
+        this.useSprayBuoy = plan.sprayBuoy; this.useCannon = plan.cannon;
         this.useGiantWave = plan.giantWave;
         this.useGeyser = plan.geyser; this.seed = seed;
         this.geyserIntensity = plan.geyserIntensity;
@@ -120,7 +126,7 @@ export class EntertainmentRaceRuntime {
         if (this.disposed || !this.world?.isValid) { done(new Error('娱乐调试场景已失效')); return; }
         this.prepareDone = done;
         try {
-            if (!this.litter && !this.supplies && !this.useSprayBuoy) { this.prepareWaterEvent(); return; }
+            if (!this.litter && !this.supplies && !this.useSprayBuoy && !this.useCannon) { this.prepareWaterEvent(); return; }
             loadRaceAsset(RESOURCE_PATHS.venueHeightShadeEffect, EffectAsset, (error, effect) => {
                 if (this.disposed) return;
                 if (error || !effect || !this.world.isValid) { this.finishPrepare(error ?? new Error('漂浮物水线材质缺失')); return; }
@@ -135,6 +141,11 @@ export class EntertainmentRaceRuntime {
     private prepareWaterEvent() {
         if (this.disposed) return;
         if (this.useSprayBuoy) { this.prepareSprayBuoy(); return; }
+        if (this.useCannon) {
+            this.prepareEffectMeshes(CANNON_PATHS, meshes => {
+                this.cannon = new CannonRaceController(this.world, this.course, this.racers, this.seed, this.raceDistance, meshes, this.rendering!, this.waterLayers);
+            }); return;
+        }
         if (this.useGiantWave) {
             this.prepareEffectMeshes(GIANT_WAVE_PATHS, meshes => {
                 this.giantWave = new GiantWaveRaceController(this.world, this.course, this.racers.map(r => r.swimmer),
@@ -233,10 +244,10 @@ export class EntertainmentRaceRuntime {
         if (state === GameState.COUNTDOWN) {
             this.leaderDistance = 0; this.whirlpoolActive = !this.light;
             this.supplies?.reset(); this.litter?.reset();
-            this.supplyPresentation?.reset(); this.litterPresentation?.reset(); this.whirlpoolPresentation?.reset(); this.geyser?.reset(); this.giantWave?.reset(); this.sprayBuoy?.reset(); this.routeClock = 1;
+            this.supplyPresentation?.reset(); this.litterPresentation?.reset(); this.whirlpoolPresentation?.reset(); this.geyser?.reset(); this.giantWave?.reset(); this.sprayBuoy?.reset(); this.cannon?.reset(); this.routeClock = 1;
             for (const racer of this.racers) { racer.swimmer.motor.configureEntertainment(true, !!this.supplies);
                 racer.swimmer.motor.configureEntertainmentWhirlpools(this.whirlpools, this.course.poolWidth, laneCenterZ(racer.lane, this.course)); if (this.useGeyser) racer.swimmer.resetEntertainmentGeyser(); racer.ai?.setEntertainmentTargetZ(null); }
-        } else if (state !== GameState.RACING) { this.clearInfluence(); this.whirlpoolPresentation?.reset(); this.geyser?.reset(); this.giantWave?.reset(); this.sprayBuoy?.hide(); }
+        } else if (state !== GameState.RACING) { this.clearInfluence(); this.whirlpoolPresentation?.reset(); this.geyser?.reset(); this.giantWave?.reset(); this.sprayBuoy?.hide(); this.cannon?.hide(); }
         for (const racer of this.racers) racer.swimmer.motor.setEntertainmentWhirlpoolActive(state === GameState.RACING && this.whirlpoolActive);
     }
     update(dt: number, state: GameState) {
@@ -261,13 +272,14 @@ export class EntertainmentRaceRuntime {
             if (target.active) this.leaderDistance = Math.max(this.leaderDistance, target.distance);
             if (target.finished) finisher = true;
         }
-        if (finisher) { this.supplies?.cancelPending(); this.litter?.cancelPendingWaves(); this.geyser?.stopNewPulses(); this.sprayBuoy?.stopNewWaves(); }
+        if (finisher) { this.supplies?.cancelPending(); this.litter?.cancelPendingWaves(); this.geyser?.stopNewPulses(); this.sprayBuoy?.stopNewWaves(); this.cannon?.stopNewStrikes(); }
         const whirlpoolActive = this.whirlpoolActive || !this.light || this.leaderDistance >= this.light.waterEventDistance;
         if (this.whirlpoolActive !== whirlpoolActive) {
             this.whirlpoolActive = whirlpoolActive;
             for (const binding of this.racers) binding.swimmer.motor.setEntertainmentWhirlpoolActive(whirlpoolActive);
         }
         this.sprayBuoy?.update(dt, this.leaderDistance);
+        this.cannon?.update(dt);
         this.giantWave?.update(dt);
         this.geyser?.update(dt, this.light ? this.leaderDistance : this.states[this.referenceIndex]?.distance ?? 0);
         this.supplies?.update(dt); this.litter?.update(dt, state);
@@ -283,7 +295,7 @@ export class EntertainmentRaceRuntime {
                     ? whirlpoolTargetZForAi(this.states[i].distance, this.states[i].lateral, this.course.poolWidth, this.whirlpools) : null;
                 const litter = this.litter?.targetZForAi(binding.lane) ?? null;
                 // 组合中先避眼前杂物，避免为了借浪加速撞向硬障碍。
-                const avoid = this.sprayBuoy?.targetZForAi(binding.lane) ?? (this.light ? litter : null) ?? this.giantWave?.targetZForAi(i) ?? this.geyser?.targetZForAi(binding.swimmer) ?? whirlpool ?? litter;
+                const avoid = this.cannon?.targetZForAi(binding.lane, binding.ai.intelligence.discipline) ?? this.sprayBuoy?.targetZForAi(binding.lane) ?? (this.light ? litter : null) ?? this.giantWave?.targetZForAi(i) ?? this.geyser?.targetZForAi(binding.swimmer) ?? whirlpool ?? litter;
                 const supply = avoid === null ? this.supplies?.targetZForAi(i, binding.condition.energyRatio, binding.swimmer.heartRate) ?? null : null;
                 binding.ai.setEntertainmentTargetZ(avoid ?? supply);
             }
@@ -297,7 +309,7 @@ export class EntertainmentRaceRuntime {
         this.disposed = true; this.clearInfluence();
         for (const binding of this.racers) binding.swimmer.motor.configureEntertainment(false);
         this.supplyPresentation?.dispose(); this.litterPresentation?.dispose(); this.litter?.dispose();
-        this.sprayBuoy?.dispose(); this.geyser?.dispose(); this.giantWave?.dispose();
+        this.sprayBuoy?.dispose(); this.cannon?.dispose(); this.geyser?.dispose(); this.giantWave?.dispose();
         if (this.useGeyser) for (const binding of this.racers) binding.swimmer.configureEntertainmentGeyser(false);
         this.whirlpoolPresentation?.dispose();
         this.rendering?.dispose(); this.rendering = null;

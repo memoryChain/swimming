@@ -1,4 +1,4 @@
-import { ENTERTAINMENT_RECOVERY_TUNING, SPRAY_BUOY_TUNING, STIMULANT_BRAWL_TUNING, LITTER_BRAWL_TUNING, WHIRLPOOL_BRAWL_TUNING, GEYSER_TUNING, GIANT_WAVE_TUNING } from './EntertainmentBalance';
+import { CANNON_BRAWL_TUNING, ENTERTAINMENT_RECOVERY_TUNING, SPRAY_BUOY_TUNING, STIMULANT_BRAWL_TUNING, LITTER_BRAWL_TUNING, WHIRLPOOL_BRAWL_TUNING, GEYSER_TUNING, GIANT_WAVE_TUNING } from './EntertainmentBalance';
 import { CHARACTER_ABILITY_TUNING } from './CharacterAbilityConfig';
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
@@ -499,7 +499,10 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('entertainment.geyser.largeWarningLeadSeconds', '大喷泉提前提醒', '大喷口比小喷口更早冒气泡，默认提前0.3秒。', () => GEYSER_TUNING.largeWarningLeadSeconds, v => GEYSER_TUNING.largeWarningLeadSeconds = v, 0.05, 0.1, 0.6, 2, 's'),
             control('entertainment.sprayBuoy.driftAlongRadius', '浮标前后漂移范围', '只用于本地喷雾浮标测试，不改变普通赛。', () => SPRAY_BUOY_TUNING.driftAlongRadius, v => SPRAY_BUOY_TUNING.driftAlongRadius = v, .05, 0, 1, 2, 'm'),
             control('entertainment.sprayBuoy.driftLateralRadius', '浮标左右漂移范围', '只用于本地喷雾浮标测试。', () => SPRAY_BUOY_TUNING.driftLateralRadius, v => SPRAY_BUOY_TUNING.driftLateralRadius = v, .05, 0, 1, 2, 'm'),
-            control('entertainment.recovery.knockedSeconds', '扶圈恢复时长', '被浮标直接击中后的暂停时长；体力、蓄气和进度保留。', () => ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds, v => ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds = v, .1, 1.5, 6, 1, 's'),
+            control('entertainment.cannon.warningSeconds', '炮击落点提醒时长', '从发射到水球落下的时间；只用于本地单发炮击。', () => CANNON_BRAWL_TUNING.warningSeconds, v => CANNON_BRAWL_TUNING.warningSeconds = v, .05, .8, 3, 2, 's'),
+            control('entertainment.cannon.targetLeadMinimum', '炮击最短预判距离', '按选手游速预测落点，最短提前距离。', () => CANNON_BRAWL_TUNING.targetLeadMinimum, v => CANNON_BRAWL_TUNING.targetLeadMinimum = v, .1, .5, 5.2, 1, 'm'),
+            control('entertainment.cannon.targetLeadMaximum', '炮击最长预判距离', '落点的最大提前距离；不改变角色基础游速。', () => CANNON_BRAWL_TUNING.targetLeadMaximum, v => CANNON_BRAWL_TUNING.targetLeadMaximum = v, .1, 1.7, 8, 1, 'm'),
+            control('entertainment.recovery.knockedSeconds', '扶圈恢复时长', '被娱乐道具中心击中后的暂停时长；体力、蓄气和进度保留。', () => ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds, v => ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds = v, .1, 1.5, 6, 1, 's'),
             control('entertainment.recovery.invulnerableSeconds', '恢复后保护时长', '期间可以正常游泳和输入，但不会再次被碰撞。', () => ENTERTAINMENT_RECOVERY_TUNING.invulnerableSeconds, v => ENTERTAINMENT_RECOVERY_TUNING.invulnerableSeconds = v, .1, 0, 4, 1, 's'),
             control('entertainment.recovery.floatSizeScale', '扶圈大小', '根据角色骨架贴合；默认沿用原版的1.12倍圈径。', () => CHARACTER_POSE_TUNING.recoveryFloatSizeScale, v => CHARACTER_POSE_TUNING.recoveryFloatSizeScale = v, .01, 1.12, 1.3, 2),
             control('entertainment.recovery.bodyTiltDegrees', '扶圈身体前倾', '只改变扶圈姿态，不修改正常游泳动作。', () => CHARACTER_POSE_TUNING.recoveryFloatBodyTiltDegrees, v => CHARACTER_POSE_TUNING.recoveryFloatBodyTiltDegrees = v, 1, 15, 45, 0, '°'),

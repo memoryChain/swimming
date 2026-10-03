@@ -10,6 +10,7 @@ export type EntertainmentSplashProfile = typeof ENTERTAINMENT_SPLASH_PROFILE[key
 
 export const ENTERTAINMENT_SPLASH_OWNER = {
     MINEFIELD: 'minefield',
+    CANNON: 'cannon',
 } as const;
 
 export type EntertainmentSplashOwner = typeof ENTERTAINMENT_SPLASH_OWNER[keyof typeof ENTERTAINMENT_SPLASH_OWNER];
@@ -77,13 +78,14 @@ export class SprayBuoySplashPool {
     private activeCount = 0;
     private disposed = false;
 
-    constructor(private readonly worldRoot: Node, meshes: readonly Mesh[], private readonly layers: FloatingItemLayers | null) {
+    constructor(private readonly worldRoot: Node, meshes: readonly Mesh[], private readonly layers: FloatingItemLayers | null,
+        heavyCount = HEAVY_POOL_SIZE, explosionCount = EXPLOSION_POOL_SIZE) {
         this.heavyBodyMesh = meshes[0]; this.heavyRingMesh = meshes[1];
         this.explosionBodyMesh = meshes[2]; this.explosionRingMesh = meshes[3]; this.explosionCoreMesh = meshes[4];
         this.material = makeWaterSplashMaterial();
         try {
-        this.buildSlots(ENTERTAINMENT_SPLASH_PROFILE.HEAVY_ENTRY, HEAVY_POOL_SIZE, this.heavyBodyMesh, this.heavyRingMesh);
-        this.buildSlots(ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION, EXPLOSION_POOL_SIZE, this.explosionBodyMesh, this.explosionRingMesh);
+        this.buildSlots(ENTERTAINMENT_SPLASH_PROFILE.HEAVY_ENTRY, heavyCount, this.heavyBodyMesh, this.heavyRingMesh);
+        this.buildSlots(ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION, explosionCount, this.explosionBodyMesh, this.explosionRingMesh);
         } catch (error) { this.dispose(); throw error; }
     }
 
@@ -102,7 +104,7 @@ export class SprayBuoySplashPool {
         slot.explosionCoreActive = slot.profile === ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION
             && !slot.rippleOnly && !!request.explosionCorePosition;
         // 共用基线只做小幅轮廓差异；调用方强度、缩放和时长仍完整相乘。
-        slot.bodyRadialBias = 1;
+        slot.bodyRadialBias = request.owner === ENTERTAINMENT_SPLASH_OWNER.CANNON ? 1.08 : 1;
         slot.bodyVerticalBias = request.owner === ENTERTAINMENT_SPLASH_OWNER.MINEFIELD ? 1.14 : 1;
         slot.coreRadialBias = 1;
         slot.coreVerticalBias = request.owner === ENTERTAINMENT_SPLASH_OWNER.MINEFIELD ? 1.12 : 1;

@@ -401,6 +401,12 @@ export const RESOURCE_PATHS = {
         soda: 'items/StimulantBottle/StimulantBottle',
         slush: 'items/CalmSlush/CalmSlush',
     },
+    cannon: {
+        base: 'items/CannonBase/CannonBase',
+        nozzle: 'items/CannonNozzle/CannonNozzle',
+        ball: 'items/CannonWaterBall/CannonWaterBall',
+        warning: 'items/CannonImpactWarning/CannonImpactWarning',
+    },
     sprayBuoy: {
         model: 'items/SprayBuoy/SprayBuoy',
         ring: 'items/RecoveryFloatRing/RecoveryFloatRing',

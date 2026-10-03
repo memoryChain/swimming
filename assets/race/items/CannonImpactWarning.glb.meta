@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "210647fc-0b56-4e15-85ae-3fe6bfe6404a",
+  "files": [],
+  "subMetas": {
+    "75450": {
+      "importer": "gltf-scene",
+      "uuid": "210647fc-0b56-4e15-85ae-3fe6bfe6404a@75450",
+      "displayName": "",
+      "id": "75450",
+      "name": "CannonImpactWarning.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "cc220": {
+      "importer": "gltf-mesh",
+      "uuid": "210647fc-0b56-4e15-85ae-3fe6bfe6404a@cc220",
+      "displayName": "",
+      "id": "cc220",
+      "name": "CannonImpactWarningMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 72
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "33abc": {
+      "importer": "gltf-material",
+      "uuid": "210647fc-0b56-4e15-85ae-3fe6bfe6404a@33abc",
+      "displayName": "",
+      "id": "33abc",
+      "name": "CannonImpactWarningVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "210647fc-0b56-4e15-85ae-3fe6bfe6404a@cc220"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "210647fc-0b56-4e15-85ae-3fe6bfe6404a@33abc"
+      ],
+      "scenes": [
+        "210647fc-0b56-4e15-85ae-3fe6bfe6404a@75450"
+      ]
+    }
+  }
+}

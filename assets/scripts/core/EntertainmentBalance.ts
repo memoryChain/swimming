@@ -185,3 +185,12 @@ export const ENTERTAINMENT_RECOVERY_TUNING = {
     disappearBlinkSeconds: 0.55,
     appearBlinkSeconds: 0.65,
 };
+
+/** 原 butterfly 单发炮击，仅用于本地 AI 娱乐测试。 */
+export const CANNON_BRAWL_TUNING = {
+    warningSeconds: 1.25,
+    coreAlongRadius: 1.05, coreLateralRadius: .82,
+    splashAlongRadius: 3.4, splashLateralRadius: 2.85,
+    targetLeadMinimum: 1.7, targetLeadMaximum: 5.2,
+    aiSafetyMargin: .7,
+};

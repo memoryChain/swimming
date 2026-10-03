@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "34d2199f-b622-4a1d-a8fc-7a6234a421c2",
+  "files": [],
+  "subMetas": {
+    "59888": {
+      "importer": "gltf-mesh",
+      "uuid": "34d2199f-b622-4a1d-a8fc-7a6234a421c2@59888",
+      "displayName": "",
+      "id": "59888",
+      "name": "CannonWaterBallMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 720
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "d1914": {
+      "importer": "gltf-material",
+      "uuid": "34d2199f-b622-4a1d-a8fc-7a6234a421c2@d1914",
+      "displayName": "",
+      "id": "d1914",
+      "name": "CannonWaterBallVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "22fdb": {
+      "importer": "gltf-scene",
+      "uuid": "34d2199f-b622-4a1d-a8fc-7a6234a421c2@22fdb",
+      "displayName": "",
+      "id": "22fdb",
+      "name": "CannonWaterBall.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "34d2199f-b622-4a1d-a8fc-7a6234a421c2@59888"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "34d2199f-b622-4a1d-a8fc-7a6234a421c2@d1914"
+      ],
+      "scenes": [
+        "34d2199f-b622-4a1d-a8fc-7a6234a421c2@22fdb"
+      ]
+    }
+  }
+}

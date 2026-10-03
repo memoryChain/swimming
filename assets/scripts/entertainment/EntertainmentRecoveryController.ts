@@ -74,7 +74,7 @@ export type EntertainmentRecoveryHooks = {
 };
 
 /**
- * 娱乐玩法共用的击倒恢复状态机。本批只由本地喷雾浮标创建。
+ * 娱乐玩法共用的击倒恢复状态机。仅由本地娱乐生命周期创建。
  * 规则不持有 Cocos 节点；选手退场后退休，重赛时重置。
  */
 export class EntertainmentRecoveryController {

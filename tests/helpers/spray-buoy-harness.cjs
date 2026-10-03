@@ -2,7 +2,7 @@ const fs=require('node:fs'),path=require('node:path');
 const {createFixedMeshHarness}=require('./fixed-mesh-harness.cjs');
 const {readGlbGeometry}=require('./glb-geometry.cjs');
 const {createAiHarness}=require('./ai-race-harness.cjs');
-function createBuoyHarness(seed=42,distance=200,ids=['cartonSwimmer6','cartonSwimmer5']){
+function createBuoyHarness(seed=42,distance=200,ids=['cartonSwimmer6','cartonSwimmer5'],mode='spray-buoy'){
     const prefabs=new Map(),requests=[],layers=new Set();let loadOverride;
     const h=createFixedMeshHarness({'../core/RaceBundleLoader':{loadRaceAsset(p,t,cb){requests.push(p);if(loadOverride)loadOverride(p,t,cb);else cb(null,prefabs.get(p));}}});
     Object.defineProperty(h.Node.prototype, 'worldPosition', { get(){return this.getWorldPosition(new h.Vec3());} });
@@ -20,7 +20,9 @@ function createBuoyHarness(seed=42,distance=200,ids=['cartonSwimmer6','cartonSwi
         root.getComponentsInChildren=function(){const all=[];function visit(n){all.push(...n.components);for(const c of n.children)visit(c);}visit(root);return all;};return {data:root};
     }
     const paths=h.loadModule('core/ResourcePaths').RESOURCE_PATHS;
-    for(const p of Object.values(paths.sprayBuoy))prefabs.set(p,readPrefab(p.split('/').pop()));prefabs.set(paths.venueHeightShadeEffect,{});
+    for(const p of Object.values(paths.sprayBuoy))prefabs.set(p,readPrefab(p.split('/').pop()));
+    if(mode==='cannon')for(const p of Object.values(paths.cannon))prefabs.set(p,readPrefab(p.split('/').pop()));
+    prefabs.set(paths.venueHeightShadeEffect,{});
     const a=createAiHarness();a.load('core/GameBalance').setSoloRaceDistance(distance);a.load('core/GameBalance').setRaceDifficulty('competitive');
     const {laneCenterZ}=a.load('venue/LaneLayout');
     const course=new (a.load('venue/RaceCourseLayout').RaceCourseLayout)(a.load('venue/VenueConfig').DEFAULT_POOL_DEFINITION);
@@ -28,7 +30,7 @@ function createBuoyHarness(seed=42,distance=200,ids=['cartonSwimmer6','cartonSwi
     // 浮圈父节点使用有完整生命周期的 Node，但身体与 Motor 使用真实实现。
     for(const actor of actors){const old=actor.body.node;actor.body.node=new h.Node('Swimmer');actor.body.node.setPosition(old.position);actor.body.node.emit=()=>{};}
     const racers=actors.map((f,lane)=>({lane,swimmer:f.body,condition:f.condition,ai:f.ai}));
-    const runtime=new (h.loadModule('app/EntertainmentRaceRuntime').EntertainmentRaceRuntime)(h.root,actors[0].body.courseLayout,'spray-buoy',seed,distance,racers,{registerFloatingObject(n){layers.add(n);return()=>layers.delete(n);}});
+    const runtime=new (h.loadModule('app/EntertainmentRaceRuntime').EntertainmentRaceRuntime)(h.root,actors[0].body.courseLayout,mode,seed,distance,racers,{registerFloatingObject(n){layers.add(n);return()=>layers.delete(n);}});
     const state=a.load('core/GameConstants').GameState;
     return {...h,actors,racers,runtime,state,paths,requests,prefabs,layers,setLoadOverride:f=>loadOverride=f,
         liveBudget:()=>({nodes:h.nodes.filter(n=>n.isValid).length,materials:h.materials.filter(n=>!n.destroyCount).length,renderers:h.nodes.filter(n=>n.isValid&&n.components.length).length})};

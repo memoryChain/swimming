@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "0feaf607-2737-4b97-bf67-5e0b86c3cad6",
+  "files": [],
+  "subMetas": {
+    "224fe": {
+      "importer": "gltf-mesh",
+      "uuid": "0feaf607-2737-4b97-bf67-5e0b86c3cad6@224fe",
+      "displayName": "",
+      "id": "224fe",
+      "name": "CannonNozzleMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 1252
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "8b07f": {
+      "importer": "gltf-material",
+      "uuid": "0feaf607-2737-4b97-bf67-5e0b86c3cad6@8b07f",
+      "displayName": "",
+      "id": "8b07f",
+      "name": "CannonNozzleVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "41a63": {
+      "importer": "gltf-scene",
+      "uuid": "0feaf607-2737-4b97-bf67-5e0b86c3cad6@41a63",
+      "displayName": "",
+      "id": "41a63",
+      "name": "CannonNozzle.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "0feaf607-2737-4b97-bf67-5e0b86c3cad6@224fe"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "0feaf607-2737-4b97-bf67-5e0b86c3cad6@8b07f"
+      ],
+      "scenes": [
+        "0feaf607-2737-4b97-bf67-5e0b86c3cad6@41a63"
+      ]
+    }
+  }
+}

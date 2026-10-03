@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "40b0ce2a-2dd8-41a0-b582-3484da53a729",
+  "files": [],
+  "subMetas": {
+    "664b4": {
+      "importer": "gltf-mesh",
+      "uuid": "40b0ce2a-2dd8-41a0-b582-3484da53a729@664b4",
+      "displayName": "",
+      "id": "664b4",
+      "name": "CannonBaseMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 1336
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "441af": {
+      "importer": "gltf-material",
+      "uuid": "40b0ce2a-2dd8-41a0-b582-3484da53a729@441af",
+      "displayName": "",
+      "id": "441af",
+      "name": "CannonBaseVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "dfe28": {
+      "importer": "gltf-scene",
+      "uuid": "40b0ce2a-2dd8-41a0-b582-3484da53a729@dfe28",
+      "displayName": "",
+      "id": "dfe28",
+      "name": "CannonBase.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "40b0ce2a-2dd8-41a0-b582-3484da53a729@664b4"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "40b0ce2a-2dd8-41a0-b582-3484da53a729@441af"
+      ],
+      "scenes": [
+        "40b0ce2a-2dd8-41a0-b582-3484da53a729@dfe28"
+      ]
+    }
+  }
+}
