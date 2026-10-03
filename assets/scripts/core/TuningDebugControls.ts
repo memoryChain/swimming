@@ -1,3 +1,4 @@
+import { STIMULANT_BRAWL_TUNING, LITTER_BRAWL_TUNING } from './EntertainmentBalance';
 import { CHARACTER_ABILITY_TUNING } from './CharacterAbilityConfig';
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
@@ -465,6 +466,23 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('water.floorFarStrength', '水下远色浓度', '远处瓷砖吸收到独立深蓝色的强度：0=不渐变，1=远处完全成为设定的远色。', () => WATER_COLOR_TUNING.floorFarStrength, (v) => { WATER_COLOR_TUNING.floorFarStrength = v; applyWaterColorTuning(); }, 0.02, 0, 1, 2),
             control('water.floorFarStart', '水下渐变起点', '瓷砖离相机多远开始转向深蓝。默认 0 表示从镜头附近就以很低斜率连续变化，避免形成近色平台边界。', () => WATER_COLOR_TUNING.floorFarStart, (v) => { WATER_COLOR_TUNING.floorFarStart = v; applyWaterColorTuning(); }, 0.5, 0, 30, 1, 'm'),
             control('water.floorFarEnd', '水下渐变尺度', '控制远色吸收的距离尺度；到该距离时约完成 80% 转色，之后仍会继续自然接近远色，不产生硬终点。', () => WATER_COLOR_TUNING.floorFarEnd, (v) => { WATER_COLOR_TUNING.floorFarEnd = v; applyWaterColorTuning(); }, 0.5, 1, 60, 1, 'm'),
+        ],
+    },
+    {
+        name: '娱乐调试',
+        controls: [
+            control('entertainment.supply.energyRestoreRatio', '苏打体力恢复比例', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => STIMULANT_BRAWL_TUNING.energyRestoreRatio, v => STIMULANT_BRAWL_TUNING.energyRestoreRatio = v, 0.05, 0, 1, 2),
+            control('entertainment.supply.heartRateBurden', '苏打心率负担', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => STIMULANT_BRAWL_TUNING.heartRateBurden, v => STIMULANT_BRAWL_TUNING.heartRateBurden = v, 5, 0, 100, 0),
+            control('entertainment.supply.heartRateRecoveryHoldSeconds', '苏打恢复锁定秒数', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => STIMULANT_BRAWL_TUNING.heartRateRecoveryHoldSeconds, v => STIMULANT_BRAWL_TUNING.heartRateRecoveryHoldSeconds = v, 0.5, 0, 10, 1),
+            control('entertainment.supply.calmSlushHeartRateDrop', '冰沙心率降低', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => STIMULANT_BRAWL_TUNING.calmSlushHeartRateDrop, v => STIMULANT_BRAWL_TUNING.calmSlushHeartRateDrop = v, 5, 0, 100, 0),
+            control('entertainment.supply.calmSlushDuration', '冰沙持续秒数', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => STIMULANT_BRAWL_TUNING.calmSlushDuration, v => STIMULANT_BRAWL_TUNING.calmSlushDuration = v, 0.5, 0, 10, 1),
+            control('entertainment.supply.calmSlushPropulsionScale', '冰沙推进倍率', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => STIMULANT_BRAWL_TUNING.calmSlushPropulsionScale, v => STIMULANT_BRAWL_TUNING.calmSlushPropulsionScale = v, 0.05, 0.1, 1, 2),
+            control('entertainment.supply.maxTurnImpulseScale', '高心率转向冲量倍率', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => STIMULANT_BRAWL_TUNING.maxTurnImpulseScale, v => STIMULANT_BRAWL_TUNING.maxTurnImpulseScale = v, 0.05, 1, 2, 2),
+            control('entertainment.supply.minTurnDragScale', '高心率转向阻尼倍率', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => STIMULANT_BRAWL_TUNING.minTurnDragScale, v => STIMULANT_BRAWL_TUNING.minTurnDragScale = v, 0.05, 0.1, 1, 2),
+            control('entertainment.debris.maxEnvironmentDrag', '软杂物阻力', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => LITTER_BRAWL_TUNING.maxEnvironmentDrag, v => LITTER_BRAWL_TUNING.maxEnvironmentDrag = v, 0.05, 0, 2, 2),
+            control('entertainment.debris.rigidSpeedRetain', '硬杂物速度保留比例', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => LITTER_BRAWL_TUNING.rigidSpeedRetain, v => LITTER_BRAWL_TUNING.rigidSpeedRetain = v, 0.05, 0, 1, 2),
+            control('entertainment.debris.rigidBackwardImpulse', '硬杂物后退冲量', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => LITTER_BRAWL_TUNING.rigidBackwardImpulse, v => LITTER_BRAWL_TUNING.rigidBackwardImpulse = v, 0.05, 0, 1, 2),
+            control('entertainment.debris.rigidLateralImpulse', '硬杂物侧向冲量', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => LITTER_BRAWL_TUNING.rigidLateralImpulse, v => LITTER_BRAWL_TUNING.rigidLateralImpulse = v, 0.05, 0, 2, 2),
         ],
     },
 ];

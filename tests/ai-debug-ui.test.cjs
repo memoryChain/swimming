@@ -50,7 +50,7 @@ test('测试入口反复切换角色等级赛程不增加节点或监听，启�
     buildAiDebugSetupPicker(root, () => starts++, () => {});
     const count = root.children.length;
     for (let i = 0; i < 100; i++) {
-        for (const name of ['Character', 'LevelUp', 'OpponentCount', 'Roster', 'Mode', 'Seed']) root.getChildByName(name).click();
+        for (const name of ['Character', 'LevelUp', 'OpponentCount', 'Roster', 'Mode', 'Seed', 'Entertainment']) root.getChildByName(name).click();
         assert.equal(root.children.length, count);
     }
     assert.equal(root.getChildByName('Level').getComponent(Label).string, '等级 30');

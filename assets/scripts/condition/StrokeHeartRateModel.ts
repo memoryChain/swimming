@@ -8,6 +8,7 @@ export class StrokeHeartRateModel {
     private count = 0;
     private clock = 0;
     private value = 80;
+    private recoveryHoldUntil = 0;
 
     private trait: HeartRateTraitId = 'balanced';
     private breathControl = false;
@@ -17,7 +18,7 @@ export class StrokeHeartRateModel {
     get heartRateTrait(): HeartRateTraitId { return this.trait; }
 
     // 比赛重置清空负荷历史，保留已配置的角色特性。
-    reset() { this.head = 0; this.count = 0; this.clock = 0; this.value = 80; }
+    reset() { this.head = 0; this.count = 0; this.clock = 0; this.value = 80; this.recoveryHoldUntil = 0; }
     get heartRate(): number { return this.value; }
     get strokeRate(): number { return this.count / HEART_RATE_TUNING.sampleSeconds; }
     get targetHeartRate(): number {
@@ -31,8 +32,18 @@ export class StrokeHeartRateModel {
     }
 
     // 瞬时负担不伪造划水次数，不清空此前采样；异常/负配置不能变成回血。
-    addBurden(amount: number) {
-        if (Number.isFinite(amount) && amount > 0) this.value = Math.min(180, this.value + amount);
+    addBurden(amount: number, recoveryHoldSeconds = 0) {
+        if (!Number.isFinite(amount) || amount <= 0) return;
+        this.value = Math.min(180, this.value + amount);
+        if (Number.isFinite(recoveryHoldSeconds) && recoveryHoldSeconds > 0) {
+            this.recoveryHoldUntil = Math.max(this.recoveryHoldUntil, this.clock + recoveryHoldSeconds);
+        }
+    }
+
+    applyCooling(amount: number) {
+        if (!Number.isFinite(amount) || amount <= 0) return;
+        this.value = Math.max(80, this.value - amount);
+        this.recoveryHoldUntil = this.clock;
     }
 
     recordStart() {
@@ -52,17 +63,25 @@ export class StrokeHeartRateModel {
         while (this.count > 0) {
             const expiry = this.starts[this.head] + HEART_RATE_TUNING.sampleSeconds;
             if (expiry > end + 1e-10) break;
-            if (!freezeValue) this.approach(Math.max(0, expiry - this.clock));
+            if (!freezeValue) this.approachInterval(Math.max(0, expiry - this.clock));
             this.clock = Math.max(this.clock, Math.min(end, expiry));
             this.head = (this.head + 1) % this.starts.length;
             this.count--;
         }
-        if (!freezeValue) this.approach(Math.max(0, end - this.clock));
+        if (!freezeValue) this.approachInterval(Math.max(0, end - this.clock));
         this.clock = end;
     }
 
-    private approach(dt: number) {
+    private approachInterval(dt: number) {
+        if (this.clock >= this.recoveryHoldUntil) { this.approach(dt); return; }
+        const held = Math.min(dt, Math.max(0, this.recoveryHoldUntil - this.clock));
+        if (held > 0) this.approach(held, true);
+        if (dt > held) this.approach(dt - held, false);
+    }
+
+    private approach(dt: number, suppressRecovery = false) {
         const target = this.targetHeartRate;
+        if (suppressRecovery && target < this.value) return;
         const profile = HEART_RATE_TRAITS[this.trait];
         const seconds = HEART_RATE_TUNING[target > this.value ? profile.riseKey : profile.recoveryKey];
         this.value = target + (this.value - target) * Math.exp(-dt / Math.max(0.01, seconds));

@@ -103,6 +103,16 @@ export class PlayerConditionModel {
         this.refreshModifiers();
     }
 
+    /** 按角色体力上限恢复；不通过负扣费绕过边界。只在补给事件时调用。 */
+    restoreEnergyRatio(ratio: number): number {
+        if (this._infiniteStamina || !Number.isFinite(ratio) || ratio <= 0) return 0;
+        const before = this._energy;
+        this._energy = Math.min(this._effectiveEnergyTotal, before + this._effectiveEnergyTotal * Math.min(1, ratio));
+        this._energyDepleted = this._energy <= 0;
+        this.refreshModifiers();
+        return this._energy - before;
+    }
+
     // 心率只消费实际运动模型，不能另跑一条显示曲线。
     syncHeartRate(value: number) {
         if (!Number.isFinite(value)) return;

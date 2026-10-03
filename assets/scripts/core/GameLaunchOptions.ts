@@ -1,3 +1,5 @@
+import { normalizeEntertainmentDebugMode } from '../entertainment/EntertainmentDebugPlan';
+import type { EntertainmentDebugMode } from '../entertainment/EntertainmentDebugPlan';
 import type { PlayerCharacterId } from '../app/PlayerCharacterConfig';
 import type { RaceDifficulty } from './GameBalance';
 import { findBossPreset, bossRoster } from '../competitor/BossAiConfig';
@@ -13,6 +15,7 @@ export interface AiDebugSetup {
     opponentCount: 1 | 7;
     mixedCharacters: boolean;
     bossId?: string | null;
+    entertainment?: EntertainmentDebugMode;
 }
 const pendingAiDebugSetup: AiDebugSetup = { characterId: 'cartonSwimmer6', level: 1, mode: 'beginner', seed: 20260913,
     opponentCount: 7, mixedCharacters: true };
@@ -26,6 +29,7 @@ export function setAiDebugSetup(setup: AiDebugSetup) {
     pendingAiDebugSetup.mixedCharacters = setup.mixedCharacters === true;
     const boss = findBossPreset(setup.bossId);
     pendingAiDebugSetup.bossId = boss?.id ?? null;
+    pendingAiDebugSetup.entertainment = boss ? 'none' : normalizeEntertainmentDebugMode(setup.entertainment);
     if (boss) { pendingAiDebugSetup.mode = boss.mode; pendingAiDebugSetup.opponentCount = boss.roster.length === 1 ? 1 : 7; }
 }
 

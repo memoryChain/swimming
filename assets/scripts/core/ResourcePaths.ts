@@ -387,6 +387,10 @@ export const PREPARE_PANORAMA_WIDTH = 2115;
 export const PREPARE_PANORAMA_HEIGHT = 743;
 
 export const RESOURCE_PATHS = {
+    entertainmentSupplies: {
+        soda: 'items/StimulantBottle/StimulantBottle',
+        slush: 'items/CalmSlush/CalmSlush',
+    },
     venuePreloadDirs: ['pool', 'skybox', 'material-effects'] as const,
     uiBundle: { name: 'ui', root: 'ui' },
     uiAtlases: {

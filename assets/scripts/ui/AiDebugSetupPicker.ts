@@ -1,3 +1,4 @@
+import { ENTERTAINMENT_DEBUG_CHOICES, normalizeEntertainmentDebugMode } from '../entertainment/EntertainmentDebugPlan';
 import { BlockInputEvents, Label, Node, UITransform, view } from 'cc';
 import { getAiDebugSetup, setAiDebugSetup } from '../core/GameLaunchOptions';
 import { getRaceDistance, getRaceModeTitle, RaceDifficulty } from '../core/GameBalance';
@@ -94,6 +95,13 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
         setup.seed = setup.seed === 20260913 ? 42 : setup.seed === 42 ? 12345 : 20260913;
         write(seed, `种子 ${setup.seed}`);
     });
+    let entertainmentIndex = ENTERTAINMENT_DEBUG_CHOICES.findIndex(choice => choice.id === normalizeEntertainmentDebugMode(setup.entertainment));
+    const entertainmentText = () => `娱乐：${ENTERTAINMENT_DEBUG_CHOICES[entertainmentIndex].label}`;
+    const entertainment = button('Entertainment', entertainmentText(), 210, 232, 290, () => {
+        entertainmentIndex = (entertainmentIndex + 1) % ENTERTAINMENT_DEBUG_CHOICES.length;
+        setup.entertainment = ENTERTAINMENT_DEBUG_CHOICES[entertainmentIndex].id;
+        write(entertainment, entertainmentText());
+    });
     const hint = makeLabel('Hint', root, '等级与智力应用于全部 AI，玩家使用自己的角色属性', 18, uiColor(190, 210, 220)).getComponent(Label);
     hint.node.setPosition(0, -210, 0);
     let launched = false;
@@ -104,7 +112,7 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
         setAiDebugSetup(setup);
         start(tier.value);
     }));
-    const normalNames = ['Character', 'Level', 'LevelDown', 'LevelUp', 'OpponentCount', 'Roster', 'Mode',
+    const normalNames = ['Entertainment', 'Character', 'Level', 'LevelDown', 'LevelUp', 'OpponentCount', 'Roster', 'Mode',
         ...AI_DEBUG_DIFFICULTY_TIERS.map((_, i) => `Tier${i}`)];
     const normalNodes = normalNames.map(name => root.getChildByName(name));
     const bossName = button('BossPreset', BOSS_AI_PRESETS[bossIndex].name, -195, 174, 360, () => changeBoss(1));

@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "988fb449-6ef7-430c-9a6d-7e480294457f",
+  "files": [],
+  "subMetas": {
+    "c4dc0": {
+      "importer": "gltf-mesh",
+      "uuid": "988fb449-6ef7-430c-9a6d-7e480294457f@c4dc0",
+      "displayName": "",
+      "id": "c4dc0",
+      "name": "CalmSlushMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 256
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "bf0b2": {
+      "importer": "gltf-material",
+      "uuid": "988fb449-6ef7-430c-9a6d-7e480294457f@bf0b2",
+      "displayName": "",
+      "id": "bf0b2",
+      "name": "CalmSlushVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "d82fc": {
+      "importer": "gltf-scene",
+      "uuid": "988fb449-6ef7-430c-9a6d-7e480294457f@d82fc",
+      "displayName": "",
+      "id": "d82fc",
+      "name": "CalmSlush.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "988fb449-6ef7-430c-9a6d-7e480294457f@c4dc0"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "988fb449-6ef7-430c-9a6d-7e480294457f@bf0b2"
+      ],
+      "scenes": [
+        "988fb449-6ef7-430c-9a6d-7e480294457f@d82fc"
+      ]
+    }
+  }
+}

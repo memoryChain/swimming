@@ -118,7 +118,9 @@ function progressSpeedFixture() {
  const names=['stepSimulation','updateMovementSpeed','movementSpeed','currentSpeed','netSpeed'];
  const methods=swimmerClass.members.filter(n=>names.includes(n.name?.getText(source)));
  assert.equal(methods.length,names.length);
- const js=ts.transpileModule(`class SpeedHarness { ${methods.map(n=>n.getText(source)).join('\n')} }`,
+ const options=source.statements.filter(n=>ts.isVariableStatement(n) && n.declarationList.declarations.some(d=>['PLAYER_MOTOR_OPTIONS','AI_MOTOR_OPTIONS'].includes(d.name.getText(source))));
+ assert.equal(options.length,2);
+ const js=ts.transpileModule(`${options.map(n=>n.getText(source)).join('\n')}\nclass SpeedHarness { ${methods.map(n=>n.getText(source)).join('\n')} }`,
   {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
  const Harness=vm.runInNewContext(`${js}; SpeedHarness`);
  const swimmer=new Harness(),motor=new SwimmerMotor();

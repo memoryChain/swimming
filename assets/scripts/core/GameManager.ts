@@ -1,3 +1,5 @@
+import { EntertainmentRaceRuntime } from '../app/EntertainmentRaceRuntime';
+import { entertainmentDebugAllowed } from '../entertainment/EntertainmentDebugPlan';
 import { consumeTutorialRequest, TUTORIAL_RUNTIME, TUTORIAL_AI } from '../tutorial/TutorialSession';
 import { TutorialRaceController, findTutorialNode } from '../tutorial/TutorialRaceController';
 import { prepareVenueResources } from './RaceBundleLoader';
@@ -181,6 +183,7 @@ export class GameManager extends Component {
     private readonly _collisionSwimmers: Swimmer[] = [];
     // AI 测试赛可选 1 或 7 个对手，等级、智力和阵容来自开始页面板。
     private _aiDebugMode = false;
+    private _entertainmentRuntime: EntertainmentRaceRuntime | null = null;
     private _freestylePresentationEnabled = false;
     private _aiDebugDifficulty = 0.8;
     private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
@@ -377,6 +380,7 @@ export class GameManager extends Component {
                 this.buildDeferredAiSwimmers();
                 this.applyAiDebugHud();
             }
+            await loading.step('娱乐调试资源', done => this.setupEntertainmentDebug(done));
             await loading.frames();
             this.buildSpectatorCrowd(this._worldRoot, this._poolNode);
             this.setupScoreboardFeed(this._poolNode);
@@ -443,6 +447,8 @@ export class GameManager extends Component {
         this._netRaceController = null;
         this._gameFlow?.stopAllAi();
         this._gameFlow?.clearRaceManagerCallbacks();
+        this._entertainmentRuntime?.dispose();
+        this._entertainmentRuntime = null;
         this._laneLockdownVisuals?.dispose();
         this._laneLockdownVisuals = null;
         this._laneLockdownRace = null;
@@ -572,6 +578,7 @@ export class GameManager extends Component {
         }
         this.updateNetRaceSync(dt);
         this.updateLaneLockdown(dt);
+        this._entertainmentRuntime?.update(dt, this._state);
         const preRacePhase = this._raceCameraDirector.preRacePhase;
         this._preRaceIntroPanel.setPhase(
             this._modelDebugFlow?.active || this._state !== GameState.PRECOUNTDOWN
@@ -840,6 +847,8 @@ export class GameManager extends Component {
     }
 
     private returnToLogin() {
+        this._entertainmentRuntime?.dispose();
+        this._entertainmentRuntime = null;
         if (this._isReturningToLogin) {
             return;
         }
@@ -999,6 +1008,7 @@ export class GameManager extends Component {
             handleModelDebugKickConfirmed: () => this._modelDebugFlow?.confirmKickStroke() ?? false,
             setState: (state) => {
                 this._state = state;
+                this._entertainmentRuntime?.onStateChanged(state);
                 this._careerRaceDebugPanel.setAvailable(this.canDebugCareerFinish());
                 this.syncConditionPhase(state);
                 if ((state === GameState.READY || state === GameState.PRECOUNTDOWN)
@@ -1498,6 +1508,23 @@ export class GameManager extends Component {
         this._raceCameraDirector.setPlayerLaneZ(playerLaneZ);
         this._cameraTarget.z = playerLaneZ;
         this.debug(`race start lane=${this._playerLaneIndex + 1}`);
+    }
+
+    private setupEntertainmentDebug(done: (error?: Error | null) => void) {
+        const setup = getAiDebugSetup();
+        if (!entertainmentDebugAllowed(this._aiDebugMode, !!this._netSession, this._roomMode,
+            this._tutorialMode, !!findBossPreset(setup.bossId), setup.entertainment)) { done(); return; }
+        const racers = [];
+        for (let lane = 0; lane < COURSE_LAYOUT.laneCount; lane++) {
+            const swimmer = this.swimmerForLane(lane);
+            if (!swimmer) continue;
+            const index = this._aiSwimmers.indexOf(swimmer);
+            racers.push({ lane, swimmer, condition: index >= 0 ? this._aiConditions[index] : this._playerCondition,
+                ai: index >= 0 ? this._aiControllers[index] : null });
+        }
+        this._entertainmentRuntime = new EntertainmentRaceRuntime(this._worldRoot, COURSE_LAYOUT,
+            setup.entertainment, setup.seed, getRaceDistance(), racers);
+        this._entertainmentRuntime.prepare(done);
     }
 
     private buildDeferredAiSwimmers() {

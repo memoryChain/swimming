@@ -61,6 +61,11 @@ export class AISwimmerController extends Component {
     private _lastStrokeStart = -10;
     private _clock = 0;
     private _targetZ: number | null = null;
+    private _entertainmentTargetZ: number | null = null;
+    setEntertainmentTargetZ(value: number | null) {
+        const next = value !== null && Number.isFinite(value) ? value : null;
+        if (this._entertainmentTargetZ !== next) this._entertainmentTargetZ = next;
+    }
     private _safeMinZ: number | null = null;
     private _safeMaxZ: number | null = null;
     private _safeWarning = false;
@@ -120,6 +125,7 @@ export class AISwimmerController extends Component {
         this._wasLocked = false;
         this._safeAware = false;
         this._targetZ = null;
+        this._entertainmentTargetZ = null;
         this._observation.strokeCostPerMeter = 0.7;
         this.planner.reset();
         this._timer = this.intelligence.id === 'extreme' ? 0
@@ -336,7 +342,7 @@ export class AISwimmerController extends Component {
             / Math.max(0.01, MOTION_TUNING.heldMotionSpeedScale);
         if (!this._primed && this.intelligence.id === 'extreme' && progress >= 0 && progress < this._target
             && remainingHold <= threshold * 0.5 && threshold > dt * 2
-            && Math.abs(b.steeringHeadingRatio) < 0.12 && this._targetZ === null && this._safeMinZ === null
+            && Math.abs(b.steeringHeadingRatio) < 0.12 && this._targetZ === null && this._entertainmentTargetZ === null && this._safeMinZ === null
             && !this.planner.wantsJump && (this.planner.action === 'swim' || this.planner.action === 'sprint')) {
             this._primedSide = opposite(this._side);
             if (b.canAcceptStroke(this._primedSide)) {
@@ -388,7 +394,7 @@ export class AISwimmerController extends Component {
         const b = this.swimmer;
         if (!isRaceSteeringEnabled()) return this._nextSide;
         const discipline = this.intelligence.discipline;
-        let targetZ = this._targetZ;
+        let targetZ = this._entertainmentTargetZ ?? this._targetZ;
         if (this._safeMinZ !== null && this._safeMaxZ !== null) {
             if (!this._safeAware) this._safeAware = randomFloat() < discipline * (this._safeWarning ? 1 : 0.5);
             if (this._safeAware) targetZ = clamp(b.node.position.z, this._safeMinZ + 0.22, this._safeMaxZ - 0.22);

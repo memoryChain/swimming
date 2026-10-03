@@ -25,7 +25,7 @@ function exportPathsSource(config) {
 function syncUiAtlasExports(root = ROOT) {
     const file = path.join(root, 'scripts/ui-atlas-export-paths.jsx');
     const source = exportPathsSource(read(path.join(root, 'config/ui-atlases.json')));
-    if (fs.existsSync(file) && fs.readFileSync(file, 'utf8') === source) return false;
+    if (fs.existsSync(file) && fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n') === source) return false;
     fs.writeFileSync(file, source); return true;
 }
 
@@ -34,7 +34,7 @@ function auditUiAtlases(root = ROOT, { fix = false } = {}) {
     const issues = [], pendingImport = [], groups = [];
     let changed = 0, images = 0;
     const exportFile = path.join(root, 'scripts/ui-atlas-export-paths.jsx');
-    if (!fs.existsSync(exportFile) || fs.readFileSync(exportFile, 'utf8') !== exportPathsSource(config)) {
+    if (!fs.existsSync(exportFile) || fs.readFileSync(exportFile, 'utf8').replace(/\r\n/g, '\n') !== exportPathsSource(config)) {
         if (fix) { syncUiAtlasExports(root); changed++; }
         else issues.push('PS 导出路径已过期，请运行 pnpm ui:atlases:sync');
     }

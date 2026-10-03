@@ -1,3 +1,5 @@
+import { EntertainmentSwimmerEffects } from '../entertainment/EntertainmentSwimmerEffects';
+import type { StimulantItemKind } from '../entertainment/StimulantBrawlRules';
 import { TUTORIAL_RUNTIME } from '../tutorial/TutorialSession';
 import { CharacterAbilityState } from './CharacterAbilityState';
 import { abilityValue, CharacterAbilityId } from '../core/CharacterAbilityConfig';
@@ -94,6 +96,27 @@ export type StrokeTimingGuide = {
 type ReleaseRanges = { perfect: { start: number; end: number }; good: { start: number; end: number } };
 
 export class SwimmerMotor {
+    private _entertainment: EntertainmentSwimmerEffects | null = null;
+    configureEntertainment(enabled: boolean, suppliesEnabled = true) {
+        if (enabled) {
+            this._entertainment ??= new EntertainmentSwimmerEffects();
+            this._entertainment.reset();
+            this._entertainment.setSuppliesEnabled(suppliesEnabled);
+        } else {
+            this._entertainment = null;
+            this._physicsInput.environmentDrag = 0;
+            this._physicsInput.propulsionScale = 1;
+        }
+    }
+    setEntertainmentDrag(value: number) { this._entertainment?.setDrag(value); }
+    applyEntertainmentSupply(kind: StimulantItemKind) {
+        if (!this._entertainment || !this._isRacing) return;
+        this._entertainment.applySupply(kind, this._heartRate);
+    }
+    applyEnvironmentSpeedRetain(retain: number) {
+        if (this._entertainment && this._isRacing && Number.isFinite(retain)) this._currentSpeed *= clamp(retain, 0, 1);
+    }
+
     readonly ability = new CharacterAbilityState();
 
     setCharacterAbility(id: CharacterAbilityId) {
@@ -499,6 +522,7 @@ export class SwimmerMotor {
         }
 
         this._heartRate.tick(dt);
+        this._entertainment?.tick(dt);
         if (this._glidePhaseActive) this.ability.suspend();
         else this.ability.tick(dt, this.isActiveStrokeHeld(StrokeType.LEFT) || this.isActiveStrokeHeld(StrokeType.RIGHT));
         this._motionClock += dt;
@@ -521,6 +545,10 @@ export class SwimmerMotor {
         physicsInput.kickAcceleration = kickAcceleration;
         physicsInput.speedCapBonus = this._speedCapBonus;
         physicsInput.glideDrag = this._glidePhaseActive ? this._glideDrag : 0;
+        if (this._entertainment) {
+            physicsInput.environmentDrag = this._entertainment.drag;
+            physicsInput.propulsionScale = this._entertainment.propulsionScale;
+        }
         const next = this._physics.step(physicsState, physicsInput, this._physicsResult);
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
         this._currentSpeed = next.currentSpeed;
@@ -576,6 +604,7 @@ export class SwimmerMotor {
     }
 
     private resetRaceState(initialDistance = 0) {
+        this._entertainment?.reset();
         this._heartRate.reset();
         this.ability.reset();
         this._authoritativeHeartRate = -1;
@@ -678,7 +707,11 @@ export class SwimmerMotor {
     }
 
     // 海豚跳冻结心率数值但采样时钟照走；普通转身等阶段自然恢复。
-    tickRestingHeartRate(dt: number, freezeValue = false) { if (this._isRacing) this._heartRate.tick(dt, freezeValue); }
+    tickRestingHeartRate(dt: number, freezeValue = false) {
+        if (!this._isRacing) return;
+        this._heartRate.tick(dt, freezeValue);
+        this._entertainment?.tick(dt);
+    }
     applyAuthoritativeHeartRate(value: number, remoteHuman = false) {
         if (!Number.isFinite(value) || value < 0) return;
         this._heartRate.applyAuthoritative(value);
@@ -1507,7 +1540,8 @@ export class SwimmerMotor {
                 this._headingTurnRate = 0;
             }
         }
-        const drag = Math.max(0, finiteOr(STEERING_TUNING.turnAngularDrag, 0));
+        const drag = Math.max(0, finiteOr(STEERING_TUNING.turnAngularDrag, 0))
+            * (this._entertainment?.turnDragScale(this.heartRate) ?? 1);
         this._headingTurnRate *= Math.exp(-drag * step);
         if (Math.abs(this._headingTurnRate) < 1e-5) {
             this._headingTurnRate = 0;
@@ -1608,7 +1642,8 @@ export class SwimmerMotor {
         const factor = minFactor + (1 - minFactor) * clamp01(powerFactor);
         const turnImpulse = Math.max(0, finiteOr(STEERING_TUNING.turnAngularImpulse, 0))
             * DEG2RAD
-            * factor;
+            * factor
+            * (this._entertainment?.turnImpulseScale(this.heartRate) ?? 1);
         const dir = (type === StrokeType.LEFT ? 1 : -1) * this._courseDirection;
         const signedImpulse = dir * turnImpulse * this.axialSteeringProjection();
         const maxRate = safeMaxTurnRateRadians();

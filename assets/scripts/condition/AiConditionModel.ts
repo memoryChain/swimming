@@ -64,6 +64,16 @@ export class AiConditionModel {
         this._energyDepleted = this._energy <= 0;
         this.refreshModifiers();
     }
+    /** 按角色体力上限恢复；不通过负扣费绕过边界。只在补给事件时调用。 */
+    restoreEnergyRatio(ratio: number): number {
+        if (this._infiniteStamina || !Number.isFinite(ratio) || ratio <= 0) return 0;
+        const before = this._energy;
+        this._energy = Math.min(this._energyTotal, before + this._energyTotal * Math.min(1, ratio));
+        this._energyDepleted = this._energy <= 0;
+        this.refreshModifiers();
+        return this._energy - before;
+    }
+
     syncHeartRate(value: number) {
         if (!Number.isFinite(value)) return;
         this._heartRate = clamp(value, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);

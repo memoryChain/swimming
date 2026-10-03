@@ -237,3 +237,21 @@ test('PS 导出映射由清单同步且幂等，194 张迁移资源路径完整�
         new vm.Script(fs.readFileSync(path.join('scripts', file), 'utf8').replace(/^#.*$/gm, ''), { filename: file });
     }
 });
+
+
+test('Windows 换行的 PS 导出清单内容相同时不误报过期，也不触发重写', () => {
+    const root=fs.mkdtempSync(path.join(os.tmpdir(),'swimming-atlas-line-ending-'));
+    try {
+        fs.mkdirSync(path.join(root,'config'));fs.mkdirSync(path.join(root,'scripts'));
+        const config={assets:{'old/icon.png':{path:'common/icon.png'}},groups:{}};
+        fs.writeFileSync(path.join(root,'config/ui-atlases.json'),JSON.stringify(config));
+        syncUiAtlasExports(root);
+        const file=path.join(root,'scripts/ui-atlas-export-paths.jsx');
+        const crlf=fs.readFileSync(file,'utf8').replace(/\n/g,'\r\n');fs.writeFileSync(file,crlf);
+        assert.equal(syncUiAtlasExports(root),false);
+        assert.equal(auditUiAtlases(root).issues.some(issue=>issue.includes('PS 导出路径已过期')),false);
+        assert.equal(fs.readFileSync(file,'utf8'),crlf);
+        fs.writeFileSync(file,crlf.replace('common/icon.png','common/old.png'));
+        assert.ok(auditUiAtlases(root).issues.some(issue=>issue.includes('PS 导出路径已过期')));
+    } finally {fs.rmSync(root,{recursive:true,force:true});}
+});
