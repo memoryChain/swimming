@@ -187,6 +187,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         raceModelEulerDegrees: () => this.raceModelEulerDegrees(),
     });
     private _skinnedRenderers: SkinnedMeshRenderer[] = [];
+    private _outlineRenderers: SkinnedMeshRenderer[] = [];
     // A freshly instantiated skinned GLB can render its bind pose for one frame
     // before Cocos uploads the joint matrices written by the procedural pose.
     // Keep its renderers hidden through one complete update/late-update cycle.
@@ -789,6 +790,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._rendererRevealFramesRemaining = 0;
         this.root = null;
         this._skinnedRenderers.length = 0;
+        this._outlineRenderers.length = 0;
         this._animationPlayer.disable();
         this._animationPlayer.bind(null);
         this._perfectGlowIntensity = 0;
@@ -1918,6 +1920,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         const resolvedCapColor = override?.cap ?? (colorVariant.cap
             ? new Color(...colorVariant.cap, 255)
             : new Color(capColor.r, capColor.g, capColor.b, 0));
+        const model = this._model;
+        const modelLoadToken = this._modelLoadToken;
         applyCharacterSkin({
             root: this.root,
             model: this._model,
@@ -1935,9 +1939,20 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             waterLine: this._waterlineEffectEnabled ? this._waterY : undefined,
             outlineWidth: modelVariant.outlineWidth,
             outlineRoot: this._outlineRoot,
-            setOutlineRoot: (root) => {
+            setOutlineRoot: (root, expectedRoot) => {
+                if (this._model !== model || this._modelLoadToken !== modelLoadToken
+                    || (expectedRoot && this._outlineRoot !== expectedRoot)) return;
                 this._outlineRoot = root;
-                this.setOutlineVisible(this._outlineVisible);
+                this._outlineRenderers.length = 0;
+                this.applyOutlineVisibility();
+            },
+            setOutlineRenderers: (root, renderers) => {
+                if (this._model !== model || this._modelLoadToken !== modelLoadToken
+                    || this._outlineRoot !== root || !root.isValid) return;
+                // 描边组件在材质回调中创建，根节点登记时还不存在。
+                this._outlineRenderers = renderers;
+                this.setSkinnedRenderersEnabled(this._loaded
+                    && this._rendererRevealFramesRemaining <= 0 && this._recoveryBlinkVisible);
             },
         });
         // Dynamic colour assets can finish loading while the swimmer is charging
@@ -2618,6 +2633,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         for (const renderer of this._skinnedRenderers) {
+            if (renderer?.isValid && renderer.enabled !== enabled) renderer.enabled = enabled;
+        }
+        for (const renderer of this._outlineRenderers) {
             if (renderer?.isValid && renderer.enabled !== enabled) renderer.enabled = enabled;
         }
     }

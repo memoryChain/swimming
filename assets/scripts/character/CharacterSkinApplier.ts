@@ -28,7 +28,8 @@ export type CharacterSkinOptions = {
     waterLine?: number;
     outlineWidth?: number;
     outlineRoot: Node | null;
-    setOutlineRoot: (root: Node | null) => void;
+    setOutlineRoot: (root: Node | null, expectedRoot?: Node) => void;
+    setOutlineRenderers: (root: Node, renderers: SkinnedMeshRenderer[]) => void;
 };
 
 export function applyCharacterSkin(options: CharacterSkinOptions) {
@@ -267,13 +268,16 @@ function configureOutlineShells(options: CharacterSkinOptions) {
     setOutlineRoot(root);
 
     loadOutlineShellMaterial(options.outlineWidth ?? OUTLINE_SHELL_WIDTH, (material) => {
-        if (!material || !model?.isValid || !root.isValid) {
+        if (!model?.isValid || !root.isValid) {
+            return;
+        }
+        if (!material) {
             root.destroy();
-            setOutlineRoot(null);
+            setOutlineRoot(null, root);
             return;
         }
 
-        let shellCount = 0;
+        const outlineRenderers: SkinnedMeshRenderer[] = [];
         for (const source of skinnedRenderers) {
             if (!source.node?.isValid || !source.mesh) {
                 continue;
@@ -305,18 +309,19 @@ function configureOutlineShells(options: CharacterSkinOptions) {
                 outline.setUseBakedAnimation(false, true);
                 outline.uploadAnimation(null);
                 setAllRendererMaterialSlots(source, outline, material);
-                shellCount++;
+                outlineRenderers.push(outline);
             } catch (error) {
                 console.warn('[SpeedSwimming] skipped character outline shell', source.node?.name, error);
             }
         }
 
-        if (shellCount <= 0) {
+        if (outlineRenderers.length <= 0) {
             root.destroy();
-            setOutlineRoot(null);
+            setOutlineRoot(null, root);
             return;
         }
-        console.log(`[SpeedSwimming] inverted hull normal-outline shells=${shellCount}`);
+        options.setOutlineRenderers(root, outlineRenderers);
+        console.log(`[SpeedSwimming] inverted hull normal-outline shells=${outlineRenderers.length}`);
     });
 }
 
