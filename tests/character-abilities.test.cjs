@@ -168,7 +168,7 @@ function bodyFixture(id) {
     const file = path.join(h.root,'assets/scripts/entity/Swimmer.ts');
     const source = ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
     const decl = source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='Swimmer');
-    const names = ['tryDolphinJump','applyAcceptedNetDolphinJump','isCollisionActive','applyCoursePosition','motor','courseLayout','startPosition','playFinishTouch','resetEntertainmentGeyser','resetEntertainmentGiantWave','isForcedLaunchActive','handleKickStroke','confirmKickStroke','canUseDolphinAbility'];
+    const names = ['tryDolphinJump','applyAcceptedNetDolphinJump','isCollisionActive','applyCoursePosition','motor','courseLayout','startPosition','playFinishTouch','resetEntertainmentRecovery','resetEntertainmentGeyser','resetEntertainmentGiantWave','isForcedLaunchActive','handleKickStroke','confirmKickStroke','canUseDolphinAbility'];
     const members = decl.members.filter(n=>names.includes(n.name?.getText(source)));
     assert.equal(members.length,names.length);
     const { DOLPHIN_JUMP } = load('core/DolphinJumpConfig');
@@ -176,6 +176,7 @@ function bodyFixture(id) {
     const js = ts.transpileModule(`class Body {${members.map(n=>n.getText(source)).join('\n')}}`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
     const Body = vm.runInNewContext(js+';Body',{DOLPHIN_JUMP,abilityValue,getRaceDistance,Quat:h.cc.Quat,Tween:{stopAllByTarget(){}}});
     const body = new Body(); body._motor = motor(id); body.node = new h.cc.Node(); body.node.active = true;
+    body._entertainmentKnocked = body._entertainmentInvulnerable = false; body._recoveryBodyVisible = true;
     body._courseLayout = load('venue/RaceCourseLayout').DEFAULT_RACE_COURSE_LAYOUT;
     body._startPosition = new h.cc.Vec3();
     body._tmpCourseRotation = new h.cc.Quat(); body._cameraNeutralCourseRotation = new h.cc.Quat();

@@ -37,11 +37,11 @@ test('入水剔除观众层、出水恢复；重复状态不写属性，其他�
     assert.equal(((1<<9)|(1<<10))&SPECTATOR_LAYER,0,'水下反射层不包含观众');
 });
 test('实际水下模式入口同帧切换观众层，连续切换可恢复',()=>{
-    const method=actualMethod('assets/scripts/venue/WaterRefractionController.ts','WaterRefractionController','setUnderwaterViewActive');
-    const {Harness}=evaluate(`export class Harness { ${method} }`,{setSpectatorCameraUnderwater,REBIND_WARMUP_FRAMES:30});
+    const methods=['setUnderwaterViewActive','applyFloatingObjectLayers'].map(name=>actualMethod('assets/scripts/venue/WaterRefractionController.ts','WaterRefractionController',name)).join('\n');
+    const {Harness}=evaluate(`export class Harness { ${methods} }`,{setSpectatorCameraUnderwater,REBIND_WARMUP_FRAMES:30,Layers:{Enum:{DEFAULT:1}},SWIMMER_LAYER:1<<10});
     const h=new Harness();
     Object.assign(h,{_underwaterViewActive:false,_mainCamera:camera(),applyFloorTint:()=>{},
-        _poolsideWaterline:{setUnderwaterViewActive:()=>{}},tagLaneFloats:()=>{}});
+        _poolsideWaterline:{setUnderwaterViewActive:()=>{}},_floatingObjects:[],tagLaneFloats:()=>{}});
     for(let i=0;i<50;i++) {
         h.setUnderwaterViewActive(true); assert.equal(h._mainCamera.visibility&SPECTATOR_LAYER,0);
         const writes=h._mainCamera.writes; h.setUnderwaterViewActive(true); assert.equal(h._mainCamera.writes,writes);

@@ -75,6 +75,8 @@ function setup() {
         makeDragSlider:(name,parent,w,h,value,callback)=>{const n=makeUiNode(name,parent);sliders.set(name,callback);return {node:n,setRatio(){}};}};
     function load(file,imports){const m={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{module:m,exports:m.exports,require:key=>imports[key]??{},console:{warn(){}}});return m.exports;}
     const {PopupUiMotion}=load('assets/scripts/ui/PopupUiMotion.ts',{'cc':cc,'./RuntimeUiFactory':factory});
+    const barrier=load('assets/scripts/ui/UiAssetBarrier.ts',{'cc':cc,
+        '../../startup/StartupLoadingCover':{StartupLoadingCover:class {constructor(){assert.fail('缓存美术不应进入异步等待');}}}});
     let persisted=0,music=.8,sfx=.8;
     const settings={musicVolume:.8,sfxVolume:.8,previewMusicVolume:v=>music=v,previewSfxVolume:v=>sfx=v,
         setVolumes(a,b){this.musicVolume=music=a;this.sfxVolume=sfx=b;persisted++;}};
@@ -83,7 +85,8 @@ function setup() {
     const player={uid:10000,usesCloud:true,onChange:fn=>profileListeners.add(fn),offChange:fn=>profileListeners.delete(fn),avatarId:'aqua',nickName:'选手',setIdentity:patch=>new Promise((resolve,reject)=>requests.push({resolve:()=>{Object.assign(player,patch);resolve();},reject}))};
     const imports={cc,'../platform/PlatformManager':{platform:()=>({copyText:text=>new Promise(resolve=>copies.push({text,resolve}))})},'./PopupUiMotion':{PopupUiMotion},'./RuntimeUiFactory':factory,
         '../core/ResourcePaths':{RESOURCE_PATHS:{avatarPickerUi:{}}},
-        './AvatarUiAssets':{loadAvatarUiSpriteFrame(){},loadAvatarSpriteFrame(){}},
+        './AvatarUiAssets':{loadAvatarUiSpriteFrame(){},loadAvatarSpriteFrame(){},preloadUiArt(_sources,done){done(null);}},
+        './UiAssetBarrier':barrier,
         './ProjectUiFonts':{styleProjectUiLabel(){},styleDynamicUiLabel(){}},
         '../app/SettingsManager':{SettingsManager:settings},'../backend/PlayerData':{PlayerData:player},
         '../backend/IdentityConfig':{AVATARS:[{id:'aqua'},{id:'coral'}],generateRandomNickName:()=> '新昵称'}};

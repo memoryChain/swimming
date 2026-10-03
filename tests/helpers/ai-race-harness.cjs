@@ -3,9 +3,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createHarness } = require('./cocos-math-harness.cjs');
 
-function createAiHarness() {
+function createAiHarness(options = {}) {
     const h = createHarness({ 'cc/env': { NATIVE: false }, './CartoonSwimmerRig': { CartoonSwimmerRig: class {} } });
-    const saved = JSON.parse(fs.readFileSync(path.join(h.root, 'assets/resources/config/tuning.json'), 'utf8'));
+    const scriptsRoot = options.scriptsRoot || path.join(h.root, 'assets/scripts');
+    const saved = JSON.parse(fs.readFileSync(options.tuningPath || path.join(h.root, 'assets/resources/config/tuning.json'), 'utf8'));
     const noop = () => {};
     Object.assign(h.cc, {
         Component: class {}, Camera: class {}, Color: class {}, JsonAsset: class {}, native: {},
@@ -14,7 +15,7 @@ function createAiHarness() {
         sys: { localStorage: { getItem: () => null } },
         resources: { load(_p, _t, callback) { callback(null, { json: saved }); } },
     });
-    const load = name => h.load(path.join(h.root, 'assets/scripts', name + '.ts'));
+    const load = name => h.load(path.join(scriptsRoot, name + '.ts'));
     load('core/TuningDebugControls').loadSavedTuningAsync(noop);
     const { Swimmer } = load('entity/Swimmer');
     const { AISwimmerController } = load('entity/AISwimmerController');

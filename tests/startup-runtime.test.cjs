@@ -247,6 +247,7 @@ test('真实登录初始化消费首屏交接，邀请优先最新房号，重�
             takeStartupHandoff: () => scenario.startup, Layers: { Enum: { UI_2D: 1 } },
             view: { getDesignResolutionSize: () => ({ width: 1280, height: 720 }) },
             SettingsManager: { apply() {} }, MusicManager: { playLogin() {} },
+            gameAnalytics: () => ({ reportLobbyReady() {} }),
             consumeReturnToRoom: () => !!scenario.returningRoom, consumeReturnToLobby: () => !!scenario.returningLobby,
             platform: () => ({ getLaunchQuery: () => ({ room: scenario.cold }), onAppShow: () => () => {} }),
             ensureLogin: () => Promise.resolve(), PlayerData: { load: () => Promise.resolve() },

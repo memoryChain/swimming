@@ -12,7 +12,7 @@ const { RESOURCE_PATHS } = Resources;
 const LEGACY_IDS = ['aqua', 'coral', 'lime', 'gold', 'violet', 'rose', 'teal', 'sky'];
 
 function pngInfo(resourcePath) {
-    const relative = resourcePath.replace(/\/texture$/, '');
+    const relative = resourcePath.replace(/\/(texture|spriteFrame)$/, '');
     const file = resolve('assets/race', `${relative}.png`);
     const bytes = readFileSync(file);
     assert.equal(bytes.toString('ascii', 1, 4), 'PNG', file);
@@ -30,11 +30,12 @@ test('avatar picker keeps persisted ids stable and exposes ten art slots', () =>
     assert.equal(RESOURCE_PATHS.avatarPickerUi.avatars.length, AVATARS.length);
 });
 
-test('all avatar picker portraits are 100x100 RGBA PNG files', () => {
+// 已确认的街头头像设计使用 256×256，见 docs/开发记录/界面接入/头像设计与裁切接入说明.zh.md。
+test('头像选择资源保持已确认的 256×256 RGBA PNG 格式', () => {
     for (const path of RESOURCE_PATHS.avatarPickerUi.avatars) {
         const info = pngInfo(path);
-        assert.equal(info.width, 100, info.file);
-        assert.equal(info.height, 100, info.file);
+        assert.equal(info.width, 256, info.file);
+        assert.equal(info.height, 256, info.file);
         assert.equal(info.colorType, 6, `${info.file} must be RGBA`);
     }
 });
