@@ -89,7 +89,6 @@ for (const file of fs.readdirSync(path.join(root, 'assets/race/models')).filter(
         const shoulderRoll = lineRoll(r.pose._leftShoulder, r.pose._rightShoulder);
         const hipRoll = lineRoll(r.pose._leftUpLeg, r.pose._rightUpLeg);
         assert.ok(shoulderRoll > 45 && shoulderRoll < 60, '高肘回臂时整片胸肩保持明显侧转');
-        assert.ok(shoulderRoll - hipRoll > 25, '胸肩相对髋部有独立侧转，不能只滚动整个人物');
         poseAt(r, 0.97);
         assert.ok(Math.abs(lineRoll(r.pose._leftShoulder, r.pose._rightShoulder)) < 3, '回臂前伸时胸肩换边经过水平');
         poseAt(r, 0.72);
@@ -101,7 +100,12 @@ for (const file of fs.readdirSync(path.join(root, 'assets/race/models')).filter(
             const headWithoutRoll = r.pose._head.getWorldRotation(new Quat());
             assert.ok(2 * Math.acos(Math.min(1, Math.abs(Quat.dot(headWithRoll, headWithoutRoll)))) * 180 / Math.PI < 8,
                 '不换气时头颈抵消大部分胸肩转动，不能把头一起拧向侧面');
-            assert.ok(shoulderRoll - lineRoll(r.pose._leftShoulder, r.pose._rightShoulder) > 30,
+            // 用同角色关闭胸廓转体的姿态作参照，消除绑定髋骨连线自身的倾角。
+            const shoulderDelta = shoulderRoll - lineRoll(r.pose._leftShoulder, r.pose._rightShoulder);
+            const hipDelta = hipRoll - lineRoll(r.pose._leftUpLeg, r.pose._rightUpLeg);
+            assert.ok(Math.abs(hipDelta) < 1e-5, '胸廓参数不改变髋部转体');
+            assert.ok(shoulderDelta - hipDelta > 25, '胸肩相对髋部有独立侧转，不能只滚动整个人物');
+            assert.ok(shoulderDelta > 30,
                 '胸肩幅度参数实际控制胸廓，不影响根节点滚转');
         } finally { MOTION_TUNING.proneChestRollDegrees = savedChestRoll; }
         for (const side of ['left', 'right']) {

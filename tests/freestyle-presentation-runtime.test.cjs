@@ -140,7 +140,6 @@ test('全周期转体与高肘求解复用临时向量和四元数', () => {
     const { FreestylePoseController } = counted.load(path.join(h.root, 'assets/scripts/character/FreestylePoseController.ts'));
     const r = createRig('CartonSwimmer16.glb'); r.wrapper.setRotationFromEuler(90, 90, 0);
     const p = new FreestylePoseController(); p.bind(r.pose.root); p.captureBasePose(); p.setDiveHandContact(r.hands);
-    p.setFreestyleChestRollDegrees(50);
     const before = allocations;
     for (let i = 0; i < 480; i++) {
         const cycle = i / 480 * Math.PI * 2; p.setFreestylePresentation(1, Math.sin(cycle), 1, 1);

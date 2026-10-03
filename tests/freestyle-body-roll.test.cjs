@@ -55,7 +55,7 @@ for(const mode of ['player','ai']) for(const fps of [30,60]) test(`${mode} ${fps
     }
 });
 
-for(const file of SWIMMER_MODEL_FILES) test(`${file}：共享侧倾、角色胸肩适配、髋部枢轴固定及多次切换完整恢复`,()=>{
+for(const file of SWIMMER_MODEL_FILES) test(`${file}：共享侧倾、共享胸肩转体、髋部枢轴固定及多次切换完整恢复`,()=>{
     const {r,parent}=rigFor(file);
     for(const direction of [1,-1]) {
         parent.setRotationFromEuler(0,direction>0?0:180,0);r.pose.setMovementDirection(direction);
@@ -68,7 +68,7 @@ for(const file of SWIMMER_MODEL_FILES) test(`${file}：共享侧倾、角色胸�
         for(const sign of [-1,1]) {
             present(r,l,rh,1,sign);
             assert.ok(Math.abs(angle(model,r.pose.root.getWorldRotation(new Quat()))-48)<.1,'整个骨架显示根确实侧倾');
-            assert.ok(Math.abs(angle(chest,r.pose._torso.getWorldRotation(new Quat()))-(r.variant?.freestyleChestRollDegrees??56))<.1);
+            assert.ok(Math.abs(angle(chest,r.pose._torso.getWorldRotation(new Quat()))-56)<.1);
             assert.ok(Math.abs(angle(hip,r.pose._hips.getWorldRotation(new Quat()))-48)<.1);
             assert.equal(JSON.stringify(r.pose._hips.rotation),hipLocal,'髋部不再追加局部扭转');
             assert.ok(Vec3.distance(pivot,r.pose._hips.getWorldPosition(new Vec3()))<1e-5,'不得绕模型脚底公转或抬离水面');

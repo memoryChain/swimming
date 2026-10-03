@@ -97,7 +97,6 @@ const SAMPLED_STANDING_SOURCE_BACK_LEAN_DEGREES = 4;
 const SAMPLED_STANDING_MAX_UPRIGHT_CORRECTION_DEGREES = 7;
 
 export class FreestylePoseController {
-    private _freestyleChestRollDegrees = FREESTYLE_BODY_ROLL_TUNING.chestDegrees;
     private _freestyleBodyRollWeight = -1;
     private _freestyleBodyRollSignal = 0;
     private _freestyleBodyRollModelAngle = 0;
@@ -527,13 +526,6 @@ export class FreestylePoseController {
         this._surfaceLiftDirection = Number.isFinite(projection)
             ? 1 - 2 * smoothRange(-projection, 0, 1)
             : 1;
-    }
-
-    /** 绑定时适配角色肩腋蒙皮；模型侧倾幅度保持共享配置。 */
-    setFreestyleChestRollDegrees(degrees: number | undefined): void {
-        this._freestyleChestRollDegrees = typeof degrees === 'number' && Number.isFinite(degrees)
-            ? clamp(degrees, FREESTYLE_BODY_ROLL_TUNING.modelDegrees, FREESTYLE_BODY_ROLL_TUNING.chestDegrees)
-            : FREESTYLE_BODY_ROLL_TUNING.chestDegrees;
     }
 
     setSwimHeadLift(degrees: number | undefined) {
@@ -1478,7 +1470,7 @@ export class FreestylePoseController {
         if (this._freestyleBodyRollWeight <= 0) return;
         this.movementForwardInRoot(this._tmpMovementForwardRoot);
         Quat.fromAxisAngle(this._tmpAxisRotation, this._tmpMovementForwardRoot,
-            (this._freestyleChestRollDegrees - FREESTYLE_BODY_ROLL_TUNING.modelDegrees)
+            (FREESTYLE_BODY_ROLL_TUNING.chestDegrees - FREESTYLE_BODY_ROLL_TUNING.modelDegrees)
                 * this._freestyleBodyRollSignal * this._freestyleBodyRollWeight * Math.PI / 180);
         Vec3.transformQuat(direction, direction, this._tmpAxisRotation);
     }
@@ -2561,7 +2553,7 @@ export class FreestylePoseController {
         this._proneChestRoll = proneRoll * clamp(MOTION_TUNING.proneChestRollDegrees, 0, 45)
             * Math.min(1.2, Math.max(0, power)) * proneWeight;
         if (this._freestyleBodyRollWeight > 0) {
-            const extraChest = this._freestyleChestRollDegrees - FREESTYLE_BODY_ROLL_TUNING.modelDegrees;
+            const extraChest = FREESTYLE_BODY_ROLL_TUNING.chestDegrees - FREESTYLE_BODY_ROLL_TUNING.modelDegrees;
             this._proneChestRoll = lerp(this._proneChestRoll,
                 extraChest * this._freestyleBodyRollSignal, this._freestyleBodyRollWeight);
         }

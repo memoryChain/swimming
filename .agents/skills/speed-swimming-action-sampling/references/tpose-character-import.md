@@ -229,3 +229,13 @@ Useful runtime logs should state the selected character variant, action-profile 
 - Cocos Asset Database imported the current GLB and texture subassets.
 - Debug model, preparation screen, tread-water, and race transitions were visually checked.
 - TypeScript validation passes after any runtime-code change.
+
+## 肩衣袖混入头骨权重
+
+新增转体暴露局部形变时，先逐顶点分析实际影响骨，不要只按主骨角度或整个角色降低动作幅度。2026-10-03 的 CartonSwimmer16 骨骼层级及静止轴与标准骨架一致，主要回归来自肩衣袖混入 `Head` 权重；头颈抵消转体后，衣袖被头与肩向不同方向牵拉。
+
+候选应保留颈部与肘部过渡，只在肩带/上臂为主体、头骨为弱影响的局部选区，平滑把头骨误权重按原比例回分给既有肩带和上臂。不要批量套用大臂去胸肩权重规则，也不要把所有颈部影响清零：这些候选可能改善自由泳却增加展示动作的衣服拉伸。
+
+`scripts/repair-shoulder-head-weights.py` 只生成独立候选，要求显式提供固定基线哈希；当前仅验收了本次 CartonSwimmer16 基线，不能推断其他模型也应处理。`scripts/validate-weight-repair.cjs` 独立核对所有非权重字节、绑定外形、未改选区，以及全部共享动作首尾帧和选区真实三角边。必须再做实际转体/高肘和多视角网格检查，最后撤掉角色角度特例。具体哈希、选区和验证结果见 `docs/开发记录/角色与动作/2026-10-03-赛博少女肩衣袖权重修正.zh.md`。
+
+跨体型测量胸廓转动时，肩/髋骨点连线可能带有角色本身的绑定倾角。以同一角色开启/关闭胸廓转体的姿态差作为独立测量，保留动作幅度阈值并确认髋部差值为零，不能因几何基线差异误改角色骨架。

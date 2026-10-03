@@ -19,7 +19,6 @@ export type SwimmerModelVariant = {
     swimHeadLiftDegrees?: number;
     // 水面划水动作；省略时沿用旧版划水，仅指定角色启用新版自由泳。
     surfaceSwimStyle?: SurfaceSwimStyle;
-    freestyleChestRollDegrees?: number;
     // Inverted-hull shell width. Omit to use the shared character default.
     outlineWidth?: number;
     // Rig-profile emote and tread-water curves. Characters normalized to the
@@ -307,8 +306,6 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
     },
     {
         id: 'cartonSwimmer16',
-        // 肩腋混合权重不同，限制胸廓补转，保持整体48°转体及骨长。
-        freestyleChestRollDegrees: 50,
         label: '赛博少女',
         candidates: CARTON_SWIMMER16_PREFAB_CANDIDATES,
         modelScaleMultiplier: 1.0,

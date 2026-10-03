@@ -697,7 +697,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 this._pose.setSurfaceSwimStyle(variant.surfaceSwimStyle);
                 this._pose.bind(this.root);
                 this._pose.setSwimHeadLift(this.swimHeadLiftDegrees());
-                this._pose.setFreestyleChestRollDegrees(variant.freestyleChestRollDegrees);
                 this.configureSkinnedRenderers();
                 this.setSkinnedRenderersEnabled(false);
                 this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
