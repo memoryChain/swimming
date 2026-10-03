@@ -1,3 +1,4 @@
+import type { GiantWaveState, GIANT_WAVE_TUNING } from '../entertainment/GiantWaveRules';
 import { GeyserSwimmerReaction } from '../swimmer/GeyserSwimmerReaction';
 import { GEYSER_TUNING } from '../entertainment/GeyserBrawlRules';
 import { emptyGeyserBodyPose, GeyserBodyPose, GeyserContact } from '../swimmer/GeyserBodyContact';
@@ -65,6 +66,19 @@ export class Swimmer extends Component {
     }
     @property public swimmerName = 'Swimmer';
 
+    get canRideGiantWave(): boolean {
+        return this._motor.isRacing && this.node?.isValid && this.node.active && !this.isForcedLaunchActive
+            && !this._phases.isFlipTurnActive && !this._phases.isDolphinJumpActive
+            && !this._phases.isUnderwater && this._motor.ability.depth <= .2;
+    }
+    configureEntertainmentGiantWave(state: GiantWaveState | null, tuning?: Readonly<typeof GIANT_WAVE_TUNING>): void {
+        this._motor.configureEntertainmentGiantWave(state, tuning, this._courseLayout, this._startPosition.z);
+        if (!state) this.cartoonRig?.setGiantWaveLift(0);
+    }
+    resetEntertainmentGiantWave(): void {
+        if (!this._motor.hasEntertainmentGiantWave) return;
+        this._motor.resetEntertainmentGiantWave(); this.cartoonRig?.setGiantWaveLift(0);
+    }
     private _geyser: GeyserSwimmerReaction | null = null;
     private _geyserBody: GeyserBodyPose | null = null;
     configureEntertainmentGeyser(enabled: boolean): void {
@@ -563,6 +577,7 @@ export class Swimmer extends Component {
 
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {
         this.resetEntertainmentGeyser();
+        this.resetEntertainmentGiantWave();
         this._movementSpeed = 0;
         this.captureStartPosition();
         this._ultimate.reset();
@@ -589,6 +604,7 @@ export class Swimmer extends Component {
 
     prepareDive(transitionSeconds?: number) {
         this.resetEntertainmentGeyser();
+        this.resetEntertainmentGiantWave();
         this.captureStartPosition();
         Tween.stopAllByTarget(this.node);
         this._motor.reset();
@@ -620,6 +636,7 @@ export class Swimmer extends Component {
 
     prepareShowcaseStanding() {
         this.resetEntertainmentGeyser();
+        this.resetEntertainmentGiantWave();
         this.captureStartPosition();
         Tween.stopAllByTarget(this.node);
         this._motor.reset();
@@ -721,6 +738,7 @@ export class Swimmer extends Component {
     }
 
     stopRace() {
+        this.resetEntertainmentGiantWave();
         this._movementSpeed = 0;
         Tween.stopAllByTarget(this.node);
         this._phases.clearFlipTurnPhase(true);
@@ -812,6 +830,11 @@ export class Swimmer extends Component {
         this._ultimate.setAbilityGainScale(this._motor.ability.id === 'frogHop' ? abilityValue('frogEnergyGain', 0.1, 3) : 1);
         this._ultimate.tick(dt);
         this._geyser?.tick(dt);
+        if (this._motor.hasEntertainmentGiantWave) {
+            const eligible = this.canRideGiantWave;
+            this._motor.setEntertainmentGiantWaveEligible(eligible);
+            if (!eligible) this.cartoonRig?.setGiantWaveLift(0);
+        }
         if (this.isForcedLaunchActive) {
             this.advanceGeyserLaunch(dt);
             this.updateMovementSpeed(phaseXBeforeStep, phaseZBeforeStep, dt);
@@ -820,6 +843,7 @@ export class Swimmer extends Component {
         // 用步前状态覆盖落水交界帧，避免阶段 tick 结束后提前恢复整帧心率。
         const freezeJumpHeartRate = this._phases.isDolphinJumpActive;
         if (this._phases.tick(dt)) {
+            if (this._motor.hasEntertainmentGiantWave) this.resetEntertainmentGiantWave();
             this._motor.ability.suspend();
             this._motor.tickRestingHeartRate(dt, freezeJumpHeartRate);
             this.updateMovementSpeed(phaseXBeforeStep, phaseZBeforeStep, dt);
@@ -828,6 +852,7 @@ export class Swimmer extends Component {
         if (this._phases.isUnderwater) this._motor.ability.suspend();
         this.updatePerfectComboIdle(dt);
         const finished = this._motor.update(dt, this.isAI ? AI_MOTOR_OPTIONS : PLAYER_MOTOR_OPTIONS);
+        if (this._motor.hasEntertainmentGiantWave) this.cartoonRig?.setGiantWaveLift(this._motor.giantWaveLift);
         this.updatePerfectZoneGlow();
         if (!this.isAI) {
             this._strokeMetrics.update(dt);
@@ -850,6 +875,7 @@ export class Swimmer extends Component {
 
         if (finished) {
             this.resetEntertainmentGeyser();
+            this.resetEntertainmentGiantWave();
             this.node.emit('swimmer-finished', this);
         }
     }
@@ -1016,6 +1042,7 @@ export class Swimmer extends Component {
 
     playFinishTouch() {
         this.resetEntertainmentGeyser();
+        this.resetEntertainmentGiantWave();
         const finishPosition = this.node.position.clone();
         // 潜航触线后恢复水面漂浮，不能把下潜深度带进完赛姿态。
         const finishY = this._motor.ability.depth > 0 ? this._startPosition.y : finishPosition.y;
@@ -1033,6 +1060,7 @@ export class Swimmer extends Component {
 
     reset() {
         this.resetEntertainmentGeyser();
+        this.resetEntertainmentGiantWave();
         this._movementSpeed = 0;
         this.cartoonRig?.setStandingSurface(null);
         this.captureStartPosition();
@@ -1062,6 +1090,7 @@ export class Swimmer extends Component {
 
     presentStanding(position: Vec3, facingY: number, surfaceWorldY: number | null = null) {
         this.resetEntertainmentGeyser();
+        this.resetEntertainmentGiantWave();
         Tween.stopAllByTarget(this.node);
         this._motor.reset();
         this._phases.clearDiveUnderwaterPhase();
@@ -1417,6 +1446,8 @@ export class Swimmer extends Component {
                 // Convert the animated anchor back into swimmer-node local space,
                 // then rebuild it with the same yaw/dive/roll but without collision
                 // pitch. Reused scratch values keep this camera hot path allocation-free.
+                const waveLift = this.cartoonRig.giantWaveLift;
+                if (waveLift > 0) out.y -= waveLift;
                 this.node.getWorldPosition(this._tmpCameraNodeWorldPosition);
                 this.node.getWorldRotation(this._tmpCameraNodeWorldRotation);
                 Quat.invert(this._tmpCameraInverseWorldRotation, this._tmpCameraNodeWorldRotation);
@@ -1443,6 +1474,7 @@ export class Swimmer extends Component {
                     this._tmpCameraNeutralWorldRotation,
                 );
                 Vec3.add(out, this._tmpCameraNodeWorldPosition, this._tmpCameraAnchorOffset);
+                if (waveLift > 0) out.y += waveLift;
             }
             return out;
         }

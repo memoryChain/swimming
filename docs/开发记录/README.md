@@ -76,3 +76,4 @@
 - [butterfly 第五批 A：娱乐基础整合](分支审查/2026-10-03-butterfly-第五批娱乐基础整合.zh.md)
 - [butterfly 第六批 B1：漩涡调试整合](分支审查/2026-10-03-butterfly-第六批漩涡调试整合.zh.md)
 - [butterfly 第七批：普通喷泉调试整合](分支审查/2026-10-03-butterfly-第七批普通喷泉调试整合.zh.md)
+- [butterfly 第八批：普通巨浪调试整合](分支审查/2026-10-03-butterfly-第八批普通巨浪调试整合.zh.md)

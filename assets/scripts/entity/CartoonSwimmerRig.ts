@@ -1229,9 +1229,13 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return 1 - Math.max(0, Math.min(1, this._treadWaterWeight));
     }
 
-    // Preserve the visual hip/buoyancy pivot while the logical swimmer root is
-    // pitched by a collision. The supplied rotations are both local to the same
-    // swimmer parent: current includes collision pitch; neutral excludes it.
+    private _giantWaveLift = 0;
+    get giantWaveLift(): number { return this._giantWaveLift; }
+    setGiantWaveLift(value: number): void {
+        const next = Number.isFinite(value) ? Math.max(0, value) : 0;
+        if (next !== this._giantWaveLift) this._giantWaveLift = next;
+    }
+    // 保持碰撞旋转时的髋部支点，并叠加独立的巨浪抬升；传入旋转均为选手局部旋转。
     applyCollisionPitchPivotCompensation(currentRotation: Readonly<Quat>, neutralRotation: Readonly<Quat>) {
         const model = this._model;
         const baseY = this._lastTreadModelY;
@@ -1266,9 +1270,19 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._tmpCollisionPitchInverseRotation,
         );
 
-        const targetX = this._collisionPitchVisualOffset.x;
-        const targetY = baseY + this._collisionPitchVisualOffset.y;
-        const targetZ = this._collisionPitchVisualOffset.z;
+        let targetX = this._collisionPitchVisualOffset.x;
+        let targetY = baseY + this._collisionPitchVisualOffset.y;
+        let targetZ = this._collisionPitchVisualOffset.z;
+        if (this._giantWaveLift > 0) {
+            // 世界竖直方向抬起，不随侧翻变成横向偏移；不污染碰撞补偿缓存。
+            this._tmpCollisionPitchDelta.set(0, this._giantWaveLift, 0);
+            this.node.getWorldRotation(this._tmpCollisionPitchInverseRotation);
+            Quat.invert(this._tmpCollisionPitchInverseRotation, this._tmpCollisionPitchInverseRotation);
+            Vec3.transformQuat(this._tmpCollisionPitchDelta, this._tmpCollisionPitchDelta, this._tmpCollisionPitchInverseRotation);
+            this.node.getWorldScale(this._tmpCollisionPitchPivotCurrent);
+            Vec3.divide(this._tmpCollisionPitchDelta, this._tmpCollisionPitchDelta, this._tmpCollisionPitchPivotCurrent);
+            targetX += this._tmpCollisionPitchDelta.x; targetY += this._tmpCollisionPitchDelta.y; targetZ += this._tmpCollisionPitchDelta.z;
+        }
         const current = model.position;
         if (Math.abs(current.x - targetX) > 1e-5
             || Math.abs(current.y - targetY) > 1e-5

@@ -1,3 +1,4 @@
+import { GiantWaveRaceController } from '../entertainment/GiantWaveRaceController';
 import { EffectAsset, Mesh, Node, Prefab } from 'cc';
 import { GeyserRaceController } from '../entertainment/GeyserRaceController';
 import { buildWhirlpoolDebugSpawns, whirlpoolTargetZForAi, WhirlpoolSpawn } from '../entertainment/WhirlpoolBrawlRules';
@@ -43,6 +44,8 @@ export class EntertainmentRaceRuntime {
     private readonly whirlpools: readonly WhirlpoolSpawn[];
     private whirlpoolPresentation: WhirlpoolRacePresentation | null = null;
     private geyser: GeyserRaceController | null = null;
+    private giantWave: GiantWaveRaceController | null = null;
+    private readonly useGiantWave: boolean;
     private readonly useGeyser: boolean;
     private readonly seed: number;
     private routeClock = 1;
@@ -57,6 +60,7 @@ export class EntertainmentRaceRuntime {
         this.litterStates = Array.from({ length: course.laneCount }, () => ({ active: false, finished: false, distance: 0, lateral: 0 }));
         const centers = Array.from({ length: course.laneCount }, (_, lane) => laneCenterZ(lane, course));
         const plan = buildEntertainmentDebugPlan(mode, raceDistance);
+        this.useGiantWave = plan.giantWave;
         this.useGeyser = plan.geyser; this.seed = seed;
         this.whirlpools = plan.whirlpool ? buildWhirlpoolDebugSpawns(seed, raceDistance, course.courseLength, plan.whirlpoolSelection) : [];
         this.supplies = plan.supplies.length ? new SupplyRaceController(
@@ -96,6 +100,11 @@ export class EntertainmentRaceRuntime {
         if (this.disposed || !this.world?.isValid) { done(new Error('娱乐调试场景已失效')); return; }
         this.prepareDone = done;
         try {
+            if (this.useGiantWave) {
+                this.giantWave = new GiantWaveRaceController(this.world, this.course, this.racers.map(r => r.swimmer),
+                    this.seed, this.raceDistance, this.waterLayers);
+                this.finishPrepare(); return;
+            }
             if (this.useGeyser) {
                 this.geyser = new GeyserRaceController(this.world, this.course, this.racers.map(r => r.swimmer),
                     this.seed, this.raceDistance, this.waterLayers);
@@ -162,10 +171,10 @@ export class EntertainmentRaceRuntime {
         this.previousState = state;
         if (state === GameState.COUNTDOWN) {
             this.supplies?.reset(); this.litter?.reset();
-            this.supplyPresentation?.reset(); this.litterPresentation?.reset(); this.whirlpoolPresentation?.reset(); this.geyser?.reset(); this.routeClock = 1;
+            this.supplyPresentation?.reset(); this.litterPresentation?.reset(); this.whirlpoolPresentation?.reset(); this.geyser?.reset(); this.giantWave?.reset(); this.routeClock = 1;
             for (const racer of this.racers) { racer.swimmer.motor.configureEntertainment(true, !!this.supplies);
                 racer.swimmer.motor.configureEntertainmentWhirlpools(this.whirlpools, this.course.poolWidth, laneCenterZ(racer.lane, this.course)); if (this.useGeyser) racer.swimmer.resetEntertainmentGeyser(); racer.ai?.setEntertainmentTargetZ(null); }
-        } else if (state !== GameState.RACING) { this.clearInfluence(); this.whirlpoolPresentation?.reset(); this.geyser?.reset(); }
+        } else if (state !== GameState.RACING) { this.clearInfluence(); this.whirlpoolPresentation?.reset(); this.geyser?.reset(); this.giantWave?.reset(); }
         for (const racer of this.racers) racer.swimmer.motor.setEntertainmentWhirlpoolActive(state === GameState.RACING);
     }
     update(dt: number, state: GameState) {
@@ -191,6 +200,7 @@ export class EntertainmentRaceRuntime {
         if (finisher) { this.supplies?.cancelPending(); this.litter?.cancelPendingWaves(); this.geyser?.stopNewPulses(); }
         this.supplies?.update(dt); this.litter?.update(dt, state);
         for (const binding of this.racers) binding.swimmer.motor.setEntertainmentDrag(this.litter?.environmentDragForLane(binding.lane) ?? 0);
+        this.giantWave?.update(dt);
         this.geyser?.update(dt, this.states[this.referenceIndex]?.distance ?? 0);
         this.routeClock += dt;
         if (this.routeClock >= .1) {
@@ -201,7 +211,7 @@ export class EntertainmentRaceRuntime {
                 // 避让杂物优先于追逐补给；不会覆盖 Boss 或房间 AI。
                 const whirlpool = this.whirlpools.length && !this.states[i].finished && this.states[i].canContact
                     ? whirlpoolTargetZForAi(this.states[i].distance, this.states[i].lateral, this.course.poolWidth, this.whirlpools) : null;
-                const avoid = this.geyser?.targetZForAi(binding.swimmer) ?? whirlpool ?? this.litter?.targetZForAi(binding.lane) ?? null;
+                const avoid = this.giantWave?.targetZForAi(i) ?? this.geyser?.targetZForAi(binding.swimmer) ?? whirlpool ?? this.litter?.targetZForAi(binding.lane) ?? null;
                 const supply = avoid === null ? this.supplies?.targetZForAi(i, binding.condition.energyRatio, binding.swimmer.heartRate) ?? null : null;
                 binding.ai.setEntertainmentTargetZ(avoid ?? supply);
             }
@@ -215,14 +225,14 @@ export class EntertainmentRaceRuntime {
         this.disposed = true; this.clearInfluence();
         for (const binding of this.racers) binding.swimmer.motor.configureEntertainment(false);
         this.supplyPresentation?.dispose(); this.litterPresentation?.dispose(); this.litter?.dispose();
-        this.geyser?.dispose();
+        this.geyser?.dispose(); this.giantWave?.dispose();
         if (this.useGeyser) for (const binding of this.racers) binding.swimmer.configureEntertainmentGeyser(false);
         this.whirlpoolPresentation?.dispose();
         this.rendering?.dispose(); this.rendering = null;
         this.finishPrepare(new Error('娱乐调试加载已取消'));
     }
     private clearInfluence() {
-        for (const binding of this.racers) { if (this.useGeyser) binding.swimmer.resetEntertainmentGeyser(); binding.swimmer.motor.setEntertainmentDrag(0); binding.swimmer.motor.setEntertainmentWhirlpoolActive(false); binding.ai?.setEntertainmentTargetZ(null); }
+        for (const binding of this.racers) { if (this.useGeyser) binding.swimmer.resetEntertainmentGeyser(); if (this.useGiantWave) binding.swimmer.resetEntertainmentGiantWave(); binding.swimmer.motor.setEntertainmentDrag(0); binding.swimmer.motor.setEntertainmentWhirlpoolActive(false); binding.ai?.setEntertainmentTargetZ(null); }
     }
     private finishPrepare(error?: Error) {
         const done = this.prepareDone; this.prepareDone = null;

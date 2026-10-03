@@ -168,7 +168,7 @@ function bodyFixture(id) {
     const file = path.join(h.root,'assets/scripts/entity/Swimmer.ts');
     const source = ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
     const decl = source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='Swimmer');
-    const names = ['tryDolphinJump','applyAcceptedNetDolphinJump','isCollisionActive','applyCoursePosition','motor','courseLayout','startPosition','playFinishTouch','resetEntertainmentGeyser','isForcedLaunchActive','handleKickStroke','confirmKickStroke','canUseDolphinAbility'];
+    const names = ['tryDolphinJump','applyAcceptedNetDolphinJump','isCollisionActive','applyCoursePosition','motor','courseLayout','startPosition','playFinishTouch','resetEntertainmentGeyser','resetEntertainmentGiantWave','isForcedLaunchActive','handleKickStroke','confirmKickStroke','canUseDolphinAbility'];
     const members = decl.members.filter(n=>names.includes(n.name?.getText(source)));
     assert.equal(members.length,names.length);
     const { DOLPHIN_JUMP } = load('core/DolphinJumpConfig');

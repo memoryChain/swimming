@@ -137,3 +137,21 @@ export const GEYSER_TUNING = {
     bodyHitLiftMinScale: 0.75,
     landingSettleSeconds: 0.35,
 };
+
+export const GIANT_WAVE_TUNING = {
+    widthFraction: 0.55, lengthFraction: 0.12, height: 0.48,
+    previewSeconds: 3, entranceSeconds: 1.2,
+    growthSeconds: 3.5, impactSeconds: 1.2, fadeSeconds: 1, gapSeconds: 5,
+    travelSpeed: 4.2, boostSpeed: 1.1, oppositionSlowdown: 0.3,
+    riseSeconds: 0.35, releaseSeconds: 0.6,
+    oppositionRiseSeconds: 0.12, oppositionReleaseSeconds: 0.2, anchorFraction: 0.04,
+};
+
+/** 以原有调参为三档基准；档位只改变覆盖、迎浪压力与间隔，不提高顺浪收益。 */
+export const GIANT_WAVE_INTENSITY_TUNING = [
+    { widthOffset: -0.20, lengthOffset: -0.04, slowdownOffset: -0.15, gapOffset: 2 },
+    { widthOffset: -0.10, lengthOffset: -0.02, slowdownOffset: -0.08, gapOffset: 1 },
+    { widthOffset: 0, lengthOffset: 0, slowdownOffset: 0, gapOffset: 0 },
+    { widthOffset: 0.10, lengthOffset: 0.02, slowdownOffset: 0.08, gapOffset: -1 },
+    { widthOffset: 0.20, lengthOffset: 0.04, slowdownOffset: 0.15, gapOffset: -2 },
+];

@@ -1,3 +1,6 @@
+import { GiantWaveSwimmerCurrent } from './GiantWaveSwimmerCurrent';
+import type { GiantWaveState, GIANT_WAVE_TUNING } from '../entertainment/GiantWaveRules';
+import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { WhirlpoolSwimmerCurrent } from './WhirlpoolSwimmerCurrent';
 import type { WhirlpoolSpawn } from '../entertainment/WhirlpoolBrawlRules';
 import { EntertainmentSwimmerEffects } from '../entertainment/EntertainmentSwimmerEffects';
@@ -98,6 +101,20 @@ export type StrokeTimingGuide = {
 type ReleaseRanges = { perfect: { start: number; end: number }; good: { start: number; end: number } };
 
 export class SwimmerMotor {
+    private _giantWave: GiantWaveSwimmerCurrent | null = null;
+    get hasEntertainmentGiantWave(): boolean { return this._giantWave !== null; }
+    get giantWaveLift(): number { return this._giantWave?.lift ?? 0; }
+    get isGiantWaveRiding(): boolean { return this._giantWave?.riding ?? false; }
+    get isGiantWaveOpposed(): boolean { return this._giantWave?.opposed ?? false; }
+    configureEntertainmentGiantWave(state: GiantWaveState | null, tuning?: Readonly<typeof GIANT_WAVE_TUNING>,
+        course?: RaceCourseLayout, laneZ = 0): void {
+        if (!state || !this._entertainment) { this._giantWave = null; return; }
+        if (!tuning || !course) throw new Error('巨浪选手绑定缺少本局参数或赛道');
+        if (this._giantWave?.matches(state, tuning, course, laneZ)) this._giantWave.reset();
+        else this._giantWave = new GiantWaveSwimmerCurrent(state, tuning, course, laneZ);
+    }
+    resetEntertainmentGiantWave(): void { this._giantWave?.reset(); }
+    setEntertainmentGiantWaveEligible(value: boolean): void { this._giantWave?.setEligible(value); }
     private _whirlpool: WhirlpoolSwimmerCurrent | null = null;
     configureEntertainmentWhirlpools(spawns: readonly WhirlpoolSpawn[] | null, poolWidth = 0, laneZ = 0) {
         if (!spawns?.length || !this._entertainment) { this._whirlpool = null; return; }
@@ -116,6 +133,7 @@ export class SwimmerMotor {
             this._entertainment.setSuppliesEnabled(suppliesEnabled);
         } else {
             this._entertainment = null;
+            this._giantWave = null;
             this._whirlpool = null;
             this._physicsInput.environmentDrag = 0;
             this._physicsInput.propulsionScale = 1;
@@ -227,6 +245,7 @@ export class SwimmerMotor {
     }
 
     stopRace() {
+        this._giantWave?.reset();
         this._isRacing = false;
         this.ability.reset();
         this._kickRecoveryRemaining = 0;
@@ -358,6 +377,7 @@ export class SwimmerMotor {
     // Dolphin-jump air strokes are allowed to be mid-cycle at water entry, but
     // that partial phase must not become the origin of every later swim stroke.
     resetScriptedVisualMotion() {
+        this._giantWave?.reset();
         this._leftArmMotionRemaining = 0;
         this._rightArmMotionRemaining = 0;
         this._leftKickMotionRemaining = 0;
@@ -621,9 +641,15 @@ export class SwimmerMotor {
             * this._axialRoll.forwardScale
             * this._collisionPitch.forwardScale;
         const currentDistanceDelta = this._whirlpool?.active && !this._glidePhaseActive ? this._whirlpool.forwardDelta : 0;
+        let movementDelta = forwardSpeed * dt;
+        const wave = this._giantWave;
+        if (wave?.eligible && !this._glidePhaseActive) {
+            wave.advance(this._distance, this._lateralOffset, dt);
+            movementDelta = (forwardSpeed * (1 - wave.slowdown) + wave.output.positiveAverage) * dt;
+        }
         this._distance = currentDistanceDelta === 0
-            ? Math.min(this.tutorialMovementLimit(raceDistance), this._distance + forwardSpeed * dt)
-            : Math.max(0, Math.min(this.tutorialMovementLimit(raceDistance), this._distance + forwardSpeed * dt + currentDistanceDelta));
+            ? Math.min(this.tutorialMovementLimit(raceDistance), this._distance + movementDelta)
+            : Math.max(0, Math.min(this.tutorialMovementLimit(raceDistance), this._distance + movementDelta + currentDistanceDelta));
         // Lateral drift accumulates the sideways component, clamped to the pool.
         const requestedLateralOffset = this._lateralOffset + this._currentSpeed * Math.sin(this._heading) * dt;
         this._lateralOffset = clamp(requestedLateralOffset, this._lateralOffsetMin, this._lateralOffsetMax);
@@ -643,6 +669,7 @@ export class SwimmerMotor {
         }
 
         if (this._distance >= raceDistance) {
+            this._giantWave?.reset();
             this._whirlpool?.reset();
             this._isRacing = false;
             this._kickRecoveryRemaining = 0;
@@ -654,6 +681,7 @@ export class SwimmerMotor {
     }
 
     private resetRaceState(initialDistance = 0) {
+        this._giantWave?.reset();
         this._entertainment?.reset();
         this._whirlpool?.reset();
         this._heartRate.reset();
@@ -760,6 +788,7 @@ export class SwimmerMotor {
     // 海豚跳冻结心率数值但采样时钟照走；普通转身等阶段自然恢复。
     tickRestingHeartRate(dt: number, freezeValue = false) {
         this._whirlpool?.reset();
+        this._giantWave?.reset();
         if (!this._isRacing) return;
         this._heartRate.tick(dt, freezeValue);
         this._entertainment?.tick(dt);

@@ -1,4 +1,4 @@
-import { STIMULANT_BRAWL_TUNING, LITTER_BRAWL_TUNING, WHIRLPOOL_BRAWL_TUNING, GEYSER_TUNING } from './EntertainmentBalance';
+import { STIMULANT_BRAWL_TUNING, LITTER_BRAWL_TUNING, WHIRLPOOL_BRAWL_TUNING, GEYSER_TUNING, GIANT_WAVE_TUNING } from './EntertainmentBalance';
 import { CHARACTER_ABILITY_TUNING } from './CharacterAbilityConfig';
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
@@ -492,6 +492,11 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('entertainment.geyser.peakHeight', '喷泉弹起高度', '只用于本地普通喷泉调试，联机不启用。', () => GEYSER_TUNING.peakHeight, v => GEYSER_TUNING.peakHeight = v, 0.1, 0.2, 3, 1),
             control('entertainment.geyser.flightSeconds', '喷泉腾空时长', '只用于本地普通喷泉调试，联机不启用。', () => GEYSER_TUNING.flightSeconds, v => GEYSER_TUNING.flightSeconds = v, 0.1, 0.3, 2, 1),
             control('entertainment.geyser.edgeSlowdownScale', '喷泉擦边速度倍率', '只用于本地普通喷泉调试，联机不启用。', () => GEYSER_TUNING.edgeSlowdownScale, v => GEYSER_TUNING.edgeSlowdownScale = v, 0.05, 0.4, 1, 2),
+            control('entertainment.giantWave.height', '巨浪高度', '只用于本地普通巨浪调试。', () => GIANT_WAVE_TUNING.height, v => GIANT_WAVE_TUNING.height = v, .05, .1, 1.2, 2),
+            control('entertainment.giantWave.widthFraction', '巨浪覆盖宽度', '占泳池宽度的比例，保留可绕行的空间。', () => GIANT_WAVE_TUNING.widthFraction, v => GIANT_WAVE_TUNING.widthFraction = v, .05, .25, .8, 2),
+            control('entertainment.giantWave.travelSpeed', '巨浪前进速度', '只改变浪的速度，不修改人物基础数值。', () => GIANT_WAVE_TUNING.travelSpeed, v => GIANT_WAVE_TUNING.travelSpeed = v, .1, 1, 8, 1),
+            control('entertainment.giantWave.boostSpeed', '顺浪加速', '沿浪方向游泳时获得的额外推进。', () => GIANT_WAVE_TUNING.boostSpeed, v => GIANT_WAVE_TUNING.boostSpeed = v, .1, .1, 2.5, 1),
+            control('entertainment.giantWave.oppositionSlowdown', '迎浪减速比例', '迎面穿浪时削弱前进，不改基础游速。', () => GIANT_WAVE_TUNING.oppositionSlowdown, v => GIANT_WAVE_TUNING.oppositionSlowdown = v, .05, .1, .5, 2),
         ],
     },
 ];

@@ -162,9 +162,16 @@ test('退出和下一次进场取消旧任务，旧资源只完成自身回调',
     assert.equal(h.hooks.size, 1); next.cancel(); assert.equal(h.hooks.size, 0);
 });
 
-function raceFixture(mode = 'race', tutorial = false) {
+function raceFixture(mode = 'race', tutorial = false, entertainment = 'none') {
     const h = harness(), calls = [], assets = new Map();
-    const Subject = methods('assets/scripts/core/GameManager.ts', 'GameManager', ['loadRace', 'update'], {
+    // 执行真实娱乐门禁，不能漏掉加载流程中已经存在的资源准备步骤。
+    const planExports = {};
+    vm.runInNewContext(transpile(fs.readFileSync(path.join(root, 'assets/scripts/entertainment/EntertainmentDebugPlan.ts'), 'utf8')), { exports: planExports });
+    const Subject = methods('assets/scripts/core/GameManager.ts', 'GameManager', ['loadRace', 'update', 'setupEntertainmentDebug'], {
+        entertainmentDebugAllowed: planExports.entertainmentDebugAllowed,
+        getAiDebugSetup: () => ({ entertainment, seed: 42, bossId: 'none' }), getAiDebugDifficulty: () => .7,
+        findBossPreset: () => null, COURSE_LAYOUT: { laneCount: 1 }, getRaceDistance: () => 200,
+        EntertainmentRaceRuntime: class { prepare(done) { assets.set('entertainment', done); } },
         RaceLoading: h.RaceLoading, DEBUG_UI_ENABLED: mode !== 'race', consumeMainGameLaunchMode: () => mode,
         loadSavedTuningAsync: done => assets.set('tuning', done),
         loadSampledActionsForRace: done => assets.set('actions', done),
@@ -184,7 +191,7 @@ function raceFixture(mode = 'race', tutorial = false) {
             if (tutorial) return;
             manager._aiSwimmers = [swimmer(), swimmer()]; manager._aiSwimmers[1].cartoonRig.raceReady = false; calls.push('ai');
         },
-        applyAiDebugHud() {}, buildSpectatorCrowd() { calls.push('crowd'); }, setupScoreboardFeed() {},
+        swimmerForLane() { return null; }, applyAiDebugHud() {}, buildSpectatorCrowd() { calls.push('crowd'); }, setupScoreboardFeed() {},
         startGame() { calls.push('start'); }, registerEvents() { calls.push('input'); }, scheduleOnce() {},
         enterModelDebug() { calls.push('debug'); manager._playerSwimmer.cartoonRig.raceReady = false; },
         paintError(error) { calls.push(error); manager._raceLoading.cancel(); },
@@ -197,7 +204,7 @@ function raceFixture(mode = 'race', tutorial = false) {
         assert.equal(calls.includes('scene'), false, '场馆资源准备前不能开始建场景');
         assets.get('venue')(); await flush(); await h.frame();
     };
-    return { ...h, calls, manager, promise, start };
+    return { ...h, calls, manager, promise, start, finishEntertainment: error => assets.get('entertainment')(error) };
 }
 
 test('真实进场流程：最后一名 AI 和嵌套资源就绪前不能隐藏 Loading 或开始展示', async () => {
@@ -254,6 +261,21 @@ test('模型调试隐藏原玩家后不再等待该节点的渲染回调，不�
     assert.equal(s.calls.filter(c => c === 'debug').length, 1);
     assert.equal(s.calls.filter(c => c === 'hide').length, 1);
     assert.equal(s.hooks.size, 0);
+});
+
+test('巨浪调试资源完成前不开始展示或比赛，失败回到错误出口而不放行', async () => {
+    for (const fail of [false, true]) {
+        const s = raceFixture('ai-debug', false, 'giant-wave'); await s.start();
+        s.manager._aiSwimmers[1].cartoonRig.raceReady = true;
+        for (let i = 0; i < 5; i++) await s.frame();
+        assert.equal(s.calls.includes('start'), false); assert.equal(s.calls.includes('crowd'), false);
+        assert.equal(s.calls.includes('hide'), false);
+        s.finishEntertainment(fail ? new Error('巨浪准备失败') : null);
+        for (let i = 0; i < 7; i++) await s.frame(); await s.promise;
+        assert.equal(s.calls.includes('start'), !fail); assert.equal(s.calls.includes('hide'), !fail);
+        if (fail) assert.ok(s.calls.some(c => c?.message === '巨浪准备失败'));
+        assert.equal(s.hooks.size, 0);
+    }
 });
 
 test('角色就绪必须包含模型、专属动作、换色资源与两帧渲染等待', () => {
