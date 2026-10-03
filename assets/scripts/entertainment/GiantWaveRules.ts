@@ -139,7 +139,7 @@ export class GiantWaveSimulation {
     constructor(readonly courseLength: number, readonly minX: number, readonly maxX: number,
         readonly poolWidth: number, readonly seed: number, readonly preset: GiantWavePreset,
         readonly swimSpan = maxX - minX, readonly intensity: GiantWaveIntensity = 3,
-        readonly raceDistance = 200) {
+        readonly raceDistance = 200, readonly triggerDistance: number | null = null) {
         this.spec = giantWaveSpec(intensity);
         this.maxWaves = giantWaveCount(preset, raceDistance, courseLength);
     }
@@ -168,8 +168,8 @@ export class GiantWaveSimulation {
             // 赛程只负责排期；方向、位置与浪速不消费任何选手数据。
             let lead = 0;
             for (let i = 0; i < samples.length; i++) lead = Math.max(lead, samples[i].distance);
-            if (lead >= (s.wave + 1) * this.courseLength) { s.wave++; this.cancelled++; return; }
-            if (lead < (s.wave + this.spec.anchorFraction) * this.courseLength) return;
+            if (this.triggerDistance === null && lead >= (s.wave + 1) * this.courseLength) { s.wave++; this.cancelled++; return; }
+            if (lead < (this.triggerDistance ?? (s.wave + this.spec.anchorFraction) * this.courseLength)) return;
             this.prepare();
             s.phase = 'preview'; s.timer = this.spec.previewSeconds; this.previews++;
             return;

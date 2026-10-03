@@ -8,27 +8,27 @@
   },
   "glyphHash": "6d91baa31c5e02843da2ed09b679ee30416bd1ba041817d7afc5d6c12f0ece5c",
   "glyphCount": 1555,
-  "scannedFileCount": 300,
+  "scannedFileCount": 301,
   "outputs": [
     {
       "path": "assets/race/fonts/startup/ShuiMasterUI-Startup.ttf",
       "weight": 600,
       "bytes": 77696,
-      "sha256": "a25bffd88c1cad271a3311f23884339868506a0efd346fe064e8e19e8e0a73e9",
+      "sha256": "489a7fd59020e634c963234f2a49f6264ab7771088e3cf480dc046b1e26ce805",
       "glyphHash": "917e1c18c620af8359da54839b29364bd21bba813d694d27b388701f542b4eed"
     },
     {
       "path": "assets/race/fonts/ShuiMasterUI-Regular.ttf",
       "weight": 400,
       "bytes": 487632,
-      "sha256": "bedd7dc2032934ebf291bfa644f4f9a1c0d32c4853ef5ec53dcaef8d668ac49e",
+      "sha256": "be0fbc0b5775a91ea4a49f5c3e14b2d6c920d01cc9248f01c8b4384431ccb382",
       "glyphHash": "6d91baa31c5e02843da2ed09b679ee30416bd1ba041817d7afc5d6c12f0ece5c"
     },
     {
       "path": "assets/race/fonts/ShuiMasterUI-SemiBold.ttf",
       "weight": 600,
       "bytes": 487240,
-      "sha256": "a25c0b7a5760e0d9c8775cf12a3f0a2ea66bc3446515627debf4b594999b4d68",
+      "sha256": "945c42136dfa4422b143e50ae15e514c9e50caffdaa395866f1497337ff85344",
       "glyphHash": "6d91baa31c5e02843da2ed09b679ee30416bd1ba041817d7afc5d6c12f0ece5c"
     }
   ]

@@ -165,8 +165,14 @@ test('退出和下一次进场取消旧任务，旧资源只完成自身回调',
 function raceFixture(mode = 'race', tutorial = false, entertainment = 'none') {
     const h = harness(), calls = [], assets = new Map();
     // 执行真实娱乐门禁，不能漏掉加载流程中已经存在的资源准备步骤。
-    const planExports = {};
-    vm.runInNewContext(transpile(fs.readFileSync(path.join(root, 'assets/scripts/entertainment/EntertainmentDebugPlan.ts'), 'utf8')), { exports: planExports });
+    const loadPlanModule = file => {
+        const exports = {};
+        vm.runInNewContext(transpile(fs.readFileSync(file, 'utf8')), {
+            exports, require: id => loadPlanModule(path.resolve(path.dirname(file), id + '.ts')),
+        });
+        return exports;
+    };
+    const planExports = loadPlanModule(path.join(root, 'assets/scripts/entertainment/EntertainmentDebugPlan.ts'));
     const Subject = methods('assets/scripts/core/GameManager.ts', 'GameManager', ['loadRace', 'update', 'setupEntertainmentDebug'], {
         entertainmentDebugAllowed: planExports.entertainmentDebugAllowed,
         getAiDebugSetup: () => ({ entertainment, seed: 42, bossId: 'none' }), getAiDebugDifficulty: () => .7,

@@ -34,15 +34,19 @@ export class LitterBrawlPresentation {
         this.bottleMeshes = meshes.bottles;
         this.trayMesh = meshes.tray;
         if (!worldRoot?.isValid) return;
-        for (let id = 0; id < clusterCount; id++) {
-            const node = this.makeMeshNode(`LitterCluster${id}`, this.bottleMeshes[id % 3]);
-            node.active = false;
-            this.clusterNodes.push(node);
-            this.clusterRenderers.push(node.getComponent(MeshRenderer)!);
-            this.generations.push(-1);
-            this.phases.push(null);
-            this.impactRevisions.push(0);
-            this.impactPulses.push(0);
+        try {
+            for (let id = 0; id < clusterCount; id++) {
+                const node = this.makeMeshNode(`LitterCluster${id}`, this.bottleMeshes[id % 3]);
+                node.active = false;
+                this.clusterRenderers.push(node.getComponent(MeshRenderer)!);
+                this.generations.push(-1);
+                this.phases.push(null);
+                this.impactRevisions.push(0);
+                this.impactPulses.push(0);
+            }
+        } catch (error) {
+            this.dispose();
+            throw error;
         }
     }
 
@@ -219,6 +223,7 @@ export class LitterBrawlPresentation {
 
     private makeMeshNode(name: string, mesh: Mesh): Node {
         const node = new Node(name);
+        this.clusterNodes.push(node);
         node.setParent(this.worldRoot);
         node.layer = this.worldRoot.layer;
         const renderer = node.addComponent(MeshRenderer);

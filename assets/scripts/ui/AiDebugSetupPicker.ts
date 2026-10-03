@@ -1,3 +1,4 @@
+import { buildEntertainmentLightPlan } from '../entertainment/EntertainmentLightPlan';
 import { ENTERTAINMENT_DEBUG_CHOICES, normalizeEntertainmentDebugMode } from '../entertainment/EntertainmentDebugPlan';
 import { BlockInputEvents, Label, Node, UITransform, view } from 'cc';
 import { getAiDebugSetup, setAiDebugSetup } from '../core/GameLaunchOptions';
@@ -92,18 +93,26 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
         setup.mode = modes[(modes.indexOf(setup.mode) + 1) % modes.length]; write(mode, modeText());
     });
     const seed = button('Seed', `种子 ${setup.seed}`, -195, -146, 360, () => {
-        setup.seed = setup.seed === 20260913 ? 42 : setup.seed === 42 ? 12345 : 20260913;
-        write(seed, `种子 ${setup.seed}`);
+        setup.seed = setup.seed === 20260913 ? 42 : setup.seed === 42 ? 12345 : setup.seed === 12345 && setup.entertainment === 'light-mix' ? 6 : 20260913;
+        write(seed, `种子 ${setup.seed}`); updateHint();
     });
     let entertainmentIndex = ENTERTAINMENT_DEBUG_CHOICES.findIndex(choice => choice.id === normalizeEntertainmentDebugMode(setup.entertainment));
     const entertainmentText = () => `娱乐：${ENTERTAINMENT_DEBUG_CHOICES[entertainmentIndex].label}`;
     const entertainment = button('Entertainment', entertainmentText(), 210, 232, 290, () => {
         entertainmentIndex = (entertainmentIndex + 1) % ENTERTAINMENT_DEBUG_CHOICES.length;
         setup.entertainment = ENTERTAINMENT_DEBUG_CHOICES[entertainmentIndex].id;
-        write(entertainment, entertainmentText());
+        write(entertainment, entertainmentText()); updateHint();
     });
     const hint = makeLabel('Hint', root, '等级与智力应用于全部 AI，玩家使用自己的角色属性', 18, uiColor(190, 210, 220)).getComponent(Label);
     hint.node.setPosition(0, -210, 0);
+    const updateHint = () => {
+        const kind = !bossMode && setup.entertainment === 'light-mix'
+            ? buildEntertainmentLightPlan(setup.seed, getRaceDistance()).waterEvent : null;
+        const text = bossMode ? '仅调试体验；生涯杯赛与联赛不加入这些关卡' : kind ? `组合：补给＋杂物＋${kind === 'whirlpool' ? '普通漩涡' : kind === 'geyser' ? '普通喷泉' : '普通巨浪'}（水面事件一局一次）`
+            : '等级与智力应用于全部 AI，玩家使用自己的角色属性';
+        if (hint.string !== text) hint.string = text;
+    };
+    updateHint();
     let launched = false;
     AI_DEBUG_DIFFICULTY_TIERS.forEach((tier, i) => button(`Tier${i}`, tier.label, 210, 174 - i * 60, 290, () => {
         if (launched || bossMode) return;
@@ -155,7 +164,7 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
         for (const node of bossNodes) active(node, bossMode);
         write(category, bossMode ? '测试类型：Boss 关卡' : '测试类型：普通 AI');
         write(subtitle, bossMode ? '选择关卡，体验固定阵容与独立 AI 战术' : '先设置阵容，再点击右侧智力档开始比赛');
-        write(hint, bossMode ? '仅调试体验；生涯杯赛与联赛不加入这些关卡' : '等级与智力应用于全部 AI，玩家使用自己的角色属性');
+        updateHint();
         updateBoss();
     };
     updateCategory();

@@ -34,17 +34,17 @@ export class GeyserRaceController {
     private _vents: readonly GeyserVent[] = EMPTY_VENTS;
     constructor(parent: Node, private readonly course: RaceCourseLayout,
         private readonly swimmers: readonly Swimmer[], seed: number, raceDistance: number,
-        meshes: GeyserMeshes, layers: FloatingItemLayers | null = null) {
+        meshes: GeyserMeshes, layers: FloatingItemLayers | null = null, singleAnchorDistance: number | null = null) {
         const patches: Patch[] = [];
         const extent = Math.max(0, Math.abs(course.finishX - course.startX) * .5);
-        for (let lap = 0; lap < Math.min(8, Math.ceil(raceDistance / course.courseLength)); lap++) {
+        for (let lap = 0; lap < (singleAnchorDistance === null ? Math.min(8, Math.ceil(raceDistance / course.courseLength)) : 1); lap++) {
             const start = lap * course.courseLength, end = Math.min(raceDistance, start + course.courseLength);
             if (end - start < 24) continue;
-            const anchorDistance = start + 10;
+            const anchorDistance = singleAnchorDistance ?? start + 10;
             const x = course.distanceToWorldX(anchorDistance + 7);
             const direction = course.directionAtDistance(anchorDistance + 7);
             const vents = planGeyserVents(seed, lap + 1, 1, x, 0, extent, course.poolWidth * .5, direction);
-            patches.push({ serial: lap + 1, anchorDistance, endDistance: end - 4, vents });
+            patches.push({ serial: lap + 1, anchorDistance, endDistance: (singleAnchorDistance === null ? end : raceDistance) - 4, vents });
         }
         this.patches = patches;
         this.previousDistance = new Float64Array(swimmers.length);
@@ -54,6 +54,13 @@ export class GeyserRaceController {
         this.visual = new GeyserBrawlPresentation(parent, course.swimY, 2, meshes, course.waterY, layers);
     }
     get vents(): readonly GeyserVent[] { return this._vents; }
+    isBackgroundRowSafe(worldX: number, padding: number): boolean {
+        for (const patch of this.patches) for (const vent of patch.vents) {
+            if (Math.abs(worldX - vent.x) <= GEYSER_TUNING.edgeRadius * geyserRadiusScale(vent, GEYSER_TUNING) + padding) return false;
+        }
+        return true;
+    }
+    get isBusy(): boolean { return this.active; }
     get elapsedSeconds(): number { return this.age; }
     get isDone(): boolean { return !this.active && (this.stopped || this.nextPatch >= this.patches.length); }
     reset(): void {

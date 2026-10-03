@@ -14,6 +14,22 @@ export type WhirlpoolSpawn = {
 export type WhirlpoolVariant = 'normal' | 'super';
 export type WhirlpoolSpawnSelection = 'random' | WhirlpoolVariant;
 
+/** 组合只准备一个一档普通漩涡，按实际泳段长度避开折返区。 */
+export function buildLightWhirlpoolSpawn(seed: number, anchorDistance: number, raceDistance: number,
+    courseLength: number): readonly WhirlpoolSpawn[] {
+    const random = new SeededRandom(((Number.isFinite(seed) ? seed : 0) ^ 0x454e5457) >>> 0);
+    const margin = WHIRLPOOL_BRAWL_TUNING.alongRadius * .7 + 2;
+    if (courseLength <= margin * 2 || raceDistance <= margin * 2) return [];
+    const desired = Math.max(8, Math.min(raceDistance - 10, anchorDistance + 13));
+    const lap = Math.floor(desired / courseLength);
+    const start = lap * courseLength;
+    const end = Math.min(raceDistance, start + courseLength);
+    if (end - start <= margin * 2) return [];
+    return [{ id: 0, distance: Math.max(start + margin, Math.min(end - margin, desired)),
+        centerFraction: Math.round(random.range(-.34, .34) * 1000) / 1000,
+        spin: random.int(2) === 0 ? -1 : 1, variant: 'normal', radiusScale: .7, forceScale: .6 }];
+}
+
 export type WhirlpoolInfluence = {
     forwardAcceleration: number;
     lateralAcceleration: number;

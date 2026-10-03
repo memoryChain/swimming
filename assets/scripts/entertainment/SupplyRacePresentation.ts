@@ -14,15 +14,21 @@ export class SupplyRacePresentation {
     private disposed = false;
     constructor(world: Node, private readonly course: RaceCourseLayout, count: number, soda: Prefab, slush: Prefab,
         private readonly rendering: FloatingItemRenderer) {
-        for (let id = 0; id < count; id++) {
-            const root = new Node(`EntertainmentSupply${id}`);
-            root.setParent(world); root.layer = world.layer; root.setScale(.7, .7, .7);
-            const a = instantiate(soda), b = instantiate(slush);
-            a.setParent(root); b.setParent(root);
-            this.setLayer(a, world.layer); this.setLayer(b, world.layer);
-            a.active = false; b.active = false; root.active = false;
-            this.roots.push(root); this.soda.push(a); this.slush.push(b);
-            this.rendering.bind(root);
+        try {
+            for (let id = 0; id < count; id++) {
+                const root = new Node(`EntertainmentSupply${id}`);
+                this.roots.push(root);
+                root.setParent(world); root.layer = world.layer; root.setScale(.7, .7, .7);
+                const a = instantiate(soda); a.setParent(root);
+                const b = instantiate(slush); b.setParent(root);
+                this.setLayer(a, world.layer); this.setLayer(b, world.layer);
+                a.active = false; b.active = false; root.active = false;
+                this.soda.push(a); this.slush.push(b);
+                this.rendering.bind(root);
+            }
+        } catch (error) {
+            this.dispose();
+            throw error;
         }
     }
     reset() { this.elapsed = 1; for (const node of this.roots) this.active(node, false); }

@@ -248,3 +248,26 @@ test('Boss诊断同时保留战术与真实动作，使用两行固定文本框�
     assert.ok(lines[1].includes('预算 180')); assert.ok(lines[1].includes('踢腿 100.5秒'));
     assert.equal(p._debugLabel.overflow, Label.Overflow.CLAMP); assert.equal(p._debugLabel.enableWrapText, false);
 });
+
+
+test('低强度组合提示跟随种子切换，只更新现有文字且启动仍只提交一次', () => {
+    const {Node,Label,load}=fixture();
+    const {setAiDebugSetup,getAiDebugSetup}=load('core/GameLaunchOptions');
+    const {buildEntertainmentLightPlan}=load('entertainment/EntertainmentLightPlan');
+    const {buildAiDebugSetupPicker}=load('ui/AiDebugSetupPicker');
+    setAiDebugSetup({...getAiDebugSetup(),entertainment:'light-mix',seed:42,bossId:null});
+    const root=new Node('root');let starts=0;buildAiDebugSetupPicker(root,()=>starts++,()=>{});
+    const hint=root.getChildByName('Hint').getComponent(Label),count=root.children.length;
+    const kindLabel=kind=>kind==='whirlpool'?'普通漩涡':kind==='geyser'?'普通喷泉':'普通巨浪';
+    const seen=new Set();
+    for(let i=0;i<20;i++){
+        const seedLabel=root.getChildByName('Seed').getChildByName('Label').getComponent(Label).string;
+        const seed=Number(seedLabel.replace('种子 ',''));
+        const kind=buildEntertainmentLightPlan(seed,200).waterEvent;seen.add(kind);
+        assert.ok(hint.string.includes(kindLabel(kind)));
+        assert.ok(hint.string.includes('一局一次'));root.getChildByName('Seed').click();assert.equal(root.children.length,count);
+    }
+    assert.equal(seen.size,3);
+    root.getChildByName('Entertainment').click();assert.equal(hint.string,'等级与智力应用于全部 AI，玩家使用自己的角色属性');
+    root.getChildByName('Tier4').click();root.getChildByName('Tier4').click();assert.equal(starts,1);
+});
