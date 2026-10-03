@@ -44,7 +44,7 @@ export type SwimmerColorVariant = {
     cap?: readonly [number, number, number];
 };
 
-export type DebugSwimmerActionPose = 'divePrep' | 'freestyle' | 'breaststroke' | 'sampledAction' | 'flipTurn';
+export type DebugSwimmerActionPose = 'divePrep' | 'freestyle' | 'butterfly' | 'breaststroke' | 'sampledAction' | 'flipTurn';
 
 export type DebugSwimmerActionPreview = {
     id: string;
@@ -327,6 +327,7 @@ export const DEBUG_SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = SWIMMER_MODEL
 
 export const DEBUG_SWIMMER_ACTION_PREVIEWS: DebugSwimmerActionPreview[] = [
     { id: 'freestyle', label: 'Freestyle', pose: 'freestyle' },
+    { id: 'butterfly', label: '蝶泳预览', pose: 'butterfly' },
     { id: 'flip_turn', label: 'Flip Turn', pose: 'flipTurn' },
     { id: 'waving', label: 'Waving', pose: 'sampledAction', sampledActionId: 'waving' },
     { id: 'arm_stretching', label: 'Arm Stretching', pose: 'sampledAction', sampledActionId: 'arm_stretching' },

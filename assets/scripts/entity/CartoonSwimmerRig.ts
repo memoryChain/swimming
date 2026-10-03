@@ -1,3 +1,4 @@
+import { BUTTERFLY_PREVIEW_TUNING } from '../character/ButterflyMotion';
 import { FreestyleBodyRollMotion } from '../character/FreestyleBodyRollMotion';
 import { scaledDelta } from '../core/TimeScale';
 import { TUTORIAL_RUNTIME } from '../tutorial/TutorialSession';
@@ -1510,6 +1511,19 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (!this._loaded || !this._modelDebugMode) {
             return;
         }
+        if (this._debugActionPose === 'butterfly') {
+            const cycleSeconds = BUTTERFLY_PREVIEW_TUNING.cycleSeconds / Math.max(0.25, this.motionPreviewSpeedScale());
+            const phase = positiveMod(this._selfTime / cycleSeconds, 1);
+            this._pose.setMovementDirection(1);
+            this._pose.setMovementHeadingRadians(0);
+            this._pose.setMovementPitchRadians(0);
+            this._pose.applyButterflyDebugPose(phase);
+            this._armAction = 0;
+            this._kickAction = 0;
+            this.syncSplashState();
+            this.updateSplashSurface(0);
+            return;
+        }
         if (this.isFlipTurnDebugPose()) {
             this.updateDebugFlipTurn(dt);
             return;
@@ -2299,6 +2313,15 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this.configureSkinnedRenderers(false);
         this._poseState.applyRaceModelSetup();
+        if (this._debugActionPose === 'butterfly') {
+            this._pose.setMovementDirection(1);
+            this._pose.setMovementHeadingRadians(0);
+            this._pose.setMovementPitchRadians(0);
+            this._pose.applyButterflyDebugPose(0);
+            this.updateSplashSurface(0);
+            this._splashEmitter?.setVisible(false);
+            return;
+        }
         if (this.isFlipTurnDebugPose()) {
             this.setupDebugFlipTurn();
             console.log(
