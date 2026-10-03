@@ -96,8 +96,8 @@ export class GeyserBrawlPresentation {
                 const pressure = clamp01(local / warning);
                 active(view.jet, false);
                 active(view.foam, true);
-                // 外沿从预警开始就覆盖危险半径，只让鼓包在高度上蓄压。
-                const swell = .18 + pressure * .42 + .045 * pressure * Math.sin(local * 9 + view.yaw);
+                // 危险范围保持不变，泡沫鼓包从预警开始就高于水面，低机位也能辨认。
+                const swell = .65 + pressure * .75 + .12 * pressure * Math.sin(local * 9 + view.yaw);
                 scale(view.foam, radius, swell, radius);
                 position(view.foam, 0, this.foamY, 0);
                 for (let group = 0; group < 2; group++) {
@@ -110,8 +110,9 @@ export class GeyserBrawlPresentation {
                     // 回收前后不可见，避免一批气泡从水面瞬移回池底。
                     const envelope = Math.min(1, rise / .12, (1 - rise) / .14);
                     const spread = (0.35 + rise * 0.35) * radius;
-                    scale(node, spread * envelope, (.38 + pressure * .2) * envelope, spread * envelope);
-                    position(node, 0.04 * Math.sin(local * 7 + group), -1.25 + rise * 1.16, 0);
+                    scale(node, spread * envelope, (.55 + pressure * .35) * envelope, spread * envelope);
+                    // 气泡从真实水面附近冒出；不能沿用池底高度，否则预警整段埋在水下。
+                    position(node, 0.04 * Math.sin(local * 7 + group), this.waterlineY - .16 + rise * .38, 0);
                 }
                 continue;
             }

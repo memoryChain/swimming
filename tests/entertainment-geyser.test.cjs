@@ -114,6 +114,39 @@ test('固定喷泉网格贴实际水面，30Hz 更新、隐藏零变换写入，
     h.visual.dispose();h.visual.dispose();assert.ok(h.meshes.every(m=>m.destroyCount===1));assert.equal(h.materials[0].destroyCount,1);
 });
 
+test('喷发前气泡实际冒出水面，泡沫有可见高度，两次预警都没有提前喷水',()=>{
+    for(const waterY of [.055,.35]){
+        const h=createGeyserPresentationHarness(1,waterY),vent={id:0,x:10,z:0,offsetSeconds:0};
+        const budget=h.budget(),cycle=h.rules.geyserCycleSeconds();
+        for(const pulse of [0,1]){
+            let visibleBubbleFrames=0;
+            for(let frame=0;frame<45;frame++){
+                h.visual.update([vent],pulse*cycle+frame/30,2);
+                const snapshot=h.snapshot();
+                assert.equal(snapshot.some(s=>s.name==='WaterJetAndCrown'),false);
+                const foam=snapshot.find(s=>s.name==='SurfaceFoam');
+                assert.ok(foam);
+                const bounds=s=>{
+                    const positions=h.meshes[s.mesh].geometry.positions,m=s.matrix;
+                    let min=Infinity,max=-Infinity;
+                    for(let i=0;i<positions.length;i+=3){
+                        const y=m[1]*positions[i]+m[5]*positions[i+1]+m[9]*positions[i+2]+m[13];
+                        min=Math.min(min,y);max=Math.max(max,y);
+                    }
+                    return {min,max};
+                };
+                const foamBounds=bounds(foam);
+                assert.ok(foamBounds.min>waterY,'泡沫必须在真实水面之上');
+                assert.ok(foamBounds.max-waterY>.1,'预警开始时泡沫鼓包至少高出水面十厘米');
+                if(snapshot.some(s=>s.name.startsWith('BubblesAndDrops')&&bounds(s).max>waterY+.05))visibleBubbleFrames++;
+            }
+            assert.ok(visibleBubbleFrames>=30,'气泡至少有一秒明显露出水面');
+        }
+        assert.deepEqual(h.budget(),budget,'预警不能新增节点、网格或材质');
+        h.visual.dispose();
+    }
+});
+
 test('两个表现槽位复用所有泳段，排布冻结且不消费公共随机数，首名完赛停止新脉冲',()=>{
     const v=fixture(),a=createAiHarness(),f=racer(a),course=f.body.courseLayout;
     const {GeyserRaceController:C}=v.loadModule('entertainment/GeyserRaceController'),rng=v.loadModule('core/SharedRNG');
