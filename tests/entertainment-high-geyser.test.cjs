@@ -4,6 +4,12 @@ const { createImportedMeshHarness } = require('./helpers/imported-mesh-harness.c
 const { createAiHarness } = require('./helpers/ai-race-harness.cjs');
 const frozen = require('./fixtures/butterfly-high-geyser.json');
 const MODES = ['geyser-three', 'geyser-four', 'geyser-five'];
+// 来源坐标不变；删除逐人找路后，固定记录新的空间选择，不覆盖来源历史记录。
+const SPATIAL_MASKS = {
+    3: { 0: 16, 1: 16, 42: 16, 77: 16, 12345: 16, 4294967295: 16 },
+    4: { 0: 33, 1: 129, 42: 66, 77: 34, 12345: 66, 4294967295: 33 },
+    5: { 0: 289, 1: 273, 42: 273, 77: 274, 12345: 530, 4294967295: 273 },
+};
 
 function fixture() { return createImportedMeshHarness('geyser'); }
 function actor(h, id = 'cartonSwimmer6') {
@@ -18,10 +24,9 @@ function runtime(h, f, mode, layers = null) {
         [{ lane: 0, swimmer: f.body, condition: f.condition, ai: f.ai }], layers);
 }
 
-test('三至五档108组来源记录的排布、节奏、大小口选择完全一致，不消耗公共随机序列', () => {
+test('三至五档108组来源排布与节奏保留，大小口仅按种子和空间选择，不消耗公共随机序列', () => {
     const h = fixture(), rules = h.loadModule('entertainment/GeyserBrawlRules');
     const safety = h.loadModule('entertainment/GeyserBrawlSafety');
-    Object.assign(h.loadModule('core/SteeringTuning').STEERING_TUNING, frozen.steering);
     const rng = h.loadModule('core/SharedRNG');
     rng.reseedSharedRandom(71); const expected = rng.randomFloat(); rng.reseedSharedRandom(71);
     for (const f of frozen.fixtures) {
@@ -29,8 +34,12 @@ test('三至五档108组来源记录的排布、节奏、大小口选择完全�
         assert.deepEqual(rules.planGeyserVents(f.seed, f.serial, f.intensity,
             f.direction * 15, 0, 25, f.halfWidth, f.direction), f.vents);
         const result = safety.selectGeyserLargeMask(f.seed, f.serial, f.intensity,
-            f.vents, f.halfWidth, f.racers, f.dangers, frozen.tuning);
-        assert.deepEqual(result, f.result, `${f.intensity}/${f.seed}/${f.direction}/${f.scenario}`);
+            f.vents, f.halfWidth, f.dangers, frozen.tuning);
+        assert.equal(result.mask, f.scenario === 'blocked' ? 0 : SPATIAL_MASKS[f.intensity][f.seed]);
+        if (f.result.rejectedRoute === 0) {
+            assert.deepEqual(result, { mask: f.result.mask, rejectedSpace: f.result.rejectedSpace },
+                `${f.intensity}/${f.seed}/${f.direction}/${f.scenario}`);
+        }
         assert.ok(result.mask.toString(2).replace(/0/g, '').length <= f.spec.largeCount);
         if (f.scenario === 'blocked') assert.equal(result.mask, 0);
     }

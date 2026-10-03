@@ -28,30 +28,27 @@ function runtime(v, f, mode = 'geyser-large', layers = null) {
         [{ lane: 0, swimmer: f.body, condition: f.condition, ai: f.ai }], layers);
 }
 
-test('大喷口选定与来源36组结果一致，正返程、快速选手及已有障碍均覆盖，公共随机序列不变', () => {
+test('二档保留来源36组空间选择，大小口不依赖选手速度，公共随机序列不变', () => {
     const h = fixture(), safety = h.loadModule('entertainment/GeyserBrawlSafety');
-    Object.assign(h.loadModule('core/SteeringTuning').STEERING_TUNING, frozen.steering);
     const rng = h.loadModule('core/SharedRNG');
     rng.reseedSharedRandom(42); const next = rng.randomFloat(); rng.reseedSharedRandom(42);
     for (const f of frozen.fixtures) {
         const result = safety.selectGeyserLargeMask(f.seed, f.serial, f.intensity, f.vents,
-            f.halfWidth, f.racers, f.dangers, frozen.tuning);
-        assert.deepEqual(result, f.result, `${f.seed}/${f.direction}/${f.scenario}`);
+            f.halfWidth, f.dangers, frozen.tuning);
+        assert.deepEqual(result, { mask: f.result.mask, rejectedSpace: f.result.rejectedSpace }, `${f.seed}/${f.direction}/${f.scenario}`);
         assert.ok(result.mask === 0 || (result.mask & (result.mask - 1)) === 0);
         if (f.scenario === 'blocked') assert.equal(result.mask, 0);
     }
     assert.equal(rng.randomFloat(), next);
 });
 
-test('标准模式不假设选手能换道，大口贴墙或挡住实际路线时拒绝放大', () => {
+test('大口贴墙、排布盖满横向通道或紧邻已有障碍时拒绝放大', () => {
     const h = fixture(), s = h.loadModule('entertainment/GeyserBrawlSafety'), t = h.rules.GEYSER_TUNING;
     const vent = { id: 0, x: 4.5, z: 0, offsetSeconds: 0, size: 'large', mixed: true };
-    const racer = { x: 0, z: 0, speed: 2, direction: 1, heading: 0, turnRate: 0, roll: 0, bodyScale: 1 };
-    assert.equal(s.geyserRouteAvailable({ ...racer, steeringEnabled: false }, [vent], 12, 2, 10.3, t), false);
-    assert.equal(s.geyserRouteAvailable({ ...racer, steeringEnabled: true }, [vent], 12, 2, 10.3, t), true);
-    assert.equal(s.selectGeyserLargeMask(42, 1, 2, [{ ...vent, z: 11 }], 12, [], [], t).mask, 0);
-    assert.equal(s.selectGeyserLargeMask(42, 1, 2, [vent], 12, [{ ...racer, steeringEnabled: false }], [], t).mask, 0);
-    assert.equal(s.selectGeyserLargeMask(42, 1, 2, [vent], 12, [racer], [{ x: 4.5, z: 0, radius: 1 }], t).mask, 0);
+    assert.equal(s.selectGeyserLargeMask(42, 1, 2, [{ ...vent, z: 11 }], 12, [], t).mask, 0);
+    assert.equal(s.selectGeyserLargeMask(42, 1, 2, [vent], 2.2, [], t).mask, 0);
+    assert.equal(s.selectGeyserLargeMask(42, 1, 2, [vent], 12, [{ x: 4.5, z: 0, radius: 1 }], t).mask, 0);
+    assert.equal(s.selectGeyserLargeMask(42, 1, 2, [vent], 12, [], t).mask, 1);
 });
 
 test('大小喷泉同轮喷发，大口提前0.3秒预警，两轮泡沫气泡露出实际水面', () => {
@@ -123,7 +120,7 @@ test('核心实际命中用大口弹起高度和时长，腾空期间拒绝输�
     c.dispose();
 });
 
-test('大小喷口在各组启动时按当前选手检查，普通喷泉及低强度组合保持两个小口', () => {
+test('大小喷口赛前定稿，比赛和重赛不再选口，普通喷泉及低强度组合保持两个小口', () => {
     const v = fixture(), a = createAiHarness(), f = actor(a), p = v.loadModule('entertainment/EntertainmentDebugPlan');
     const rng = v.loadModule('core/SharedRNG'); rng.reseedSharedRandom(77);
     const expected = rng.randomFloat(); rng.reseedSharedRandom(77);
