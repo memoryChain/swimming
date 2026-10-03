@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "44c7d370-2752-4984-9dc4-5e5f8334bf67",
+  "files": [],
+  "subMetas": {
+    "a584e": {
+      "importer": "gltf-mesh",
+      "uuid": "44c7d370-2752-4984-9dc4-5e5f8334bf67@a584e",
+      "displayName": "",
+      "id": "a584e",
+      "name": "SprayBuoySplashRingMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 136
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "c4a71": {
+      "importer": "gltf-material",
+      "uuid": "44c7d370-2752-4984-9dc4-5e5f8334bf67@c4a71",
+      "displayName": "",
+      "id": "c4a71",
+      "name": "SprayBuoySplashRingVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "59d7e": {
+      "importer": "gltf-scene",
+      "uuid": "44c7d370-2752-4984-9dc4-5e5f8334bf67@59d7e",
+      "displayName": "",
+      "id": "59d7e",
+      "name": "SprayBuoySplashRing.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "44c7d370-2752-4984-9dc4-5e5f8334bf67@a584e"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "44c7d370-2752-4984-9dc4-5e5f8334bf67@c4a71"
+      ],
+      "scenes": [
+        "44c7d370-2752-4984-9dc4-5e5f8334bf67@59d7e"
+      ]
+    }
+  }
+}

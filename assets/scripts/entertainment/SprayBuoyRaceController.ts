@@ -31,7 +31,7 @@ export class SprayBuoyRaceController {
         this.recovery = new EntertainmentRecoveryController(course.laneCount, {
             onKnocked: lane => {
                 const binding = this.bindings[lane]; if (!binding) return;
-                binding.ai?.stopSwimming(); binding.swimmer.beginEntertainmentKnockout(); this.states[lane].active = false;
+                binding.swimmer.beginEntertainmentKnockout(); binding.ai?.stopSwimming(); this.states[lane].active = false;
             },
             onRespawn: (lane, state) => {
                 const binding = this.bindings[lane];

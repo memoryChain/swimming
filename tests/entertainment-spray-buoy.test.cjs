@@ -176,3 +176,16 @@ test('恢复调参可保存重载，旧配置保留原版默认恢复时长',()=
     controls.get('entertainment.recovery.knockedSeconds').set(3.5);controls.get('entertainment.recovery.invulnerableSeconds').set(2);tuning.loadSavedTuningAsync(()=>{});
     near(b.ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds,4.1);near(b.ENTERTAINMENT_RECOVERY_TUNING.invulnerableSeconds,1.4);
 });
+
+test('AI划水中途被击倒时取消未完成输入，不额外结算体力和蓄气',()=>{
+    const h=createBuoyHarness();h.runtime.prepare(assert.ifError);const actor=h.actors[0],a=actor.body;
+    const {StrokeType}=h.loadModule('core/GameConstants');
+    a.handleStrokeHeld(StrokeType.LEFT,true);a.motor.recordStroke(StrokeType.LEFT);a.stepSimulation(.3);
+    actor.ai._phase='stroke';actor.ai._side=StrokeType.LEFT;
+    a.consumeAiConditionStrokes();a.consumeRhythmResults();a.ultimate.applyNetEnergy(37,1);
+    const charge=a.ultimate.energy,hr=a.heartRate;
+    h.runtime.sprayBuoy.recovery.tryKnockDown(0,4,a.distance);
+    assert.equal(a.isEntertainmentKnocked,true);assert.equal(a.consumeAiConditionStrokes(),0,'被打断的一划不能被停止AI的松手结算');
+    near(a.ultimate.energy,charge);near(a.heartRate,hr);
+    h.runtime.dispose();
+});

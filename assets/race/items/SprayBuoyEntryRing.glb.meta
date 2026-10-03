@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "b5d457e2-86d1-4f9b-ab38-74d4b9ff0981",
+  "files": [],
+  "subMetas": {
+    "96829": {
+      "importer": "gltf-mesh",
+      "uuid": "b5d457e2-86d1-4f9b-ab38-74d4b9ff0981@96829",
+      "displayName": "",
+      "id": "96829",
+      "name": "SprayBuoyEntryRingMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 56
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "57f43": {
+      "importer": "gltf-material",
+      "uuid": "b5d457e2-86d1-4f9b-ab38-74d4b9ff0981@57f43",
+      "displayName": "",
+      "id": "57f43",
+      "name": "SprayBuoyEntryRingVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "4eca8": {
+      "importer": "gltf-scene",
+      "uuid": "b5d457e2-86d1-4f9b-ab38-74d4b9ff0981@4eca8",
+      "displayName": "",
+      "id": "4eca8",
+      "name": "SprayBuoyEntryRing.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "b5d457e2-86d1-4f9b-ab38-74d4b9ff0981@96829"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "b5d457e2-86d1-4f9b-ab38-74d4b9ff0981@57f43"
+      ],
+      "scenes": [
+        "b5d457e2-86d1-4f9b-ab38-74d4b9ff0981@4eca8"
+      ]
+    }
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "fb96b115-780c-4be1-b76d-e2f16de6fbe6",
+  "files": [],
+  "subMetas": {
+    "d6cbe": {
+      "importer": "gltf-mesh",
+      "uuid": "fb96b115-780c-4be1-b76d-e2f16de6fbe6@d6cbe",
+      "displayName": "",
+      "id": "d6cbe",
+      "name": "SprayBuoyEntryBodyMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 192
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "00258": {
+      "importer": "gltf-material",
+      "uuid": "fb96b115-780c-4be1-b76d-e2f16de6fbe6@00258",
+      "displayName": "",
+      "id": "00258",
+      "name": "SprayBuoyEntryBodyVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "cccae": {
+      "importer": "gltf-scene",
+      "uuid": "fb96b115-780c-4be1-b76d-e2f16de6fbe6@cccae",
+      "displayName": "",
+      "id": "cccae",
+      "name": "SprayBuoyEntryBody.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "fb96b115-780c-4be1-b76d-e2f16de6fbe6@d6cbe"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "fb96b115-780c-4be1-b76d-e2f16de6fbe6@00258"
+      ],
+      "scenes": [
+        "fb96b115-780c-4be1-b76d-e2f16de6fbe6@cccae"
+      ]
+    }
+  }
+}

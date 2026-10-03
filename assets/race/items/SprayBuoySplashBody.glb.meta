@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "c5148814-d47e-47da-b0cd-e86548ee683e",
+  "files": [],
+  "subMetas": {
+    "48d64": {
+      "importer": "gltf-mesh",
+      "uuid": "c5148814-d47e-47da-b0cd-e86548ee683e@48d64",
+      "displayName": "",
+      "id": "48d64",
+      "name": "SprayBuoySplashBodyMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 328
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "6de5c": {
+      "importer": "gltf-material",
+      "uuid": "c5148814-d47e-47da-b0cd-e86548ee683e@6de5c",
+      "displayName": "",
+      "id": "6de5c",
+      "name": "SprayBuoySplashBodyVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "f1ced": {
+      "importer": "gltf-scene",
+      "uuid": "c5148814-d47e-47da-b0cd-e86548ee683e@f1ced",
+      "displayName": "",
+      "id": "f1ced",
+      "name": "SprayBuoySplashBody.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "c5148814-d47e-47da-b0cd-e86548ee683e@48d64"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "c5148814-d47e-47da-b0cd-e86548ee683e@6de5c"
+      ],
+      "scenes": [
+        "c5148814-d47e-47da-b0cd-e86548ee683e@f1ced"
+      ]
+    }
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "d8aec3cf-0142-4d90-8328-a95e8f07645e",
+  "files": [],
+  "subMetas": {
+    "b46af": {
+      "importer": "gltf-mesh",
+      "uuid": "d8aec3cf-0142-4d90-8328-a95e8f07645e@b46af",
+      "displayName": "",
+      "id": "b46af",
+      "name": "SprayBuoySplashCoreMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 96
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "7b2d3": {
+      "importer": "gltf-material",
+      "uuid": "d8aec3cf-0142-4d90-8328-a95e8f07645e@7b2d3",
+      "displayName": "",
+      "id": "7b2d3",
+      "name": "SprayBuoySplashCoreVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "a4c55": {
+      "importer": "gltf-scene",
+      "uuid": "d8aec3cf-0142-4d90-8328-a95e8f07645e@a4c55",
+      "displayName": "",
+      "id": "a4c55",
+      "name": "SprayBuoySplashCore.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "d8aec3cf-0142-4d90-8328-a95e8f07645e@b46af"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "d8aec3cf-0142-4d90-8328-a95e8f07645e@7b2d3"
+      ],
+      "scenes": [
+        "d8aec3cf-0142-4d90-8328-a95e8f07645e@a4c55"
+      ]
+    }
+  }
+}
