@@ -60,6 +60,10 @@ export class Swimmer extends Component {
     }
     @property public swimmerName = 'Swimmer';
 
+    private _freestylePresentationEnabled = false;
+    /** 比赛玩家、AI和远端真人共用；只切换显示，不写推进或输入。 */
+    enableFreestylePresentation(enabled: boolean) { this._freestylePresentationEnabled = enabled; }
+
     private readonly _motor = new SwimmerMotor();
     private _movementSpeed = 0;
     private _startPosition = new Vec3();
@@ -1069,6 +1073,10 @@ export class Swimmer extends Component {
                 bodyPitchRadians,
                 this._motor.heading,
                 bodyUpProjection,
+                this._motor.isRacing && !this._phases.isUnderwater
+                    && !this._phases.isDiveGlidePoseActive && !this._phases.isFlipTurnActive
+                    && !this._phases.isDolphinJumpActive && this._motor.ability.depth <= 0.05,
+                this._freestylePresentationEnabled,
             );
         }
     }

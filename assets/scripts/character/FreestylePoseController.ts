@@ -1,4 +1,6 @@
 import { Node, Quat, Vec3 } from 'cc';
+import { FREESTYLE_BODY_ROLL_TUNING } from './FreestyleBodyRollMotion';
+import { highElbowRecoveryEnvelope, sampleHighElbowRecovery } from './FreestyleRecoveryMotion';
 import { FREESTYLE_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { AXIAL_ROLL_TUNING } from '../core/AxialRollTuning';
@@ -95,6 +97,26 @@ const SAMPLED_STANDING_SOURCE_BACK_LEAN_DEGREES = 4;
 const SAMPLED_STANDING_MAX_UPRIGHT_CORRECTION_DEGREES = 7;
 
 export class FreestylePoseController {
+    private _freestyleChestRollDegrees = FREESTYLE_BODY_ROLL_TUNING.chestDegrees;
+    private _freestyleBodyRollWeight = -1;
+    private _freestyleBodyRollSignal = 0;
+    private _freestyleBodyRollModelAngle = 0;
+    private _leftHighElbowWeight = 0;
+    private _rightHighElbowWeight = 0;
+    private readonly _recoveryArmRotation = new Quat();
+    private readonly _recoveryForeRotation = new Quat();
+    private readonly _bodyRollPivotBefore = new Vec3();
+    private readonly _bodyRollPivotAfter = new Vec3();
+    private readonly _bodyRollRootPosition = new Vec3();
+
+    /** -1 保留原动作；转体与抬肘分别使用真实姿态准入权重。 */
+    setFreestylePresentation(weight: number, signal = 0, leftRecovery = 0, rightRecovery = 0): void {
+        this._freestyleBodyRollWeight = Number.isFinite(weight) && weight >= 0 ? clamp(weight, 0, 1) : -1;
+        this._freestyleBodyRollSignal = Number.isFinite(signal) ? clamp(signal, -1, 1) : 0;
+        this._leftHighElbowWeight = this._freestyleBodyRollWeight < 0 || !Number.isFinite(leftRecovery) ? 0 : clamp(leftRecovery, 0, 1);
+        this._rightHighElbowWeight = this._freestyleBodyRollWeight < 0 || !Number.isFinite(rightRecovery) ? 0 : clamp(rightRecovery, 0, 1);
+    }
+
     public root: Node = null;
     public readonly rootBasePos = new Vec3();
     public readonly rootBaseEuler = new Vec3();
@@ -257,6 +279,8 @@ export class FreestylePoseController {
     private _movementPitchRadians = 0;
 
     unbind() {
+        this.setFreestylePresentation(-1);
+        this._freestyleBodyRollModelAngle = 0;
         // 换模等待期间仍可能收到水花、镜头和边界查询，不能保留已销毁的骨骼。
         this.root = null;
         this._rootBone = this._torso = this._hips = this._spine = this._spine1 = null;
@@ -359,6 +383,7 @@ export class FreestylePoseController {
     }
 
     restoreBasePose() {
+        this._freestyleBodyRollModelAngle = 0;
         this._collisionLimp.reset();
         this.root?.setPosition(this.rootBasePos);
         this.root?.setRotation(this.rootBaseRotation);
@@ -504,14 +529,24 @@ export class FreestylePoseController {
             : 1;
     }
 
+    /** 绑定时适配角色肩腋蒙皮；模型侧倾幅度保持共享配置。 */
+    setFreestyleChestRollDegrees(degrees: number | undefined): void {
+        this._freestyleChestRollDegrees = typeof degrees === 'number' && Number.isFinite(degrees)
+            ? clamp(degrees, FREESTYLE_BODY_ROLL_TUNING.modelDegrees, FREESTYLE_BODY_ROLL_TUNING.chestDegrees)
+            : FREESTYLE_BODY_ROLL_TUNING.chestDegrees;
+    }
+
     setSwimHeadLift(degrees: number | undefined) {
         this._swimHeadLiftDegrees = typeof degrees === 'number' ? degrees : FREESTYLE_POSE_TUNING.defaultSwimHeadLiftDegrees;
     }
 
     applyFreestylePose(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, upperBodyPower: number, armPower: number, kickPower: number) {
+        this._freestyleBodyRollModelAngle = FREESTYLE_BODY_ROLL_TUNING.modelDegrees
+            * this._freestyleBodyRollSignal * Math.max(0, this._freestyleBodyRollWeight);
         const rightPhase = positiveMod(this.armPoseCycle(rightArmCycle), Math.PI * 2) / (Math.PI * 2);
         const rightBreath = lerp(this.rightBreathSignal(rightArmCycle),
-            smoothPulse(rightPhase, 0.48, 0.64, 0.82, 0.99), this._proneFreestyleWeight);
+            smoothPulse(rightPhase, 0.48, 0.64, 0.82, 0.99), this._proneFreestyleWeight)
+            * (1 - Math.max(0, this._freestyleBodyRollWeight));
         this.applyFreestyleRootMotion(leftArmCycle, rightArmCycle, leftKickCycle, rightKickCycle, bodyPhase, rightBreath);
         this.applyUpperBodyRoll(
             this.armReachSignal(leftArmCycle, rightArmCycle),
@@ -522,8 +557,24 @@ export class FreestylePoseController {
         );
         this.applySurfaceArm(this._leftShoulder, this._leftArm, this._leftForeArm, this._leftHand, this.armPoseCycle(leftArmCycle), armPower);
         this.applySurfaceArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(rightArmCycle), armPower);
+        this.applyHighElbowRecovery(this._leftArm, this._leftForeArm, this._leftHand, this.armPoseCycle(leftArmCycle), this._leftHighElbowWeight);
+        this.applyHighElbowRecovery(this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(rightArmCycle), this._rightHighElbowWeight);
         this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, leftKickCycle, kickPower);
         this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, rightKickCycle, kickPower);
+        this.applyBodyRollModelTilt();
+    }
+
+    private applyBodyRollModelTilt(): void {
+        if (this._freestyleBodyRollModelAngle === 0 || !this.root || !this._hips) return;
+        // 仅修改骨架显示根，不写 Swimmer 的物理节点；固定髋部避免绕脚底公转。
+        this._hips.getWorldPosition(this._bodyRollPivotBefore);
+        if (this.root.parent) this.root.parent.inverseTransformPoint(this._bodyRollPivotBefore, this._bodyRollPivotBefore);
+        this.applyWorldAxisRoll(this.root, this._freestyleBodyRollModelAngle);
+        this._hips.getWorldPosition(this._bodyRollPivotAfter);
+        if (this.root.parent) this.root.parent.inverseTransformPoint(this._bodyRollPivotAfter, this._bodyRollPivotAfter);
+        Vec3.subtract(this._bodyRollRootPosition, this._bodyRollPivotBefore, this._bodyRollPivotAfter);
+        Vec3.add(this._bodyRollRootPosition, this.root.position, this._bodyRollRootPosition);
+        this.root.setPosition(this._bodyRollRootPosition);
     }
 
     applyFreestyleRootMotion(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, rightBreath = 0) {
@@ -536,10 +587,11 @@ export class FreestylePoseController {
         const baseBodyRoll = this.sideBodyRollSignal(leftArmCycle, rightArmCycle)
             * AXIAL_ROLL_TUNING.proceduralRollDegrees;
         const proneRoll = proneFreestyleRollSignal(this.armPoseCycle(leftArmCycle), this.armPoseCycle(rightArmCycle));
-        const bodyRoll = lerp(baseBodyRoll, proneRoll * (AXIAL_ROLL_TUNING.proceduralRollDegrees + 12), this._proneFreestyleWeight)
-            - breathRatio * MOTION_TUNING.rightBreathBodyRollDegrees;
+        const bodyRoll = (lerp(baseBodyRoll, proneRoll * (AXIAL_ROLL_TUNING.proceduralRollDegrees + 12), this._proneFreestyleWeight)
+            - breathRatio * MOTION_TUNING.rightBreathBodyRollDegrees) * (1 - Math.max(0, this._freestyleBodyRollWeight));
         const kickSignal = (Math.sin(leftKickCycle) - Math.sin(rightKickCycle)) * 0.5;
-        const axisCenteringOffset = this.freestyleAxisCenteringOffset(baseBodyRoll, breathRatio);
+        const axisCenteringOffset = this.freestyleAxisCenteringOffset(baseBodyRoll, breathRatio)
+            * (1 - Math.max(0, this._freestyleBodyRollWeight));
         this.laneSideInRootParent(this._tmpParentDirection);
         this.root.setPosition(
             this.rootBasePos.x + armReach * 0.03 + this._tmpParentDirection.x * axisCenteringOffset,
@@ -1341,6 +1393,17 @@ export class FreestylePoseController {
         if (!arm || !foreArm) return;
         const side = arm === this._leftArm ? 1 : -1;
         sampleProneFreestyleArm(cycle, this._proneUpperDirection, this._proneForeDirection);
+        const recovery = this.bodyRollRecoveryWeight(cycle);
+        if (recovery > 0) {
+            const sideScale = lerp(1, FREESTYLE_BODY_ROLL_TUNING.recoverySideScale, recovery);
+            this._proneUpperDirection.x *= sideScale;
+            this._proneForeDirection.x *= sideScale;
+            if (this._proneUpperDirection.z < 0) {
+                this._proneUpperDirection.z *= lerp(1, FREESTYLE_BODY_ROLL_TUNING.recoveryHeightScale, recovery);
+            }
+            Vec3.normalize(this._proneUpperDirection, this._proneUpperDirection);
+            Vec3.normalize(this._proneForeDirection, this._proneForeDirection);
+        }
         const reach = Math.max(0, this._proneUpperDirection.y);
         const extension = proneFreestyleExtensionWeight(cycle);
         // 前伸先上举肩带，再求解大臂；只转大臂会在横展的肩头形成 U 型拐角。
@@ -1368,6 +1431,39 @@ export class FreestylePoseController {
         }
     }
 
+    private bodyRollRecoveryWeight(cycle: number): number {
+        if (this._freestyleBodyRollWeight <= 0) return 0;
+        const phase = positiveMod(cycle, Math.PI * 2) / (Math.PI * 2);
+        return this._freestyleBodyRollWeight * smoothPulse(phase, 0.50, 0.64, 0.82, 0.98);
+    }
+
+    private applyHighElbowRecovery(arm: Node, foreArm: Node, hand: Node, cycle: number, admission: number): void {
+        if (admission <= 0 || !arm || !foreArm || !hand) return;
+        const weight = admission * highElbowRecoveryEnvelope(cycle);
+        if (weight <= 0) return;
+        Quat.copy(this._recoveryArmRotation, arm.rotation);
+        Quat.copy(this._recoveryForeRotation, foreArm.rotation);
+        const side = arm === this._leftArm ? 1 : -1;
+        sampleHighElbowRecovery(cycle, this._proneUpperDirection, this._proneForeDirection);
+        this.movementForwardInRoot(this._tmpMovementForwardRoot);
+        this.setProneArmDirection(this._proneUpperDirection, side);
+        this.swingRecoveryBone(arm, foreArm);
+        this.setProneArmDirection(this._proneForeDirection, side);
+        this.applyBoneOffset(foreArm, 0, 0, 0);
+        this.swingRecoveryBone(foreArm, hand);
+        this.blendSurfaceBone(arm, this._recoveryArmRotation, weight);
+        this.blendSurfaceBone(foreArm, this._recoveryForeRotation, weight);
+    }
+
+    private swingRecoveryBone(bone: Node, child: Node): void {
+        this.root.getWorldRotation(this._tmpRootWorldRotation);
+        Vec3.transformQuat(this._tmpDirection, this._tmpDirection, this._tmpRootWorldRotation);
+        bone.getWorldPosition(this._tmpGroundHip);
+        child.getWorldPosition(this._tmpGroundKnee);
+        Vec3.subtract(this._tmpWorldDirection, this._tmpGroundKnee, this._tmpGroundHip);
+        this.rotateWorldBoneDirection(bone, this._tmpWorldDirection, this._tmpDirection);
+    }
+
     private setProneArmDirection(direction: Vec3, side: number) {
         this._tmpDirection.set(
             side * direction.x + this._tmpMovementForwardRoot.x * direction.y,
@@ -1375,6 +1471,16 @@ export class FreestylePoseController {
             direction.z + this._tmpMovementForwardRoot.z * direction.y,
         );
         Vec3.normalize(this._tmpDirection, this._tmpDirection);
+        this.rotateBodyRollArmTarget(this._tmpDirection);
+    }
+
+    private rotateBodyRollArmTarget(direction: Vec3): void {
+        if (this._freestyleBodyRollWeight <= 0) return;
+        this.movementForwardInRoot(this._tmpMovementForwardRoot);
+        Quat.fromAxisAngle(this._tmpAxisRotation, this._tmpMovementForwardRoot,
+            (this._freestyleChestRollDegrees - FREESTYLE_BODY_ROLL_TUNING.modelDegrees)
+                * this._freestyleBodyRollSignal * this._freestyleBodyRollWeight * Math.PI / 180);
+        Vec3.transformQuat(direction, direction, this._tmpAxisRotation);
     }
 
     private relaxProneElbowTwist(arm: Node, foreArm: Node) {
@@ -1450,6 +1556,7 @@ export class FreestylePoseController {
         if (!this._diveHands?.ready) return;
         // 掌心随前臂从入水朝腹侧转为抱水朝后。只绕前臂轴旋转，不挪动肘腕。
         this._tmpDirection.set(0, -this._proneForeDirection.z, this._proneForeDirection.y);
+        this.rotateBodyRollArmTarget(this._tmpDirection);
         this.root.getWorldRotation(this._tmpRootWorldRotation);
         Vec3.transformQuat(this._tmpDirection, this._tmpDirection, this._tmpRootWorldRotation);
         foreArm.getWorldPosition(this._tmpGroundKnee);
@@ -1465,7 +1572,10 @@ export class FreestylePoseController {
         Vec3.normalize(this._tmpDirection, this._tmpDirection);
         Vec3.normalize(this._tmpWorldDirection, this._tmpWorldDirection);
         Vec3.cross(this._tmpGroundKneeOffset, this._tmpWorldDirection, this._tmpDirection);
-        const angle = Math.atan2(Vec3.dot(this._tmpGroundKneeOffset, this._tmpGroundAxis), Vec3.dot(this._tmpWorldDirection, this._tmpDirection));
+        let angle = Math.atan2(Vec3.dot(this._tmpGroundKneeOffset, this._tmpGroundAxis), Vec3.dot(this._tmpWorldDirection, this._tmpDirection));
+        // 转体时使用上臂／前臂／手掌分担的局部翻掌，不再强制掌心追世界朝向。
+        // 否则肘部松弛会把额外的大角度翻掌传回肩腋，造成蒙皮塌陷。
+        angle *= 1 - Math.max(0, this._freestyleBodyRollWeight);
         Quat.fromAxisAngle(this._tmpDeltaRotation, this._tmpGroundAxis, angle);
         foreArm.getWorldRotation(this._tmpGroundBoneRotation);
         Quat.multiply(this._tmpResultRotation, this._tmpDeltaRotation, this._tmpGroundBoneRotation);
@@ -1482,6 +1592,9 @@ export class FreestylePoseController {
         const wheel = -normalized * Math.PI * 2;
         const c = Math.cos(wheel);
         const s = Math.sin(wheel);
+        const recoveryWeight = this.bodyRollRecoveryWeight(cycle);
+        const recoverySideScale = lerp(1, FREESTYLE_BODY_ROLL_TUNING.recoverySideScale, recoveryWeight);
+        const recoveryHeightScale = lerp(1, FREESTYLE_BODY_ROLL_TUNING.recoveryHeightScale, recoveryWeight);
         const armPower = 0.92 + Math.min(2, Math.max(0.8, power)) * 0.08;
         const forwardReach = smoothRange(c, 0.20, 0.96);
         const forwardSideClearance = MOTION_TUNING.forwardArmSideClearance;
@@ -1493,7 +1606,8 @@ export class FreestylePoseController {
         const shoulderLift = lerp(-1 - 2 * c, -7.2, forwardReach) * armPower;
         const shoulderOpen = side * lerp(6, 1.2, forwardReach) * armPower;
         const shoulderRoll = side * lerp(2, 0.35, forwardReach) * armPower;
-        const elbowStraight = lerp(-6 + 2 * c, 0.2, forwardReach) * armPower;
+        const elbowStraight = lerp(-6 + 2 * c, 0.2, forwardReach) * armPower
+            - FREESTYLE_BODY_ROLL_TUNING.recoveryElbowBendDegrees * recoveryWeight;
         const foreArmOpen = side * lerp(3, 0.15, forwardReach) * armPower;
         const foreArmRoll = side * lerp(2, 0.1, forwardReach) * armPower;
         const handNeutral = lerp(-2 * c, -0.1, forwardReach) * armPower;
@@ -1514,6 +1628,7 @@ export class FreestylePoseController {
                 s * 0.12 + this._tmpMovementForwardRoot.z * forwardReach,
             );
             Vec3.normalize(this._tmpDirection, this._tmpDirection);
+            this.rotateBodyRollArmTarget(this._tmpDirection);
             this.applyBoneDirectionFromRootWithOffset(
                 shoulder,
                 arm,
@@ -1526,11 +1641,12 @@ export class FreestylePoseController {
             this.applyBoneOffset(shoulder, shoulderLift, shoulderOpen, shoulderRoll);
         }
         this._tmpDirection.set(
-            side * sideClearance + this._tmpMovementForwardRoot.x * c,
+            side * sideClearance * recoverySideScale + this._tmpMovementForwardRoot.x * c,
             this._tmpMovementForwardRoot.y * c,
-            s + this._tmpMovementForwardRoot.z * c,
+            s * recoveryHeightScale + this._tmpMovementForwardRoot.z * c,
         );
         Vec3.normalize(this._tmpDirection, this._tmpDirection);
+        this.rotateBodyRollArmTarget(this._tmpDirection);
         Vec3.copy(this._tmpArmDirection, this._tmpDirection);
         this.applyBoneDirectionFromRootWithOffset(arm, foreArm, this._tmpDirection, 0, 0, 0);
         this.applyBoneAxialRoll(arm, foreArm, upperArmPalmTurn);
@@ -1545,6 +1661,7 @@ export class FreestylePoseController {
             // arm direction as reach increases. Reversing these operands makes the
             // elbow bend more at full extension, especially on disconnected cartoon
             // rigs whose right-arm child offsets are not perfectly axial.
+            this.rotateBodyRollArmTarget(this._tmpDirection);
             Vec3.copy(this._tmpBaseDirection, this._tmpDirection);
             Vec3.lerp(this._tmpDirection, this._tmpBaseDirection, this._tmpArmDirection, forwardReach);
             Vec3.normalize(this._tmpDirection, this._tmpDirection);
@@ -2443,17 +2560,25 @@ export class FreestylePoseController {
         this.applyBoneOffset(this._torso, (swimHeadLift * 0.18 + breathLift * 1.6) * this._surfaceLiftDirection, breathTurn * 0.1, 0);
         this._proneChestRoll = proneRoll * clamp(MOTION_TUNING.proneChestRollDegrees, 0, 45)
             * Math.min(1.2, Math.max(0, power)) * proneWeight;
+        if (this._freestyleBodyRollWeight > 0) {
+            const extraChest = this._freestyleChestRollDegrees - FREESTYLE_BODY_ROLL_TUNING.modelDegrees;
+            this._proneChestRoll = lerp(this._proneChestRoll,
+                extraChest * this._freestyleBodyRollSignal, this._freestyleBodyRollWeight);
+        }
         // 胸廓整片侧转，回臂侧肩膀随之抬起；骨盆只继承较小的整体侧滚。
-        if (proneWeight > 0.000001) {
+        if (proneWeight > 0.000001 || this._freestyleBodyRollWeight > 0) {
             // 胸背与肩带共同转动，避免把整个角度集中在腋下的一节骨骼。
-            if (chestBase) this.applyWorldAxisRoll(chestBase, this._proneChestRoll * 0.6);
-            this.applyWorldAxisRoll(this._torso, this._proneChestRoll * (chestBase ? 0.4 : 1));
+            const lowerShare = lerp(0.6, 0.8, Math.max(0, this._freestyleBodyRollWeight));
+            if (chestBase) this.applyWorldAxisRoll(chestBase, this._proneChestRoll * lowerShare);
+            this.applyWorldAxisRoll(this._torso, this._proneChestRoll * (chestBase ? 1 - lowerShare : 1));
         }
         this.applyBoneOffset(this._neck, (swimHeadLift * 0.72 + breathLift * 3.0) * this._surfaceLiftDirection, headBreathTurn * 0.28, 0);
         this.applyBoneOffset(this._head, (-2.5 + swimHeadLift * 1.15 + breathLift * 2.1) * this._surfaceLiftDirection, headBreathTurn * 0.5, 0);
-        if (proneWeight > 0.000001) {
+        if (proneWeight > 0.000001 || this._freestyleBodyRollWeight > 0) {
             // 不换气时头颈抵消胸廓侧转；右侧换气时逐渐允许头跟随肩膀。
-            const counterRoll = -this._proneChestRoll * lerp(0.85, 0.25, breathRatio);
+            const counterRoll = lerp(-this._proneChestRoll * lerp(0.85, 0.25, breathRatio),
+                -(this._proneChestRoll + this._freestyleBodyRollModelAngle) * FREESTYLE_BODY_ROLL_TUNING.headStability,
+                Math.max(0, this._freestyleBodyRollWeight));
             this.applyWorldAxisRoll(this._neck, counterRoll * 0.65);
             this.applyWorldAxisRoll(this._head, counterRoll * 0.35);
         }

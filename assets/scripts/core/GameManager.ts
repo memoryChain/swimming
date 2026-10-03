@@ -181,6 +181,7 @@ export class GameManager extends Component {
     private readonly _collisionSwimmers: Swimmer[] = [];
     // AI 测试赛可选 1 或 7 个对手，等级、智力和阵容来自开始页面板。
     private _aiDebugMode = false;
+    private _freestylePresentationEnabled = false;
     private _aiDebugDifficulty = 0.8;
     private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
     private _splashParticlesEnabled: boolean = PERFORMANCE_CONFIG.splash.particleEmittersEnabled;
@@ -355,6 +356,7 @@ export class GameManager extends Component {
         const loading = this._raceLoading = new RaceLoading();
         try {
             const launchMode = consumeMainGameLaunchMode();
+            this._freestylePresentationEnabled = launchMode === 'race' || launchMode === 'ai-debug';
             const modelDebug = DEBUG_UI_ENABLED && launchMode === 'model-debug';
             const underwaterDebug = DEBUG_UI_ENABLED && launchMode === 'underwater-debug';
             this._aiDebugMode = DEBUG_UI_ENABLED && launchMode === 'ai-debug';
@@ -1417,6 +1419,7 @@ export class GameManager extends Component {
         const competitors = this.createCompetitorManager().buildPlayer(root);
         this._swimmersRoot = competitors.group;
         this._playerSwimmer = competitors.playerSwimmer;
+        this._playerSwimmer.enableFreestylePresentation(this._freestylePresentationEnabled);
         this.bindDolphinEnergyCost(this._playerSwimmer, this._playerCondition);
         this._aiController = null;
         this._aiControllers = [];
@@ -1524,6 +1527,7 @@ export class GameManager extends Component {
         this._aiSwimmers.splice(0, this._aiSwimmers.length, ...competitors.aiSwimmers);
         this._aiConditions.splice(0, this._aiConditions.length, ...this._aiSwimmers.map(() => new AiConditionModel()));
         for (let i = 0; i < this._aiSwimmers.length; i++) {
+            this._aiSwimmers[i].enableFreestylePresentation(this._freestylePresentationEnabled);
             this._aiControllers[i].bindCondition(this._aiConditions[i]);
             this.bindDolphinEnergyCost(this._aiSwimmers[i], this._aiConditions[i]);
         }

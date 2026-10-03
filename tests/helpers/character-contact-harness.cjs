@@ -58,6 +58,7 @@ function createRig(file, modelDirectory = process.env.CHARACTER_MODEL_DIRECTORY 
     wrapper.setRotationFromEuler(0, 90, 0);
     const variant = SWIMMER_MODEL_VARIANTS.find(v => v.candidates.some(p => p.toLowerCase().includes(file.slice(0, -4).toLowerCase())));
     pose.setSurfaceSwimStyle(variant?.surfaceSwimStyle);
+    pose.setFreestyleChestRollDegrees(variant?.freestyleChestRollDegrees);
     const scale = 1.35 * (variant?.modelScaleMultiplier || 1);
     wrapper.scale.set(scale, scale, scale);
     // 独立保留全部足部顶点，验证压缩成 16 点后没有漏掉更低的真实鞋底。
@@ -138,4 +139,6 @@ function createRig(file, modelDirectory = process.env.CHARACTER_MODEL_DIRECTORY 
     return { pose, soles, hands, wrapper, variant, exactY, renderers, fullHead, exactHandBounds, modelDirectory };
 }
 
-module.exports = { ...harness, createRig };
+// 动作回归跟随主干模型名册，新增角色会自动进入真实 GLB 检查。
+const SWIMMER_MODEL_FILES = SWIMMER_MODEL_VARIANTS.map(v => path.basename(v.candidates[0]) + '.glb');
+module.exports = { ...harness, createRig, SWIMMER_MODEL_FILES };

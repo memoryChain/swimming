@@ -69,4 +69,46 @@ function elbowStrainSampler(rig, file) {
         percentile95() { ratios.sort((a, b) => a - b); return ratios[Math.floor(ratios.length * 0.95)]; },
     };
 }
-module.exports = { elbowStrainSampler };
+// 加权蒙皮矩阵的体积比：接近零代表相邻骨骼反向扭转造成关节塌缩。
+// 使用肩腋真实混合权重，包含辅助骨，不以主骨角度替代网格验证。
+function shoulderVolumeSampler(rig) {
+    const pieces = [];
+    for (const renderer of rig.renderers) {
+        const bones = renderer.skeleton.joints.map(p => rig.wrapper.getChildByPath(p));
+        renderer.mesh.struct.primitives.forEach((_, p) => {
+            const joints = renderer.mesh.readAttribute(p, 'JOINTS_0');
+            const weights = renderer.mesh.readAttribute(p, 'WEIGHTS_0');
+            const vertices = [];
+            for (let v = 0; v < joints.length / 4; v++) {
+                let upper = 0, chest = 0;
+                for (let k = 0; k < 4; k++) {
+                    const name = bones[joints[v * 4 + k]]?.name || '', w = weights[v * 4 + k];
+                    if (/^(L|R)_Upperarm/.test(name)) upper += w;
+                    if (/Clavicle|Spine|Chest/.test(name)) chest += w;
+                }
+                if (upper > .15 && chest > .15) vertices.push(v);
+            }
+            pieces.push({ bones, binds: renderer.skeleton.bindposes, joints, weights, vertices });
+        });
+    }
+    return {
+        sample() {
+            const volumes = [], fields = ['m00','m01','m02','m04','m05','m06','m08','m09','m10'];
+            for (const piece of pieces) {
+                const matrices = piece.bones.map((b, i) => Mat4.multiply(new Mat4(), b.worldMatrix, piece.binds[i]));
+                for (const v of piece.vertices) {
+                    const a = new Array(9).fill(0);
+                    for (let k = 0; k < 4; k++) {
+                        const m = matrices[piece.joints[v * 4 + k]], w = piece.weights[v * 4 + k];
+                        fields.forEach((f, i) => { a[i] += m[f] * w; });
+                    }
+                    const det = a[0]*(a[4]*a[8]-a[5]*a[7])-a[3]*(a[1]*a[8]-a[2]*a[7])+a[6]*(a[1]*a[5]-a[2]*a[4]);
+                    volumes.push(det / (rig.wrapper.scale.x * rig.wrapper.scale.y * rig.wrapper.scale.z));
+                }
+            }
+            volumes.sort((a,b) => a-b);
+            return { count: volumes.length, percentile05: volumes[Math.floor(volumes.length * .05)] };
+        },
+    };
+}
+module.exports = { elbowStrainSampler, shoulderVolumeSampler };

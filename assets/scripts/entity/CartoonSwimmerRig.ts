@@ -1,3 +1,4 @@
+import { FreestyleBodyRollMotion } from '../character/FreestyleBodyRollMotion';
 import { scaledDelta } from '../core/TimeScale';
 import { TUTORIAL_RUNTIME } from '../tutorial/TutorialSession';
 import { _decorator, Camera, Color, Component, EffectAsset, instantiate, JsonAsset, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3, Vec4 } from 'cc';
@@ -7,7 +8,7 @@ import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer'
 import type { BreaststrokeBoneName, BreaststrokeMotionSample } from '../character/BreaststrokeMotionCurve';
 import { sampledActionIdFor } from '../character/CharacterActionConfig';
 import type { CharacterAction } from '../character/CharacterActionConfig';
-import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
+import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING } from '../character/CharacterMotionTuning';
 import { CharacterPoseStateController } from '../character/CharacterPoseStateController';
 import { CharacterRig } from '../character/CharacterRig';
 import { StandingSoleContact } from '../character/StandingSoleContact';
@@ -220,6 +221,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _kickCycleMotion = 0;
     private _lastKickCycle = 0;
     private _hasLastKickCycle = false;
+    private _freestyleBodyRoll: FreestyleBodyRollMotion | null = null;
     private _treadWaterWeight = 0;
     private _treadWaterPhase = 0;
     private _treadExitHold = 0;
@@ -695,6 +697,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 this._pose.setSurfaceSwimStyle(variant.surfaceSwimStyle);
                 this._pose.bind(this.root);
                 this._pose.setSwimHeadLift(this.swimHeadLiftDegrees());
+                this._pose.setFreestyleChestRollDegrees(variant.freestyleChestRollDegrees);
                 this.configureSkinnedRenderers();
                 this.setSkinnedRenderersEnabled(false);
                 this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
@@ -753,6 +756,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private clearLoadedModel() {
         // 先解除动作和旧骨架的绑定，再销毁模型；新模型加载后重放当前展示状态。
         this._poseState.resetRuntime();
+        this._freestyleBodyRoll?.reset();
         this._pose.unbind();
         this._standingSoles.clear();
         this._headBounds.clear();
@@ -1143,6 +1147,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     setFinishFloating() {
+        this._freestyleBodyRoll?.reset();
         this._pose.resetCollisionSoftness();
         if (this._modelDebugMode) {
             return;
@@ -1152,6 +1157,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     setDiveStreamlinePose() {
+        this._freestyleBodyRoll?.reset();
         this._pose.resetCollisionSoftness();
         if (this._modelDebugMode) {
             return;
@@ -1163,6 +1169,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     startDiveStreamlineTransition(duration = CHARACTER_POSE_TUNING.diveStreamlineTransitionSeconds) {
+        this._freestyleBodyRoll?.reset();
         if (this._modelDebugMode) {
             return;
         }
@@ -1276,6 +1283,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         movementPitchRadians = motor.collisionPitchRadians * this.axialRollVisualWeight,
         movementHeadingRadians = motor.heading,
         bodyUpProjection = Math.cos(motor.axialRollRadians) * Math.cos(motor.collisionPitchRadians),
+        surfacePresentationAllowed = false,
+        freestylePresentationEnabled = false,
     ) {
         const useDt = this.consumeThrottledMotionDt(dt);
         if (useDt < 0) {
@@ -1292,6 +1301,19 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             bodyUpProjection,
         );
         this._pose.setSurfaceBodyUpProjection(bodyUpProjection);
+        if (freestylePresentationEnabled) {
+            const motion = this._freestyleBodyRoll ?? (this._freestyleBodyRoll = new FreestyleBodyRollMotion());
+            // 速度覆盖沿用 owner／房主权威；相位来自既有输入回放，准入只读物理姿态。
+            motion.update(useDt,
+                this._visualLeftArmCycle + FREESTYLE_POSE_TUNING.armForwardCycleOffset,
+                this._visualRightArmCycle + FREESTYLE_POSE_TUNING.armForwardCycleOffset,
+                surfacePresentationAllowed && this._treadWaterWeight < 0.1,
+                bodyUpProjection, movementPitchRadians,
+                motor.axialRollAngularVelocity, motor.collisionPitchAngularVelocity);
+            this._pose.setFreestylePresentation(motion.weight, motion.roll, motion.leftRecovery, motion.rightRecovery);
+        } else {
+            this._freestyleBodyRoll?.reset();
+        }
         this.updateFreestyle(
             useDt,
             this._visualLeftArmCycle,
@@ -1305,6 +1327,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         );
         // 该补偿只作用于本次水面姿态，水下滑行、转身和独立预览使用默认方向。
         this._pose.setSurfaceBodyUpProjection(1);
+        this._pose.setFreestylePresentation(-1);
         // 跟随原有降频与离屏裁剪，在完整基础姿态之后应用，下一次姿态会自然覆盖。
         if (this._loaded && this._poseState.isFreestyleActive) {
             this._pose.applyCollisionSoftness(motor.collisionSoftness, useDt);
@@ -1312,6 +1335,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     updateUnderwaterKickFromMotor(dt: number, motor: SwimmerMotor, movementDirection = 1, movementPitchRadians = 0) {
+        this._freestyleBodyRoll?.reset();
         this._pose.resetCollisionSoftness();
         const useDt = this.consumeThrottledMotionDt(dt);
         if (useDt < 0) {
@@ -1587,6 +1611,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._bubbleEmitter?.dispose();
         this._bubbleEmitter = null;
         this._poseState.resetRuntime();
+        this._freestyleBodyRoll?.reset();
         this._pose.unbind();
         this._standingSoles.clear();
         this._headBounds.clear();
@@ -1604,6 +1629,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     resetPose() {
+        this._freestyleBodyRoll?.reset();
+        this._pose.setFreestylePresentation(-1);
         if (!this._loaded || !this.root) {
             return;
         }
