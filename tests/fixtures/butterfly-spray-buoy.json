@@ -1,0 +1,1086 @@
+{
+  "source": "feature/butterfly-debug@e5dca0327ed8d5e70bf5f38d39489022491e8e4b",
+  "note": "独立喷雾浮标原版的初始布局、10秒漂移及65/130米补充空槽记录。只作离线对照。",
+  "fixtures": [
+    {
+      "seed": 0,
+      "poolWidth": 21,
+      "stages": [
+        {
+          "action": "initial",
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 20.082969165336547,
+              "lateral": 5.278628747653762
+            },
+            {
+              "id": 1,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 26.452041024394667,
+              "lateral": -0.5841030048211687
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 46.66930597358945,
+              "lateral": 3.8948994873226903
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 41.1567041115843,
+              "lateral": 3.877943562598996
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 12.192706651157168,
+              "lateral": -3.4664976121741042
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 35.20502100864707,
+              "lateral": 0.7300199228190984
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 5.8892821467498315,
+              "lateral": -4.739886271034811
+            }
+          ]
+        },
+        {
+          "action": "10seconds",
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 19.480154066914935,
+              "lateral": 5.7428902276205385
+            },
+            {
+              "id": 1,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 27.07308152746605,
+              "lateral": -1.6935027890661352
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 46.13857842842121,
+              "lateral": 5.026999793355396
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 40.5132182066692,
+              "lateral": 2.7765436615336148
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 12.85605111033441,
+              "lateral": -4.427202838036755
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 34.725862009928164,
+              "lateral": 0.9626672048675713
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 5.782951081817613,
+              "lateral": -5.815181840468108
+            }
+          ]
+        },
+        {
+          "action": "refill",
+          "event": {
+            "mineId": 1,
+            "hitLane": 0,
+            "courseX": 27.07308152746605,
+            "lateral": -1.6935027890661352,
+            "hitMask": 1,
+            "revision": 1,
+            "elapsedSeconds": 10.000000000000007
+          },
+          "leader": 65,
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 19.453182209591535,
+              "lateral": 5.714740797165281
+            },
+            {
+              "id": 1,
+              "generation": 1,
+              "active": true,
+              "armed": false,
+              "courseX": 26.877895501287345,
+              "lateral": -3.560087649225229
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 46.111959268457184,
+              "lateral": 5.019851783530823
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 40.49299773307655,
+              "lateral": 2.7896967712799965
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 12.87957876148408,
+              "lateral": -4.436016527038315
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 34.69997464939032,
+              "lateral": 0.9340844023432604
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 5.7913291286609905,
+              "lateral": -5.817295334422937
+            }
+          ]
+        },
+        {
+          "action": "refill",
+          "event": {
+            "mineId": 1,
+            "hitLane": 0,
+            "courseX": 26.877895501287345,
+            "lateral": -3.560087649225229,
+            "hitMask": 1,
+            "revision": 3,
+            "elapsedSeconds": 10.050000000000008
+          },
+          "leader": 130,
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 19.426271021571797,
+              "lateral": 5.686375551809697
+            },
+            {
+              "id": 1,
+              "generation": 2,
+              "active": true,
+              "armed": false,
+              "courseX": 27.409652733986103,
+              "lateral": 1.5111322809537082
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 46.08519502495127,
+              "lateral": 5.011347095257266
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 40.4734342634608,
+              "lateral": 2.804086058907875
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 12.902614531685451,
+              "lateral": -4.44347800087846
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 34.67382814969572,
+              "lateral": 0.9055889454522554
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 5.800625513766663,
+              "lateral": -5.817999999869887
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "seed": 42,
+      "poolWidth": 21,
+      "stages": [
+        {
+          "action": "initial",
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 6.97088843548065,
+              "lateral": -5.735393485702231
+            },
+            {
+              "id": 1,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 26.307287956150862,
+              "lateral": -1.03637502882486
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 13.116559387674355,
+              "lateral": 3.8746559509463134
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 18.76031657958169,
+              "lateral": 1.3124426458971281
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 35.210294069445965,
+              "lateral": 5.134239910141846
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 41.74959286423245,
+              "lateral": -4.452827753982235
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 46.54405320120968,
+              "lateral": 4.634700828784417
+            }
+          ]
+        },
+        {
+          "action": "10seconds",
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 7.249769227045687,
+              "lateral": -4.660957996630511
+            },
+            {
+              "id": 1,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 26.35041680011199,
+              "lateral": -1.0389196075912277
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 13.214004609479842,
+              "lateral": 2.8025251258704857
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 18.951622008593038,
+              "lateral": 0.859120798726679
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 34.74099690802052,
+              "lateral": 5.940312768272283
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 41.47562659513391,
+              "lateral": -3.322876585008659
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 46.740700405095474,
+              "lateral": 4.541140782591417
+            }
+          ]
+        },
+        {
+          "action": "refill",
+          "event": {
+            "mineId": 1,
+            "hitLane": 0,
+            "courseX": 26.35041680011199,
+            "lateral": -1.0389196075912277,
+            "hitMask": 1,
+            "revision": 1,
+            "elapsedSeconds": 10.000000000000007
+          },
+          "leader": 65,
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 7.248613832265882,
+              "lateral": -4.658775503982887
+            },
+            {
+              "id": 1,
+              "generation": 1,
+              "active": true,
+              "armed": false,
+              "courseX": 27.607102473938742,
+              "lateral": -4.113632674481778
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 13.205279638875448,
+              "lateral": 2.81799176416173
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 18.97039259506802,
+              "lateral": 0.8873222638952127
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 34.71527815743039,
+              "lateral": 5.915899281010737
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 41.4544466762584,
+              "lateral": -3.331505489498977
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 46.73598272763546,
+              "lateral": 4.569371113597151
+            }
+          ]
+        },
+        {
+          "action": "refill",
+          "event": {
+            "mineId": 1,
+            "hitLane": 0,
+            "courseX": 27.607102473938742,
+            "lateral": -4.113632674481778,
+            "hitMask": 1,
+            "revision": 3,
+            "elapsedSeconds": 10.050000000000008
+          },
+          "leader": 130,
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 7.246488338736914,
+              "lateral": -4.6580016675663085
+            },
+            {
+              "id": 1,
+              "generation": 2,
+              "active": true,
+              "armed": false,
+              "courseX": 27.623636492730867,
+              "lateral": -0.6749772223211834
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 13.195640724571387,
+              "lateral": 2.834625767778537
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 18.98984947861491,
+              "lateral": 0.9157247987853039
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 34.68928043647899,
+              "lateral": 5.890780767578198
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 41.4326778580957,
+              "lateral": -3.3414683158369116
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 46.73031131957001,
+              "lateral": 4.597340321343695
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "seed": 987,
+      "poolWidth": 21,
+      "stages": [
+        {
+          "action": "initial",
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 26.738633724305863,
+              "lateral": 4.591042209654318
+            },
+            {
+              "id": 1,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 41.17850760731677,
+              "lateral": 0.6668657129145028
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 18.957162781084403,
+              "lateral": -1.716424416666129
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 7.228035401848314,
+              "lateral": -3.4220081256514745
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 46.61030692052174,
+              "lateral": -4.658096883537687
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 33.758924914258046,
+              "lateral": 3.527576439898901
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 13.111689410334698,
+              "lateral": 5.3787034397504625
+            }
+          ]
+        },
+        {
+          "action": "10seconds",
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 27.398933950228777,
+              "lateral": 4.585660937535304
+            },
+            {
+              "id": 1,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 41.686740313246915,
+              "lateral": 1.0340915501539312
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 18.759024655381108,
+              "lateral": -0.7391545589964077
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 7.085903535288038,
+              "lateral": -4.445849086939823
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 46.71725599920272,
+              "lateral": -5.767368116738352
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 33.95760920298043,
+              "lateral": 2.8637211760124366
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 13.216555681706518,
+              "lateral": 6.072918289641969
+            }
+          ]
+        },
+        {
+          "action": "refill",
+          "event": {
+            "mineId": 1,
+            "hitLane": 0,
+            "courseX": 41.686740313246915,
+            "lateral": 1.0340915501539312,
+            "hitMask": 1,
+            "revision": 1,
+            "elapsedSeconds": 10.000000000000007
+          },
+          "leader": 65,
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 27.421534122040164,
+              "lateral": 4.613447102168677
+            },
+            {
+              "id": 1,
+              "generation": 1,
+              "active": true,
+              "armed": false,
+              "courseX": 40.57939951999346,
+              "lateral": 2.892848144419984
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 18.76367978202137,
+              "lateral": -0.7591372618523762
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 7.068672128072558,
+              "lateral": -4.451438757394466
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 46.708902166672594,
+              "lateral": -5.755040270128104
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 33.9766041974081,
+              "lateral": 2.8452958580464247
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 13.208120287545421,
+              "lateral": 6.090600119994613
+            }
+          ]
+        },
+        {
+          "action": "refill",
+          "event": {
+            "mineId": 1,
+            "hitLane": 0,
+            "courseX": 40.57939951999346,
+            "lateral": 2.892848144419984,
+            "hitMask": 1,
+            "revision": 3,
+            "elapsedSeconds": 10.050000000000008
+          },
+          "leader": 130,
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 27.44358804462813,
+              "lateral": 4.640864952088826
+            },
+            {
+              "id": 1,
+              "generation": 2,
+              "active": true,
+              "armed": false,
+              "courseX": 41.611034680706375,
+              "lateral": 5.841435903482479
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 18.769289076607315,
+              "lateral": -0.7801045784854412
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 7.050703801371559,
+              "lateral": -4.455638706295893
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 46.69962969615379,
+              "lateral": -5.741454997419296
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 33.99627743954043,
+              "lateral": 2.827971502686048
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 13.198767268601564,
+              "lateral": 6.107152057087433
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "seed": 20260913,
+      "poolWidth": 21,
+      "stages": [
+        {
+          "action": "initial",
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 19.74812136341073,
+              "lateral": -3.963194743778639
+            },
+            {
+              "id": 1,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 34.19644723958655,
+              "lateral": -5.491633620628689
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 6.800458164258487,
+              "lateral": 2.7391816951227512
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 11.75864323512646,
+              "lateral": 5.118378754847219
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 40.8970640823234,
+              "lateral": 4.904490637794294
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 26.25667991838584,
+              "lateral": -0.9283124138729318
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 45.59681325371947,
+              "lateral": 1.4900136172626575
+            }
+          ]
+        },
+        {
+          "action": "10seconds",
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 20.212677812853528,
+              "lateral": -4.048788010727665
+            },
+            {
+              "id": 1,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 33.77101613736861,
+              "lateral": -5.2302448046887955
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 7.228181733038431,
+              "lateral": 3.7377322481832698
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 11.958885728067846,
+              "lateral": 5.966130048265548
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 41.5269966780368,
+              "lateral": 4.220959637231351
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 26.468531717182934,
+              "lateral": -1.602672058322682
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 45.25279854931142,
+              "lateral": 0.390111393260435
+            }
+          ]
+        },
+        {
+          "action": "refill",
+          "event": {
+            "mineId": 1,
+            "hitLane": 0,
+            "courseX": 33.77101613736861,
+            "lateral": -5.2302448046887955,
+            "hitMask": 1,
+            "revision": 1,
+            "elapsedSeconds": 10.000000000000007
+          },
+          "leader": 65,
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 20.220625477683168,
+              "lateral": -4.075939190153335
+            },
+            {
+              "id": 1,
+              "generation": 1,
+              "active": true,
+              "armed": false,
+              "courseX": 35.142610281042295,
+              "lateral": 3.598079310300406
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 7.234173645139834,
+              "lateral": 3.718552257434873
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 11.977927886436365,
+              "lateral": 5.942555337466175
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 41.54586220792326,
+              "lateral": 4.247260515646225
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 26.48792277659946,
+              "lateral": -1.6208445222315677
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 45.250952901534596,
+              "lateral": 0.39025614639747397
+            }
+          ]
+        },
+        {
+          "action": "refill",
+          "event": {
+            "mineId": 1,
+            "hitLane": 0,
+            "courseX": 35.142610281042295,
+            "lateral": 3.598079310300406,
+            "hitMask": 1,
+            "revision": 3,
+            "elapsedSeconds": 10.050000000000008
+          },
+          "leader": 130,
+          "mines": [
+            {
+              "id": 0,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 20.227639312753883,
+              "lateral": -4.1026138514707196
+            },
+            {
+              "id": 1,
+              "generation": 2,
+              "active": true,
+              "armed": false,
+              "courseX": 35.24649247804972,
+              "lateral": -4.750126033293447
+            },
+            {
+              "id": 2,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 7.239214170953512,
+              "lateral": 3.6983494964790866
+            },
+            {
+              "id": 3,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 11.997646577193828,
+              "lateral": 5.918210773783059
+            },
+            {
+              "id": 4,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 41.564020376788186,
+              "lateral": 4.274083633908976
+            },
+            {
+              "id": 5,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 26.507977416426183,
+              "lateral": -1.6379059542568137
+            },
+            {
+              "id": 6,
+              "generation": 0,
+              "active": true,
+              "armed": true,
+              "courseX": 45.25007791395928,
+              "lateral": 0.39181081882729707
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

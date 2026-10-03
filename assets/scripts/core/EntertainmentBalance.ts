@@ -155,3 +155,33 @@ export const GIANT_WAVE_INTENSITY_TUNING = [
     { widthOffset: 0.10, lengthOffset: 0.02, slowdownOffset: 0.08, gapOffset: -1 },
     { widthOffset: 0.20, lengthOffset: 0.04, slowdownOffset: 0.15, gapOffset: -2 },
 ];
+
+/** 本地喷雾浮标的原版布局、碰撞和避让参数。 */
+export const SPRAY_BUOY_TUNING = {
+    mineCount: 7,
+    waveSecondDistance: 65,
+    waveThirdDistance: 130,
+    mineItemAlongRadius: 0.67,
+    mineItemLateralRadius: 0.65,
+    swimmerContactAlongRadius: 0.68,
+    swimmerContactLateralRadius: 0.4,
+    blastAlongRadius: 3.2,
+    blastLateralRadius: 2.5,
+    driftAlongRadius: 0.75,
+    driftLateralRadius: 0.58,
+    driftSpeed: 0.72,
+    spawnClearAlongRadius: 2.85,
+    spawnClearLateralRadius: 1.8,
+    spawnClearSeconds: 0.45,
+    aiLookAhead: 5.5,
+    aiAvoidOffset: 1.75,
+};
+
+/** 娱乐击倒与恢复时长。只在启用该玩法时消费。 */
+export const ENTERTAINMENT_RECOVERY_TUNING = {
+    knockedSeconds: 3.5,
+    invulnerableSeconds: 2,
+    respawnSpeed: 0,
+    disappearBlinkSeconds: 0.55,
+    appearBlinkSeconds: 0.65,
+};

@@ -1,3 +1,4 @@
+import type { RecoveryFloatPose } from '../character/RecoveryFloatPose';
 import { BUTTERFLY_PREVIEW_TUNING } from '../character/ButterflyMotion';
 import { FreestyleBodyRollMotion } from '../character/FreestyleBodyRollMotion';
 import { scaledDelta } from '../core/TimeScale';
@@ -169,10 +170,13 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         leftHandWaterProgress: 0,
         rightHandWaterProgress: 0,
     };
+    public onEntertainmentRecoveryFloat: ((pose: RecoveryFloatPose | null, weight: number) => void) | null = null;
+    private _recoveryBlinkVisible = true;
     private readonly _pose = new FreestylePoseController();
     private readonly _animationPlayer = new CharacterAnimationPlayer();
     private readonly _poseState = new CharacterPoseStateController({
         pose: this._pose,
+        onRecoveryFloat: (pose, weight) => this.onEntertainmentRecoveryFloat?.(pose, weight),
         getModel: () => this._model,
         getRoot: () => this.root,
         getSelfTime: () => this._selfTime,
@@ -1012,11 +1016,20 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     // 模型尚未加载时也保存状态，新壳通过 setOutlineRoot 继承它。
     setOutlineVisible(visible: boolean): void {
         this._outlineVisible = visible;
-        if (this._outlineRoot?.isValid && this._outlineRoot.active !== visible) {
-            this._outlineRoot.active = visible;
-        }
+        this.applyOutlineVisibility();
     }
 
+    /** 闪烁只控制已缓存的渲染器，骨骼和比赛状态继续存在。 */
+    setRecoveryBlinkVisible(visible: boolean): void {
+        if (this._recoveryBlinkVisible === visible) return;
+        this._recoveryBlinkVisible = visible;
+        if (this._rendererRevealFramesRemaining <= 0) this.setSkinnedRenderersEnabled(visible);
+        this.applyOutlineVisibility();
+    }
+    private applyOutlineVisibility(): void {
+        const visible = this._outlineVisible && this._recoveryBlinkVisible;
+        if (this._outlineRoot?.isValid && this._outlineRoot.active !== visible) this._outlineRoot.active = visible;
+    }
     setSwimmerColors(skinColor: Color, suitColor: Color, capColor: Color, robotStyle = false, playerOutline = false) {
         this.storeSkinSettings(skinColor, suitColor, capColor, robotStyle, playerOutline);
         if (!this._loaded || !this.root) {
@@ -1162,6 +1175,23 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._animationPlayer.stop();
         this._poseState.enterTreadWater();
+    }
+
+    prepareEntertainmentRecovery(): void { void this._pose.recoveryFloat; }
+
+    setEntertainmentKnocked(transitionSeconds = CHARACTER_POSE_TUNING.recoveryFloatEnterSeconds) {
+        this._pose.resetCollisionSoftness();
+        if (this._modelDebugMode) {
+            return;
+        }
+        this._animationPlayer.stop();
+        this.clearCollisionPitchPivotCompensation();
+        this._pose.setMovementPitchRadians(0);
+        this._poseState.enterEntertainmentKnockout(transitionSeconds);
+    }
+
+    syncEntertainmentKnockoutElapsed(elapsedSeconds: number, landingSeconds = 0) {
+        this._poseState.syncEntertainmentKnockoutElapsed(elapsedSeconds, landingSeconds);
     }
 
     setDiveStreamlinePose() {
@@ -1638,7 +1668,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._rendererRevealFramesRemaining--;
         if (this._rendererRevealFramesRemaining <= 0) {
-            this.setSkinnedRenderersEnabled(true);
+            this.setSkinnedRenderersEnabled(this._recoveryBlinkVisible);
         }
     }
 
@@ -2587,12 +2617,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (!this._model?.isValid) {
             return;
         }
-        const renderers: SkinnedMeshRenderer[] = [];
-        collectComponentsRecursive(this._model, SkinnedMeshRenderer, renderers);
-        for (const renderer of renderers) {
-            if (renderer?.isValid) {
-                renderer.enabled = enabled;
-            }
+        for (const renderer of this._skinnedRenderers) {
+            if (renderer?.isValid && renderer.enabled !== enabled) renderer.enabled = enabled;
         }
     }
 

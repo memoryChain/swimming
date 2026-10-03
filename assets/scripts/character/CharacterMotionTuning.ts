@@ -108,6 +108,25 @@ export const CHARACTER_POSE_TUNING = {
     // 自由泳与踩水之间的过渡速率（每秒权重变化量），越大切换越快。
     raceTreadBlendRate: 2.6,
 
+    // 原扶圈恢复姿态参数；只在本地娱乐恢复时使用。
+    recoveryFloatSurfaceY: 0.09,
+    recoveryFloatSizeScale: 1.12,
+    recoveryFloatHandStaggerSeconds: 0.12,
+    recoveryFloatEnterSeconds: 0.46,
+    recoveryFloatImpactSeconds: 0.22,
+    recoveryFloatReachSeconds: 0.34,
+    recoveryFloatRingDelaySeconds: 0.32,
+    recoveryFloatBodyTiltDegrees: 35,
+    recoveryFloatSwayDegrees: 4,
+    recoveryFloatBobAmplitude: 0.024,
+    recoveryFloatBobSpeed: 2.8,
+    recoveryFloatLegSwayDegrees: 5,
+    // 命中后的短落水路径继续沿用原参数。
+    entertainmentKnockoutAirborneThreshold: 0.06,
+    entertainmentKnockoutLandingMinSeconds: 0.28,
+    entertainmentKnockoutLandingMaxSeconds: 0.62,
+    entertainmentKnockoutLandingSecondsPerMeter: 0.18,
+    entertainmentKnockoutLandingSplashScale: 1.65,
     // Full mid-race tread-water cycle duration before animation speed scaling.
     // 比赛途中踩水动作在动画倍率前的一整轮周期。
     raceTreadWaterCycleSeconds: 2.25,

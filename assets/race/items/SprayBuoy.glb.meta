@@ -1,0 +1,112 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "4513d5fd-af7a-47a1-9a4e-ea76dc01d37c",
+  "files": [],
+  "subMetas": {
+    "f8a02": {
+      "importer": "gltf-mesh",
+      "uuid": "4513d5fd-af7a-47a1-9a4e-ea76dc01d37c@f8a02",
+      "displayName": "",
+      "id": "f8a02",
+      "name": "BuoyBalloonMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 672
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "14e6e": {
+      "importer": "gltf-mesh",
+      "uuid": "4513d5fd-af7a-47a1-9a4e-ea76dc01d37c@14e6e",
+      "displayName": "",
+      "id": "14e6e",
+      "name": "BuoyBodyMesh.mesh",
+      "userData": {
+        "gltfIndex": 1,
+        "triangleCount": 656
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "536bd": {
+      "importer": "gltf-material",
+      "uuid": "4513d5fd-af7a-47a1-9a4e-ea76dc01d37c@536bd",
+      "displayName": "",
+      "id": "536bd",
+      "name": "PoolPlasticVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "ef9b4": {
+      "importer": "gltf-scene",
+      "uuid": "4513d5fd-af7a-47a1-9a4e-ea76dc01d37c@ef9b4",
+      "displayName": "",
+      "id": "ef9b4",
+      "name": "SprayBuoy.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "4513d5fd-af7a-47a1-9a4e-ea76dc01d37c@f8a02",
+        "4513d5fd-af7a-47a1-9a4e-ea76dc01d37c@14e6e"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "4513d5fd-af7a-47a1-9a4e-ea76dc01d37c@536bd"
+      ],
+      "scenes": [
+        "4513d5fd-af7a-47a1-9a4e-ea76dc01d37c@ef9b4"
+      ]
+    }
+  }
+}

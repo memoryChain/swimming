@@ -1,4 +1,4 @@
-import { STIMULANT_BRAWL_TUNING, LITTER_BRAWL_TUNING, WHIRLPOOL_BRAWL_TUNING, GEYSER_TUNING, GIANT_WAVE_TUNING } from './EntertainmentBalance';
+import { ENTERTAINMENT_RECOVERY_TUNING, SPRAY_BUOY_TUNING, STIMULANT_BRAWL_TUNING, LITTER_BRAWL_TUNING, WHIRLPOOL_BRAWL_TUNING, GEYSER_TUNING, GIANT_WAVE_TUNING } from './EntertainmentBalance';
 import { CHARACTER_ABILITY_TUNING } from './CharacterAbilityConfig';
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
@@ -492,6 +492,13 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('entertainment.geyser.peakHeight', '喷泉弹起高度', '只用于本地普通喷泉调试，联机不启用。', () => GEYSER_TUNING.peakHeight, v => GEYSER_TUNING.peakHeight = v, 0.1, 0.2, 3, 1),
             control('entertainment.geyser.flightSeconds', '喷泉腾空时长', '只用于本地普通喷泉调试，联机不启用。', () => GEYSER_TUNING.flightSeconds, v => GEYSER_TUNING.flightSeconds = v, 0.1, 0.3, 2, 1),
             control('entertainment.geyser.edgeSlowdownScale', '喷泉擦边速度倍率', '只用于本地普通喷泉调试，联机不启用。', () => GEYSER_TUNING.edgeSlowdownScale, v => GEYSER_TUNING.edgeSlowdownScale = v, 0.05, 0.4, 1, 2),
+            control('entertainment.sprayBuoy.driftAlongRadius', '浮标前后漂移范围', '只用于本地喷雾浮标测试，不改变普通赛。', () => SPRAY_BUOY_TUNING.driftAlongRadius, v => SPRAY_BUOY_TUNING.driftAlongRadius = v, .05, 0, 1, 2, 'm'),
+            control('entertainment.sprayBuoy.driftLateralRadius', '浮标左右漂移范围', '只用于本地喷雾浮标测试。', () => SPRAY_BUOY_TUNING.driftLateralRadius, v => SPRAY_BUOY_TUNING.driftLateralRadius = v, .05, 0, 1, 2, 'm'),
+            control('entertainment.recovery.knockedSeconds', '扶圈恢复时长', '被浮标直接击中后的暂停时长；体力、蓄气和进度保留。', () => ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds, v => ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds = v, .1, 1.5, 6, 1, 's'),
+            control('entertainment.recovery.invulnerableSeconds', '恢复后保护时长', '期间可以正常游泳和输入，但不会再次被碰撞。', () => ENTERTAINMENT_RECOVERY_TUNING.invulnerableSeconds, v => ENTERTAINMENT_RECOVERY_TUNING.invulnerableSeconds = v, .1, 0, 4, 1, 's'),
+            control('entertainment.recovery.floatSizeScale', '扶圈大小', '根据角色骨架贴合；默认沿用原版的1.12倍圈径。', () => CHARACTER_POSE_TUNING.recoveryFloatSizeScale, v => CHARACTER_POSE_TUNING.recoveryFloatSizeScale = v, .01, 1.12, 1.3, 2),
+            control('entertainment.recovery.bodyTiltDegrees', '扶圈身体前倾', '只改变扶圈姿态，不修改正常游泳动作。', () => CHARACTER_POSE_TUNING.recoveryFloatBodyTiltDegrees, v => CHARACTER_POSE_TUNING.recoveryFloatBodyTiltDegrees = v, 1, 15, 45, 0, '°'),
+            control('entertainment.recovery.bobAmplitude', '扶圈起伏幅度', '仅调整恢复表现，范围限制为保持圈身穿过水面。', () => CHARACTER_POSE_TUNING.recoveryFloatBobAmplitude, v => CHARACTER_POSE_TUNING.recoveryFloatBobAmplitude = v, .002, 0, .024, 3, 'm'),
             control('entertainment.giantWave.height', '巨浪高度', '只用于本地普通巨浪调试。', () => GIANT_WAVE_TUNING.height, v => GIANT_WAVE_TUNING.height = v, .05, .1, 1.2, 2),
             control('entertainment.giantWave.widthFraction', '巨浪覆盖宽度', '占泳池宽度的比例，保留可绕行的空间。', () => GIANT_WAVE_TUNING.widthFraction, v => GIANT_WAVE_TUNING.widthFraction = v, .05, .25, .8, 2),
             control('entertainment.giantWave.travelSpeed', '巨浪前进速度', '只改变浪的速度，不修改人物基础数值。', () => GIANT_WAVE_TUNING.travelSpeed, v => GIANT_WAVE_TUNING.travelSpeed = v, .1, 1, 8, 1),

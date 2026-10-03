@@ -1,4 +1,4 @@
-"""核对巨浪／喷泉 GLB 与原有效果一致，按需检查 Creator 实际导入字节和资源路径。"""
+"""核对巨浪／喷泉／浮标喷水 GLB 与原有效果一致，按需检查 Creator 实际导入字节和资源路径。"""
 import argparse
 import importlib.util
 import json
@@ -91,11 +91,11 @@ if __name__ == '__main__':
     p.add_argument('--library', type=Path, default=ROOT/'library', help='指定现有 Creator 项目的导入缓存目录')
     args = p.parse_args()
     reference = {}
-    for effect in ('GiantWave', 'Geyser'):
+    for effect in ('GiantWave', 'Geyser', 'SprayBuoySplash'):
         reference.update(json.loads((ROOT/'modelresource/entertainment'/(effect+'-reference.json')).read_text())['meshes'])
     result = {name: validate(name, old, args.directory) for name, old in reference.items()}
     if args.imported:
         for name in reference: validate_imported(name, args.directory, args.library)
         print('Creator 实际导入字节、Prefab 路径及变换检查通过')
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    print('巨浪／喷泉 GLB 与原有效果的形状和线性顶点色一致')
+    print('巨浪／喷泉／浮标喷水 GLB 与原有效果的形状和线性顶点色一致')

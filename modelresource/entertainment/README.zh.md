@@ -59,3 +59,19 @@ python3 scripts/run-blender.py -- --python scripts/preview-entertainment-items.p
 检查保留外包围盒、原始顶点及色板，明确允许以下内侧接触修复：冰沙雪花内表面向杯壁延伸；餐盒盖／污渍／分隔条底面延伸 1mm，外沿底面延伸 7mm。三角面和外轮廓预算保持不变。之后若批准改变轮廓／配色，应同步维护比较基准和审查记录，不通过静默放宽检查掩盖差异。
 
 游戏端已删除 `LitterDebrisGeometry.ts`；杂物赛前加载四个 GLB，从唯一 MeshRenderer 读取共享 Mesh，仍使用六个固定槽位和唯一水线材质。补给继续使用原来的固定池、路径和效果规则。普通赛、联机、教学与 Boss 均不加载这些本地娱乐调试资源。
+
+
+## 喷雾浮标喷水与扶圈
+
+`SprayBuoySplash.blend` 保存五个原版喷水网格，每个场景对应一个 GLB：`SprayBuoyEntryBody`、`SprayBuoyEntryRing`、`SprayBuoySplashBody`、`SprayBuoySplashRing`、`SprayBuoySplashCore`。不改形状、线性顶点色或原播放参数，五件合计 808 个三角面、26,112 B；没有图片、骨骼或动画。冻结来源为 `SprayBuoySplash-reference.json`，来源提交 `e5dca0327ed8d5e70bf5f38d39489022491e8e4b`。
+
+```sh
+python3 scripts/run-blender.py -- --python scripts/build-entertainment-vfx.py -- export --effect spray-buoy-splash
+python3 scripts/check-spray-buoy-assets.py
+# 在现有 Creator 会话导入后：
+python3 scripts/check-spray-buoy-assets.py --imported
+```
+
+浮标 `SprayBuoy.glb` 和扶圈 `RecoveryFloatRing.glb` 直接使用原分支资源及既有 UUID；检查脚本固定原字节哈希，核对五件喷水每个有向三角形的位置和颜色。`--imported` 进一步核对当前 Creator 的实际 Mesh 字节、Prefab 路径、父子节点变换和气球转轴。运行时没有程序生成网格，只有固定池的变换动画。
+
+浮标与圈使用共用无光照水线材质，喷水沿用透明无光照材质；全部登记相机水面分层。新的 GLB `.meta` 由 Creator 生成，不能手工拼造。具体玩法、预算与验收范围见第十批审查报告。

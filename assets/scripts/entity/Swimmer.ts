@@ -1,3 +1,4 @@
+import { EntertainmentKnockoutMotion } from '../swimmer/EntertainmentKnockoutMotion';
 import type { GiantWaveState, GIANT_WAVE_TUNING } from '../entertainment/GiantWaveRules';
 import { GeyserSwimmerReaction } from '../swimmer/GeyserSwimmerReaction';
 import { GEYSER_TUNING } from '../entertainment/GeyserBrawlRules';
@@ -67,7 +68,7 @@ export class Swimmer extends Component {
     @property public swimmerName = 'Swimmer';
 
     get canRideGiantWave(): boolean {
-        return this._motor.isRacing && this.node?.isValid && this.node.active && !this.isForcedLaunchActive
+        return this._motor.isRacing && this.node?.isValid && this.node.active && !this._entertainmentKnocked && !this._entertainmentInvulnerable && !this.isForcedLaunchActive
             && !this._phases.isFlipTurnActive && !this._phases.isDolphinJumpActive
             && !this._phases.isUnderwater && this._motor.ability.depth <= .2;
     }
@@ -78,6 +79,55 @@ export class Swimmer extends Component {
     resetEntertainmentGiantWave(): void {
         if (!this._motor.hasEntertainmentGiantWave) return;
         this._motor.resetEntertainmentGiantWave(); this.cartoonRig?.setGiantWaveLift(0);
+    }
+    private _entertainmentKnocked = false;
+    private _entertainmentInvulnerable = false;
+    private _recoveryBodyVisible = true;
+    private _recoveryMotion: EntertainmentKnockoutMotion | null = null;
+    get isEntertainmentKnocked(): boolean { return this._entertainmentKnocked; }
+    get isEntertainmentInvulnerable(): boolean { return this._entertainmentInvulnerable; }
+    get canHitSprayBuoy(): boolean {
+        return this._motor.isRacing && this.node?.isValid && this.node.active && !this._phases.isFlipTurnActive
+            && !this._entertainmentKnocked && !this._entertainmentInvulnerable;
+    }
+    beginEntertainmentKnockout(): void {
+        if (this._entertainmentKnocked || !this._motor.isRacing) return;
+        this.resetEntertainmentGeyser(); this.resetEntertainmentGiantWave();
+        this._entertainmentKnocked = true; this._entertainmentInvulnerable = false;
+        this._movementSpeed = 0; Tween.stopAllByTarget(this.node);
+        this._recoveryMotion ??= new EntertainmentKnockoutMotion(this.node, this._courseLayout,
+            (elapsed, landing) => this.cartoonRig?.syncEntertainmentKnockoutElapsed(elapsed, landing),
+            scale => this.cartoonRig?.triggerBigSplash(scale));
+        this._recoveryMotion.begin(this.distance, this._motor.heading);
+        this._phases.clearFlipTurnPhase(true); this._phases.clearDiveUnderwaterPhase();
+        this._motor.suspendForEntertainmentKnockout();
+        this.cartoonRig?.finishDiveChargeEffect(); this.cartoonRig?.setPerfectGlowActive(false);
+        this.cartoonRig?.setEntertainmentKnocked();
+    }
+    syncEntertainmentKnockoutPresentation(elapsed: number): void { this._recoveryMotion?.sample(elapsed); }
+    syncEntertainmentRecoveryBodyVisibility(visible: boolean): void {
+        if (visible === this._recoveryBodyVisible) return;
+        this._recoveryBodyVisible = visible; this.cartoonRig?.setRecoveryBlinkVisible(visible);
+    }
+    respawnAfterEntertainmentHit(distance: number, worldZ: number, speed: number): void {
+        if (!this._entertainmentKnocked || !this.node?.isValid || !this.node.active) return;
+        this.syncEntertainmentRecoveryBodyVisibility(false); Tween.stopAllByTarget(this.node);
+        this._movementSpeed = 0; this._entertainmentKnocked = false; this._entertainmentInvulnerable = true;
+        this._recoveryMotion?.reset(); this._phases.clearFlipTurnPhase(true); this._phases.clearDiveUnderwaterPhase();
+        this._motor.resumeAfterEntertainmentHit(distance, speed); this._motor.setLateralOffset(worldZ - this._startPosition.z);
+        this.applyCoursePosition(this.distance); this.resetPose();
+        this.cartoonRig?.setDiveReady(false); this.cartoonRig?.setActiveSwimming(true);
+        this.cartoonRig?.finishDiveChargeEffect(); this.updatePerfectZoneGlow();
+    }
+    endEntertainmentInvulnerability(): void {
+        this._entertainmentInvulnerable = false; this.syncEntertainmentRecoveryBodyVisibility(true);
+    }
+    resetEntertainmentRecovery(): void {
+        if (!this._entertainmentKnocked && !this._entertainmentInvulnerable && this._recoveryBodyVisible) return;
+        const knocked = this._entertainmentKnocked;
+        this._entertainmentKnocked = this._entertainmentInvulnerable = false;
+        this._recoveryMotion?.reset(); this.syncEntertainmentRecoveryBodyVisibility(true);
+        if (knocked) { this.cartoonRig?.setActiveSwimming(false); this.cartoonRig?.resetPose(); }
     }
     private _geyser: GeyserSwimmerReaction | null = null;
     private _geyserBody: GeyserBodyPose | null = null;
@@ -240,7 +290,7 @@ export class Swimmer extends Component {
     // that scripts its own position and race distance. See
     // entity/SwimmerCollisionResolver.ts.
     get isCollisionActive(): boolean {
-        return this._motor.isRacing
+        return !this._entertainmentKnocked && !this._entertainmentInvulnerable && this._motor.isRacing
             && this.node.active
             && !this.isForcedLaunchActive
             && !this._phases.isFlipTurnActive
@@ -542,6 +592,7 @@ export class Swimmer extends Component {
     }
 
     eliminate() {
+        this.resetEntertainmentRecovery();
         this.stopRace();
         this.node.active = false;
     }
@@ -576,6 +627,7 @@ export class Swimmer extends Component {
     }
 
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {
+        this.resetEntertainmentRecovery();
         this.resetEntertainmentGeyser();
         this.resetEntertainmentGiantWave();
         this._movementSpeed = 0;
@@ -603,6 +655,7 @@ export class Swimmer extends Component {
     }
 
     prepareDive(transitionSeconds?: number) {
+        this.resetEntertainmentRecovery();
         this.resetEntertainmentGeyser();
         this.resetEntertainmentGiantWave();
         this.captureStartPosition();
@@ -635,6 +688,7 @@ export class Swimmer extends Component {
     }
 
     prepareShowcaseStanding() {
+        this.resetEntertainmentRecovery();
         this.resetEntertainmentGeyser();
         this.resetEntertainmentGiantWave();
         this.captureStartPosition();
@@ -1041,6 +1095,7 @@ export class Swimmer extends Component {
     }
 
     playFinishTouch() {
+        this.resetEntertainmentRecovery();
         this.resetEntertainmentGeyser();
         this.resetEntertainmentGiantWave();
         const finishPosition = this.node.position.clone();
@@ -1059,6 +1114,7 @@ export class Swimmer extends Component {
     }
 
     reset() {
+        this.resetEntertainmentRecovery();
         this.resetEntertainmentGeyser();
         this.resetEntertainmentGiantWave();
         this._movementSpeed = 0;
@@ -1089,6 +1145,7 @@ export class Swimmer extends Component {
     }
 
     presentStanding(position: Vec3, facingY: number, surfaceWorldY: number | null = null) {
+        this.resetEntertainmentRecovery();
         this.resetEntertainmentGeyser();
         this.resetEntertainmentGiantWave();
         Tween.stopAllByTarget(this.node);

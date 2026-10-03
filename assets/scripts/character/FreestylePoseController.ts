@@ -1,8 +1,9 @@
+import { RecoveryFloatPose } from './RecoveryFloatPose';
 import { Node, Quat, Vec3 } from 'cc';
 import { BUTTERFLY_PREVIEW_TUNING, butterflyExtension, butterflyKickPower, butterflyWristFeather, butterflyWristFlex, sampleButterflyArm } from './ButterflyMotion';
 import { FREESTYLE_BODY_ROLL_TUNING } from './FreestyleBodyRollMotion';
 import { highElbowRecoveryEnvelope, sampleHighElbowRecovery } from './FreestyleRecoveryMotion';
-import { FREESTYLE_POSE_TUNING } from './CharacterMotionTuning';
+import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { AXIAL_ROLL_TUNING } from '../core/AxialRollTuning';
 import { BreaststrokeBoneName, BreaststrokeMotionSample, getBreaststrokeSamples } from './BreaststrokeMotionCurve';
@@ -98,6 +99,16 @@ const SAMPLED_STANDING_SOURCE_BACK_LEAN_DEGREES = 4;
 const SAMPLED_STANDING_MAX_UPRIGHT_CORRECTION_DEGREES = 7;
 
 export class FreestylePoseController {
+    private _recoveryFloat: RecoveryFloatPose | null = null;
+    get recoveryFloat(): RecoveryFloatPose {
+        if (!this._recoveryFloat) {
+            const current = this.capturePoseSnapshot();
+            this.restoreBasePose();
+            this._recoveryFloat = new RecoveryFloatPose(); this._recoveryFloat.bind(this.root);
+            if (current) this.applyPoseSnapshot(current);
+        }
+        return this._recoveryFloat;
+    }
     private _freestyleBodyRollWeight = -1;
     private _freestyleBodyRollSignal = 0;
     private _freestyleBodyRollModelAngle = 0;
@@ -282,6 +293,7 @@ export class FreestylePoseController {
         this.setFreestylePresentation(-1);
         this._freestyleBodyRollModelAngle = 0;
         // 换模等待期间仍可能收到水花、镜头和边界查询，不能保留已销毁的骨骼。
+        this._recoveryFloat?.bind(null);
         this.root = null;
         this._rootBone = this._torso = this._hips = this._spine = this._spine1 = null;
         this._neck = this._head = null;
@@ -330,6 +342,7 @@ export class FreestylePoseController {
         this.bindFlipTurnBones(root);
         this.bindSampledActionNodes(root);
         this.rebuildManualBoneCache();
+        this._recoveryFloat?.bind(root);
     }
 
     captureBasePose() {
@@ -1113,6 +1126,41 @@ export class FreestylePoseController {
         this.applyBoneOffset(this._leftFoot, 8, 0, 0);
         this.applyBoneOffset(this._rightFoot, 8, 0, 0);
     }
+
+    applyEntertainmentKnockoutPose(phase: number, _elapsedSeconds: number, model?: Node, support = 1, fitHeight = true, motionWeight = 1) {
+        this.restoreBasePose();
+        const wave = Math.sin(phase - 0.4) * motionWeight;
+        const leg = CHARACTER_POSE_TUNING.recoveryFloatLegSwayDegrees;
+        this.applyBoneOffset(this._neck, -4, wave * 1.2, 0);
+        this.applyBoneOffset(this._head, -5, Math.sin(phase * 0.7 - 0.5) * 2 * motionWeight, 0);
+        this.applyBoneOffset(this._leftUpLeg, -3 + wave * leg, 0, -3);
+        this.applyBoneOffset(this._rightUpLeg, 3 - wave * leg, 0, 3);
+        if (model) this.recoveryFloat.apply(model, phase, support, fitHeight, motionWeight);
+    }
+
+    /** 将保存的入场姿态混向刚算出的动态目标，不在表现采样中创建新快照。 */
+    blendFromPoseSnapshot(from: ProceduralPoseSnapshot, ratio: number, leftArmRatio = ratio, rightArmRatio = ratio) {
+        if (!this.root) return;
+        const t = clamp(ratio, 0, 1);
+        if (this._hips && from.hipPosition) {
+            Vec3.lerp(this._tmpBlendPosition, from.hipPosition, this._hips.position, t);
+            this._hips.setPosition(this._tmpBlendPosition);
+        }
+        Vec3.lerp(this._tmpBlendPosition, from.rootPosition, this.root.position, t);
+        this.root.setPosition(this._tmpBlendPosition);
+        Quat.slerp(this._tmpBlendRotation, from.rootRotation, this.root.rotation, t);
+        this.root.setRotation(this._tmpBlendRotation);
+        for (let i = 0; i < this._manualBones.length; i++) {
+            const bone = this._manualBones[i];
+            const rotation = from.boneRotations.get(bone);
+            if (!bone.isValid || !rotation) continue;
+            const boneT = bone === this._leftArm || bone === this._leftForeArm || bone === this._leftHand ? leftArmRatio
+                : bone === this._rightArm || bone === this._rightForeArm || bone === this._rightHand ? rightArmRatio : t;
+            Quat.slerp(this._tmpBlendRotation, rotation, bone.rotation, boneT);
+            bone.setRotation(this._tmpBlendRotation);
+        }
+    }
+
 
     handWaterContact(cycle: number): number {
         const phase = positiveMod(-this.armPoseCycle(cycle), Math.PI * 2) / (Math.PI * 2);

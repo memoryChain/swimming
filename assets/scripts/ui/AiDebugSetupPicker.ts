@@ -108,7 +108,7 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
     const updateHint = () => {
         const kind = !bossMode && setup.entertainment === 'light-mix'
             ? buildEntertainmentLightPlan(setup.seed, getRaceDistance()).waterEvent : null;
-        const text = bossMode ? '仅调试体验；生涯杯赛与联赛不加入这些关卡' : kind ? `组合：补给＋杂物＋${kind === 'whirlpool' ? '普通漩涡' : kind === 'geyser' ? '普通喷泉' : '普通巨浪'}（水面事件一局一次）`
+        const text = !bossMode && setup.entertainment === 'spray-buoy' ? '直接撞浮标会扶圈恢复 3.5 秒，随后保护 2 秒；附近选手仅受冲击' : bossMode ? '仅调试体验；生涯杯赛与联赛不加入这些关卡' : kind ? `组合：补给＋杂物＋${kind === 'whirlpool' ? '普通漩涡' : kind === 'geyser' ? '普通喷泉' : '普通巨浪'}（水面事件一局一次）`
             : '等级与智力应用于全部 AI，玩家使用自己的角色属性';
         if (hint.string !== text) hint.string = text;
     };

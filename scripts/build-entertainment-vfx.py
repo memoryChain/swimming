@@ -10,7 +10,7 @@ from pathlib import Path
 import bpy
 
 ROOT = Path(__file__).resolve().parents[1]
-EFFECTS = {'giant-wave': 'GiantWave', 'geyser': 'Geyser'}
+EFFECTS = {'giant-wave': 'GiantWave', 'geyser': 'Geyser', 'spray-buoy-splash': 'SprayBuoySplash'}
 
 
 def make_source(path, reference):
