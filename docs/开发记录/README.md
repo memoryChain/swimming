@@ -71,3 +71,4 @@
 - [butterfly 第一批低风险整合](分支审查/2026-10-03-butterfly-第一批低风险整合.zh.md)
 - [butterfly 第二批统一埋点整合](分支审查/2026-10-03-butterfly-第二批统一埋点整合.zh.md)
 - [butterfly 第三批自由泳动作整合](分支审查/2026-10-03-butterfly-第三批自由泳动作整合.zh.md)
+- [butterfly 第四批 A：蝶泳模型动作预览](分支审查/2026-10-03-butterfly-第四批蝶泳模型预览整合.zh.md)
