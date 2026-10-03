@@ -2,21 +2,22 @@ import type { Node } from 'cc';
 import type { Swimmer } from '../entity/Swimmer';
 import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { FloatingItemLayers } from './FloatingItemRenderer';
-import { GiantWaveSimulation, giantWaveTargetZ, type GiantWaveSample } from './GiantWaveRules';
+import { GiantWaveSimulation, giantWaveTargetZ, type GiantWaveSample, type GiantWaveIntensity } from './GiantWaveRules';
 import { GiantWavePresentation } from './GiantWavePresentation';
 import type { GiantWaveMeshes } from './EntertainmentItemAssets';
 
-/** 本局独立普通巨浪，准备阶段创建，重赛复用；不管理 HUD、画中画、云端或联机。 */
+/** 本局独立巨浪，准备阶段创建，重赛复用；不管理 HUD、画中画、云端或联机。 */
 export class GiantWaveRaceController {
     readonly simulation: GiantWaveSimulation;
     private readonly presentation: GiantWavePresentation;
     private readonly samples: GiantWaveSample[];
     private disposed = false;
     constructor(parent: Node, private readonly course: RaceCourseLayout, private readonly swimmers: readonly Swimmer[],
-        seed: number, private readonly raceDistance: number, meshes: GiantWaveMeshes, layers: FloatingItemLayers | null = null, singleTriggerDistance: number | null = null) {
+        seed: number, private readonly raceDistance: number, meshes: GiantWaveMeshes, layers: FloatingItemLayers | null = null,
+        singleTriggerDistance: number | null = null, intensity: GiantWaveIntensity = singleTriggerDistance === null ? 3 : 1) {
         this.simulation = new GiantWaveSimulation(course.courseLength, Math.min(course.poolStartX, course.poolFinishX),
             Math.max(course.poolStartX, course.poolFinishX), course.poolWidth, seed, singleTriggerDistance === null ? 'three' : 'single',
-            Math.abs(course.finishX - course.startX), singleTriggerDistance === null ? 3 : 1, raceDistance, singleTriggerDistance);
+            Math.abs(course.finishX - course.startX), intensity, raceDistance, singleTriggerDistance);
         this.samples = swimmers.map(() => ({ distance: 0, x: 0, z: 0, direction: 1, speed: 0, eligible: false }));
         this.presentation = new GiantWavePresentation(parent, course.waterY, meshes, layers);
         let bound = 0;

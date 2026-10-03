@@ -1,6 +1,7 @@
 import { CannonRaceController } from '../entertainment/CannonRaceController';
 import { SprayBuoyRaceController } from '../entertainment/SprayBuoyRaceController';
 import { GiantWaveRaceController } from '../entertainment/GiantWaveRaceController';
+import type { GiantWaveIntensity } from '../entertainment/GiantWaveRules';
 import { EffectAsset, Mesh, Node, Prefab } from 'cc';
 import { GeyserRaceController } from '../entertainment/GeyserRaceController';
 import type { GeyserIntensity } from '../entertainment/GeyserBrawlRules';
@@ -61,6 +62,7 @@ export class EntertainmentRaceRuntime {
     private geyser: GeyserRaceController | null = null;
     private giantWave: GiantWaveRaceController | null = null;
     private readonly useGiantWave: boolean;
+    private readonly giantWaveIntensity: GiantWaveIntensity;
     private readonly useGeyser: boolean;
     private readonly geyserIntensity: GeyserIntensity;
     private readonly seed: number;
@@ -82,6 +84,7 @@ export class EntertainmentRaceRuntime {
         this.light = plan.light; this.whirlpoolActive = !this.light;
         this.useSprayBuoy = plan.sprayBuoy; this.useCannon = plan.cannon;
         this.useGiantWave = plan.giantWave;
+        this.giantWaveIntensity = plan.giantWaveIntensity;
         this.useGeyser = plan.geyser; this.seed = seed;
         this.geyserIntensity = plan.geyserIntensity;
         this.whirlpools = plan.whirlpool ? this.light
@@ -151,7 +154,7 @@ export class EntertainmentRaceRuntime {
             this.prepareEffectMeshes(GIANT_WAVE_PATHS, meshes => {
                 this.giantWave = new GiantWaveRaceController(this.world, this.course, this.racers.map(r => r.swimmer),
                     this.seed, this.raceDistance, { body: meshes[0], wake: meshes[1], shore: meshes[2] }, this.waterLayers,
-                    this.light?.waterEventDistance ?? null);
+                    this.light?.waterEventDistance ?? null, this.giantWaveIntensity);
             }); return;
         }
         if (this.useGeyser) {

@@ -1,6 +1,7 @@
 import { buildEntertainmentLightPlan } from './EntertainmentLightPlan';
 import type { GeyserIntensity } from './GeyserBrawlRules';
-export type EntertainmentDebugMode = 'none' | 'supplies' | 'debris' | 'supplies-debris' | 'whirlpool' | 'whirlpool-super' | 'geyser' | 'geyser-large' | 'geyser-three' | 'geyser-four' | 'geyser-five' | 'giant-wave' | 'light-mix' | 'spray-buoy' | 'cannon';
+import type { GiantWaveIntensity } from './GiantWaveRules';
+export type EntertainmentDebugMode = 'none' | 'supplies' | 'debris' | 'supplies-debris' | 'whirlpool' | 'whirlpool-super' | 'geyser' | 'geyser-large' | 'geyser-three' | 'geyser-four' | 'geyser-five' | 'giant-wave-one' | 'giant-wave-two' | 'giant-wave' | 'giant-wave-four' | 'giant-wave-five' | 'light-mix' | 'spray-buoy' | 'cannon';
 export const ENTERTAINMENT_DEBUG_CHOICES: readonly { id: EntertainmentDebugMode; label: string }[] = [
     { id: 'none', label: '关闭' },
     { id: 'supplies', label: '补给' },
@@ -13,13 +14,17 @@ export const ENTERTAINMENT_DEBUG_CHOICES: readonly { id: EntertainmentDebugMode;
     { id: 'geyser-three', label: '喷泉三档混排' },
     { id: 'geyser-four', label: '喷泉四档混排' },
     { id: 'geyser-five', label: '喷泉五档混排' },
+    { id: 'giant-wave-one', label: '巨浪一档' },
+    { id: 'giant-wave-two', label: '巨浪二档' },
     { id: 'giant-wave', label: '普通巨浪' },
+    { id: 'giant-wave-four', label: '巨浪四档' },
+    { id: 'giant-wave-five', label: '巨浪五档' },
     { id: 'spray-buoy', label: '喷雾浮标' },
     { id: 'cannon', label: '单发炮击' },
     { id: 'light-mix', label: '低强度组合' },
 ];
 export function normalizeEntertainmentDebugMode(value: unknown): EntertainmentDebugMode {
-    return value === 'supplies' || value === 'debris' || value === 'supplies-debris' || value === 'whirlpool' || value === 'whirlpool-super' || value === 'geyser' || value === 'geyser-large' || value === 'geyser-three' || value === 'geyser-four' || value === 'geyser-five' || value === 'giant-wave' || value === 'light-mix' || value === 'spray-buoy' || value === 'cannon' ? value : 'none';
+    return value === 'supplies' || value === 'debris' || value === 'supplies-debris' || value === 'whirlpool' || value === 'whirlpool-super' || value === 'geyser' || value === 'geyser-large' || value === 'geyser-three' || value === 'geyser-four' || value === 'geyser-five' || value === 'giant-wave-one' || value === 'giant-wave-two' || value === 'giant-wave' || value === 'giant-wave-four' || value === 'giant-wave-five' || value === 'light-mix' || value === 'spray-buoy' || value === 'cannon' ? value : 'none';
 }
 /** 一、二档保留旧 id；调试界面和比赛计划消费同一个档位映射。 */
 export function entertainmentGeyserIntensity(mode: unknown): GeyserIntensity | null {
@@ -29,6 +34,17 @@ export function entertainmentGeyserIntensity(mode: unknown): GeyserIntensity | n
         case 'geyser-three': return 3;
         case 'geyser-four': return 4;
         case 'geyser-five': return 5;
+        default: return null;
+    }
+}
+/** 原普通巨浪保留三档；各入口共用已有的五档规格。 */
+export function entertainmentGiantWaveIntensity(mode: unknown): GiantWaveIntensity | null {
+    switch (mode) {
+        case 'giant-wave-one': return 1;
+        case 'giant-wave-two': return 2;
+        case 'giant-wave': return 3;
+        case 'giant-wave-four': return 4;
+        case 'giant-wave-five': return 5;
         default: return null;
     }
 }
@@ -42,12 +58,14 @@ export function buildEntertainmentDebugPlan(mode: EntertainmentDebugMode, raceDi
     const long = raceDistance >= 400;
     const light = mode === 'light-mix' ? buildEntertainmentLightPlan(seed, raceDistance) : null;
     const geyserIntensity = entertainmentGeyserIntensity(mode);
+    const giantWaveIntensity = entertainmentGiantWaveIntensity(mode);
     return {
         sprayBuoy: mode === 'spray-buoy',
         cannon: mode === 'cannon',
         geyser: geyserIntensity !== null || light?.waterEvent === 'geyser',
         geyserIntensity: geyserIntensity ?? 1 as const,
-        giantWave: mode === 'giant-wave' || light?.waterEvent === 'giant-wave',
+        giantWave: giantWaveIntensity !== null || light?.waterEvent === 'giant-wave',
+        giantWaveIntensity: giantWaveIntensity ?? (light ? 1 : 3) as GiantWaveIntensity,
         whirlpool: mode === 'whirlpool' || mode === 'whirlpool-super' || light?.waterEvent === 'whirlpool',
         whirlpoolSelection: mode === 'whirlpool-super' ? 'super' as const : 'normal' as const,
         supplies: light?.supplies ?? (mode === 'supplies' || mode === 'supplies-debris'

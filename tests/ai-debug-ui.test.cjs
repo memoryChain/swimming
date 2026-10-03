@@ -291,3 +291,37 @@ test('喷泉五档提示与实际计划一致，连续切换只改已有文字�
     root.getChildByName('Tier4').click();root.getChildByName('Tier4').click();assert.equal(starts,1);
     assert.equal(getAiDebugSetup().entertainment,'supplies');
 });
+
+test('巨浪五档提示与计划一致，反复切换保留节点监听，重复提示不重写', () => {
+    const { Node, Label, load } = fixture();
+    const { setAiDebugSetup, getAiDebugSetup } = load('core/GameLaunchOptions');
+    const { ENTERTAINMENT_DEBUG_CHOICES, entertainmentGiantWaveIntensity, buildEntertainmentDebugPlan } = load('entertainment/EntertainmentDebugPlan');
+    const { giantWaveSpec } = load('entertainment/GiantWaveRules');
+    setAiDebugSetup({ ...getAiDebugSetup(), entertainment: 'none', bossId: null });
+    const root = new Node('root'); let starts = 0;
+    load('ui/AiDebugSetupPicker').buildAiDebugSetupPicker(root, () => starts++, () => {});
+    const all = node => [node, ...node.children.flatMap(all)], initial = all(root), listeners = initial.map(n => n.events.size);
+    const hint = root.getChildByName('Hint').getComponent(Label), seen = new Set();
+    for (let i = 0; i < ENTERTAINMENT_DEBUG_CHOICES.length * 20; i++) {
+        const choice = ENTERTAINMENT_DEBUG_CHOICES[i % ENTERTAINMENT_DEBUG_CHOICES.length];
+        const level = entertainmentGiantWaveIntensity(choice.id);
+        if (level) {
+            const spec = giantWaveSpec(level); seen.add(level);
+            assert.equal(buildEntertainmentDebugPlan(choice.id, 200).giantWaveIntensity, level);
+            assert.equal(hint.string, `${level}档：覆盖泳池 ${Math.round(spec.widthFraction * 100)}%，迎浪最多减速 ${Math.round(spec.oppositionSlowdown * 100)}%；顺浪加速不变`);
+            const current = hint.string;
+            Object.defineProperty(hint, 'string', { configurable: true, get: () => current, set: () => assert.fail('相同巨浪提示不得重写') });
+            root.getChildByName('Seed').click();
+            Object.defineProperty(hint, 'string', { configurable: true, writable: true, value: current });
+        }
+        root.getChildByName('Entertainment').click();
+        assert.deepEqual(all(root), initial); assert.deepEqual(initial.map(n => n.events.size), listeners);
+        assert.equal(starts, 0);
+    }
+    assert.equal(seen.size, 5);
+    for (let i = 0; i <= ENTERTAINMENT_DEBUG_CHOICES.findIndex(c => c.id === 'giant-wave-five'); i++) {
+        if (i > 0) root.getChildByName('Entertainment').click();
+    }
+    root.getChildByName('Tier4').click(); root.getChildByName('Tier4').click();
+    assert.equal(starts, 1); assert.equal(getAiDebugSetup().entertainment, 'giant-wave-five');
+});

@@ -507,7 +507,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('entertainment.recovery.floatSizeScale', '扶圈大小', '根据角色骨架贴合；默认沿用原版的1.12倍圈径。', () => CHARACTER_POSE_TUNING.recoveryFloatSizeScale, v => CHARACTER_POSE_TUNING.recoveryFloatSizeScale = v, .01, 1.12, 1.3, 2),
             control('entertainment.recovery.bodyTiltDegrees', '扶圈身体前倾', '只改变扶圈姿态，不修改正常游泳动作。', () => CHARACTER_POSE_TUNING.recoveryFloatBodyTiltDegrees, v => CHARACTER_POSE_TUNING.recoveryFloatBodyTiltDegrees = v, 1, 15, 45, 0, '°'),
             control('entertainment.recovery.bobAmplitude', '扶圈起伏幅度', '仅调整恢复表现，范围限制为保持圈身穿过水面。', () => CHARACTER_POSE_TUNING.recoveryFloatBobAmplitude, v => CHARACTER_POSE_TUNING.recoveryFloatBobAmplitude = v, .002, 0, .024, 3, 'm'),
-            control('entertainment.giantWave.height', '巨浪高度', '只用于本地普通巨浪调试。', () => GIANT_WAVE_TUNING.height, v => GIANT_WAVE_TUNING.height = v, .05, .1, 1.2, 2),
+            control('entertainment.giantWave.height', '巨浪高度', '本地巨浪调试，各档共用基础高度。', () => GIANT_WAVE_TUNING.height, v => GIANT_WAVE_TUNING.height = v, .05, .1, 1.2, 2),
             control('entertainment.giantWave.widthFraction', '巨浪覆盖宽度', '占泳池宽度的比例，保留可绕行的空间。', () => GIANT_WAVE_TUNING.widthFraction, v => GIANT_WAVE_TUNING.widthFraction = v, .05, .25, .8, 2),
             control('entertainment.giantWave.travelSpeed', '巨浪前进速度', '只改变浪的速度，不修改人物基础数值。', () => GIANT_WAVE_TUNING.travelSpeed, v => GIANT_WAVE_TUNING.travelSpeed = v, .1, 1, 8, 1),
             control('entertainment.giantWave.boostSpeed', '顺浪加速', '沿浪方向游泳时获得的额外推进。', () => GIANT_WAVE_TUNING.boostSpeed, v => GIANT_WAVE_TUNING.boostSpeed = v, .1, .1, 2.5, 1),

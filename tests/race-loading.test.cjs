@@ -269,9 +269,9 @@ test('模型调试隐藏原玩家后不再等待该节点的渲染回调，不�
     assert.equal(s.hooks.size, 0);
 });
 
-test('巨浪调试资源完成前不开始展示或比赛，失败回到错误出口而不放行', async () => {
-    for (const fail of [false, true]) {
-        const s = raceFixture('ai-debug', false, 'giant-wave'); await s.start();
+test('巨浪五档调试资源完成前不开始展示或比赛，失败回到错误出口而不放行', async () => {
+    for (const mode of ['giant-wave-one', 'giant-wave-two', 'giant-wave', 'giant-wave-four', 'giant-wave-five']) for (const fail of [false, true]) {
+        const s = raceFixture('ai-debug', false, mode); await s.start();
         s.manager._aiSwimmers[1].cartoonRig.raceReady = true;
         for (let i = 0; i < 5; i++) await s.frame();
         assert.equal(s.calls.includes('start'), false); assert.equal(s.calls.includes('crowd'), false);

@@ -1,6 +1,7 @@
 import { buildEntertainmentLightPlan } from '../entertainment/EntertainmentLightPlan';
-import { ENTERTAINMENT_DEBUG_CHOICES, entertainmentGeyserIntensity, normalizeEntertainmentDebugMode } from '../entertainment/EntertainmentDebugPlan';
+import { ENTERTAINMENT_DEBUG_CHOICES, entertainmentGeyserIntensity, entertainmentGiantWaveIntensity, normalizeEntertainmentDebugMode } from '../entertainment/EntertainmentDebugPlan';
 import { geyserSpec } from '../entertainment/GeyserBrawlRules';
+import { giantWaveSpec } from '../entertainment/GiantWaveRules';
 import { BlockInputEvents, Label, Node, UITransform, view } from 'cc';
 import { getAiDebugSetup, setAiDebugSetup } from '../core/GameLaunchOptions';
 import { getRaceDistance, getRaceModeTitle, RaceDifficulty } from '../core/GameBalance';
@@ -111,6 +112,12 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
         if (geyserLevel) {
             const spec = geyserSpec(geyserLevel);
             write(hint, `每组 ${spec.ventCount} 个喷口，各喷 ${spec.pulseCount} 次；最多 ${spec.largeCount} 个大口`);
+            return;
+        }
+        const waveLevel = !bossMode ? entertainmentGiantWaveIntensity(setup.entertainment) : null;
+        if (waveLevel) {
+            const spec = giantWaveSpec(waveLevel);
+            write(hint, `${waveLevel}档：覆盖泳池 ${Math.round(spec.widthFraction * 100)}%，迎浪最多减速 ${Math.round(spec.oppositionSlowdown * 100)}%；顺浪加速不变`);
             return;
         }
         const kind = !bossMode && setup.entertainment === 'light-mix'
