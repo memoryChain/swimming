@@ -299,6 +299,20 @@ export class SwimmerMotor {
         this.collisionSoftness.reset();
     }
 
+    /** 喷泉弹起取消未完成输入，不回滚已支付体力或已结算划水。 */
+    beginForcedLaunch(): void {
+        this._leftActions.length = this._rightActions.length = 0;
+        this._leftStrokeHeld = this._rightStrokeHeld = false;
+        this._leftPressStartedAt = this._rightPressStartedAt = -1;
+        this._strokeAcceleration = this._strokeAccelerationSeconds = this._strokeAccelerationTotalSeconds = 0;
+        this._kickRecoveryRemaining = 0;
+        this.resetScriptedVisualMotion(); this.clearKnockback(); this.ability.suspend();
+    }
+    /** 受迫轨迹是本步唯一水平位移来源，范围仍取主干规则。 */
+    setForcedLaunchPosition(distance: number, lateral: number, speed: number): void {
+        this.setFlipTurnDistance(distance); this.setLateralOffset(lateral); this.setFlipTurnSpeed(speed);
+    }
+
     setFlipTurnSpeed(speed: number) {
         this._currentSpeed = Math.max(0, speed);
         this._currentAcceleration = 0;

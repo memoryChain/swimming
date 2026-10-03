@@ -412,6 +412,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return true;
     }
 
+    get geyserBodyScale(): number { return Math.max(.65, Math.min(1.5, this.modelScale() / 1.35)); }
+    private readonly _geyserBodyPivot = new Vec3();
+    get geyserBodyPivot(): Readonly<Vec3> { return this._geyserBodyPivot; }
+
     get modelVariantId(): string {
         return this._modelVariantId;
     }
@@ -713,8 +717,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                         this._tmpFlipTurnWorldPivot,
                     );
                     this._hasCollisionPitchPivot = true;
+                    Vec3.multiply(this._geyserBodyPivot, this._collisionPitchPivotModelLocal, this._model.scale);
+                    Vec3.transformQuat(this._geyserBodyPivot, this._geyserBodyPivot, this._model.rotation);
+                    this._geyserBodyPivot.y += this._model.position.y;
                 } else {
                     this._hasCollisionPitchPivot = false;
+                    this._geyserBodyPivot.set(0, 0, 0);
                 }
                 this._hasPresentationPivot = false;
                 if (this._hasCollisionPitchPivot) {

@@ -1,3 +1,8 @@
+import { GeyserSwimmerReaction } from '../swimmer/GeyserSwimmerReaction';
+import { GEYSER_TUNING } from '../entertainment/GeyserBrawlRules';
+import { emptyGeyserBodyPose, GeyserBodyPose, GeyserContact } from '../swimmer/GeyserBodyContact';
+import type { ForcedLaunchStart } from '../swimmer/ForcedLaunchModel';
+import { blendGeyserAngle } from '../swimmer/GeyserReactionModel';
 import { TUTORIAL_RUNTIME } from '../tutorial/TutorialSession';
 import type { NetSnapshotEntry } from '../net/NetRaceSnapshot';
 import { abilityValue } from '../core/CharacterAbilityConfig';
@@ -59,6 +64,87 @@ export class Swimmer extends Component {
         return this.isAI && !this.collisionRemoteHuman;
     }
     @property public swimmerName = 'Swimmer';
+
+    private _geyser: GeyserSwimmerReaction | null = null;
+    private _geyserBody: GeyserBodyPose | null = null;
+    configureEntertainmentGeyser(enabled: boolean): void {
+        if (enabled) { if (!this._geyser) { this._geyser = new GeyserSwimmerReaction(); this._geyserBody = emptyGeyserBodyPose(); } }
+        else { this.resetEntertainmentGeyser(); this._geyser = null; this._geyserBody = null; }
+    }
+    resetEntertainmentGeyser(): void {
+        if (!this._geyser) return;
+        if (this._geyser.launch) {
+            this._motor.resetScriptedVisualMotion();
+            if (this.node?.isValid) this.node.setPosition(this.node.position.x, this._courseLayout.swimY, this.node.position.z);
+        }
+        this._geyser.reset();
+    }
+    get isForcedLaunchActive(): boolean { return !!this._geyser?.launch; }
+    get geyserBodyScale(): number { return this.cartoonRig?.geyserBodyScale ?? 1; }
+    get geyserHitEligible(): boolean {
+        return !!this._geyser?.eligible && this._motor.isRacing && this.node?.isValid && this.node.active
+            && !this._phases.isFlipTurnActive
+            && this._courseLayout.distanceToCurrentCourseEnd(this.distance, getRaceDistance()) > 3;
+    }
+    applyGeyserHit(id: number, strength: 1 | 2, late: number, start: ForcedLaunchStart | null, contact: GeyserContact): boolean {
+        if (!this.geyserHitEligible) return false;
+        this.sampleGeyserBody(this._geyserBody);
+        if (!this._geyser.hit(id, strength, late, this._geyserBody, this._motor.collisionPitchAngularVelocity,
+            this._motor.axialRollAngularVelocity, start, contact)) return false;
+        if (strength === 1) this._motor.setForcedLaunchPosition(this.distance, this._motor.lateralOffset,
+            this._motor.currentSpeed * GEYSER_TUNING.edgeSlowdownScale);
+        else {
+            if (this._phases.isDolphinJumpActive) { this._phases.clearFlipTurnPhase(); this._phases.clearDiveUnderwaterPhase(); }
+            this._motor.beginForcedLaunch(); this._motor.correctHeading(start.heading, 0, 1);
+            this.cartoonRig?.setStrokeHeld(StrokeType.LEFT, false); this.cartoonRig?.setStrokeHeld(StrokeType.RIGHT, false);
+        }
+        return true;
+    }
+    private advanceGeyserLaunch(dt: number): void {
+        const sample = this._geyser.advanceLaunch(dt);
+        const end = this._courseLayout.currentCourseEndDistance(this.distance, getRaceDistance());
+        const distance = Math.min(end - .05, sample.distance);
+        this._motor.tickRestingHeartRate(dt, false); this._motor.advanceVisualAnimation(dt);
+        this._motor.setForcedLaunchPosition(distance, sample.lateral, sample.speed);
+        this.applyCoursePosition(distance); this.node.setPosition(this.node.position.x, sample.y, this.node.position.z);
+        this.updateBodyMotion(dt);
+        this.cartoonRig?.applyCollisionPitchPivotCompensation(this._tmpCourseRotation, this._cameraNeutralCourseRotation);
+        this.enforcePoolWallBoundary();
+        if (sample.done || distance >= end - .05) {
+            this._geyser.land(); this._motor.resetScriptedVisualMotion();
+            this.node.setPosition(this.node.position.x, this._courseLayout.swimY, this.node.position.z);
+        }
+    }
+    sampleGeyserBody(out: GeyserBodyPose): void {
+        out.x = this._courseLayout.distanceToWorldX(this.distance);
+        out.z = this._startPosition.z + this._motor.lateralOffset;
+        out.y = this.node.position.y;
+        const direction = this._courseLayout.finishDirectionAtDistance(this.distance);
+        const dolphin = this._phases.isDolphinAirActive;
+        const heading = dolphin ? this._phases.dolphinTravelHeadingRadians() : this._motor.heading;
+        const lean = this._phases.diveRecoveryLean() * Math.PI / 180;
+        const baseRoll = this._motor.axialRollRadians + this._phases.dolphinRollResidualRadians();
+        out.yaw = direction > 0 ? heading : Math.PI - heading;
+        const pivot = this.cartoonRig?.geyserBodyPivot;
+        if (pivot) {
+            const py = Math.cos(baseRoll) * pivot.y - Math.sin(baseRoll) * pivot.z;
+            const pz = Math.sin(baseRoll) * pivot.y + Math.cos(baseRoll) * pivot.z;
+            const px = Math.cos(lean) * pivot.x - Math.sin(lean) * py;
+            out.x += Math.cos(out.yaw) * px - Math.sin(out.yaw) * pz;
+            out.z += Math.sin(out.yaw) * px + Math.cos(out.yaw) * pz;
+            out.y += Math.sin(lean) * pivot.x + Math.cos(lean) * py;
+        }
+        out.pitch = dolphin ? this._phases.dolphinFlightPitchRadians() : this._motor.collisionPitchRadians + lean;
+        out.roll = dolphin ? this._phases.dolphinFlightRollRadians() : baseRoll;
+        const pose = this._geyser?.pose;
+        if (pose?.weight > 0) {
+            out.pitch = blendGeyserAngle(out.pitch, pose.pitch, pose.weight);
+            out.roll = blendGeyserAngle(out.roll, pose.roll, pose.weight);
+        }
+        out.scale = this.geyserBodyScale;
+        out.leftArm = this._motor.leftArmCycle;
+        out.rightArm = this._motor.rightArmCycle;
+    }
 
     private _freestylePresentationEnabled = false;
     /** 比赛玩家、AI和远端真人共用；只切换显示，不写推进或输入。 */
@@ -142,6 +228,7 @@ export class Swimmer extends Component {
     get isCollisionActive(): boolean {
         return this._motor.isRacing
             && this.node.active
+            && !this.isForcedLaunchActive
             && !this._phases.isFlipTurnActive
             && !this._phases.isDolphinJumpActive
             && !this._phases.isUnderwater
@@ -475,6 +562,7 @@ export class Swimmer extends Component {
     }
 
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {
+        this.resetEntertainmentGeyser();
         this._movementSpeed = 0;
         this.captureStartPosition();
         this._ultimate.reset();
@@ -500,6 +588,7 @@ export class Swimmer extends Component {
     }
 
     prepareDive(transitionSeconds?: number) {
+        this.resetEntertainmentGeyser();
         this.captureStartPosition();
         Tween.stopAllByTarget(this.node);
         this._motor.reset();
@@ -530,6 +619,7 @@ export class Swimmer extends Component {
     }
 
     prepareShowcaseStanding() {
+        this.resetEntertainmentGeyser();
         this.captureStartPosition();
         Tween.stopAllByTarget(this.node);
         this._motor.reset();
@@ -721,6 +811,12 @@ export class Swimmer extends Component {
         const phaseZBeforeStep = positionBeforeStep.z;
         this._ultimate.setAbilityGainScale(this._motor.ability.id === 'frogHop' ? abilityValue('frogEnergyGain', 0.1, 3) : 1);
         this._ultimate.tick(dt);
+        this._geyser?.tick(dt);
+        if (this.isForcedLaunchActive) {
+            this.advanceGeyserLaunch(dt);
+            this.updateMovementSpeed(phaseXBeforeStep, phaseZBeforeStep, dt);
+            return;
+        }
         // 用步前状态覆盖落水交界帧，避免阶段 tick 结束后提前恢复整帧心率。
         const freezeJumpHeartRate = this._phases.isDolphinJumpActive;
         if (this._phases.tick(dt)) {
@@ -753,11 +849,13 @@ export class Swimmer extends Component {
         }
 
         if (finished) {
+            this.resetEntertainmentGeyser();
             this.node.emit('swimmer-finished', this);
         }
     }
 
     handleStroke(type: StrokeType): RhythmResult | null {
+        if (this.isForcedLaunchActive) return null;
         if (!this._motor.isRacing) {
             return null;
         }
@@ -797,6 +895,7 @@ export class Swimmer extends Component {
     }
 
     canAcceptStroke(type: StrokeType): boolean {
+        if (this.isForcedLaunchActive) return false;
         if (!this._motor.isRacing) {
             return false;
         }
@@ -809,13 +908,14 @@ export class Swimmer extends Component {
     // Shared by local input and network replay. This is presentation/gameplay
     // phase state only; the wire format remains the existing held/stroke events.
     get canUseArmStroke(): boolean {
-        return this._motor.isRacing
+        return !this.isForcedLaunchActive && this._motor.isRacing
             && !this._phases.isFlipTurnActive
             && !this._phases.isDolphinJumpActive
             && this._phases.canUseArmStroke;
     }
 
     handleKickStroke(type: StrokeType, confirmed = true): void {
+        if (this.isForcedLaunchActive) return ;
         if (!this._motor.isRacing) {
             return;
         }
@@ -845,11 +945,13 @@ export class Swimmer extends Component {
     }
 
     confirmKickStroke() {
+        if (this.isForcedLaunchActive) return;
         if (this._phases.isUnderwater || this._phases.isFlipTurnActive || this._phases.isDolphinJumpActive) return;
         this._motor.confirmKickAbility();
     }
 
     handleStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0): RhythmResult | null {
+        if (this.isForcedLaunchActive) return null;
         if (this._phases.isFlipTurnActive) {
             return null;
         }
@@ -913,6 +1015,7 @@ export class Swimmer extends Component {
     }
 
     playFinishTouch() {
+        this.resetEntertainmentGeyser();
         const finishPosition = this.node.position.clone();
         // 潜航触线后恢复水面漂浮，不能把下潜深度带进完赛姿态。
         const finishY = this._motor.ability.depth > 0 ? this._startPosition.y : finishPosition.y;
@@ -929,6 +1032,7 @@ export class Swimmer extends Component {
     }
 
     reset() {
+        this.resetEntertainmentGeyser();
         this._movementSpeed = 0;
         this.cartoonRig?.setStandingSurface(null);
         this.captureStartPosition();
@@ -957,6 +1061,7 @@ export class Swimmer extends Component {
     }
 
     presentStanding(position: Vec3, facingY: number, surfaceWorldY: number | null = null) {
+        this.resetEntertainmentGeyser();
         Tween.stopAllByTarget(this.node);
         this._motor.reset();
         this._phases.clearDiveUnderwaterPhase();
@@ -1052,10 +1157,13 @@ export class Swimmer extends Component {
         if (!this.cartoonRig) {
             return;
         }
-        const bodyPitchRadians = this._phases.diveRecoveryLean() * Math.PI / 180
+        const basePitch = this._phases.diveRecoveryLean() * Math.PI / 180
             + this._motor.collisionPitchRadians * this.cartoonRig.axialRollVisualWeight;
-        const visualAxialRollRadians = this._phases.dolphinRollResidualRadians()
+        const baseRoll = this._phases.dolphinRollResidualRadians()
             + this._motor.axialRollRadians * this.cartoonRig.axialRollVisualWeight;
+        const pose = this._geyser?.pose;
+        const bodyPitchRadians = pose?.weight > 0 ? blendGeyserAngle(basePitch, pose.pitch, pose.weight) : basePitch;
+        const visualAxialRollRadians = pose?.weight > 0 ? blendGeyserAngle(baseRoll, pose.roll, pose.weight) : baseRoll;
         const bodyUpProjection = Math.cos(bodyPitchRadians) * Math.cos(visualAxialRollRadians);
         const kickOnlyUnderwater = (this._phases.isDiveGlidePoseActive
             && !this._phases.canUseArmStroke) || (this._motor.ability.depth > 0.01
@@ -1074,7 +1182,7 @@ export class Swimmer extends Component {
                 this._motor.heading,
                 bodyUpProjection,
                 this._motor.isRacing && !this._phases.isUnderwater
-                    && !this._phases.isDiveGlidePoseActive && !this._phases.isFlipTurnActive
+                    && !this.isForcedLaunchActive && !this._phases.isDiveGlidePoseActive && !this._phases.isFlipTurnActive
                     && !this._phases.isDolphinJumpActive && this._motor.ability.depth <= 0.05,
                 this._freestylePresentationEnabled,
             );
@@ -1131,7 +1239,9 @@ export class Swimmer extends Component {
         Quat.rotateZ(this._tmpCourseRotation, this._tmpCourseRotation, pitch * deg2rad);
         Quat.copy(this._cameraNeutralCourseRotation, this._tmpCourseRotation);
         const surfaceRagdollWeight = this.cartoonRig?.axialRollVisualWeight ?? 1;
-        const collisionPitch = this._motor.collisionPitchRadians * surfaceRagdollWeight;
+        const pose = this._geyser?.pose;
+        const baseCollisionPitch = this._motor.collisionPitchRadians * surfaceRagdollWeight;
+        const collisionPitch = pose?.weight > 0 ? blendGeyserAngle(baseCollisionPitch, pose.pitch, pose.weight) : baseCollisionPitch;
         this._cameraCollisionPitchApplied = collisionPitch;
         if (Math.abs(collisionPitch) > 1e-5) {
             Quat.rotateZ(this._tmpCourseRotation, this._tmpCourseRotation, collisionPitch);
@@ -1140,7 +1250,8 @@ export class Swimmer extends Component {
         // head-to-feet axis used by the dolphin corkscrew. Scripted dive/turn/glide
         // phases reset the motor roll, leaving only their own residual here.
         const dolphinRoll = this._phases.dolphinRollResidualRadians();
-        const axialRoll = dolphinRoll + this._motor.axialRollRadians * surfaceRagdollWeight;
+        const baseAxialRoll = dolphinRoll + this._motor.axialRollRadians * surfaceRagdollWeight;
+        const axialRoll = pose?.weight > 0 ? blendGeyserAngle(baseAxialRoll, pose.roll, pose.weight) : baseAxialRoll;
         if (Math.abs(axialRoll) > 1e-5) {
             Quat.rotateX(this._tmpCourseRotation, this._tmpCourseRotation, axialRoll);
             Quat.rotateX(this._cameraNeutralCourseRotation, this._cameraNeutralCourseRotation, axialRoll);
@@ -1390,6 +1501,7 @@ export class Swimmer extends Component {
 
     // 满气按钮发动海豚跳；转身、水下或前方空间不足时由阶段控制器拒绝。
     tryDolphinJump(): boolean {
+        if (this.isForcedLaunchActive) return false;
         if (!this._motor.isRacing || !this._motor.ability.allowsDolphin) {
             return false;
         }
@@ -1413,6 +1525,7 @@ export class Swimmer extends Component {
     // frame will align the exact post-spend energy.
     // owner 快照已含心率负担与体力扣费；回放与重复/迟到事件不能再次结算。
     applyAcceptedNetDolphinJump(): boolean {
+        if (this.isForcedLaunchActive) return false;
         if (!this._motor.isRacing || !this._motor.ability.supportsDolphin || !this._phases.tryStartDolphinJump()) {
             return false;
         }

@@ -75,3 +75,4 @@
 - [butterfly 娱乐模式与 mipmap 专项审查](分支审查/2026-10-03-butterfly-娱乐模式与mipmap专项审查.zh.md)
 - [butterfly 第五批 A：娱乐基础整合](分支审查/2026-10-03-butterfly-第五批娱乐基础整合.zh.md)
 - [butterfly 第六批 B1：漩涡调试整合](分支审查/2026-10-03-butterfly-第六批漩涡调试整合.zh.md)
+- [butterfly 第七批：普通喷泉调试整合](分支审查/2026-10-03-butterfly-第七批普通喷泉调试整合.zh.md)

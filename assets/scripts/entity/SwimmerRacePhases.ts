@@ -136,6 +136,9 @@ export class SwimmerRacePhases {
         return this._dolphinHeading;
     }
 
+    /** 喷泉身体接触读取真实空中侧滚，不推进海豚动作。 */
+    dolphinFlightRollRadians(): number { return this._dolphinBaseAxialRoll + this._dolphinRollAngle; }
+
     // Airborne flight pitch (radians, + = ascending) — the parabola slope. The
     // camera and speed lines tilt with this so they follow the arc up and down.
     dolphinFlightPitchRadians(): number {

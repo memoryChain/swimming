@@ -1,4 +1,4 @@
-import { STIMULANT_BRAWL_TUNING, LITTER_BRAWL_TUNING, WHIRLPOOL_BRAWL_TUNING } from './EntertainmentBalance';
+import { STIMULANT_BRAWL_TUNING, LITTER_BRAWL_TUNING, WHIRLPOOL_BRAWL_TUNING, GEYSER_TUNING } from './EntertainmentBalance';
 import { CHARACTER_ABILITY_TUNING } from './CharacterAbilityConfig';
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
@@ -489,6 +489,9 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('entertainment.whirlpool.capturePropulsionDrag', '漩涡核心阻力', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => WHIRLPOOL_BRAWL_TUNING.capturePropulsionDrag, v => WHIRLPOOL_BRAWL_TUNING.capturePropulsionDrag = v, 0.1, 0, 5, 1),
             control('entertainment.whirlpool.maxFlowSpeed', '漩涡水流速度上限', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed, v => WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed = v, 0.1, 0.1, 6, 1),
             control('entertainment.whirlpool.flowDecaySeconds', '漩涡水流衰减秒数', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => WHIRLPOOL_BRAWL_TUNING.flowDecaySeconds, v => WHIRLPOOL_BRAWL_TUNING.flowDecaySeconds = v, 0.05, 0.05, 1.5, 2),
+            control('entertainment.geyser.peakHeight', '喷泉弹起高度', '只用于本地普通喷泉调试，联机不启用。', () => GEYSER_TUNING.peakHeight, v => GEYSER_TUNING.peakHeight = v, 0.1, 0.2, 3, 1),
+            control('entertainment.geyser.flightSeconds', '喷泉腾空时长', '只用于本地普通喷泉调试，联机不启用。', () => GEYSER_TUNING.flightSeconds, v => GEYSER_TUNING.flightSeconds = v, 0.1, 0.3, 2, 1),
+            control('entertainment.geyser.edgeSlowdownScale', '喷泉擦边速度倍率', '只用于本地普通喷泉调试，联机不启用。', () => GEYSER_TUNING.edgeSlowdownScale, v => GEYSER_TUNING.edgeSlowdownScale = v, 0.05, 0.4, 1, 2),
         ],
     },
 ];
