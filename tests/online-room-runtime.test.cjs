@@ -161,7 +161,7 @@ function load(file) {
 }
 const { OnlineRoomView } = load(path.join(root, 'assets/scripts/ui/OnlineRoomView.ts'));
 const { RoomFlow } = load(path.join(root, 'assets/scripts/ui/RoomFlow.ts'));
-const { NET_RACE_PROTOCOL_VERSION } = load(path.join(root, 'assets/scripts/net/NetRaceProtocol.ts'));
+const { NET_RACE_PROTOCOL_VERSION, NET_ROOM_SCOPE } = load(path.join(root, 'assets/scripts/net/NetRaceProtocol.ts'));
 function nodes(n) { return [n, ...n.children.flatMap(nodes)]; }
 function find(n, name) { return nodes(n).find(n => n.name === name); }
 const host = { pos: 0, self: false, owner: true, ready: true, avatarId: 'coral', nickName: '小龟9460', character: '肌肉男', level: 2, careerLeague: 0 };
@@ -388,6 +388,7 @@ function flow(isHost = false) {
     f._members = [{ ...host, self: isHost }, { ...guest, self: !isHost }];
     f._accessInfo = 'test-room'; f._rulesId = '1800000000000'; f._rulesRevision = 1; f._rulesOwnerPos = 0;
     f._memberProtocolVersions[0] = NET_RACE_PROTOCOL_VERSION; f._memberProtocolVersions[2] = NET_RACE_PROTOCOL_VERSION;
+    f._memberProtocolScopes[0] = f._memberProtocolScopes[2] = NET_ROOM_SCOPE;
     f._memberModifiers[0] = f._memberModifiers[2] = 'muscleMan,2,warm,red';
     return f;
 }

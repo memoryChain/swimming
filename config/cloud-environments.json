@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "activeTarget": "development",
+  "region": "ap-shanghai",
+  "environments": {
+    "development": {
+      "environmentId": "cloud1-d5gn11660fac3375c",
+      "collectionPrefix": "dev_"
+    },
+    "production": {
+      "environmentId": "cloud1-d5gn11660fac3375c",
+      "collectionPrefix": ""
+    }
+  }
+}

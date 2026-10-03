@@ -7,11 +7,12 @@ const vm = require('node:vm');
 const { build } = require('../scripts/build-wechat-cloud.cjs');
 const suppliedOutput = process.env.SWIMMING_CLOUD_TEST_OUTPUT;
 const output = suppliedOutput ? path.resolve(suppliedOutput) : fs.mkdtempSync(path.join(os.tmpdir(), 'swimming-cloud-'));
-if (!suppliedOutput) build(output);
+if (!suppliedOutput) build(output, { target: 'production' });
 test.after(() => { if (!suppliedOutput) fs.rmSync(output, { recursive: true, force: true }); });
-const { createService } = require(path.join(output, 'swimming-player/service.cjs'));
-const { createDefaultProfile } = require(path.join(output, 'swimming-player/rules/backend/PlayerProfile.js'));
-const { CLOUD_PROTOCOL } = require(path.join(output, 'swimming-player/rules/backend/CloudProtocol.js'));
+const playerDirectory = process.env.SWIMMING_CLOUD_TEST_FUNCTION || (suppliedOutput ? 'swimming-player' : 'swimming-player-v3');
+const { createService } = require(path.join(output, playerDirectory, 'service.cjs'));
+const { createDefaultProfile } = require(path.join(output, playerDirectory, 'rules/backend/PlayerProfile.js'));
+const { CLOUD_PROTOCOL } = require(path.join(output, playerDirectory, 'rules/backend/CloudProtocol.js'));
 const characterId = Object.keys(createDefaultProfile().characters)[0];
 const copy = value => JSON.parse(JSON.stringify(value));
 
@@ -255,6 +256,7 @@ test('旧经济版本只接受有效旧票据补结算，不能新开赛或按�
     assert.equal((await h.player(h.request('career', settlement(start.result.ticket), start.revision, { rulesVersion: 2 }))).code, 'VERSION');
     const doc = h.db.data.get(`players/${start.playerId}`);
     delete doc.profile.career.pending.terms;
+    delete doc.profile.career.pending.rulesVersion;
     h.advance(90000);
     const request = h.request('career', settlement(start.result.ticket), start.revision, { rulesVersion: 2 });
     const settled = await h.player(request);
@@ -384,7 +386,8 @@ function client(h, storage = new Map(), options = {}) {
         const requireLocal = id => {
             if (id === 'cc') return { sys: { localStorage } };
             if (id === './BackendManager') return { backend: () => activeBackend };
-            if (id === './WechatCloudConfig') return { WECHAT_CLOUD_CONFIG: { environmentId: options.noEnv ? '' : options.environmentId || 'test-env', functionName: 'swimming-player', timeoutMs: 1000 } };
+            if (id === './WechatCloudConfig') return { WECHAT_CLOUD_CONFIG: { environmentId: options.noEnv ? '' : options.environmentId || 'test-env',
+                functionName: options.functionName || 'swimming-player-v3', storageNamespace: options.storageNamespace || '', buildStamp: 'test-build', timeoutMs: 1000 } };
             return load(path.resolve(path.dirname(file), id + '.ts'));
         };
         vm.runInContext(`(function(require,module,exports){${code}\n})`, sandbox)(requireLocal, module, module.exports);
@@ -1015,4 +1018,18 @@ test('本地空间不足也能结束当前教学并补传，正常云存档仍�
     await data.completeTutorial(); await c.backend.syncTutorialCompletion();
     assert.equal(data.loaded, true); assert.equal(data.profile.tutorialCompleted, true);
     assert.equal((await h.load()).profile.tutorialCompleted, true);
+});
+
+test('同一云环境的开发与正式缓存隔离，开发登录不重放正式待发送请求或教学状态', async () => {
+    const prod = harness(), dev = harness(), storage = new Map();
+    await prod.compensate(); const c = client(prod, storage); await c.backend.loadProfile();
+    c.drop(2); await assert.rejects(c.backend.spendCoinsForLevel(characterId, 1));
+    const pending = [...storage].find(([key]) => key.endsWith('.pending'));
+    assert.ok(pending); const saved = pending[1];
+    const d = client(dev, storage, { storageNamespace: 'dev_', functionName: 'swimming-player-dev-v3' });
+    assert.equal((await d.backend.loadProfile()).coins, 0);
+    assert.equal(d.requests.every(req => req.action === 'load'), true);
+    assert.equal(storage.get(pending[0]), saved, '开发登录不删除或重放正式订单');
+    assert.equal((await client(prod, storage).backend.loadProfile()).coins, 9500);
+    assert.ok([...storage.keys()].some(key => key.includes('.dev_.writer')));
 });

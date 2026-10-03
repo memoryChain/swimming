@@ -14,9 +14,10 @@ test('微信远程构建在准备发布前拒绝未开启 MD5 的旧任务，不
     for (const md5Cache of [false, undefined, true]) {
         const calls = [];
         const sandbox = {
-            exports: {}, __dirname: path.resolve('extensions/wechat-race-subpackage'),
+            exports: {}, __dirname: path.resolve('extensions/wechat-race-subpackage'), console: { log() {} },
             require(id) {
                 if (id === 'path') return path;
+                if (id === '../../scripts/wechat-cloud-target.cjs') return { assertClientConfig: () => ({ outputName: 'wechatgame' }) };
                 if (id === './remote-assets') return {
                     readRemoteConfig: () => ({ enabled: true, autoUpload: true }),
                     readClientVersion: () => '1.0.0',
@@ -28,7 +29,7 @@ test('微信远程构建在准备发布前拒绝未开启 MD5 的旧任务，不
             },
         };
         vm.runInNewContext(source, sandbox);
-        const options = Object.freeze({ platform: 'wechatgame', md5Cache });
+        const options = Object.freeze({ platform: 'wechatgame', outputName: 'wechatgame', md5Cache });
         await assert.rejects(sandbox.exports.onBeforeBuild(options), md5Cache === true ? /测试终点/ : /当前微信构建任务未开启 MD5 Cache/);
         assert.deepEqual(calls, md5Cache === true ? ['prepare'] : []);
         assert.equal(options.md5Cache, md5Cache);
@@ -127,11 +128,12 @@ test('构建覆盖旧任务的 Bundle 设置，UI 嵌套包独立导出且角色
                 readRemoteConfig: () => ({ enabled: true, autoUpload: false }), readClientVersion: () => '1.0.0',
                 applyWechatProjectConfig() {}, assertStartupSceneEntry() {},
                 assertTextureCompressionPolicy: () => ({}), assertUiFontPolicy: () => ({}), assertUiAtlasPolicy: () => ({groups:[]}),
+                assertClientConfig: () => ({ outputName: 'wechatgame' }),
             };
         },
     };
     vm.runInNewContext(fs.readFileSync('extensions/wechat-race-subpackage/hooks.js', 'utf8'), sandbox);
-    const options = { platform: 'wechatgame', md5Cache: true, packAutoAtlas:true, bundleConfigs: [
+    const options = { platform: 'wechatgame', outputName: 'wechatgame', md5Cache: true, packAutoAtlas:true, bundleConfigs: [
         { root: 'db://assets/race', isRemote: true }, { root: 'db://assets/race/ui', isRemote: true },
     ] };
     await sandbox.exports.onBeforeBuild(options);

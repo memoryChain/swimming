@@ -19,6 +19,7 @@ const { decodeInputFrame, encodeInputFrame } = InputCodec;
 const { MonotonicSequenceTracker, ownerLaneMatches, shouldUseTransientPacketCondition } = Ordering;
 const {
     NET_RACE_PROTOCOL_VERSION,
+    NET_ROOM_SCOPE,
     decodeProtocolHello,
     decodeProtocolRequest,
     encodeProtocolHello,
@@ -152,7 +153,7 @@ test('an attributed P| or frame self cannot update another registered lane', () 
 
 test('lobby protocol hello rejects missing or mixed versions', () => {
     const hello = decodeProtocolHello(encodeProtocolHello(4));
-    assert.deepEqual(hello, { pos: 4, version: NET_RACE_PROTOCOL_VERSION });
+    assert.deepEqual(hello, { pos: 4, version: NET_RACE_PROTOCOL_VERSION, scope: NET_ROOM_SCOPE });
     assert.equal(decodeProtocolHello('PV|4|bad'), null);
     assert.equal(hasCompatibleProtocol([0, 4], { 0: NET_RACE_PROTOCOL_VERSION, 4: NET_RACE_PROTOCOL_VERSION }), true);
     assert.equal(hasCompatibleProtocol([0, 4], { 0: NET_RACE_PROTOCOL_VERSION }), false);

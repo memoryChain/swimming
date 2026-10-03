@@ -28,7 +28,7 @@ export class WechatCloudBackend implements IBackend {
     private tutorialRetryAt = 0;
     private _tutorialEnabled: boolean | null = null;
     private loadSequence = 0;
-    private readonly prefix = `swimming.cloud.${WECHAT_CLOUD_CONFIG.environmentId}`;
+    private readonly prefix = `swimming.cloud.${WECHAT_CLOUD_CONFIG.environmentId}${WECHAT_CLOUD_CONFIG.storageNamespace ? '.' + WECHAT_CLOUD_CONFIG.storageNamespace : ''}`;
 
     get tutorialEnabled(): boolean {
         if (this._tutorialEnabled === null) {
@@ -56,6 +56,8 @@ export class WechatCloudBackend implements IBackend {
         const key = `${this.prefix}.writer`;
         this.writerId = sys.localStorage.getItem(key) || this.newId();
         sys.localStorage.setItem(key, this.writerId);
+        // 仅初始化时打印公开部署标识，也让构建审计核对实际编译进去的目标。
+        console.info('[CloudTarget]', WECHAT_CLOUD_CONFIG.buildStamp);
         wx.cloud.init({ env: WECHAT_CLOUD_CONFIG.environmentId });
         this.initialized = true;
     }

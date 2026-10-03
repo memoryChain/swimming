@@ -16,20 +16,23 @@ test('云开发根项目开启上传压缩并跟随构建 SourceMap 配置，保
     const build = { sourceMaps: false, packages: { wechatgame: { appid: 'wx89ee56c51312f147' } } };
     const buildFile = path.join(root, 'config/build/wechatgame.json');
     fs.writeFileSync(buildFile, JSON.stringify(build));
+    fs.writeFileSync(path.join(root, 'config/cloud-environments.json'), JSON.stringify({ schema: 1, activeTarget: 'development', region: 'ap-shanghai',
+        environments: { development: { environmentId: 'test-env', collectionPrefix: 'dev_' }, production: { environmentId: 'prod-env', collectionPrefix: '' } } }));
+    fs.writeFileSync(path.join(root, 'assets/scripts/backend/CloudProtocol.ts'), 'export const CLOUD_PROTOCOL = { version: 1, rulesVersion: 3 };');
     fs.writeFileSync(path.join(root, 'assets/scripts/backend/WechatCloudConfig.ts'), "export const config = { environmentId: '' };\n");
     const file = path.join(root, 'project.config.json');
     const ignores = [{ type: 'file', value: 'local-notes.txt' }];
     fs.writeFileSync(file, JSON.stringify({ setting: { minified: false, uploadWithSourceMap: true, urlCheck: true }, packOptions: { ignore: ignores } }));
-    configure('test-env', root);
+    configure('development', undefined, root);
     const project = JSON.parse(fs.readFileSync(file));
     assert.equal(project.setting.minified, true);
     assert.equal(project.setting.uploadWithSourceMap, false);
     assert.equal(project.setting.urlCheck, true);
     assert.deepEqual(project.packOptions.ignore, ignores);
-    assert.equal(project.miniprogramRoot, 'build/wechatgame/');
-    assert.equal(project.cloudfunctionRoot, 'cloud/functions/');
+    assert.equal(project.miniprogramRoot, 'build/wechatgame-development/');
+    assert.equal(project.cloudfunctionRoot, 'cloud/functions/development/');
     build.sourceMaps = true; fs.writeFileSync(buildFile, JSON.stringify(build));
-    configure('test-env', root);
+    configure('development', undefined, root);
     assert.equal(JSON.parse(fs.readFileSync(file)).setting.uploadWithSourceMap, true);
 });
 

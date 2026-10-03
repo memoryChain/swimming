@@ -36,7 +36,8 @@ function failed(error, doc) {
 
 /** 注入数据库与时钟，测试执行真实规则和事务流程，不连接线上环境。 */
 function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], now = Date.now, uuid = crypto.randomUUID,
-    seed = () => crypto.randomInt(0x100000000) }) {
+    seed = () => crypto.randomInt(0x100000000), legacyRules = null, allowLegacyClients = false }) {
+    requireValue(!allowLegacyClients || legacyRules?.version === 2, 'CONFIG', '旧规则快照缺失');
     async function read(tx, collection, id) {
         // 入口必须使用 throwOnNotFound:false；其他数据库错误直接失败，不能误判新账号。
         const data = (await tx.collection(collection).doc(id).get()).data;
@@ -84,6 +85,7 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
     function protocol(event, allowLegacyReplay = false) {
         requireValue(event && event.protocol === CLOUD_PROTOCOL.version
             && (event.rulesVersion === CLOUD_PROTOCOL.rulesVersion
+                || (allowLegacyClients && event.rulesVersion === legacyRules.version)
                 || (allowLegacyReplay && event.rulesVersion === 2 && event.action !== 'load')),
             'VERSION', '游戏版本已更新，请重新进入游戏');
         requireValue(event.data && typeof event.data === 'object' && !Array.isArray(event.data)
@@ -95,6 +97,7 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
     }
     function applyPlayer(doc, event, time) {
         const p = doc.profile, data = event.data;
+        const oldClient = event.rulesVersion === 2;
         if (event.action === 'tutorialComplete') {
             requireValue(Object.keys(data).length === 0, 'INPUT', '教学参数无效');
             p.tutorialCompleted = true;
@@ -132,7 +135,7 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
             let levelsGained = 0, coinsSpent = 0;
             const maxed = progress.level >= PROGRESSION_BALANCE.maxLevel;
             while (levelsGained < data.requestedLevels && progress.level < PROGRESSION_BALANCE.maxLevel) {
-                const cost = coinCostForLevel(progress.level);
+                const cost = oldClient && legacyRules ? legacyRules.coinCostForLevel(progress.level) : coinCostForLevel(progress.level);
                 if (p.coins < cost) break;
                 p.coins -= cost; coinsSpent += cost; progress.level++; levelsGained++;
             }
@@ -142,6 +145,7 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
         requireValue(event.action === 'career', 'FORBIDDEN', '不支持此存档操作');
         requireValue(['begin', 'settle', 'abandon'].includes(data.type), 'INPUT', '比赛操作无效');
         const command = clone(data);
+        let careerRules = oldClient && legacyRules ? legacyRules.executeCareer : executeCareer;
         if (command.type === 'begin') {
             requireValue(owns(p.characters, command.characterId) && integer(command.tier, 0, 5)
                 && ['quick', 'league', 'cup'].includes(command.source)
@@ -153,6 +157,12 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
             const ticket = p.career.pending;
             requireValue(ticket && ticket.id === command.ticketId && doc.pendingWriter === event.writerId
                 && time - doc.pendingAt <= TICKET_TTL, 'TICKET', '比赛记录已失效');
+            // 已签发票据锁定规则；换客户端或伪造请求版本不能改变奖金与晋级条件。
+            // 历史无标记票据：有条款的是规则3；无条款沿用规则2（快速赛奖励相同）。
+            const ticketVersion = ticket.rulesVersion ?? (ticket.terms ? 3 : 2);
+            requireValue([2, CLOUD_PROTOCOL.rulesVersion].includes(ticketVersion)
+                && (!oldClient || ticketVersion === 2), 'VERSION', '比赛版本不兼容，请重新开赛');
+            if (ticketVersion === 2 && legacyRules) careerRules = legacyRules.executeCareer;
             requireValue(typeof command.finished === 'boolean' && integer(command.racerCount, 2, 8)
                 && integer(command.placement, 1, command.racerCount)
                 && ['perfectCount', 'goodCount', 'missCount', 'maxCombo'].every(k => integer(command[k], 0, 100000))
@@ -169,11 +179,12 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
         } else {
             requireValue(owns(p.characters, command.characterId), 'INPUT', '角色不存在');
         }
-        const result = executeCareer(p, command);
+        const result = careerRules(p, command);
         requireValue(result.ok, 'CAREER', result.message);
         if (command.type === 'begin') {
             // 随机凭据不会因回档或本地 serial 重置而复用。
             result.ticket.id = `race-${uuid()}`;
+            result.ticket.rulesVersion = event.rulesVersion;
             doc.pendingWriter = event.writerId; doc.pendingAt = time;
         } else if (!p.career.pending) { doc.pendingWriter = ''; doc.pendingAt = 0; }
         const { profile: _profile, ...payload } = result;
@@ -215,8 +226,9 @@ function createService({ db, appId, adminPlayerIds = [], adminWebUserIds = [], n
                         return envelope(doc, previous.result);
                     }
                     // 旧经济请求仅恢复已提交回执，或结算仍有效的旧票据；不能按新价格扣旧订单。
-                    if (event.rulesVersion === 2) requireValue(event.action === 'career' && event.data.type === 'settle'
-                        && doc.profile.career.pending && !doc.profile.career.pending.terms,
+                    if (event.rulesVersion === 2 && !allowLegacyClients) requireValue(event.action === 'career' && event.data.type === 'settle'
+                        && doc.profile.career.pending && !doc.profile.career.pending.terms
+                        && (doc.profile.career.pending.rulesVersion ?? 2) === 2,
                     'VERSION', '游戏版本已更新，请重新进入游戏');
                     requireValue(event.expectedRevision === doc.revision, 'CONFLICT', '存档已更新，请重试当前操作');
                     const result = applyPlayer(doc, event, time);

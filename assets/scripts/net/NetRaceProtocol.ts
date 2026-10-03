@@ -39,13 +39,18 @@
 // 版本50：放缓踢水回正、保留更多撞击与松软反馈，AI撞后才主动脱困。
 // 版本51：按住划水速度降至0.65，放宽实际松手时间；旧版不得混跑。
 // 版本52：按住倍率0.8，按狂野赛程重平衡角色、技能与AI；同ID/等级必须解析相同属性。
-export const NET_RACE_PROTOCOL_VERSION = 52;
+// 版本53：大厅握手绑定云数据命名空间与经济版本，开发与正式客户端不能混房。
+import { WECHAT_CLOUD_CONFIG } from '../backend/WechatCloudConfig';
+import { CLOUD_PROTOCOL } from '../backend/CloudProtocol';
+export const NET_RACE_PROTOCOL_VERSION = 53;
+export const NET_ROOM_SCOPE = `${WECHAT_CLOUD_CONFIG.environmentId}:${WECHAT_CLOUD_CONFIG.storageNamespace || 'production'}:r${CLOUD_PROTOCOL.rulesVersion}`;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 
 export interface NetRaceProtocolHello {
     pos: number;
     version: number;
+    scope: string;
 }
 
 export interface NetRaceProtocolRequest {
@@ -53,7 +58,7 @@ export interface NetRaceProtocolRequest {
 }
 
 export function encodeProtocolHello(pos: number): string {
-    return `${PROTOCOL_TAG}${Math.floor(pos)}|${NET_RACE_PROTOCOL_VERSION}`;
+    return `${PROTOCOL_TAG}${Math.floor(pos)}|${NET_RACE_PROTOCOL_VERSION}|${NET_ROOM_SCOPE}`;
 }
 
 export function decodeProtocolHello(message: string): NetRaceProtocolHello | null {
@@ -61,7 +66,7 @@ export function decodeProtocolHello(message: string): NetRaceProtocolHello | nul
         return null;
     }
     const parts = message.slice(PROTOCOL_TAG.length).split('|');
-    if (parts.length !== 2) {
+    if (parts.length !== 2 && parts.length !== 3) {
         return null;
     }
     const pos = parseInt(parts[0], 10);
@@ -69,7 +74,7 @@ export function decodeProtocolHello(message: string): NetRaceProtocolHello | nul
     if (!Number.isFinite(pos) || pos < 0 || !Number.isFinite(version) || version < 0) {
         return null;
     }
-    return { pos: Math.floor(pos), version: Math.floor(version) };
+    return { pos: Math.floor(pos), version: Math.floor(version), scope: parts[2] || '' };
 }
 
 // Best-effort room broadcasts can lose a member's first PV| declaration. A peer
@@ -99,12 +104,13 @@ export function decodeProtocolRequest(message: string): NetRaceProtocolRequest |
 export function hasCompatibleProtocol(
     memberPositions: readonly number[],
     versions: Readonly<Record<number, number>>,
+    scopes?: Readonly<Record<number, string>>,
 ): boolean {
     if (memberPositions.length === 0) {
         return false;
     }
     for (const pos of memberPositions) {
-        if (pos < 0 || versions[pos] !== NET_RACE_PROTOCOL_VERSION) {
+        if (pos < 0 || versions[pos] !== NET_RACE_PROTOCOL_VERSION || (scopes && scopes[pos] !== NET_ROOM_SCOPE)) {
             return false;
         }
     }

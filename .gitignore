@@ -8,6 +8,8 @@ local/
 build/
 !/config/build/
 !/config/build/wechatgame.json
+!/config/build/wechatgame-development.json
+!/config/build/wechatgame-production.json
 /output/
 # Creator 本机任务和历史不共享；构建选项导出到 config/build/wechatgame.json。
 profiles/

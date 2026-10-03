@@ -1,0 +1,18 @@
+{
+  "typescript": "5.4.5",
+  "sha256": "93decbd299d235ef9646c12b181ca6ec5bfcfcc21b2f836d36e7362559424e9e",
+  "modules": [
+    "app/PlayerCharacterConfig",
+    "backend/CloudProtocol",
+    "backend/IdentityConfig",
+    "backend/PlayerProfile",
+    "competitor/AiEventValidation",
+    "competitor/AiRaceConfig",
+    "core/SharedRNG",
+    "progression/CareerAiConfig",
+    "progression/CareerRules",
+    "progression/CupRewardConfig",
+    "progression/ItemConfig",
+    "progression/ProgressionBalance"
+  ]
+}

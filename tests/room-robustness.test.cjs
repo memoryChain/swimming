@@ -181,7 +181,7 @@ test('所有角色外观与存档一致，暖肤色保留原贴图；摘要拒�
 });
 
 function prepare(h, flow, host = false) {
-    const { NET_RACE_PROTOCOL_VERSION } = h.load('assets/scripts/net/NetRaceProtocol.ts');
+    const { NET_RACE_PROTOCOL_VERSION, NET_ROOM_SCOPE } = h.load('assets/scripts/net/NetRaceProtocol.ts');
     flow._isHost = host; flow._localPos = host ? 0 : 2;
     flow._members = [
         { clientId: 11, pos: 0, self: host, owner: true, ready: true, avatarId: 'coral', nickName: '房主' },
@@ -189,11 +189,12 @@ function prepare(h, flow, host = false) {
     ];
     flow.reconcileProtocolRoster();
     flow._memberProtocolVersions[0] = flow._memberProtocolVersions[2] = NET_RACE_PROTOCOL_VERSION;
+    flow._memberProtocolScopes[0] = flow._memberProtocolScopes[2] = NET_ROOM_SCOPE;
     flow._memberModifiers[0] = flow._memberModifiers[2] = 'cartonSwimmer6,1,warm,red';
     flow._rulesId = '1800000000000'; flow._rulesRevision = 1;
     flow._localReady = true; flow._localReadyRule = flow.ruleKey();
     flow._ruleReady[2] = flow.ruleKey(); flow._ruleReadyModifiers[2] = flow._memberModifiers[2];
-    return { t: 'start', pv: NET_RACE_PROTOCOL_VERSION, owner: 0, seed: 123, mode: flow._mode, rules: flow.ruleKey(),
+    return { t: 'start', pv: NET_RACE_PROTOCOL_VERSION, cloudScope: NET_ROOM_SCOPE, owner: 0, seed: 123, mode: flow._mode, rules: flow.ruleKey(),
         roster: flow._members.map(member => flow.memberKey(member)), mods: { ...flow._memberModifiers } };
 }
 
@@ -254,7 +255,7 @@ test('热启动连续邀请只跟随最新房号，同房不重进，退出失�
 test('开赛包缺失角色、改变本人配置或名单不一致时拒绝；有效包冻结快照且只进场一次', async t => {
     const h = harness(); t.after(h.close); const flow = h.create(); await flush(); const start = prepare(h, flow);
     for (const invalid of [ { ...start, mods: { 0: start.mods[0] } }, { ...start, mods: { ...start.mods, 2: 'muscleMan,9,deep,blue' } },
-        { ...start, roster: [] }, { ...start, pv: 45 }, { ...start, seed: 0 }, { ...start, owner: 2 } ]) {
+        { ...start, roster: [] }, { ...start, pv: 45 }, { ...start, cloudScope: 'other-cloud' }, { ...start, seed: 0 }, { ...start, owner: 2 } ]) {
         flow.handleBroadcast(JSON.stringify(invalid)); assert.equal(flow._startRequested, false);
     }
     // 旧版本消息会主动取消准备；玩家重新准备后才接受正确的开赛消息。
@@ -291,4 +292,15 @@ test('首次本地存档及旧存档恢复角色和配色，不把临时身份�
     const second = createHarness(); second.cc.sys = h.cc.sys;
     await second.load(path.join(root, 'assets/scripts/backend/PlayerData.ts')).PlayerData.load();
     assert.deepEqual(second.load(path.join(root, 'assets/scripts/app/PlayerCharacterConfig.ts')).getPlayerCharacterSelection(), saved.characterSelection);
+});
+
+test('开发与正式命名空间不同时不能准备或开赛，恢复同范围后保活重赛照常', async t => {
+    const h = harness(); t.after(h.close); const flow = h.create(); await flush(); const start = prepare(h, flow, false);
+    const { NET_RACE_PROTOCOL_VERSION, NET_ROOM_SCOPE } = h.load('assets/scripts/net/NetRaceProtocol.ts');
+    flow.collectProtocolHello(`PV|0|${NET_RACE_PROTOCOL_VERSION}|other-scope`);
+    assert.equal(flow.protocolCompatible(), false); assert.equal(flow._localReady, false);
+    flow.handleBroadcast(JSON.stringify({ ...start, cloudScope: 'other-scope' }));
+    assert.equal(h.calls.includes('race'), false);
+    flow.collectProtocolHello(`PV|0|${NET_RACE_PROTOCOL_VERSION}|${NET_ROOM_SCOPE}`);
+    assert.equal(flow.protocolCompatible(), true);
 });

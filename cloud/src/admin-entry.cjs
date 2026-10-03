@@ -2,9 +2,13 @@
 const cloud = require('wx-server-sdk');
 const cloudbase = require('@cloudbase/node-sdk');
 const { createService } = require('./service.cjs');
+const { scopeDatabase } = require('./deployment.cjs');
+const deployment = require('./deployment-target.json');
+const legacyRules = require('./legacy-rules.cjs');
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const webApp = cloudbase.init({ env: cloudbase.SYMBOL_CURRENT_ENV });
-const service = createService({ db: cloud.database({ throwOnNotFound: false }), appId: process.env.WECHAT_APP_ID,
+const service = createService({ db: scopeDatabase(cloud.database({ throwOnNotFound: false }), deployment.collectionPrefix),
+    appId: process.env.WECHAT_APP_ID, legacyRules, allowLegacyClients: deployment.compatibility === true,
     adminPlayerIds: (process.env.ADMIN_PLAYER_IDS || '').split(',').map(s => s.trim()).filter(Boolean),
     adminWebUserIds: (process.env.ADMIN_WEB_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean) });
 exports.main = event => {

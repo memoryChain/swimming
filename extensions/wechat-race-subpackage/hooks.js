@@ -15,6 +15,7 @@ const { applyWechatIosDpr } = require('./wechat-ios-dpr');
 const { applyWechatFirstScreen } = require('./wechat-first-screen');
 const { preparePublisher, publishAfterBuild } = require('./cdn-publish');
 const { assertUiAtlasPolicy, assertBuiltUiAtlases } = require('../../scripts/ui-atlas-policy.cjs');
+const { assertClientConfig, writeClientRelease } = require('../../scripts/wechat-cloud-target.cjs');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -55,6 +56,9 @@ exports.onBeforeBuild = async function onBeforeBuild(options) {
         return;
     }
 
+    const cloudTarget = assertClientConfig(PROJECT_ROOT);
+    if (options.outputName !== cloudTarget.outputName) throw new Error(`云构建目标为 ${cloudTarget.target}；请导入 config/build/wechatgame-${cloudTarget.target}.json，避免覆盖另一目标的客户端包`);
+    console.log(`[cloud-target] ${cloudTarget.target} / ${cloudTarget.environmentId} / ${cloudTarget.functionName}`);
     const remoteConfig = readRemoteConfig(PROJECT_ROOT);
     if (remoteConfig.enabled) {
         readClientVersion(PROJECT_ROOT);
@@ -232,6 +236,8 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
         assertRemoteOutput(result.dest);
         console.log(`[remote-assets] 远程资源 ${release.files.length} 个文件；发布目录 ${release.publishRoot}；服务器 ${release.server}`);
     }
+    const cloudRelease = writeClientRelease(PROJECT_ROOT, result.dest);
+    console.log(`[cloud-target] 构建已核验：${cloudRelease.target} / ${cloudRelease.functionName}`);
     const packageAudit = auditWechatPackageOutput(result.dest);
     console.log(
         `[wechat-race-subpackage] generated and verified resource bundles; `

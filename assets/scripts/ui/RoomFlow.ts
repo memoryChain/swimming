@@ -27,6 +27,7 @@ import { resolveLocalModifierDigest } from '../progression/RaceModifiers';
 import { decodeModifierDigest, encodeModifierDigest, hasCompleteModifierDigest } from '../net/NetRaceModifierCodec';
 import {
     NET_RACE_PROTOCOL_VERSION,
+    NET_ROOM_SCOPE,
     decodeProtocolHello,
     decodeProtocolRequest,
     encodeProtocolHello,
@@ -100,6 +101,7 @@ export class RoomFlow {
     private readonly _memberCareerLeagues: Record<number, number> = {};
     private readonly _memberModifiers: Record<number, string> = {};
     private readonly _memberProtocolVersions: Record<number, number> = {};
+    private readonly _memberProtocolScopes: Record<number, string> = {};
     private readonly _memberProtocolFingerprints: Record<number, string> = {};
     private _statusHint: string | null = null;
     private _startRequested = false;
@@ -318,6 +320,7 @@ export class RoomFlow {
         }
         this.broadcastSelfCareer();
         this._memberProtocolVersions[this._localPos] = NET_RACE_PROTOCOL_VERSION;
+        this._memberProtocolScopes[this._localPos] = NET_ROOM_SCOPE;
         netRoom().broadcast(encodeProtocolHello(this._localPos));
         const payload = this.storeSelfModifiers();
         if (!payload) {
@@ -382,7 +385,8 @@ export class RoomFlow {
         }
         const firstDeclaration = this._memberProtocolVersions[hello.pos] === undefined;
         this._memberProtocolVersions[hello.pos] = hello.version;
-        if (hello.version !== NET_RACE_PROTOCOL_VERSION && this._localReady && !this._isHost) {
+        this._memberProtocolScopes[hello.pos] = hello.scope;
+        if ((hello.version !== NET_RACE_PROTOCOL_VERSION || hello.scope !== NET_ROOM_SCOPE) && this._localReady && !this._isHost) {
             this._localReady = false;
             netRoom().updateReady(false).catch(() => undefined);
         }
@@ -404,6 +408,7 @@ export class RoomFlow {
             const fingerprint = this.memberKey(member);
             if (this._memberProtocolFingerprints[member.pos] !== fingerprint) {
                 delete this._memberProtocolVersions[member.pos];
+                delete this._memberProtocolScopes[member.pos];
                 delete this._memberModifiers[member.pos];
                 delete this._memberCareerLeagues[member.pos];
                 delete this._ruleReady[member.pos];
@@ -413,12 +418,14 @@ export class RoomFlow {
             }
             if (member.self) {
                 this._memberProtocolVersions[member.pos] = NET_RACE_PROTOCOL_VERSION;
+                this._memberProtocolScopes[member.pos] = NET_ROOM_SCOPE;
             }
         }
         for (const rawPos of Object.keys(this._memberProtocolVersions)) {
             const pos = Number(rawPos);
             if (!active[pos]) {
                 delete this._memberProtocolVersions[pos];
+                delete this._memberProtocolScopes[pos];
             }
         }
         for (const rawPos of Object.keys(this._memberProtocolFingerprints)) {
@@ -442,6 +449,7 @@ export class RoomFlow {
         return hasCompatibleProtocol(
             this._members.map((member) => member.pos),
             this._memberProtocolVersions,
+            this._memberProtocolScopes,
         );
     }
 
@@ -829,6 +837,7 @@ export class RoomFlow {
         this.broadcastStart(JSON.stringify({
             t: 'start',
             pv: NET_RACE_PROTOCOL_VERSION,
+            cloudScope: NET_ROOM_SCOPE,
             seed: this._pendingSeed,
             mods: this._memberModifiers,
             mode: this._mode,
@@ -940,7 +949,7 @@ export class RoomFlow {
                 if (this._isHost || this._startRequested || data.seed === this._lastStartSeed
                     || !Number.isInteger(data.seed) || data.seed <= 0 || data.seed > 0xffffffff
                     || data.owner !== this._members.find(member => member.owner)?.pos) return;
-                if (!isCompatibleProtocolVersion(data.pv)) {
+                if (!isCompatibleProtocolVersion(data.pv) || data.cloudScope !== NET_ROOM_SCOPE) {
                     if (this._localReady && !this._isHost) {
                         this._localReady = false;
                         netRoom().updateReady(false).catch(() => undefined);

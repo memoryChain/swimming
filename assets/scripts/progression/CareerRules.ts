@@ -31,6 +31,8 @@ export interface CareerRaceTerms {
     championCoins: number; firstClearCoins: number;
 }
 export interface RaceTicket {
+    /** 云端签发时固定经济规则；旧票据可缺省，客户端不能指定。 */
+    rulesVersion?: number;
     id: string; source: SoloSource; characterId: string; level: number;
     distance: 200 | 400; rule: RaceRule; tier: number; round: number;
     seed: number; ai: AiEventConfig; cupId?: string; championCoins?: number; terms?: CareerRaceTerms;
