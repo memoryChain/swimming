@@ -7,8 +7,9 @@ import { EntertainmentRecoveryRuntime } from './EntertainmentRecoveryRuntime';
 import { EntertainmentRecoveryReason } from './EntertainmentRecoveryController';
 import { FloatingItemLayers, FloatingItemRenderer } from './FloatingItemRenderer';
 import { SprayBuoySplashPool } from './SprayBuoySplashPool';
+import type { CannonDebugPlan } from './EntertainmentDebugPlan';
 
-/** 单发炮击的本地接线，不依赖 GameManager 内部对象、网络或云结算。 */
+/** 炮击的本地接线，不依赖 GameManager 内部对象、网络或云结算。 */
 export class CannonRaceController {
     readonly rules: CannonBrawlController;
     private readonly states: CannonRacerState[];
@@ -18,16 +19,17 @@ export class CannonRaceController {
     private disposed = false;
     constructor(world: Node, course: RaceCourseLayout, private readonly racers: readonly EntertainmentRacerBinding[],
         seed: number, private readonly raceDistance: number, meshes: readonly Mesh[], rendering: FloatingItemRenderer,
-        layers: FloatingItemLayers | null) {
+        layers: FloatingItemLayers | null, plan: CannonDebugPlan) {
         this.states = Array.from({ length: course.laneCount }, () => ({ active: false, finished: false, damageable: false, distance: 0, lateral: 0, speed: 0 }));
         this.rules = new CannonBrawlController(course.laneCount, seed, course.poolWidth, lane => this.states[lane],
             launch => this.presentation?.showLaunch(launch), impact => this.onImpact(impact),
-            Math.max(0, raceDistance - 20), distance => course.distanceToWorldX(distance));
+            Math.max(0, raceDistance - 20), distance => course.distanceToWorldX(distance), plan.triggers,
+            plan.maxConcurrentLaunches, plan.minimumLaunchIntervalSeconds);
         try {
             this.recovery = new EntertainmentRecoveryRuntime(course, racers, raceDistance, meshes[4], rendering);
-            // 单发之间最短仍有1.25秒，只预建一个0.95秒的喷水槽，不建浮标入水池。
-            this.splashes = new SprayBuoySplashPool(world, [meshes[5], meshes[6], meshes[5], meshes[6], meshes[7]], layers, 0, 1);
-            this.presentation = new CannonBrawlPresentation(world, course, meshes, this.splashes, rendering, layers);
+            // 单发一个喷水槽；双发最多两处同时落水，赛前固定两个槽。
+            this.splashes = new SprayBuoySplashPool(world, [meshes[5], meshes[6], meshes[5], meshes[6], meshes[7]], layers, 0, plan.maxConcurrentLaunches);
+            this.presentation = new CannonBrawlPresentation(world, course, meshes, this.splashes, rendering, layers, plan.maxConcurrentLaunches);
         } catch (error) { this.dispose(); throw error; }
     }
     reset(): void { if (!this.disposed) { this.recovery?.reset(); this.rules.reset(); this.presentation?.reset(); this.splashes?.reset(); } }
@@ -43,7 +45,8 @@ export class CannonRaceController {
             r.finished = s.distance >= this.raceDistance; r.distance = s.distance; r.lateral = s.node.position.z; r.speed = s.currentSpeed;
         }
         this.rules.update(step);
-        this.presentation?.update(step, this.rules.currentLaunch(), this.rules.currentRemainingSeconds()); this.splashes?.update(step);
+        this.presentation?.update(step, this.rules.currentLaunch(), this.rules.currentRemainingSeconds(),
+            this.rules.currentSecondaryLaunch(), this.rules.currentSecondaryRemainingSeconds()); this.splashes?.update(step);
     }
     targetZForAi(lane: number, discipline: number): number | null {
         const r = this.states[lane];
@@ -60,7 +63,11 @@ export class CannonRaceController {
             const lane = binding.lane, s = binding.swimmer;
             if (!(impact.hitMask & (1 << lane)) || !s.canHitSprayBuoy || !this.recovery?.rules.isDamageable(lane)) continue;
             if (lane === impact.knockedLane) {
-                if (this.recovery.knockDown(lane, EntertainmentRecoveryReason.CANNON, impact.knockedDistance)) s.cartoonRig?.triggerBigSplash(2.8);
+                if (this.recovery.knockDown(lane, EntertainmentRecoveryReason.CANNON, impact.knockedDistance)) {
+                    // 同一步可能两发落水，立即刷新资格，第二发不能选中刚进入恢复的选手。
+                    this.states[lane].damageable = false;
+                    s.cartoonRig?.triggerBigSplash(2.8);
+                }
             } else {
                 const away = Math.sign(s.node.position.z - impact.targetZ) || (lane & 1 ? 1 : -1);
                 s.applyCollisionImpulse(-1.05, away * 2.25); s.applyCollisionAxialImpulse(away * 4.2);

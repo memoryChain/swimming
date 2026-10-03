@@ -17,7 +17,7 @@ import { AiConditionModel } from '../condition/AiConditionModel';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { ENTERTAINMENT_DEBUG_TUNING, LITTER_BRAWL_TUNING, STIMULANT_BRAWL_TUNING, WHIRLPOOL_BRAWL_TUNING } from '../core/EntertainmentBalance';
-import { buildEntertainmentDebugPlan, EntertainmentDebugMode } from '../entertainment/EntertainmentDebugPlan';
+import { buildEntertainmentDebugPlan, CannonDebugPlan, EntertainmentDebugMode } from '../entertainment/EntertainmentDebugPlan';
 import { buildGradedStimulantSchedule } from '../entertainment/StimulantBrawlRules';
 import { EntertainmentRacerState, SupplyRaceController } from '../entertainment/SupplyRaceController';
 import { SupplyRacePresentation } from '../entertainment/SupplyRacePresentation';
@@ -57,6 +57,7 @@ export class EntertainmentRaceRuntime {
     private whirlpoolPresentation: WhirlpoolRacePresentation | null = null;
     private readonly useSprayBuoy: boolean;
     private readonly useCannon: boolean;
+    private readonly cannonPlan: CannonDebugPlan | null;
     private cannon: CannonRaceController | null = null;
     private sprayBuoy: SprayBuoyRaceController | null = null;
     private geyser: GeyserRaceController | null = null;
@@ -83,6 +84,7 @@ export class EntertainmentRaceRuntime {
         const plan = buildEntertainmentDebugPlan(mode, raceDistance, seed);
         this.light = plan.light; this.whirlpoolActive = !this.light;
         this.useSprayBuoy = plan.sprayBuoy; this.useCannon = plan.cannon;
+        this.cannonPlan = plan.cannonPlan;
         this.useGiantWave = plan.giantWave;
         this.giantWaveIntensity = plan.giantWaveIntensity;
         this.useGeyser = plan.geyser; this.seed = seed;
@@ -147,7 +149,7 @@ export class EntertainmentRaceRuntime {
         if (this.useSprayBuoy) { this.prepareSprayBuoy(); return; }
         if (this.useCannon) {
             this.prepareEffectMeshes(CANNON_PATHS, meshes => {
-                this.cannon = new CannonRaceController(this.world, this.course, this.racers, this.seed, this.raceDistance, meshes, this.rendering!, this.waterLayers);
+                this.cannon = new CannonRaceController(this.world, this.course, this.racers, this.seed, this.raceDistance, meshes, this.rendering!, this.waterLayers, this.cannonPlan!);
             }); return;
         }
         if (this.useGiantWave) {

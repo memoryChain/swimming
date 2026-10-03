@@ -284,6 +284,21 @@ test('巨浪五档调试资源完成前不开始展示或比赛，失败回到�
     }
 });
 
+test('单双发炮击都等待资源准备，失败不提前开始比赛', async () => {
+    for (const mode of ['cannon', 'cannon-four', 'cannon-five']) for (const fail of [false, true]) {
+        const s = raceFixture('ai-debug', false, mode); await s.start();
+        s.manager._aiSwimmers[1].cartoonRig.raceReady = true;
+        for (let i = 0; i < 5; i++) await s.frame();
+        assert.equal(s.calls.includes('start'), false); assert.equal(s.calls.includes('crowd'), false);
+        assert.equal(s.calls.includes('hide'), false);
+        s.finishEntertainment(fail ? new Error('炮击准备失败') : null);
+        for (let i = 0; i < 7; i++) await s.frame(); await s.promise;
+        assert.equal(s.calls.includes('start'), !fail); assert.equal(s.calls.includes('hide'), !fail);
+        if (fail) assert.ok(s.calls.some(c => c?.message === '炮击准备失败'));
+        assert.equal(s.hooks.size, 0);
+    }
+});
+
 test('角色就绪必须包含模型、专属动作、换色资源与两帧渲染等待', () => {
     const variant = { id: 'a', dynamicColor: { mode: 'mask' } };
     const Subject = methods('assets/scripts/entity/CartoonSwimmerRig.ts', 'CartoonSwimmerRig', ['raceReady', 'raceLoadError', 'lateUpdate', 'setModelVariant'], {

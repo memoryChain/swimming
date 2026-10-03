@@ -21,7 +21,7 @@ function createBuoyHarness(seed=42,distance=200,ids=['cartonSwimmer6','cartonSwi
     }
     const paths=h.loadModule('core/ResourcePaths').RESOURCE_PATHS;
     for(const p of Object.values(paths.sprayBuoy))prefabs.set(p,readPrefab(p.split('/').pop()));
-    if(mode==='cannon')for(const p of Object.values(paths.cannon))prefabs.set(p,readPrefab(p.split('/').pop()));
+    if(mode==='cannon'||mode==='cannon-four'||mode==='cannon-five')for(const p of Object.values(paths.cannon))prefabs.set(p,readPrefab(p.split('/').pop()));
     prefabs.set(paths.venueHeightShadeEffect,{});
     const a=createAiHarness();a.load('core/GameBalance').setSoloRaceDistance(distance);a.load('core/GameBalance').setRaceDifficulty('competitive');
     const {laneCenterZ}=a.load('venue/LaneLayout');

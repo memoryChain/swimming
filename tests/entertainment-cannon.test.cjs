@@ -69,12 +69,12 @@ test('炮管仰角沿水球起始方向，球从真实炮口出发；前后岸�
     for(const distance of [3,10,25,40,47,53,75,97])for(const z of [-8,0,8])for(const side of [0,1]){
         id+=2;const shot={strikeId:id+side,targetDistance:distance,targetZ:z,warningSeconds:1.25,revision:id};p.showLaunch(shot);
         const nozzle=p.nozzles[side],origin=world(nozzle,new h.Vec3()),muzzle=world(nozzle,new h.Vec3(0,0,1.02));
-        assert.ok(h.Vec3.equals(p.projectile.worldPosition,muzzle));
+        assert.ok(h.Vec3.equals(p.flights[0].projectile.worldPosition,muzzle));
         const axis=h.Vec3.normalize(new h.Vec3(),h.Vec3.subtract(new h.Vec3(),muzzle,origin));
         p.update(.05,shot,shot.warningSeconds*(1-.0001));
-        const direction=h.Vec3.normalize(new h.Vec3(),h.Vec3.subtract(new h.Vec3(),p.projectile.worldPosition,muzzle));assert.ok(h.Vec3.dot(axis,direction)>.99999999);
-        p.update(.05,shot,0);near(p.projectile.worldPosition.x,course.distanceToWorldX(distance));near(p.projectile.worldPosition.y,course.waterY+.12);near(p.projectile.worldPosition.z,z);
-        assert.equal(p.projectile.components[0].material.name,'RuntimeEntertainmentWaterline');
+        const direction=h.Vec3.normalize(new h.Vec3(),h.Vec3.subtract(new h.Vec3(),p.flights[0].projectile.worldPosition,muzzle));assert.ok(h.Vec3.dot(axis,direction)>.99999999);
+        p.update(.05,shot,0);near(p.flights[0].projectile.worldPosition.x,course.distanceToWorldX(distance));near(p.flights[0].projectile.worldPosition.y,course.waterY+.12);near(p.flights[0].projectile.worldPosition.z,z);
+        assert.equal(p.flights[0].projectile.components[0].material.name,'RuntimeEntertainmentWaterline');
     }
     h.runtime.dispose();assert.equal(h.layers.size,0);
 });
@@ -83,8 +83,8 @@ test('调短或调长提醒时间时，水球按该发的实际时长飞行而�
     const h=cannon();h.runtime.prepare(assert.ifError);const p=h.runtime.cannon.presentation;
     for(const warningSeconds of [.8,1.25,3]){
         const shot={strikeId:1,targetDistance:40,targetZ:0,warningSeconds,revision:1};p.showLaunch(shot);p.update(.05,shot,warningSeconds/2);
-        near(p.projectile.worldPosition.x,(p.source.x+p.target.x)/2);near(p.projectile.worldPosition.z,(p.source.z+p.target.z)/2);
-        near(p.projectile.worldPosition.y,(p.source.y+p.target.y)/2+5.8);
+        near(p.flights[0].projectile.worldPosition.x,(p.flights[0].source.x+p.flights[0].target.x)/2);near(p.flights[0].projectile.worldPosition.z,(p.flights[0].source.z+p.flights[0].target.z)/2);
+        near(p.flights[0].projectile.worldPosition.y,(p.flights[0].source.y+p.flights[0].target.y)/2+5.8);
     }h.runtime.dispose();
 });
 

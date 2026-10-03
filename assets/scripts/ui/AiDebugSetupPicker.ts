@@ -1,5 +1,5 @@
 import { buildEntertainmentLightPlan } from '../entertainment/EntertainmentLightPlan';
-import { ENTERTAINMENT_DEBUG_CHOICES, entertainmentGeyserIntensity, entertainmentGiantWaveIntensity, normalizeEntertainmentDebugMode } from '../entertainment/EntertainmentDebugPlan';
+import { buildCannonDebugPlan, ENTERTAINMENT_DEBUG_CHOICES, entertainmentGeyserIntensity, entertainmentGiantWaveIntensity, normalizeEntertainmentDebugMode } from '../entertainment/EntertainmentDebugPlan';
 import { geyserSpec } from '../entertainment/GeyserBrawlRules';
 import { giantWaveSpec } from '../entertainment/GiantWaveRules';
 import { BlockInputEvents, Label, Node, UITransform, view } from 'cc';
@@ -93,6 +93,7 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
     const modeText = () => `${getRaceModeTitle(setup.mode)} ${getRaceDistance(setup.mode)}米`;
     const mode = button('Mode', modeText(), -195, -82, 360, () => {
         setup.mode = modes[(modes.indexOf(setup.mode) + 1) % modes.length]; write(mode, modeText());
+        updateHint();
     });
     const seed = button('Seed', `种子 ${setup.seed}`, -195, -146, 360, () => {
         setup.seed = setup.seed === 20260913 ? 42 : setup.seed === 42 ? 12345 : setup.seed === 12345 && setup.entertainment === 'light-mix' ? 6 : 20260913;
@@ -108,6 +109,11 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
     const hint = makeLabel('Hint', root, '等级与智力应用于全部 AI，玩家使用自己的角色属性', 18, uiColor(190, 210, 220)).getComponent(Label);
     hint.node.setPosition(0, -210, 0);
     const updateHint = () => {
+        const cannonPlan = !bossMode ? buildCannonDebugPlan(setup.entertainment, getRaceDistance(setup.mode)) : null;
+        if (cannonPlan) {
+            write(hint, `最多 ${cannonPlan.triggers.length} 发，同一时间最多 ${cannonPlan.maxConcurrentLaunches} 颗水球${cannonPlan.maxConcurrentLaunches === 2 ? `，间隔至少 ${cannonPlan.minimumLaunchIntervalSeconds} 秒` : ''}；落点提前提醒`);
+            return;
+        }
         const geyserLevel = !bossMode ? entertainmentGeyserIntensity(setup.entertainment) : null;
         if (geyserLevel) {
             const spec = geyserSpec(geyserLevel);

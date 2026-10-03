@@ -62,6 +62,44 @@ test('测试入口反复切换角色等级赛程不增加节点或监听，启�
     }
 });
 
+test('双发入口反复切换档位与赛程仅刷新已有提示，种子不变更提示，启动保存对应档位', () => {
+    const { Node, Label, load } = fixture();
+    const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
+    const { getAiDebugSetup, setAiDebugSetup } = load('core/GameLaunchOptions');
+    const { buildCannonDebugPlan, ENTERTAINMENT_DEBUG_CHOICES } = load('entertainment/EntertainmentDebugPlan');
+    const { getRaceDistance } = load('core/GameBalance');
+    const raceModes = ['beginner', 'competitive', 'championship'];
+    setAiDebugSetup({ entertainment: 'none' });
+    const root = new Node('root'); let starts = 0;
+    buildAiDebugSetupPicker(root, () => starts++, () => {});
+    const all = n => [n, ...n.children.flatMap(all)], initial = all(root), listeners = initial.map(n => n.events.size);
+    const hint = root.getChildByName('Hint').getComponent(Label), seen = new Set();
+    let modeIndex = raceModes.indexOf(getAiDebugSetup().mode);
+    for (let i = 0; i < ENTERTAINMENT_DEBUG_CHOICES.length * 10; i++) {
+        const choice = ENTERTAINMENT_DEBUG_CHOICES[i % ENTERTAINMENT_DEBUG_CHOICES.length];
+        if (choice.id === 'cannon-four' || choice.id === 'cannon-five') {
+            seen.add(choice.id);
+            for (let j = 0; j < raceModes.length; j++) {
+                const plan = buildCannonDebugPlan(choice.id, getRaceDistance(raceModes[modeIndex]));
+                assert.equal(hint.string, `最多 ${plan.triggers.length} 发，同一时间最多 2 颗水球，间隔至少 ${plan.minimumLaunchIntervalSeconds} 秒；落点提前提醒`);
+                const current = hint.string;
+                Object.defineProperty(hint, 'string', { configurable: true, get: () => current, set: () => assert.fail('相同炮击提示不得重写') });
+                root.getChildByName('Seed').click();
+                Object.defineProperty(hint, 'string', { configurable: true, writable: true, value: current });
+                root.getChildByName('Mode').click(); modeIndex = (modeIndex + 1) % raceModes.length;
+            }
+        }
+        root.getChildByName('Entertainment').click();
+        assert.deepEqual(all(root), initial); assert.deepEqual(initial.map(n => n.events.size), listeners);
+        assert.equal(starts, 0);
+    }
+    assert.equal(seen.size, 2);
+    const target = ENTERTAINMENT_DEBUG_CHOICES.findIndex(c => c.id === 'cannon-five');
+    for (let i = 0; i < target; i++) root.getChildByName('Entertainment').click();
+    root.getChildByName('Tier4').click(); root.getChildByName('Tier4').click();
+    assert.equal(starts, 1); assert.equal(getAiDebugSetup().entertainment, 'cannon-five');
+});
+
 test('真实登录入口保持弹窗专用层，面板居中适配，遮挡覆盖屏幕，关闭清理窗口监听', () => {
     const h = fixture(), { Node, load, view, listeners, UITransform, BlockInputEvents } = h;
     const tsPath = process.env.TYPESCRIPT_PATH || process.env.PATH.split(path.delimiter)
