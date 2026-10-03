@@ -27,7 +27,7 @@ function waterLayers() {
     return owner;
 }
 
-function renderingFixture() {
+function renderingFixture(waterY = .125) {
     let materialCount = 0, materialDestroyed = 0, nodeCount = 0;
     class Color { static WHITE = new Color(255, 255, 255, 255); constructor(...rgba) { this.rgba = rgba; } }
     class Vec4 { constructor(x, y, z, w) { Object.assign(this, { x, y, z, w }); } }
@@ -45,6 +45,7 @@ function renderingFixture() {
         constructor(name) {
             this.name = name; this.children = []; this.isValid = true; this.active = true;
             this._layer = 1; this.layerWrites = 0; this.transformWrites = 0;
+            this.position = new h.Vec3(); this.rotation = new h.Quat();
             this.scale = { x: 1, y: 1, z: 1 }; nodeCount++;
         }
         get layer() { return this._layer; }
@@ -53,8 +54,8 @@ function renderingFixture() {
         addComponent() { this.renderer = new MeshRenderer(); return this.renderer; }
         setParent(parent) { this.parent = parent; parent.children.push(this); }
         setScale(x, y, z) { Object.assign(this.scale, { x, y, z }); }
-        setWorldPosition() { this.transformWrites++; }
-        setRotationFromEuler() { this.transformWrites++; }
+        setWorldPosition(x, y, z) { this.position.set(x, y, z); this.transformWrites++; }
+        setRotationFromEuler(x, y, z) { h.Quat.fromEuler(this.rotation, x, y, z); this.transformWrites++; }
         destroy() { this.isValid = false; for (const child of this.children) child.destroy(); }
     }
     const h = createHarness();
@@ -67,9 +68,99 @@ function renderingFixture() {
         } });
     const { FloatingItemRenderer } = h.load(h.root + '/assets/scripts/entertainment/FloatingItemRenderer.ts');
     const layers = waterLayers();
-    const rendering = new FloatingItemRenderer({}, .125, layers);
+    const rendering = new FloatingItemRenderer({}, waterY, layers);
     return { h, layers, rendering, Node, MeshRenderer, counts: () => ({ materialCount, materialDestroyed, nodeCount }) };
 }
+
+// 读取实际交付的 GLB 顶点，再用 Creator 的四元数变换验证是否真正穿过水面。
+function readItemMesh(h, name) {
+    const data = fs.readFileSync(`${h.root}/assets/race/items/${name}.glb`);
+    const jsonLength = data.readUInt32LE(12);
+    const gltf = JSON.parse(data.subarray(20, 20 + jsonLength));
+    const binaryOffset = 28 + jsonLength;
+    const accessor = gltf.accessors[gltf.meshes[0].primitives[0].attributes.POSITION];
+    const view = gltf.bufferViews[accessor.bufferView];
+    assert.equal(accessor.componentType, 5126);
+    assert.equal(accessor.type, 'VEC3');
+    const points = Array.from({ length: accessor.count }, (_, index) => {
+        const offset = binaryOffset + (view.byteOffset || 0) + (accessor.byteOffset || 0)
+            + index * (view.byteStride || 12);
+        return new h.Vec3(data.readFloatLE(offset), data.readFloatLE(offset + 4), data.readFloatLE(offset + 8));
+    });
+    return { name, points };
+}
+
+function waterExtents(f, root, mesh, waterY) {
+    const point = new f.h.Vec3();
+    let min = Infinity, max = -Infinity;
+    for (const source of mesh.points) {
+        f.h.Vec3.multiply(point, source, root.scale);
+        f.h.Vec3.transformQuat(point, point, root.rotation);
+        const height = point.y + root.position.y - waterY;
+        min = Math.min(min, height); max = Math.max(max, height);
+    }
+    return { min, max };
+}
+
+test('六种实际 GLB 在完整漂浮周期与碰撞摆动中都有可见的水上、水下部分', () => {
+    for (const waterY of [.125, -1.4]) {
+        const f = renderingFixture(waterY), world = new f.Node('世界');
+        const course = { waterY, poolWidth: 21, distanceToWorldX: x => x };
+        const bottles = ['ColaBottle', 'CrushedWaterBottle', 'SportDrinkBottle'].map(name => readItemMesh(f.h, name));
+        const tray = readItemMesh(f.h, 'MealTray');
+        const supplies = ['StimulantBottle', 'CalmSlush'].map(name => readItemMesh(f.h, name));
+        const { SupplyRacePresentation } = f.h.load(f.h.root + '/assets/scripts/entertainment/SupplyRacePresentation.ts');
+        const { LitterBrawlPresentation } = f.h.load(f.h.root + '/assets/scripts/entertainment/LitterBrawlPresentation.ts');
+        const supply = new SupplyRacePresentation(world, course, 6,
+            { name: supplies[0].name }, { name: supplies[1].name }, f.rendering);
+        const litter = new LitterBrawlPresentation(world, course, 18, f.rendering, { bottles, tray });
+        const slots = Array.from({ length: 6 }, (_, id) => ({ id, active: true,
+            kind: id % 2 ? 'calm-slush' : 'heartbeat-soda', age: 2, courseX: 20, lateral: id }));
+        const clusters = Array.from({ length: 18 }, (_, id) => ({ id, active: true, phase: 'floating', phaseProgress: 1,
+            generation: 1, kind: id % 2 ? 'soft' : 'rigid', visualVariant: id % 3, impactRevision: 0,
+            courseX: 20, lateral: id, throwSide: id % 2 ? 1 : -1 }));
+        const litterNodes = world.children.slice(6);
+        for (const cluster of clusters) cluster.phase = 'falling';
+        litter.update(.05, clusters, true);
+        const landingHeights = litterNodes.map(node => node.position.y);
+        for (const cluster of clusters) cluster.phase = 'floating';
+        litter.update(.05, clusters, true);
+        for (let id = 0; id < litterNodes.length; id++) {
+            assert.ok(Math.abs(litterNodes[id].position.y - landingHeights[id]) < .006,
+                '落水结束到漂浮只能继续正常波动，不能切换成不同高度');
+        }
+        // 覆盖慢波、完整翻滚和多次碰撞；不能只确认材质的 waterLine 属性存在。
+        for (let tick = 0; tick < 1200; tick++) {
+            for (const slot of slots) slot.age = 2 + tick * .05;
+            if (tick % 53 === 0) for (const cluster of clusters) cluster.impactRevision++;
+            supply.update(.05, slots, true); litter.update(.05, clusters, true);
+            for (let id = 0; id < 6; id++) {
+                const mesh = supplies[id % 2];
+                const span = waterExtents(f, world.children[id], mesh, waterY);
+                assert.ok(span.min < -.01 && span.max > .01, `${mesh.name} 在采样 ${tick} 离开水面：${JSON.stringify(span)}`);
+            }
+            for (const node of litterNodes) {
+                const mesh = node.renderer.mesh;
+                const span = waterExtents(f, node, mesh, waterY);
+                assert.ok(span.min < -.01 && span.max > .01, `${mesh.name} 在采样 ${tick} 离开水面：${JSON.stringify(span)}`);
+            }
+        }
+        const floatingHeights = litterNodes.map(node => node.position.y);
+        for (const cluster of clusters) { cluster.phase = 'retiring'; cluster.phaseProgress = 0; }
+        litter.update(.05, clusters, true);
+        for (let id = 0; id < litterNodes.length; id++) {
+            assert.ok(Math.abs(litterNodes[id].position.y - floatingHeights[id]) < .006,
+                '开始下沉时保持同一漂浮高度，不能先向上跳');
+        }
+        for (const cluster of clusters) cluster.phaseProgress = 1;
+        litter.update(.05, clusters, true);
+        for (const node of litterNodes) {
+            assert.ok(waterExtents(f, node, node.renderer.mesh, waterY).max < -.1,
+                '退场末尾模型须完全没入水中再回收');
+        }
+        supply.dispose(); litter.dispose(); f.rendering.dispose();
+    }
+});
 
 test('动态物体及子网格随相机切层；隐藏对象和水下迟到注册一致，注销恢复原层且不重复写', () => {
     const f = renderingFixture(), a = new f.Node('补给'), child = new f.Node('子网格');

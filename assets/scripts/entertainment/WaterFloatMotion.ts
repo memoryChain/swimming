@@ -24,15 +24,23 @@ export const WATER_FLOAT_PROFILES = {
     },
     rigidDebris: {
         angularSpeed: 1.6,
-        amplitude: 0.055,
+        // 小瓶子缩放后的半厚度只有约 6cm，波峰也要保留实际没水部分。
+        amplitude: 0.025,
         secondaryAmplitudeRatio: 0.18,
         secondarySpeedRatio: 0.51,
     },
     softDebris: {
         angularSpeed: 1.45,
-        amplitude: 0.07,
+        amplitude: 0.03,
         secondaryAmplitudeRatio: 0.24,
         secondarySpeedRatio: 0.46,
+    },
+    supply: {
+        // 两个竖立补给模型较高，保留原有起伏，独立于杂物的档位。
+        angularSpeed: 1.6,
+        amplitude: 0.055,
+        secondaryAmplitudeRatio: 0.18,
+        secondarySpeedRatio: 0.51,
     },
 } as const satisfies Record<string, WaterFloatProfile>;
 

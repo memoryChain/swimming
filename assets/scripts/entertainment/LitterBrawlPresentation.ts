@@ -105,7 +105,8 @@ export class LitterBrawlPresentation {
             }
             this.impactPulses[id] = Math.max(0, this.impactPulses[id] - presentationStep);
             const targetX = this.course.distanceToWorldX(cluster.courseX);
-            const targetY = this.course.waterY + 0.08;
+            // GLB 杂物以瓶身／餐盒中心为原点，必须让实体穿过水面，而非整体抬离水面。
+            const targetY = this.course.waterY;
             if (cluster.phase === 'falling') {
                 const t = clamp01(cluster.phaseProgress);
                 // 从看台方向高处抛入，仍消费原权威预警进度与落点。
@@ -116,7 +117,7 @@ export class LitterBrawlPresentation {
                 const airborne = 1 - smoothstep(t);
                 node.setWorldPosition(
                     targetX + Math.sin(t * Math.PI) * cluster.throwSide * 0.65,
-                    targetY + (rigid ? 0.035 : 0.015)
+                    targetY
                         + sampleWaterFloatOffset(this.clock, floatInstancePhase,
                             rigid ? WATER_FLOAT_PROFILES.rigidDebris : WATER_FLOAT_PROFILES.softDebris)
                         + (1 - t) * 5.4 + Math.sin(t * Math.PI) * 1.8,
@@ -155,7 +156,7 @@ export class LitterBrawlPresentation {
                     const rollDirection = cluster.id % 2 === 0 ? 1 : -1;
                     node.setWorldPosition(
                         targetX,
-                        targetY + 0.035
+                        targetY
                             + sampleWaterFloatOffset(
                                 this.clock,
                                 floatInstancePhase,
@@ -180,7 +181,7 @@ export class LitterBrawlPresentation {
                         : 0;
                     node.setWorldPosition(
                         targetX,
-                        targetY + 0.015
+                        targetY
                             + sampleWaterFloatOffset(
                                 this.clock,
                                 floatInstancePhase,

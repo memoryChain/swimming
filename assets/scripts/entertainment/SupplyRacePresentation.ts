@@ -41,7 +41,7 @@ export class SupplyRacePresentation {
             const t = Math.min(1, slot.age / ENTERTAINMENT_DEBUG_TUNING.supplyThrowSeconds);
             const landed = t >= 1;
             node.setWorldPosition(this.course.distanceToWorldX(slot.courseX),
-                this.course.waterY + .08 + (landed ? sampleWaterFloatOffset(slot.age, i * .83, WATER_FLOAT_PROFILES.rigidDebris)
+                this.course.waterY + .08 + (landed ? sampleWaterFloatOffset(slot.age, i * .83, WATER_FLOAT_PROFILES.supply)
                     : (1 - t) * 4.5 + Math.sin(t * Math.PI) * 1.8),
                 landed ? slot.lateral : slot.lateral * t + (slot.lateral > 0 ? 1 : -1) * (this.course.poolWidth / 2 + 2) * (1 - t));
             node.setRotationFromEuler(landed ? 7 * Math.sin(slot.age * 1.8) : 230 * (1 - t), i * 53 + slot.age * 8, 0);
