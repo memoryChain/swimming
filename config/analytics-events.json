@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 2,
+  "description": "跨平台共用业务事件字段；各平台实现映射至自身上报接口，非平台官方导入文件。侧边栏事件仅适用于支持该入口的平台。",
+  "commonFields": {
+    "build_version": "string",
+    "schema_version": "number",
+    "is_test": "number"
+  },
+  "events": [
+    {
+      "name": "lobby_ready",
+      "description": "冷启动后资源加载完成且大厅首次可操作，仅一次",
+      "fields": {
+        "load_ms": "number",
+        "source": "string"
+      }
+    },
+    {
+      "name": "race_start",
+      "description": "每局倒计时结束并进入出发阶段，仅本地玩家一次",
+      "fields": {
+        "mode": "string",
+        "distance": "number",
+        "character_id": "string",
+        "play_type": "string",
+        "test_type": "string"
+      }
+    },
+    {
+      "name": "race_end",
+      "description": "每局本地玩家一次；单机触壁或最终成绩解析，联机等待主干权威成绩，明确退出单独记录",
+      "fields": {
+        "mode": "string",
+        "distance": "number",
+        "character_id": "string",
+        "play_type": "string",
+        "test_type": "string",
+        "outcome": "string",
+        "time_ms": "number",
+        "placement": "number",
+        "progress_percent": "number"
+      }
+    },
+    {
+      "name": "race_again",
+      "description": "已结束一局后触发原地重赛",
+      "fields": {
+        "mode": "string",
+        "distance": "number",
+        "character_id": "string",
+        "play_type": "string",
+        "test_type": "string"
+      }
+    },
+    {
+      "name": "sidebar_guide_click",
+      "description": "大厅侧边栏引导弹窗打开",
+      "fields": {
+        "entry": "string"
+      }
+    },
+    {
+      "name": "sidebar_jump_result",
+      "description": "跳转调用终态，仅表示跳转结果",
+      "fields": {
+        "entry": "string",
+        "result": "string"
+      }
+    },
+    {
+      "name": "sidebar_return",
+      "description": "最新平台回调或冷启动参数满足真实侧边栏来源",
+      "fields": {
+        "source": "string",
+        "scene": "string"
+      }
+    }
+  ]
+}

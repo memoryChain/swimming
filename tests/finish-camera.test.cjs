@@ -31,7 +31,10 @@ test('真正触壁后使用池内斜侧近景，双向终点及边缘泳道取�
 function flowSetup() {
     const raceManager = {};
     let awards = 0, rewards = 0, state = GameState.FINISHED, resolve;
-    const refs = { raceManager, aiControllers: [], aiSwimmers: [], playerSwimmer: null,
+    const refs = { raceManager, aiControllers: [], aiSwimmers: [], playerSwimmer: {
+        distance: 200, node: { active: true, position: new Vec3() },
+        getCameraUpperBodyWorldPosition: out => out,
+    }, raceCameraDirector: { update() {} },
         debug() {}, showFinishRank() {}, clearFinishRanks() {},
         getState: () => state, setState: value => { state = value; },
         resolveNetLeaderboard: (_, done) => { resolve = done; },
@@ -43,20 +46,20 @@ function flowSetup() {
     return { flow, finish, resolve: () => resolve([row]), awards: () => awards, rewards: () => rewards };
 }
 
-test('最后到达也保留两秒近景，只展示一次领奖，等待网络结果不重复计时', () => {
-    const s = flowSetup(); s.finish(); s.resolve();
+test('最后到达也保留两秒近景，只展示一次领奖，等待网络结果不重复计时', async () => {
+    const s = flowSetup(); s.finish(); s.resolve(); await Promise.resolve();
     assert.equal(s.rewards(), 1, '镜头停留不延迟奖励结算');
     s.flow.updateRaceCamera(1.9); assert.equal(s.awards(), 0);
     s.flow.updateRaceCamera(0.11); assert.equal(s.awards(), 1);
     s.flow.updateRaceCamera(3); assert.equal(s.awards(), 1);
-    const late = flowSetup(); late.finish(); late.flow.updateRaceCamera(3); late.resolve();
+    const late = flowSetup(); late.finish(); late.flow.updateRaceCamera(3); late.resolve(); await Promise.resolve();
     assert.equal(late.awards(), 1);
 });
 
-test('退出取消待展示结果及尚未返回的网络回调', () => {
+test('退出取消待展示结果及尚未返回的网络回调', async () => {
     for (const resolved of [true, false]) {
-        const s = flowSetup(); s.finish(); if (resolved) s.resolve();
-        s.flow.clearRaceManagerCallbacks(); if (!resolved) s.resolve();
+        const s = flowSetup(); s.finish(); if (resolved) { s.resolve(); await Promise.resolve(); }
+        s.flow.clearRaceManagerCallbacks(); if (!resolved) { s.resolve(); await Promise.resolve(); }
         s.flow.updateRaceCamera(3); assert.equal(s.awards(), 0);
     }
 });

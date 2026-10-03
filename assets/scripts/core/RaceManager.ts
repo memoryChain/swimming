@@ -51,6 +51,8 @@ export class RaceManager extends Component {
     public onFinishCountdownTick: (value: number) => void = null;
     public onDiveReady: () => void = null;
 
+    get elapsedSeconds(): number { return this._raceTimer; }
+
     private _state = GameState.READY;
     private _countdownTimer = 0;
     private _raceTimer = 0;

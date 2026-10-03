@@ -34,6 +34,7 @@ import {
 } from 'cc';
 import { DEV } from 'cc/env';
 import { GameFlowController } from '../app/GameFlowController';
+import { gameAnalytics } from '../platform/PlatformAnalytics';
 import { MusicManager } from '../app/MusicManager';
 import { PlayerConditionModel } from '../condition/PlayerConditionModel';
 import { AiConditionModel } from '../condition/AiConditionModel';
@@ -841,6 +842,7 @@ export class GameManager extends Component {
             return;
         }
         this._isReturningToLogin = true;
+        this._gameFlow?.recordPlayerExit();
         this._raceLoading?.cancel();
         LoadingOverlay.hide();
         if (!this._roomMode && getSoloRaceTicket()) { setReturnToLobby(true); markSoloReturn(); }
@@ -967,6 +969,14 @@ export class GameManager extends Component {
 
     private createGameFlow(): GameFlowController {
         return new GameFlowController({
+            analytics: gameAnalytics().createRaceTracker(),
+            analyticsContext: () => this._tutorialMode ? null : ({
+                mode: getRaceDifficultyConfig().id,
+                distance: getRaceDistance(),
+                character_id: getPlayerCharacterSelection().characterId,
+                play_type: this._netSession ? 'network' : 'local',
+                test_type: this._aiDebugMode ? 'ai_debug' : 'normal',
+            }),
             raceManager: this._raceManager,
             playerSwimmer: this._playerSwimmer,
             aiSwimmers: this._aiSwimmers,

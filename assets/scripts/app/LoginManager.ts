@@ -18,6 +18,7 @@ import { RoomFlow } from '../ui/RoomFlow';
 import { getUILayer, UILayer } from '../ui/UILayers';
 import { ensureLogin } from '../platform/PlatformSession';
 import { platform } from '../platform/PlatformManager';
+import { gameAnalytics } from '../platform/PlatformAnalytics';
 import { rewardedAdUnitId } from '../platform/AdConfig';
 import { showToast } from '../ui/Toast';
 import { PlayerData } from '../backend/PlayerData';
@@ -67,6 +68,7 @@ export class LoginManager extends Component {
     private _suspendedForRace = false;
 
     onLoad() {
+        gameAnalytics();
         const startup = takeStartupHandoff(this.node);
         this._lobbyCover = startup?.cover ?? null;
         const canvasNode = this.findCanvasNode();
@@ -304,6 +306,7 @@ export class LoginManager extends Component {
             if (this._loginUiRoot?.isValid) this._loginUiRoot.active = false;
             this._prepareRaceFlow?.playReadyEntrance();
             this._lobbyCover?.dispose(); this._lobbyCover = null;
+            gameAnalytics().reportLobbyReady();
 
         } catch (error) {
             if (this._lobbyLoading !== loading || this._destroyed) return;

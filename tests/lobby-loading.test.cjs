@@ -63,6 +63,7 @@ function loginHarness({ deferResources = false } = {}) {
     }
     const Login = methods('assets/scripts/app/LoginManager.ts', ['openPrepareRace', 'prepareLobby', 'cancelLobbyLoading'], {
         UiAssetBarrier: h.UiAssetBarrier, StartupLoadingCover: Cover, PlayerData,
+        gameAnalytics: () => ({ reportLobbyReady() { calls.push('analytics-ready'); } }),
         STARTUP_COPY: { loadingProfile: '存档', loadingBundle: '分包', downloadingBundle: '下载', loadingUi: '界面', preparingView: '画面' },
         loadRaceBundle(done, progress) { h.downloadProgress = progress; if (deferResources) resources.then(() => done(null)); else done(null); },
         prepareProjectUiFonts() { requests.push(h.trackUiCallback(() => {}, error => error)); }, console: { warn() {} },
@@ -92,7 +93,7 @@ test('真实登录交接保留首屏并防连点，存档、图片、角色全�
     m._prepareRaceFlow.presentationReady = true;
     h.frame(); h.frame(); await flush();
     assert.equal(m._loginUiRoot.active, false); assert.equal(cover.disposed, true);
-    assert.equal(m._lobbyLoading, null); assert.deepEqual(h.calls, ['head', 'lobby', 'enter']);
+    assert.equal(m._lobbyLoading, null); assert.deepEqual(h.calls, ['head', 'lobby', 'enter', 'analytics-ready']);
 });
 
 test('大厅图片失败保留可重试的登录画面，重试重新构建且旧回调不提前揭开', async () => {
@@ -136,6 +137,7 @@ test('等待存档或模型时被邀请/销毁打断，迟到回调不创建大�
         h.resolveProfile(); h.requests.forEach(done => done()); await flush();
         assert.equal(m._lobbyLoading, null); assert.equal(cover.disposed, true);
         assert.equal(h.hooks.size, 0); assert.equal(h.calls.includes('enter'), false);
+        assert.equal(h.calls.includes('analytics-ready'), false);
         if (!mounted) assert.deepEqual(h.calls, []);
     }
 });
