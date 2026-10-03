@@ -1,4 +1,4 @@
-import { Color, gfx, Material, Mesh, MeshRenderer, Node, Vec3 } from 'cc';
+import { Color, EffectAsset, gfx, Material, Mesh, MeshRenderer, Node, Vec3 } from 'cc';
 import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { CannonImpact, CannonLaunch } from './CannonBrawlController';
 import { FloatingItemLayers, FloatingItemRenderer } from './FloatingItemRenderer';
@@ -30,7 +30,7 @@ export class CannonBrawlPresentation {
     constructor(private readonly world: Node, private readonly course: RaceCourseLayout,
         meshes: readonly Mesh[], private readonly splashes: SprayBuoySplashPool,
         private readonly rendering: FloatingItemRenderer, layers: FloatingItemLayers | null) {
-        this.bodyMaterial = vertexMaterial('CannonBody', false);
+        this.bodyMaterial = cannonBodyMaterial(rendering.effect);
         this.warningMaterial = vertexMaterial('CannonWarning', true);
         try {
             const midpoint = (course.startX + course.finishX) * .5;
@@ -132,11 +132,21 @@ export class CannonBrawlPresentation {
     }
     private setActive(n: Node | null, active: boolean): void { if (n?.isValid && n.active !== active) n.active = active; }
 }
+function cannonBodyMaterial(effect: EffectAsset): Material {
+    const material = new Material();
+    // 复用已加载的场馆无光照效果。普通分支直接读取线性顶点色，
+    // 不启用高度明暗或水线，也不再使用 builtin-unlit 的 sRGB 转换。
+    material.initialize({ effectAsset: effect,
+        defines: { USE_TEXTURE: false, USE_POOLSIDE_WATERLINE: false, USE_FLOATING_VERTEX_COLOR: false },
+        states: { rasterizerState: { cullMode: gfx.CullMode.BACK },
+            depthStencilState: { depthTest: true, depthWrite: true } } });
+    material.name = 'CannonBody'; material.setProperty('mainColor', Color.WHITE); return material;
+}
 function vertexMaterial(name: string, transparent: boolean): Material {
     const material = new Material();
     material.initialize({ effectName: 'builtin-unlit', technique: transparent ? 1 : 0,
         defines: { USE_VERTEX_COLOR: true }, states: {
-            // 炮台与原版一致：反绕序描边已并进网格，必须背面剔除。
+            // 落点提醒沿用原来的双面透明材质和颜色处理。
             rasterizerState: { cullMode: transparent ? gfx.CullMode.NONE : gfx.CullMode.BACK },
             depthStencilState: { depthTest: true, depthWrite: !transparent },
         } });

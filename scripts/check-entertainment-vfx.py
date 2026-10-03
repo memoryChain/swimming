@@ -1,4 +1,4 @@
-"""核对巨浪／喷泉／浮标喷水／炮击 GLB 与原有效果一致，按需检查 Creator 实际导入字节和资源路径。"""
+"""核对巨浪／喷泉／浮标喷水／炮击 GLB 与已确认参考数据一致，按需检查 Creator 实际导入字节和资源路径。"""
 import argparse
 import importlib.util
 import json
@@ -98,4 +98,4 @@ if __name__ == '__main__':
         for name in reference: validate_imported(name, args.directory, args.library)
         print('Creator 实际导入字节、Prefab 路径及变换检查通过')
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    print('巨浪／喷泉／浮标喷水／炮击 GLB 与原有效果的形状和线性顶点色一致')
+    print('巨浪／喷泉／浮标喷水／炮击 GLB 与已确认参考数据的形状和线性顶点色一致')

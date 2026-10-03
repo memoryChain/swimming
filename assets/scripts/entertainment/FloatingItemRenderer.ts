@@ -10,7 +10,7 @@ export class FloatingItemRenderer {
     private readonly bindings = new Map<Node, () => void>();
     private disposed = false;
 
-    constructor(effect: EffectAsset, waterY: number, private readonly layers: FloatingItemLayers | null) {
+    constructor(readonly effect: EffectAsset, waterY: number, private readonly layers: FloatingItemLayers | null) {
         this.material = new Material();
         this.material.initialize({
             effectAsset: effect,
