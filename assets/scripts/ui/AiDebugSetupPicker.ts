@@ -111,7 +111,7 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
     const updateHint = () => {
         const cannonPlan = !bossMode ? buildCannonDebugPlan(setup.entertainment, getRaceDistance(setup.mode)) : null;
         if (cannonPlan) {
-            write(hint, `最多 ${cannonPlan.triggers.length} 发，同一时间最多 ${cannonPlan.maxConcurrentLaunches} 颗水球${cannonPlan.maxConcurrentLaunches === 2 ? `，间隔至少 ${cannonPlan.minimumLaunchIntervalSeconds} 秒` : ''}；落点提前提醒`);
+            write(hint, `最多 ${cannonPlan.triggers.length} 发，同一时间最多 ${cannonPlan.maxConcurrentLaunches} 颗水球${cannonPlan.minimumLaunchIntervalSeconds > 0 ? `，间隔至少 ${cannonPlan.minimumLaunchIntervalSeconds} 秒` : ''}；落点提前提醒`);
             return;
         }
         const geyserLevel = !bossMode ? entertainmentGeyserIntensity(setup.entertainment) : null;

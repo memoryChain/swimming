@@ -62,7 +62,7 @@ test('测试入口反复切换角色等级赛程不增加节点或监听，启�
     }
 });
 
-test('双发入口反复切换档位与赛程仅刷新已有提示，种子不变更提示，启动保存对应档位', () => {
+test('炮击五档入口反复切换档位与赛程仅刷新已有提示，种子不变更提示，启动保存对应档位', () => {
     const { Node, Label, load } = fixture();
     const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
     const { getAiDebugSetup, setAiDebugSetup } = load('core/GameLaunchOptions');
@@ -77,11 +77,11 @@ test('双发入口反复切换档位与赛程仅刷新已有提示，种子不�
     let modeIndex = raceModes.indexOf(getAiDebugSetup().mode);
     for (let i = 0; i < ENTERTAINMENT_DEBUG_CHOICES.length * 10; i++) {
         const choice = ENTERTAINMENT_DEBUG_CHOICES[i % ENTERTAINMENT_DEBUG_CHOICES.length];
-        if (choice.id === 'cannon-four' || choice.id === 'cannon-five') {
+        if (['cannon-one', 'cannon-two', 'cannon-three', 'cannon-four', 'cannon-five'].includes(choice.id)) {
             seen.add(choice.id);
             for (let j = 0; j < raceModes.length; j++) {
                 const plan = buildCannonDebugPlan(choice.id, getRaceDistance(raceModes[modeIndex]));
-                assert.equal(hint.string, `最多 ${plan.triggers.length} 发，同一时间最多 2 颗水球，间隔至少 ${plan.minimumLaunchIntervalSeconds} 秒；落点提前提醒`);
+                assert.equal(hint.string, `最多 ${plan.triggers.length} 发，同一时间最多 ${plan.maxConcurrentLaunches} 颗水球，间隔至少 ${plan.minimumLaunchIntervalSeconds} 秒；落点提前提醒`);
                 const current = hint.string;
                 Object.defineProperty(hint, 'string', { configurable: true, get: () => current, set: () => assert.fail('相同炮击提示不得重写') });
                 root.getChildByName('Seed').click();
@@ -93,7 +93,7 @@ test('双发入口反复切换档位与赛程仅刷新已有提示，种子不�
         assert.deepEqual(all(root), initial); assert.deepEqual(initial.map(n => n.events.size), listeners);
         assert.equal(starts, 0);
     }
-    assert.equal(seen.size, 2);
+    assert.equal(seen.size, 5);
     const target = ENTERTAINMENT_DEBUG_CHOICES.findIndex(c => c.id === 'cannon-five');
     for (let i = 0; i < target; i++) root.getChildByName('Entertainment').click();
     root.getChildByName('Tier4').click(); root.getChildByName('Tier4').click();

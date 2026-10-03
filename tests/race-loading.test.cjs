@@ -284,8 +284,8 @@ test('巨浪五档调试资源完成前不开始展示或比赛，失败回到�
     }
 });
 
-test('单双发炮击都等待资源准备，失败不提前开始比赛', async () => {
-    for (const mode of ['cannon', 'cannon-four', 'cannon-five']) for (const fail of [false, true]) {
+test('原单发及炮击五档都等待资源准备，失败不提前开始比赛', async () => {
+    for (const mode of ['cannon', 'cannon-one', 'cannon-two', 'cannon-three', 'cannon-four', 'cannon-five']) for (const fail of [false, true]) {
         const s = raceFixture('ai-debug', false, mode); await s.start();
         s.manager._aiSwimmers[1].cartoonRig.raceReady = true;
         for (let i = 0; i < 5; i++) await s.frame();

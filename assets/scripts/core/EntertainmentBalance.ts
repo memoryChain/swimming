@@ -193,6 +193,9 @@ export const CANNON_BRAWL_TUNING = {
     splashAlongRadius: 3.4, splashLateralRadius: 2.85,
     targetLeadMinimum: 1.7, targetLeadMaximum: 5.2,
     aiSafetyMargin: .7,
+    oneMinimumIntervalSeconds: 3,
+    twoMinimumIntervalSeconds: 2.6,
+    threeMinimumIntervalSeconds: 2.3,
     fourMinimumIntervalSeconds: 1,
     fiveMinimumIntervalSeconds: .85,
 };

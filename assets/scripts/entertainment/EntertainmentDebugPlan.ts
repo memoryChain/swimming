@@ -3,7 +3,7 @@ import type { GeyserIntensity } from './GeyserBrawlRules';
 import type { GiantWaveIntensity } from './GiantWaveRules';
 import { CANNON_BRAWL_TUNING } from '../core/EntertainmentBalance';
 import { CANNON_STRIKE_TRIGGERS } from './CannonBrawlController';
-export type EntertainmentDebugMode = 'none' | 'supplies' | 'debris' | 'supplies-debris' | 'whirlpool' | 'whirlpool-super' | 'geyser' | 'geyser-large' | 'geyser-three' | 'geyser-four' | 'geyser-five' | 'giant-wave-one' | 'giant-wave-two' | 'giant-wave' | 'giant-wave-four' | 'giant-wave-five' | 'light-mix' | 'spray-buoy' | 'cannon' | 'cannon-four' | 'cannon-five';
+export type EntertainmentDebugMode = 'none' | 'supplies' | 'debris' | 'supplies-debris' | 'whirlpool' | 'whirlpool-super' | 'geyser' | 'geyser-large' | 'geyser-three' | 'geyser-four' | 'geyser-five' | 'giant-wave-one' | 'giant-wave-two' | 'giant-wave' | 'giant-wave-four' | 'giant-wave-five' | 'light-mix' | 'spray-buoy' | 'cannon' | 'cannon-one' | 'cannon-two' | 'cannon-three' | 'cannon-four' | 'cannon-five';
 export const ENTERTAINMENT_DEBUG_CHOICES: readonly { id: EntertainmentDebugMode; label: string }[] = [
     { id: 'none', label: '关闭' },
     { id: 'supplies', label: '补给' },
@@ -23,21 +23,40 @@ export const ENTERTAINMENT_DEBUG_CHOICES: readonly { id: EntertainmentDebugMode;
     { id: 'giant-wave-five', label: '巨浪五档' },
     { id: 'spray-buoy', label: '喷雾浮标' },
     { id: 'cannon', label: '单发炮击' },
+    { id: 'cannon-one', label: '一档单发炮击' },
+    { id: 'cannon-two', label: '二档单发炮击' },
+    { id: 'cannon-three', label: '三档单发炮击' },
     { id: 'cannon-four', label: '四档双发炮击' },
     { id: 'cannon-five', label: '五档双发炮击' },
     { id: 'light-mix', label: '低强度组合' },
 ];
 export function normalizeEntertainmentDebugMode(value: unknown): EntertainmentDebugMode {
-    return value === 'supplies' || value === 'debris' || value === 'supplies-debris' || value === 'whirlpool' || value === 'whirlpool-super' || value === 'geyser' || value === 'geyser-large' || value === 'geyser-three' || value === 'geyser-four' || value === 'geyser-five' || value === 'giant-wave-one' || value === 'giant-wave-two' || value === 'giant-wave' || value === 'giant-wave-four' || value === 'giant-wave-five' || value === 'light-mix' || value === 'spray-buoy' || value === 'cannon' || value === 'cannon-four' || value === 'cannon-five' ? value : 'none';
+    return value === 'supplies' || value === 'debris' || value === 'supplies-debris' || value === 'whirlpool' || value === 'whirlpool-super' || value === 'geyser' || value === 'geyser-large' || value === 'geyser-three' || value === 'geyser-four' || value === 'geyser-five' || value === 'giant-wave-one' || value === 'giant-wave-two' || value === 'giant-wave' || value === 'giant-wave-four' || value === 'giant-wave-five' || value === 'light-mix' || value === 'spray-buoy' || value === 'cannon' || value === 'cannon-one' || value === 'cannon-two' || value === 'cannon-three' || value === 'cannon-four' || value === 'cannon-five' ? value : 'none';
 }
 export type CannonDebugPlan = Readonly<{ maxConcurrentLaunches: 1 | 2; minimumLaunchIntervalSeconds: number; triggers: readonly number[] }>;
-/** 沿用来源四、五档发数和每3米触发计划；单发保留已有计划。 */
+/** 五档共用发数映射，调试入口与比赛计划不各自维护规格。 */
+export function entertainmentCannonIntensity(mode: unknown): 1 | 2 | 3 | 4 | 5 | null {
+    switch (mode) {
+        case 'cannon-one': return 1;
+        case 'cannon-two': return 2;
+        case 'cannon-three': return 3;
+        case 'cannon-four': return 4;
+        case 'cannon-five': return 5;
+        default: return null;
+    }
+}
+const CANNON_COUNTS: readonly (readonly [number, number])[] = [[1, 2], [2, 3], [3, 5], [6, 9], [9, 12]];
+/** 沿用来源五档发数和每3米触发计划；原单发保留已有计划。 */
 export function buildCannonDebugPlan(mode: unknown, raceDistance: number): CannonDebugPlan | null {
     if (mode === 'cannon') return { maxConcurrentLaunches: 1, minimumLaunchIntervalSeconds: 0, triggers: CANNON_STRIKE_TRIGGERS };
-    if (mode !== 'cannon-four' && mode !== 'cannon-five') return null;
-    const four = mode === 'cannon-four', count = raceDistance >= 400 ? four ? 9 : 12 : four ? 6 : 9;
-    return { maxConcurrentLaunches: 2,
-        minimumLaunchIntervalSeconds: four ? CANNON_BRAWL_TUNING.fourMinimumIntervalSeconds : CANNON_BRAWL_TUNING.fiveMinimumIntervalSeconds,
+    const level = entertainmentCannonIntensity(mode);
+    if (!level) return null;
+    const count = CANNON_COUNTS[level - 1][raceDistance >= 400 ? 1 : 0];
+    const minimumLaunchIntervalSeconds = level === 1 ? CANNON_BRAWL_TUNING.oneMinimumIntervalSeconds
+        : level === 2 ? CANNON_BRAWL_TUNING.twoMinimumIntervalSeconds
+        : level === 3 ? CANNON_BRAWL_TUNING.threeMinimumIntervalSeconds
+        : level === 4 ? CANNON_BRAWL_TUNING.fourMinimumIntervalSeconds : CANNON_BRAWL_TUNING.fiveMinimumIntervalSeconds;
+    return { maxConcurrentLaunches: level >= 4 ? 2 : 1, minimumLaunchIntervalSeconds,
         triggers: Array.from({ length: count }, (_, i) => 20 + i * 3) };
 }
 /** 一、二档保留旧 id；调试界面和比赛计划消费同一个档位映射。 */
