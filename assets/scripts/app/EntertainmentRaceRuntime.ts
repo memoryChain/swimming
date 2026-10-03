@@ -55,6 +55,7 @@ export class EntertainmentRaceRuntime {
     private giantWave: GiantWaveRaceController | null = null;
     private readonly useGiantWave: boolean;
     private readonly useGeyser: boolean;
+    private readonly geyserIntensity: 1 | 2;
     private readonly seed: number;
     private readonly light: EntertainmentLightPlan | null;
     private leaderDistance = 0;
@@ -75,6 +76,7 @@ export class EntertainmentRaceRuntime {
         this.useSprayBuoy = plan.sprayBuoy;
         this.useGiantWave = plan.giantWave;
         this.useGeyser = plan.geyser; this.seed = seed;
+        this.geyserIntensity = plan.geyserIntensity;
         this.whirlpools = plan.whirlpool ? this.light
             ? buildLightWhirlpoolSpawn(seed, this.light.waterEventDistance, raceDistance, course.courseLength)
             : buildWhirlpoolDebugSpawns(seed, raceDistance, course.courseLength, plan.whirlpoolSelection) : [];
@@ -144,7 +146,7 @@ export class EntertainmentRaceRuntime {
             this.prepareEffectMeshes(GEYSER_PATHS, meshes => {
                 this.geyser = new GeyserRaceController(this.world, this.course, this.racers.map(r => r.swimmer),
                     this.seed, this.raceDistance, { foam: meshes[0], jet: meshes[1], drops: meshes[2] }, this.waterLayers,
-                    this.light?.waterEventDistance ?? null);
+                    this.light?.waterEventDistance ?? null, this.geyserIntensity);
                 for (const racer of this.racers) racer.swimmer.configureEntertainmentGeyser(true);
             }); return;
         }

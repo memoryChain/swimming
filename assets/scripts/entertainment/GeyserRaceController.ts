@@ -4,17 +4,19 @@ import type { ForcedLaunchStart } from '../swimmer/ForcedLaunchModel';
 import { emptyGeyserBodyPose, emptyGeyserContact, sampleGeyserBodyContact, geyserBodyClearance } from '../swimmer/GeyserBodyContact';
 import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { GEYSER_TUNING, geyserBurstOverlap, geyserPhaseAt, geyserSpec, geyserPulseStart, geyserHitId,
-    planGeyserVents, geyserRadiusScale, geyserPulseIndex, geyserWarningSeconds, type GeyserHitStrength, type GeyserVent } from './GeyserBrawlRules';
+    planGeyserVents, geyserRadiusScale, geyserPulseIndex, geyserWarningSeconds, applyGeyserSizes, type GeyserHitStrength, type GeyserVent } from './GeyserBrawlRules';
 import { GeyserBrawlPresentation } from './GeyserBrawlPresentation';
 import type { FloatingItemLayers } from './FloatingItemRenderer';
 import type { GeyserMeshes } from './EntertainmentItemAssets';
+import { selectGeyserLargeMask, type GeyserRouteRacer } from './GeyserBrawlSafety';
+import { isRaceSteeringEnabled } from '../core/GameBalance';
 
 type Patch = { serial: number; anchorDistance: number; endDistance: number; vents: readonly GeyserVent[] };
 const EMPTY_VENTS: readonly GeyserVent[] = [];
 
-/** 普通喷泉独立调试：赛前冻结排布，两个表现槽位反复使用；不承担联机或导演混排。 */
+/** 本地喷泉独立调试：赛前冻结排布和表现池，大喷口仅在启动时检查绕行空间。 */
 export class GeyserRaceController {
-    readonly spec = geyserSpec(1);
+    readonly spec: ReturnType<typeof geyserSpec>;
     private readonly patches: readonly Patch[];
     private readonly visual: GeyserBrawlPresentation;
     private readonly previousDistance: Float64Array;
@@ -33,8 +35,10 @@ export class GeyserRaceController {
     private active = false;
     private _vents: readonly GeyserVent[] = EMPTY_VENTS;
     constructor(parent: Node, private readonly course: RaceCourseLayout,
-        private readonly swimmers: readonly Swimmer[], seed: number, raceDistance: number,
-        meshes: GeyserMeshes, layers: FloatingItemLayers | null = null, singleAnchorDistance: number | null = null) {
+        private readonly swimmers: readonly Swimmer[], private readonly seed: number, raceDistance: number,
+        meshes: GeyserMeshes, layers: FloatingItemLayers | null = null, singleAnchorDistance: number | null = null,
+        private readonly intensity: 1 | 2 = 1) {
+        this.spec = geyserSpec(intensity);
         const patches: Patch[] = [];
         const extent = Math.max(0, Math.abs(course.finishX - course.startX) * .5);
         for (let lap = 0; lap < (singleAnchorDistance === null ? Math.min(8, Math.ceil(raceDistance / course.courseLength)) : 1); lap++) {
@@ -43,7 +47,7 @@ export class GeyserRaceController {
             const anchorDistance = singleAnchorDistance ?? start + 10;
             const x = course.distanceToWorldX(anchorDistance + 7);
             const direction = course.directionAtDistance(anchorDistance + 7);
-            const vents = planGeyserVents(seed, lap + 1, 1, x, 0, extent, course.poolWidth * .5, direction);
+            const vents = planGeyserVents(seed, lap + 1, intensity, x, 0, extent, course.poolWidth * .5, direction);
             patches.push({ serial: lap + 1, anchorDistance, endDistance: (singleAnchorDistance === null ? end : raceDistance) - 4, vents });
         }
         this.patches = patches;
@@ -51,12 +55,14 @@ export class GeyserRaceController {
         this.previousLateral = new Float64Array(swimmers.length);
         this.baseline = new Uint8Array(swimmers.length);
         this.previousBodies = swimmers.map(() => emptyGeyserBodyPose());
-        this.visual = new GeyserBrawlPresentation(parent, course.swimY, 2, meshes, course.waterY, layers);
+        this.visual = new GeyserBrawlPresentation(parent, course.swimY, this.spec.ventCount, meshes, course.waterY, layers);
     }
     get vents(): readonly GeyserVent[] { return this._vents; }
     isBackgroundRowSafe(worldX: number, padding: number): boolean {
         for (const patch of this.patches) for (const vent of patch.vents) {
-            if (Math.abs(worldX - vent.x) <= GEYSER_TUNING.edgeRadius * geyserRadiusScale(vent, GEYSER_TUNING) + padding) return false;
+            // 大口在启动时才选定；背景排布提前按可能的大口留出空间。
+            const scale = this.intensity === 1 ? geyserRadiusScale(vent, GEYSER_TUNING) : GEYSER_TUNING.largeRadiusScale;
+            if (Math.abs(worldX - vent.x) <= GEYSER_TUNING.edgeRadius * scale + padding) return false;
         }
         return true;
     }
@@ -79,7 +85,7 @@ export class GeyserRaceController {
             while (this.nextPatch < this.patches.length && referenceDistance >= this.patches[this.nextPatch].endDistance) this.nextPatch++;
             const patch = this.patches[this.nextPatch];
             if (patch && referenceDistance >= patch.anchorDistance) {
-                this.nextPatch++; this.serial = patch.serial; this._vents = patch.vents;
+                this.nextPatch++; this.serial = patch.serial; this._vents = this.selectVentSizes(patch);
                 this.age = 0; this.stoppedAt = Number.POSITIVE_INFINITY; this.active = true;
                 this.capturePositions();
                 this.visual.update(this.vents, 0, this.spec.pulseCount);
@@ -146,6 +152,26 @@ export class GeyserRaceController {
             swimmer.sampleGeyserBody(this.previousBodies[lane]);
             this.baseline[lane] = swimmer.geyserHitEligible ? 1 : 0;
         }
+    }
+
+    /** 每组只检查一次；不在普通喷泉或持续比赛帧里搜索路线。无可绕行路线就保留小口。 */
+    private selectVentSizes(patch: Patch): readonly GeyserVent[] {
+        if (this.intensity === 1) return patch.vents;
+        const racers: GeyserRouteRacer[] = [];
+        for (const swimmer of this.swimmers) {
+            if (!swimmer.motor.isRacing || !swimmer.node?.isValid || !swimmer.node.active) continue;
+            const x = this.course.distanceToWorldX(swimmer.distance);
+            const step = this.course.distanceToWorldX(swimmer.distance + .5) - x;
+            swimmer.sampleGeyserBody(this.currentBody);
+            racers.push({ x: this.currentBody.x, z: this.currentBody.z,
+                speed: Math.max(0, swimmer.motor.currentSpeed) * Math.abs(step * 2),
+                direction: Math.sign(step) || this.course.direction, heading: swimmer.motor.heading,
+                turnRate: swimmer.motor.headingTurnRate, roll: swimmer.netAxialRoll,
+                bodyScale: swimmer.geyserBodyScale, steeringEnabled: isRaceSteeringEnabled() });
+        }
+        const safety = selectGeyserLargeMask(this.seed, patch.serial, this.intensity, patch.vents,
+            this.course.poolWidth * .5, racers, [], GEYSER_TUNING);
+        return applyGeyserSizes(patch.vents, safety.mask, true);
     }
 
     private resolveHits(fromAge: number, toAge: number): void {

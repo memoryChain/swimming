@@ -80,3 +80,6 @@
 - [巨浪与喷泉改为 Blender 资源，保持原有效果](分支审查/2026-10-03-巨浪与喷泉Blender资源转换.zh.md)
 
 - [butterfly 第九批：低强度娱乐组合](分支审查/2026-10-03-butterfly-第九批低强度组合调试整合.zh.md)
+- [butterfly 第十批：喷雾浮标与扶圈恢复](分支审查/2026-10-03-butterfly-第十批喷雾浮标与扶圈恢复.zh.md)
+- [butterfly 主干功能回归复查](分支审查/2026-10-03-butterfly-主干功能回归复查.zh.md)
+- [butterfly 第十一批：大喷泉混排](分支审查/2026-10-03-butterfly-第十一批大喷泉混排.zh.md)
