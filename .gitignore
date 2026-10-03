@@ -41,6 +41,9 @@ sceneresource/*.blendbak
 sceneresource/*.venuebak
 sceneresource/**/__pycache__/
 sceneresource/*.tmp.png
+modelresource/**/*.blend1
+modelresource/**/*.blendbak
+modelresource/**/*.tmp.png
 
 # Local tooling downloads
 tools/blender-portable/

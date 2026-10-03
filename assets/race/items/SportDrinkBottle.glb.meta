@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "eb6beefb-d868-4752-90e0-6d79385d349a",
+  "files": [],
+  "subMetas": {
+    "8c3e8": {
+      "importer": "gltf-mesh",
+      "uuid": "eb6beefb-d868-4752-90e0-6d79385d349a@8c3e8",
+      "displayName": "",
+      "id": "8c3e8",
+      "name": "SportDrinkBottleMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 196
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "d0e92": {
+      "importer": "gltf-material",
+      "uuid": "eb6beefb-d868-4752-90e0-6d79385d349a@d0e92",
+      "displayName": "",
+      "id": "d0e92",
+      "name": "SportDrinkBottleVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "6d721": {
+      "importer": "gltf-scene",
+      "uuid": "eb6beefb-d868-4752-90e0-6d79385d349a@6d721",
+      "displayName": "",
+      "id": "6d721",
+      "name": "SportDrinkBottle.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "eb6beefb-d868-4752-90e0-6d79385d349a@8c3e8"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "eb6beefb-d868-4752-90e0-6d79385d349a@d0e92"
+      ],
+      "scenes": [
+        "eb6beefb-d868-4752-90e0-6d79385d349a@6d721"
+      ]
+    }
+  }
+}

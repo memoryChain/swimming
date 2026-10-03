@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "2562007d-6473-42aa-ac9b-fa5eb94d1ba4",
+  "files": [],
+  "subMetas": {
+    "daebf": {
+      "importer": "gltf-mesh",
+      "uuid": "2562007d-6473-42aa-ac9b-fa5eb94d1ba4@daebf",
+      "displayName": "",
+      "id": "daebf",
+      "name": "MealTrayMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 144
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "8b198": {
+      "importer": "gltf-material",
+      "uuid": "2562007d-6473-42aa-ac9b-fa5eb94d1ba4@8b198",
+      "displayName": "",
+      "id": "8b198",
+      "name": "MealTrayVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "eaee2": {
+      "importer": "gltf-scene",
+      "uuid": "2562007d-6473-42aa-ac9b-fa5eb94d1ba4@eaee2",
+      "displayName": "",
+      "id": "eaee2",
+      "name": "MealTray.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "2562007d-6473-42aa-ac9b-fa5eb94d1ba4@daebf"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "2562007d-6473-42aa-ac9b-fa5eb94d1ba4@8b198"
+      ],
+      "scenes": [
+        "2562007d-6473-42aa-ac9b-fa5eb94d1ba4@eaee2"
+      ]
+    }
+  }
+}

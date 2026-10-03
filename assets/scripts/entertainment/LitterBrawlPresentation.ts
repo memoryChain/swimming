@@ -1,7 +1,7 @@
-import { Mesh, MeshRenderer, Node, utils } from 'cc';
+import { Mesh, MeshRenderer, Node } from 'cc';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { LitterClusterState } from './LitterBrawlController';
-import { buildBottleLitterGeometry, buildMealTrayLitterGeometry } from './LitterDebrisGeometry';
+import type { EntertainmentDebrisMeshes } from './EntertainmentItemAssets';
 import { sampleWaterFloatOffset, WATER_FLOAT_PROFILES } from './WaterFloatMotion';
 import { FloatingItemRenderer } from './FloatingItemRenderer';
 
@@ -17,8 +17,8 @@ export class LitterBrawlPresentation {
     private readonly phases: Array<LitterClusterState['phase'] | null> = [];
     private readonly impactRevisions: number[] = [];
     private readonly impactPulses: number[] = [];
-    private readonly bottleMeshes: Mesh[] = [];
-    private trayMesh: Mesh | null = null;
+    private readonly bottleMeshes: readonly [Mesh, Mesh, Mesh];
+    private readonly trayMesh: Mesh;
     private elapsed = PRESENTATION_INTERVAL;
     private clock = 0;
     private visible = true;
@@ -29,13 +29,11 @@ export class LitterBrawlPresentation {
         private readonly course: RaceCourseLayout,
         clusterCount: number,
         private readonly rendering: FloatingItemRenderer,
+        meshes: EntertainmentDebrisMeshes,
     ) {
+        this.bottleMeshes = meshes.bottles;
+        this.trayMesh = meshes.tray;
         if (!worldRoot?.isValid) return;
-        for (let variant = 0; variant < 3; variant++) {
-            this.bottleMeshes.push(utils.createMesh(buildBottleLitterGeometry(variant)));
-        }
-        const trayMesh = utils.createMesh(buildMealTrayLitterGeometry());
-        this.trayMesh = trayMesh;
         for (let id = 0; id < clusterCount; id++) {
             const node = this.makeMeshNode(`LitterCluster${id}`, this.bottleMeshes[id % 3]);
             node.active = false;
@@ -211,9 +209,7 @@ export class LitterBrawlPresentation {
         }
         this.clusterNodes.length = 0;
         this.clusterRenderers.length = 0;
-        for (const mesh of this.bottleMeshes) mesh.destroy();
-        this.bottleMeshes.length = 0;
-        this.trayMesh?.destroy();
+        // GLB Mesh 属于 race Bundle；只释放本实例的节点，重赛继续复用资源。
     }
 
     private hideAll(): void {

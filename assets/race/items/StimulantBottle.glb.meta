@@ -2,18 +2,18 @@
   "ver": "2.3.14",
   "importer": "gltf",
   "imported": true,
-  "uuid": "988fb449-6ef7-430c-9a6d-7e480294457f",
+  "uuid": "2a623d89-1c89-4b0b-96ce-0c1f4a895036",
   "files": [],
   "subMetas": {
-    "c4dc0": {
+    "f5ff4": {
       "importer": "gltf-mesh",
-      "uuid": "988fb449-6ef7-430c-9a6d-7e480294457f@c4dc0",
+      "uuid": "2a623d89-1c89-4b0b-96ce-0c1f4a895036@f5ff4",
       "displayName": "",
-      "id": "c4dc0",
-      "name": "CalmSlushMesh.mesh",
+      "id": "f5ff4",
+      "name": "StimulantPotionMesh.mesh",
       "userData": {
         "gltfIndex": 0,
-        "triangleCount": 256
+        "triangleCount": 320
       },
       "ver": "1.1.1",
       "imported": true,
@@ -23,12 +23,12 @@
       ],
       "subMetas": {}
     },
-    "bf0b2": {
+    "b9684": {
       "importer": "gltf-material",
-      "uuid": "988fb449-6ef7-430c-9a6d-7e480294457f@bf0b2",
+      "uuid": "2a623d89-1c89-4b0b-96ce-0c1f4a895036@b9684",
       "displayName": "",
-      "id": "bf0b2",
-      "name": "CalmSlushVertexColor.material",
+      "id": "b9684",
+      "name": "StimulantVertexColor.material",
       "userData": {
         "gltfIndex": 0
       },
@@ -39,12 +39,12 @@
       ],
       "subMetas": {}
     },
-    "d82fc": {
+    "96f15f": {
       "importer": "gltf-scene",
-      "uuid": "988fb449-6ef7-430c-9a6d-7e480294457f@d82fc",
+      "uuid": "2a623d89-1c89-4b0b-96ce-0c1f4a895036@96f15f",
       "displayName": "",
-      "id": "d82fc",
-      "name": "CalmSlush.prefab",
+      "id": "96f15f",
+      "name": "StimulantBottle.prefab",
       "userData": {
         "gltfIndex": 0
       },
@@ -78,15 +78,15 @@
     },
     "assetFinder": {
       "meshes": [
-        "988fb449-6ef7-430c-9a6d-7e480294457f@c4dc0"
+        "2a623d89-1c89-4b0b-96ce-0c1f4a895036@f5ff4"
       ],
       "skeletons": [],
       "textures": [],
       "materials": [
-        "988fb449-6ef7-430c-9a6d-7e480294457f@bf0b2"
+        "2a623d89-1c89-4b0b-96ce-0c1f4a895036@b9684"
       ],
       "scenes": [
-        "988fb449-6ef7-430c-9a6d-7e480294457f@d82fc"
+        "2a623d89-1c89-4b0b-96ce-0c1f4a895036@96f15f"
       ]
     }
   }

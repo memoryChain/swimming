@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "d3a318c0-0b80-4b88-a31f-4cc6245c117e",
+  "files": [],
+  "subMetas": {
+    "4b3c0": {
+      "importer": "gltf-mesh",
+      "uuid": "d3a318c0-0b80-4b88-a31f-4cc6245c117e@4b3c0",
+      "displayName": "",
+      "id": "4b3c0",
+      "name": "ColaBottleMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 236
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "60d41": {
+      "importer": "gltf-material",
+      "uuid": "d3a318c0-0b80-4b88-a31f-4cc6245c117e@60d41",
+      "displayName": "",
+      "id": "60d41",
+      "name": "ColaBottleVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "347eb": {
+      "importer": "gltf-scene",
+      "uuid": "d3a318c0-0b80-4b88-a31f-4cc6245c117e@347eb",
+      "displayName": "",
+      "id": "347eb",
+      "name": "ColaBottle.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "d3a318c0-0b80-4b88-a31f-4cc6245c117e@4b3c0"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "d3a318c0-0b80-4b88-a31f-4cc6245c117e@60d41"
+      ],
+      "scenes": [
+        "d3a318c0-0b80-4b88-a31f-4cc6245c117e@347eb"
+      ]
+    }
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "8a6a0814-b1dc-4c9a-b64e-caa22aba3805",
+  "files": [],
+  "subMetas": {
+    "dab63": {
+      "importer": "gltf-mesh",
+      "uuid": "8a6a0814-b1dc-4c9a-b64e-caa22aba3805@dab63",
+      "displayName": "",
+      "id": "dab63",
+      "name": "CrushedWaterBottleMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 172
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "2ed10": {
+      "importer": "gltf-material",
+      "uuid": "8a6a0814-b1dc-4c9a-b64e-caa22aba3805@2ed10",
+      "displayName": "",
+      "id": "2ed10",
+      "name": "CrushedWaterBottleVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "ffa32": {
+      "importer": "gltf-scene",
+      "uuid": "8a6a0814-b1dc-4c9a-b64e-caa22aba3805@ffa32",
+      "displayName": "",
+      "id": "ffa32",
+      "name": "CrushedWaterBottle.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "8a6a0814-b1dc-4c9a-b64e-caa22aba3805@dab63"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "8a6a0814-b1dc-4c9a-b64e-caa22aba3805@2ed10"
+      ],
+      "scenes": [
+        "8a6a0814-b1dc-4c9a-b64e-caa22aba3805@ffa32"
+      ]
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import { EffectAsset, Node, Prefab } from 'cc';
+import { EffectAsset, Mesh, Node, Prefab } from 'cc';
 import { GameState } from '../core/GameConstants';
 import { laneCenterZ } from '../venue/LaneLayout';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
@@ -16,6 +16,10 @@ import { SupplyRacePresentation } from '../entertainment/SupplyRacePresentation'
 import { LitterBrawlController, LitterRacerState } from '../entertainment/LitterBrawlController';
 import { LitterBrawlPresentation } from '../entertainment/LitterBrawlPresentation';
 import { FloatingItemRenderer, FloatingItemLayers } from '../entertainment/FloatingItemRenderer';
+import { readEntertainmentItemMesh } from '../entertainment/EntertainmentItemAssets';
+
+const DEBRIS_PATHS = [RESOURCE_PATHS.entertainmentDebris.cola, RESOURCE_PATHS.entertainmentDebris.water,
+    RESOURCE_PATHS.entertainmentDebris.sport, RESOURCE_PATHS.entertainmentDebris.tray] as const;
 
 export type EntertainmentRacerBinding = {
     lane: number;
@@ -83,12 +87,27 @@ export class EntertainmentRaceRuntime {
                 if (error || !effect || !this.world.isValid) { this.finishPrepare(error ?? new Error('漂浮物水线材质缺失')); return; }
                 try {
                     this.rendering = new FloatingItemRenderer(effect, this.course.waterY, this.waterLayers);
-                    if (this.litter) this.litterPresentation = new LitterBrawlPresentation(
-                        this.world, this.course, this.litter.clusters().length, this.rendering);
-                    this.prepareSupplies();
+                    this.prepareDebris();
                 } catch (e) { this.finishPrepare(e instanceof Error ? e : new Error(String(e))); }
             });
         } catch (e) { this.finishPrepare(e instanceof Error ? e : new Error(String(e))); }
+    }
+    private prepareDebris(index = 0, meshes: Mesh[] = []) {
+        if (!this.litter) { this.prepareSupplies(); return; }
+        loadRaceAsset(DEBRIS_PATHS[index], Prefab, (error, prefab) => {
+            if (this.disposed) return;
+            if (error || !prefab || !this.world.isValid) {
+                this.finishPrepare(error ?? new Error(`杂物模型缺失：${DEBRIS_PATHS[index]}`)); return;
+            }
+            try {
+                meshes.push(readEntertainmentItemMesh(prefab, DEBRIS_PATHS[index]));
+                if (index + 1 < DEBRIS_PATHS.length) { this.prepareDebris(index + 1, meshes); return; }
+                this.litterPresentation = new LitterBrawlPresentation(this.world, this.course,
+                    this.litter.clusters().length, this.rendering!,
+                    { bottles: [meshes[0], meshes[1], meshes[2]], tray: meshes[3] });
+                this.prepareSupplies();
+            } catch (e) { this.finishPrepare(e instanceof Error ? e : new Error(String(e))); }
+        });
     }
     private prepareSupplies() {
         if (!this.supplies) { this.finishPrepare(); return; }

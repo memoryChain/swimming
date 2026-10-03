@@ -95,8 +95,8 @@ CCProgram venue-shade-fs %{
     #endif
     // Baked arena dimming: per-vertex brightness multiplier (COLOR_0, linear).
     #if USE_FLOATING_VERTEX_COLOR && !USE_POOLSIDE_WATERLINE
-    // 补给与杂物沿用 builtin-unlit 的顶点色空间，不叠加环境光或圆周明暗。
-    base *= SRGBToLinear(v_color.rgb);
+    // Blender 导出的 glTF COLOR_0 已是线性值，不重复做 sRGB 转换。
+    base *= v_color.rgb;
     alpha *= v_color.a;
     #endif
     #if USE_POOLSIDE_WATERLINE || USE_FLOATING_VERTEX_COLOR

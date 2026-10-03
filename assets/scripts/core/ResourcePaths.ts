@@ -391,6 +391,12 @@ export const RESOURCE_PATHS = {
         soda: 'items/StimulantBottle/StimulantBottle',
         slush: 'items/CalmSlush/CalmSlush',
     },
+    entertainmentDebris: {
+        cola: 'items/ColaBottle/ColaBottle',
+        water: 'items/CrushedWaterBottle/CrushedWaterBottle',
+        sport: 'items/SportDrinkBottle/SportDrinkBottle',
+        tray: 'items/MealTray/MealTray',
+    },
     venuePreloadDirs: ['pool', 'skybox', 'material-effects'] as const,
     uiBundle: { name: 'ui', root: 'ui' },
     uiAtlases: {

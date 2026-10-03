@@ -1,0 +1,249 @@
+{
+  "StimulantBottle": {
+    "sourceParts": [
+      "BottleBody",
+      "DrinkCore",
+      "Neck",
+      "Collar",
+      "Cap",
+      "BadgeFront",
+      "BadgeBack"
+    ],
+    "sourceVertices": 172,
+    "contacts": [
+      {
+        "parts": [
+          "BottleBody",
+          "Neck"
+        ],
+        "surfaceIntersections": 30,
+        "nearestVertexDistance": 0.02
+      },
+      {
+        "parts": [
+          "Neck",
+          "Collar"
+        ],
+        "surfaceIntersections": 52,
+        "nearestVertexDistance": 0.04000001
+      },
+      {
+        "parts": [
+          "Collar",
+          "Cap"
+        ],
+        "surfaceIntersections": 16,
+        "nearestVertexDistance": 1e-08
+      },
+      {
+        "parts": [
+          "BottleBody",
+          "BadgeFront"
+        ],
+        "surfaceIntersections": 6,
+        "nearestVertexDistance": 0.00999999
+      },
+      {
+        "parts": [
+          "BottleBody",
+          "BadgeBack"
+        ],
+        "surfaceIntersections": 6,
+        "nearestVertexDistance": 0.00999999
+      }
+    ],
+    "triangles": 320,
+    "bytes": 21864
+  },
+  "CalmSlush": {
+    "sourceParts": [
+      "Cup",
+      "Slush",
+      "Straw",
+      "SnowflakeFrontVertical",
+      "SnowflakeFrontSlash",
+      "SnowflakeFrontBackslash",
+      "SnowflakeBackVertical",
+      "SnowflakeBackSlash",
+      "SnowflakeBackBackslash"
+    ],
+    "sourceVertices": 146,
+    "contacts": [
+      {
+        "parts": [
+          "Cup",
+          "Slush"
+        ],
+        "surfaceIntersections": 34,
+        "nearestVertexDistance": 0.01581137
+      },
+      {
+        "parts": [
+          "Slush",
+          "Straw"
+        ],
+        "surfaceIntersections": 18,
+        "nearestVertexDistance": 0.02329635
+      },
+      {
+        "parts": [
+          "Cup",
+          "SnowflakeFrontVertical"
+        ],
+        "surfaceIntersections": 7,
+        "nearestVertexDistance": 0.01009861
+      },
+      {
+        "parts": [
+          "Cup",
+          "SnowflakeFrontSlash"
+        ],
+        "surfaceIntersections": 10,
+        "nearestVertexDistance": 0.01455902
+      },
+      {
+        "parts": [
+          "Cup",
+          "SnowflakeFrontBackslash"
+        ],
+        "surfaceIntersections": 10,
+        "nearestVertexDistance": 0.01442016
+      },
+      {
+        "parts": [
+          "Cup",
+          "SnowflakeBackVertical"
+        ],
+        "surfaceIntersections": 7,
+        "nearestVertexDistance": 0.01009861
+      },
+      {
+        "parts": [
+          "Cup",
+          "SnowflakeBackSlash"
+        ],
+        "surfaceIntersections": 10,
+        "nearestVertexDistance": 0.01442016
+      },
+      {
+        "parts": [
+          "Cup",
+          "SnowflakeBackBackslash"
+        ],
+        "surfaceIntersections": 10,
+        "nearestVertexDistance": 0.01455902
+      }
+    ],
+    "triangles": 256,
+    "bytes": 21980
+  },
+  "ColaBottle": {
+    "sourceParts": [
+      "Bottle"
+    ],
+    "sourceVertices": 120,
+    "contacts": [],
+    "triangles": 236,
+    "bytes": 16748
+  },
+  "CrushedWaterBottle": {
+    "sourceParts": [
+      "Bottle"
+    ],
+    "sourceVertices": 88,
+    "contacts": [],
+    "triangles": 172,
+    "bytes": 13056
+  },
+  "SportDrinkBottle": {
+    "sourceParts": [
+      "Bottle"
+    ],
+    "sourceVertices": 100,
+    "contacts": [],
+    "triangles": 196,
+    "bytes": 13952
+  },
+  "MealTray": {
+    "sourceParts": [
+      "TrayBase",
+      "Lid",
+      "RimFront",
+      "RimBack",
+      "RimLeft",
+      "RimRight",
+      "Hinge",
+      "FoodStain",
+      "Divider"
+    ],
+    "sourceVertices": 90,
+    "contacts": [
+      {
+        "parts": [
+          "TrayBase",
+          "Lid"
+        ],
+        "surfaceIntersections": 16,
+        "nearestVertexDistance": 1e-08
+      },
+      {
+        "parts": [
+          "Lid",
+          "FoodStain"
+        ],
+        "surfaceIntersections": 10,
+        "nearestVertexDistance": 1e-08
+      },
+      {
+        "parts": [
+          "Lid",
+          "Divider"
+        ],
+        "surfaceIntersections": 11,
+        "nearestVertexDistance": 4e-08
+      },
+      {
+        "parts": [
+          "TrayBase",
+          "Hinge"
+        ],
+        "surfaceIntersections": 15,
+        "nearestVertexDistance": 0.007
+      },
+      {
+        "parts": [
+          "TrayBase",
+          "RimFront"
+        ],
+        "surfaceIntersections": 9,
+        "nearestVertexDistance": 0.0
+      },
+      {
+        "parts": [
+          "TrayBase",
+          "RimBack"
+        ],
+        "surfaceIntersections": 9,
+        "nearestVertexDistance": 3e-08
+      },
+      {
+        "parts": [
+          "TrayBase",
+          "RimLeft"
+        ],
+        "surfaceIntersections": 10,
+        "nearestVertexDistance": 1e-08
+      },
+      {
+        "parts": [
+          "TrayBase",
+          "RimRight"
+        ],
+        "surfaceIntersections": 10,
+        "nearestVertexDistance": 1e-08
+      }
+    ],
+    "triangles": 144,
+    "bytes": 10744
+  }
+}

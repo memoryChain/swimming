@@ -99,7 +99,9 @@ test('真实补给与杂物池共用单一材质、使用世界水线，20次重
     const { SupplyRacePresentation } = f.h.load(f.h.root + '/assets/scripts/entertainment/SupplyRacePresentation.ts');
     const { LitterBrawlPresentation } = f.h.load(f.h.root + '/assets/scripts/entertainment/LitterBrawlPresentation.ts');
     const supply = new SupplyRacePresentation(world, course, 6, { name: '苏打' }, { name: '冰沙' }, f.rendering);
-    const litter = new LitterBrawlPresentation(world, course, 6, f.rendering);
+    const meshes = Array.from({ length: 4 }, (_, id) => ({ id, destroy() { this.destroyed = true; } }));
+    const litter = new LitterBrawlPresentation(world, course, 6, f.rendering,
+        { bottles: meshes.slice(0, 3), tray: meshes[3] });
     const renderNodes = world.children.flatMap(n => n.renderer ? [n] : n.children);
     assert.equal(renderNodes.length, 18); assert.equal(f.layers._floatingObjects.length, 12);
     const material = renderNodes[0].renderer.sharedMaterials[0];
@@ -128,11 +130,10 @@ test('真实补给与杂物池共用单一材质、使用世界水线，20次重
         assert.deepEqual(f.counts(), initial); assert.equal(material.writes, uniformWrites);
         assert.equal(f.layers._floatingObjects.length, 12);
     }
-    const meshes = [...litter.bottleMeshes, litter.trayMesh];
     supply.dispose(); litter.dispose(); supply.dispose(); litter.dispose();
     assert.equal(f.layers._floatingObjects.length, 0);
     for (const node of renderNodes) assert.equal(node.isValid, false);
-    for (const mesh of meshes) assert.equal(mesh.destroyed, true);
+    for (const mesh of meshes) assert.equal(mesh.destroyed, undefined);
     f.rendering.dispose(); f.rendering.dispose(); assert.equal(f.counts().materialDestroyed, 1);
     f.layers.setUnderwaterViewActive(true); assert.equal(f.layers._floatingObjects.length, 0);
 });

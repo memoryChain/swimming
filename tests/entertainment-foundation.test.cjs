@@ -174,7 +174,9 @@ function runtimeFixture(deferred=false, lanes=1) {
     const pending=[], counts={built:0,destroyed:0,presentationUpdates:0,renderBuilt:0,renderDestroyed:0};
     class Presentation { constructor(){counts.built++;} reset(){} update(){counts.presentationUpdates++;} dispose(){counts.destroyed++;} }
     class Rendering { constructor(){counts.renderBuilt++;} dispose(){counts.renderDestroyed++;} }
-    const h=fixture({ '../core/RaceBundleLoader':{loadRaceAsset(_path,_type,done){if(deferred)pending.push(done);else done(null,{});}},
+    const asset = { data: { isValid: true, children: [], position: {x:0,y:0,z:0}, rotation: {x:0,y:0,z:0,w:1},
+        scale: {x:1,y:1,z:1}, getComponentsInChildren(){return [{mesh:{}}];} } };
+    const h=fixture({ '../core/RaceBundleLoader':{loadRaceAsset(_path,_type,done){if(deferred)pending.push(done);else done(null,asset);}},
         '../entertainment/SupplyRacePresentation':{SupplyRacePresentation:Presentation},
         '../entertainment/LitterBrawlPresentation':{LitterBrawlPresentation:Presentation},
         '../entertainment/FloatingItemRenderer':{FloatingItemRenderer:Rendering} });
@@ -188,7 +190,7 @@ function runtimeFixture(deferred=false, lanes=1) {
         applyConditionCadenceScale(v){motor.setConditionCadenceScale(v);},applyCollisionImpulse(){}};
     const runtime=new EntertainmentRaceRuntime({isValid:true},{laneCount:lanes,laneWidth:2.5,poolWidth:lanes*2.5,courseLength:50},
         'supplies-debris',42,200,[{lane:0,swimmer,condition,ai:{setEntertainmentTargetZ(v){route=v;}}}]);
-    return {runtime,counts,pending,motor,swimmer,GameState,getRoute:()=>route};
+    return {runtime,counts,pending,motor,swimmer,GameState,asset,getRoute:()=>route};
 }
 
 test('娱乐生命周期重复重赛不重建表现，结束清除阻力和路线，退出可重复且迟到加载不建节点', () => {
@@ -239,7 +241,9 @@ test('补给表现使用真实模块，20次重赛不创建额外模型，隐藏
 
 test('任一补给模型加载失败立即清理固定池和 Motor 配置，回调只完成一次', () => {
     const d=runtimeFixture(true);let failed=0;
-    d.runtime.prepare(e=>{assert.ok(e);failed++;});d.pending.shift()(null,{});d.pending.shift()(new Error('模型缺失'));
+    d.runtime.prepare(e=>{assert.ok(e);failed++;});d.pending.shift()(null,{});
+    for(let i=0;i<4;i++)d.pending.shift()(null,d.asset);
+    d.pending.shift()(new Error('模型缺失'));
     assert.equal(failed,1);assert.equal(d.counts.destroyed,1);assert.equal(d.motor._entertainment,null);
     assert.equal(d.counts.renderDestroyed,1);
     d.runtime.dispose();assert.equal(failed,1);
@@ -252,10 +256,41 @@ test('水线效果加载失败不建池；冰沙迟到加载不复活已释放�
     assert.equal(d.motor._entertainment,null);
     const canceled=runtimeFixture(true);let completed=0;
     canceled.runtime.prepare(e=>{assert.ok(e);completed++;});canceled.pending.shift()(null,{});
+    for(let i=0;i<4;i++)canceled.pending.shift()(null,canceled.asset);
     canceled.pending.shift()(null,{});const slush=canceled.pending.shift();
     canceled.runtime.dispose();slush(null,{});
     assert.equal(completed,1);assert.equal(canceled.counts.built,1);assert.equal(canceled.counts.destroyed,1);
     assert.equal(canceled.counts.renderDestroyed,1);
+});
+
+test('四种 GLB 杂物各自加载失败或迟到都清理材质；所有网格就绪前不创建杂物槽位', () => {
+    for(let index=0;index<4;index++) {
+        const d=runtimeFixture(true);let completed=0;
+        d.runtime.prepare(e=>{assert.ok(e);completed++;});d.pending.shift()(null,{});
+        for(let loaded=0;loaded<index;loaded++)d.pending.shift()(null,d.asset);
+        const next=d.pending.shift();
+        assert.equal(d.counts.built,0);
+        next(new Error('杂物缺失'));assert.equal(completed,1);assert.equal(d.counts.built,0);
+        assert.equal(d.counts.renderDestroyed,1);assert.equal(d.motor._entertainment,null);
+        d.runtime.dispose();assert.equal(completed,1);
+        const canceled=runtimeFixture(true);let canceledCount=0;
+        canceled.runtime.prepare(e=>{assert.ok(e);canceledCount++;});canceled.pending.shift()(null,{});
+        for(let loaded=0;loaded<index;loaded++)canceled.pending.shift()(null,canceled.asset);
+        const late=canceled.pending.shift();canceled.runtime.dispose();late(null,canceled.asset);
+        assert.equal(canceledCount,1);assert.equal(canceled.counts.built,0);assert.equal(canceled.counts.renderDestroyed,1);
+    }
+});
+
+test('共享道具网格拒绝多网格和未应用的父级变换，直接复用有效 Mesh', () => {
+    const h=fixture();h.cc.MeshRenderer=class{};
+    const {readEntertainmentItemMesh}=h.load('entertainment/EntertainmentItemAssets');
+    const mesh={}, node={isValid:true,children:[],position:{x:0,y:0,z:0},rotation:{x:0,y:0,z:0,w:1},scale:{x:1,y:1,z:1},
+        getComponentsInChildren(){return [{mesh}];}};
+    assert.equal(readEntertainmentItemMesh({data:node},'test'),mesh);
+    node.children=[{...node,children:[],scale:{x:2,y:1,z:1}}];
+    assert.throws(()=>readEntertainmentItemMesh({data:node},'test'),/应用变换/);
+    node.children=[];node.getComponentsInChildren=()=>[{mesh},{mesh}];
+    assert.throws(()=>readEntertainmentItemMesh({data:node},'test'),/单网格/);
 });
 
 test('娱乐手感参数通过统一调参保存重载，旧配置缺少新键时使用来源默认值', () => {
