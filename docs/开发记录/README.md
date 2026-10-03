@@ -69,3 +69,4 @@
 
 - [butterfly 合并前审查](分支审查/2026-10-03-butterfly-合并前审查.zh.md)
 - [butterfly 第一批低风险整合](分支审查/2026-10-03-butterfly-第一批低风险整合.zh.md)
+- [butterfly 第二批统一埋点整合](分支审查/2026-10-03-butterfly-第二批统一埋点整合.zh.md)
