@@ -179,6 +179,7 @@ function runtimeFixture(deferred=false, lanes=1) {
     const h=fixture({ '../core/RaceBundleLoader':{loadRaceAsset(_path,_type,done){if(deferred)pending.push(done);else done(null,asset);}},
         '../entertainment/SupplyRacePresentation':{SupplyRacePresentation:Presentation},
         '../entertainment/LitterBrawlPresentation':{LitterBrawlPresentation:Presentation},
+        '../entertainment/WhirlpoolRacePresentation':{WhirlpoolRacePresentation:Presentation},
         '../entertainment/FloatingItemRenderer':{FloatingItemRenderer:Rendering} });
     h.cc.Prefab=class{};h.cc.EffectAsset=class{};
     const {EntertainmentRaceRuntime}=h.load('app/EntertainmentRaceRuntime'),{GameState}=h.load('core/GameConstants');

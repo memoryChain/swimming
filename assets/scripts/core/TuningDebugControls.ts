@@ -1,4 +1,4 @@
-import { STIMULANT_BRAWL_TUNING, LITTER_BRAWL_TUNING } from './EntertainmentBalance';
+import { STIMULANT_BRAWL_TUNING, LITTER_BRAWL_TUNING, WHIRLPOOL_BRAWL_TUNING } from './EntertainmentBalance';
 import { CHARACTER_ABILITY_TUNING } from './CharacterAbilityConfig';
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
@@ -483,6 +483,12 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('entertainment.debris.rigidSpeedRetain', '硬杂物速度保留比例', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => LITTER_BRAWL_TUNING.rigidSpeedRetain, v => LITTER_BRAWL_TUNING.rigidSpeedRetain = v, 0.05, 0, 1, 2),
             control('entertainment.debris.rigidBackwardImpulse', '硬杂物后退冲量', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => LITTER_BRAWL_TUNING.rigidBackwardImpulse, v => LITTER_BRAWL_TUNING.rigidBackwardImpulse = v, 0.05, 0, 1, 2),
             control('entertainment.debris.rigidLateralImpulse', '硬杂物侧向冲量', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => LITTER_BRAWL_TUNING.rigidLateralImpulse, v => LITTER_BRAWL_TUNING.rigidLateralImpulse = v, 0.05, 0, 2, 2),
+            control('entertainment.whirlpool.inwardPullAcceleration', '漩涡吸力', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => WHIRLPOOL_BRAWL_TUNING.inwardPullAcceleration, v => WHIRLPOOL_BRAWL_TUNING.inwardPullAcceleration = v, 0.2, 0, 10, 1),
+            control('entertainment.whirlpool.swirlAcceleration', '漩涡旋转水流', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => WHIRLPOOL_BRAWL_TUNING.swirlAcceleration, v => WHIRLPOOL_BRAWL_TUNING.swirlAcceleration = v, 0.2, 0, 12, 1),
+            control('entertainment.whirlpool.coreBackwardAcceleration', '漩涡核心后退力', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => WHIRLPOOL_BRAWL_TUNING.coreBackwardAcceleration, v => WHIRLPOOL_BRAWL_TUNING.coreBackwardAcceleration = v, 0.2, 0, 12, 1),
+            control('entertainment.whirlpool.capturePropulsionDrag', '漩涡核心阻力', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => WHIRLPOOL_BRAWL_TUNING.capturePropulsionDrag, v => WHIRLPOOL_BRAWL_TUNING.capturePropulsionDrag = v, 0.1, 0, 5, 1),
+            control('entertainment.whirlpool.maxFlowSpeed', '漩涡水流速度上限', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed, v => WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed = v, 0.1, 0.1, 6, 1),
+            control('entertainment.whirlpool.flowDecaySeconds', '漩涡水流衰减秒数', '只用于本地 AI 娱乐调试，普通赛和联机不启用。', () => WHIRLPOOL_BRAWL_TUNING.flowDecaySeconds, v => WHIRLPOOL_BRAWL_TUNING.flowDecaySeconds = v, 0.05, 0.05, 1.5, 2),
         ],
     },
 ];

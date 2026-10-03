@@ -1,0 +1,66 @@
+CCEffect %{
+  techniques:
+  - name: transparent
+    passes:
+    - vert: current-vs:vert
+      frag: current-fs:frag
+      # 薄水膜和水流绘制在池水之后；不写深度、不挖空池水。
+      priority: 2
+      rasterizerState:
+        cullMode: none
+      depthStencilState:
+        depthTest: true
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one_minus_src_alpha
+          blendSrcAlpha: one
+          blendDstAlpha: one_minus_src_alpha
+      properties:
+        flowMotion: { value: [0, 0.48, 3, 0] }
+}%
+
+CCProgram current-vs %{
+  precision highp float;
+  #include <legacy/input>
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/local-batch>
+  #include <legacy/fog-vs>
+  in vec4 a_color;
+  out vec2 v_uv;
+  out vec4 v_color;
+  vec4 vert () {
+    vec4 position;
+    CCVertInput(position);
+    mat4 matWorld;
+    CCGetWorldMatrix(matWorld);
+    v_uv = a_texCoord;
+    v_color = a_color;
+    vec4 world = matWorld * position;
+    CC_TRANSFER_FOG(world);
+    return cc_matProj * (cc_matView * world);
+  }
+}%
+
+CCProgram current-fs %{
+  precision highp float;
+  #include <legacy/output-standard>
+  #include <legacy/fog-fs>
+  in vec2 v_uv;
+  in vec4 v_color;
+  uniform CurrentParams {
+    vec4 flowMotion;
+  };
+  vec4 frag () {
+    // 水膜与水线共享柔边和向下流动；水膜另由顶点色控制低对比与纵向渐隐。
+    float edge = smoothstep(0.0, 0.24, v_uv.x) * (1.0 - smoothstep(0.76, 1.0, v_uv.x));
+    float surge = 0.80 + 0.20 * sin((v_uv.y - flowMotion.x * flowMotion.y) * 6.2831853);
+    float alpha = v_color.a * edge * surge;
+    if (v_uv.y < -0.5) alpha = v_color.a;
+    vec4 o = vec4(v_color.rgb, alpha);
+    CC_APPLY_FOG(o);
+    return CCFragOutput(o);
+  }
+}%

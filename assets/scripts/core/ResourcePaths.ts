@@ -446,6 +446,7 @@ export const RESOURCE_PATHS = {
     swimmerDynamicColorEffect: 'effects/SwimmerDynamicColor',
     toonPropEffect: 'effects/ToonProp',
     underwaterFloorEffect: 'effects/UnderwaterFloorTint',
+    whirlpoolFunnelEffect: 'effects/WhirlpoolFunnel',
     venueHeightShadeEffect: 'effects/VenueHeightShade',
     speedStarsUiPrefab: 'ui/SpeedStarsUI',
     uiFonts: {

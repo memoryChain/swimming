@@ -69,3 +69,39 @@ export const ENTERTAINMENT_DEBUG_TUNING = {
     debrisItemsPerWave: 3,
     debrisPoolSize: 6,
 };
+
+export const WHIRLPOOL_BRAWL_TUNING = {
+    alongRadius: 5.2,
+    lateralRadius: 4.2,
+    coreRadiusRatio: 0.32,
+    inwardPullAcceleration: 3.6,
+    coreCaptureAcceleration: 2.4,
+    captureRadiusRatio: 0.62,
+    capturePropulsionDrag: 2.0,
+    approachForwardPullScale: 0.25,
+    outerInwardScale: 0.58,
+    swirlAcceleration: 5.2,
+    coreSwirlScale: 0.82,
+    outerBoostAcceleration: 2.0,
+    outerCounterflowAcceleration: 1.2,
+    coreBackwardAcceleration: 6.0,
+    yawAccelerationScale: 0.22,
+    rollAccelerationScale: 0.42,
+    maxFlowSpeed: 3.4,
+    submergedInfluenceScale: 0.35,
+    flowDecaySeconds: 0.5,
+};
+
+export const WHIRLPOOL_SUPER_TUNING = {
+    alongRadiusScale: 1.35,
+    lateralRadiusScale: 1.5,
+    coreRadiusScale: 1.5,
+    captureRadiusScale: 1.15,
+    captureDragScale: 1.35,
+    inwardPullScale: 1.3,
+    swirlScale: 1.25,
+    outerBoostScale: 1.4,
+    outerCounterflowScale: 1.3,
+    coreBackwardScale: 1.35,
+    maxFlowSpeedScale: 1.08,
+};

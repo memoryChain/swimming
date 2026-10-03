@@ -1,4 +1,6 @@
 import { EffectAsset, Mesh, Node, Prefab } from 'cc';
+import { buildWhirlpoolDebugSpawns, whirlpoolTargetZForAi, WhirlpoolSpawn } from '../entertainment/WhirlpoolBrawlRules';
+import { WhirlpoolRacePresentation } from '../entertainment/WhirlpoolRacePresentation';
 import { GameState } from '../core/GameConstants';
 import { laneCenterZ } from '../venue/LaneLayout';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
@@ -36,6 +38,9 @@ export class EntertainmentRaceRuntime {
     private supplyPresentation: SupplyRacePresentation | null = null;
     private litterPresentation: LitterBrawlPresentation | null = null;
     private rendering: FloatingItemRenderer | null = null;
+    private readonly referenceIndex: number;
+    private readonly whirlpools: readonly WhirlpoolSpawn[];
+    private whirlpoolPresentation: WhirlpoolRacePresentation | null = null;
     private routeClock = 1;
     private disposed = false;
     private previousState: GameState | null = null;
@@ -43,10 +48,12 @@ export class EntertainmentRaceRuntime {
     constructor(private readonly world: Node, private readonly course: RaceCourseLayout, mode: EntertainmentDebugMode,
         seed: number, private readonly raceDistance: number, private readonly racers: readonly EntertainmentRacerBinding[],
         private readonly waterLayers: FloatingItemLayers | null = null) {
+        this.referenceIndex = Math.max(0, racers.findIndex(racer => !racer.ai));
         this.states = racers.map(() => ({ active: false, canContact: false, finished: false, distance: 0, lateral: 0, heading: 0 }));
         this.litterStates = Array.from({ length: course.laneCount }, () => ({ active: false, finished: false, distance: 0, lateral: 0 }));
         const centers = Array.from({ length: course.laneCount }, (_, lane) => laneCenterZ(lane, course));
         const plan = buildEntertainmentDebugPlan(mode, raceDistance);
+        this.whirlpools = plan.whirlpool ? buildWhirlpoolDebugSpawns(seed, raceDistance, course.courseLength, plan.whirlpoolSelection) : [];
         this.supplies = plan.supplies.length ? new SupplyRaceController(
             buildGradedStimulantSchedule(seed, course.laneCount, raceDistance, course.courseLength, plan.supplies, 3),
             centers, course.courseLength, this.states, (index, kind) => {
@@ -75,12 +82,26 @@ export class EntertainmentRaceRuntime {
                 maxWaveDelayDistance: 12,
                 courseLength: course.courseLength,
             }) : null;
-        for (const racer of racers) racer.swimmer.motor.configureEntertainment(true, !!this.supplies);
+        for (const racer of racers) {
+            racer.swimmer.motor.configureEntertainment(true, !!this.supplies);
+            racer.swimmer.motor.configureEntertainmentWhirlpools(this.whirlpools, course.poolWidth, laneCenterZ(racer.lane, course));
+        }
     }
     prepare(done: (error?: Error | null) => void) {
         if (this.disposed || !this.world?.isValid) { done(new Error('娱乐调试场景已失效')); return; }
         this.prepareDone = done;
         try {
+            if (this.whirlpools.length) {
+                loadRaceAsset(RESOURCE_PATHS.whirlpoolFunnelEffect, EffectAsset, (error, effect) => {
+                    if (this.disposed) return;
+                    if (error || !effect || !this.world.isValid) { this.finishPrepare(error ?? new Error('漩涡材质缺失')); return; }
+                    try {
+                        this.whirlpoolPresentation = new WhirlpoolRacePresentation(this.world, this.course, this.whirlpools, effect, this.waterLayers);
+                        this.finishPrepare();
+                    } catch (e) { this.finishPrepare(e instanceof Error ? e : new Error(String(e))); }
+                });
+                return;
+            }
             if (!this.litter && !this.supplies) { this.finishPrepare(); return; }
             loadRaceAsset(RESOURCE_PATHS.venueHeightShadeEffect, EffectAsset, (error, effect) => {
                 if (this.disposed) return;
@@ -130,9 +151,11 @@ export class EntertainmentRaceRuntime {
         this.previousState = state;
         if (state === GameState.COUNTDOWN) {
             this.supplies?.reset(); this.litter?.reset();
-            this.supplyPresentation?.reset(); this.litterPresentation?.reset(); this.routeClock = 1;
-            for (const racer of this.racers) { racer.swimmer.motor.configureEntertainment(true, !!this.supplies); racer.ai?.setEntertainmentTargetZ(null); }
-        } else if (state !== GameState.RACING) this.clearInfluence();
+            this.supplyPresentation?.reset(); this.litterPresentation?.reset(); this.whirlpoolPresentation?.reset(); this.routeClock = 1;
+            for (const racer of this.racers) { racer.swimmer.motor.configureEntertainment(true, !!this.supplies);
+                racer.swimmer.motor.configureEntertainmentWhirlpools(this.whirlpools, this.course.poolWidth, laneCenterZ(racer.lane, this.course)); racer.ai?.setEntertainmentTargetZ(null); }
+        } else if (state !== GameState.RACING) { this.clearInfluence(); this.whirlpoolPresentation?.reset(); }
+        for (const racer of this.racers) racer.swimmer.motor.setEntertainmentWhirlpoolActive(state === GameState.RACING);
     }
     update(dt: number, state: GameState) {
         if (this.disposed) return;
@@ -164,11 +187,14 @@ export class EntertainmentRaceRuntime {
                 const binding = this.racers[i];
                 if (!binding.ai) continue;
                 // 避让杂物优先于追逐补给；不会覆盖 Boss 或房间 AI。
-                const avoid = this.litter?.targetZForAi(binding.lane) ?? null;
+                const whirlpool = this.whirlpools.length && !this.states[i].finished && this.states[i].canContact
+                    ? whirlpoolTargetZForAi(this.states[i].distance, this.states[i].lateral, this.course.poolWidth, this.whirlpools) : null;
+                const avoid = whirlpool ?? this.litter?.targetZForAi(binding.lane) ?? null;
                 const supply = avoid === null ? this.supplies?.targetZForAi(i, binding.condition.energyRatio, binding.swimmer.heartRate) ?? null : null;
                 binding.ai.setEntertainmentTargetZ(avoid ?? supply);
             }
         }
+        this.whirlpoolPresentation?.update(this.states[this.referenceIndex]?.distance ?? 0, dt, true);
         if (this.supplies) this.supplyPresentation?.update(dt, this.supplies.slots, true);
         if (this.litter) this.litterPresentation?.update(dt, this.litter.clusters(), true);
     }
@@ -177,11 +203,12 @@ export class EntertainmentRaceRuntime {
         this.disposed = true; this.clearInfluence();
         for (const binding of this.racers) binding.swimmer.motor.configureEntertainment(false);
         this.supplyPresentation?.dispose(); this.litterPresentation?.dispose(); this.litter?.dispose();
+        this.whirlpoolPresentation?.dispose();
         this.rendering?.dispose(); this.rendering = null;
         this.finishPrepare(new Error('娱乐调试加载已取消'));
     }
     private clearInfluence() {
-        for (const binding of this.racers) { binding.swimmer.motor.setEntertainmentDrag(0); binding.ai?.setEntertainmentTargetZ(null); }
+        for (const binding of this.racers) { binding.swimmer.motor.setEntertainmentDrag(0); binding.swimmer.motor.setEntertainmentWhirlpoolActive(false); binding.ai?.setEntertainmentTargetZ(null); }
     }
     private finishPrepare(error?: Error) {
         const done = this.prepareDone; this.prepareDone = null;

@@ -1,3 +1,5 @@
+import { WhirlpoolSwimmerCurrent } from './WhirlpoolSwimmerCurrent';
+import type { WhirlpoolSpawn } from '../entertainment/WhirlpoolBrawlRules';
 import { EntertainmentSwimmerEffects } from '../entertainment/EntertainmentSwimmerEffects';
 import type { StimulantItemKind } from '../entertainment/StimulantBrawlRules';
 import { TUTORIAL_RUNTIME } from '../tutorial/TutorialSession';
@@ -96,6 +98,16 @@ export type StrokeTimingGuide = {
 type ReleaseRanges = { perfect: { start: number; end: number }; good: { start: number; end: number } };
 
 export class SwimmerMotor {
+    private _whirlpool: WhirlpoolSwimmerCurrent | null = null;
+    configureEntertainmentWhirlpools(spawns: readonly WhirlpoolSpawn[] | null, poolWidth = 0, laneZ = 0) {
+        if (!spawns?.length || !this._entertainment) { this._whirlpool = null; return; }
+        if (this._whirlpool?.matches(spawns, poolWidth, laneZ)) {
+            this._whirlpool.reset(); this._whirlpool.active = false;
+        } else this._whirlpool = new WhirlpoolSwimmerCurrent(spawns, poolWidth, laneZ);
+    }
+    setEntertainmentWhirlpoolActive(active: boolean) {
+        if (this._whirlpool) { this._whirlpool.active = active; if (!active) this._whirlpool.reset(); }
+    }
     private _entertainment: EntertainmentSwimmerEffects | null = null;
     configureEntertainment(enabled: boolean, suppliesEnabled = true) {
         if (enabled) {
@@ -104,6 +116,7 @@ export class SwimmerMotor {
             this._entertainment.setSuppliesEnabled(suppliesEnabled);
         } else {
             this._entertainment = null;
+            this._whirlpool = null;
             this._physicsInput.environmentDrag = 0;
             this._physicsInput.propulsionScale = 1;
         }
@@ -525,6 +538,19 @@ export class SwimmerMotor {
         this._entertainment?.tick(dt);
         if (this._glidePhaseActive) this.ability.suspend();
         else this.ability.tick(dt, this.isActiveStrokeHeld(StrokeType.LEFT) || this.isActiveStrokeHeld(StrokeType.RIGHT));
+        if (this._whirlpool?.active) {
+            if (this._glidePhaseActive || this._distance >= getRaceDistance()) this._whirlpool.reset();
+            else {
+                this._whirlpool.advance(this._distance, this._lateralOffset, this._currentSpeed,
+                    this._heading, this.ability.depth > .2, dt);
+                const flow = this._whirlpool.influence;
+                if (isRaceSteeringEnabled()) {
+                    const maxRate = safeMaxTurnRateRadians();
+                    this._headingTurnRate = clamp(this._headingTurnRate + flow.yawAcceleration * dt, -maxRate, maxRate);
+                }
+                this.applyCollisionAxialImpulse(flow.rollAcceleration * dt);
+            }
+        }
         this._motionClock += dt;
         this._armAction = Math.max(0, this._armAction - dt * 4.6);
         this._kickAction = Math.max(0, this._kickAction - dt * 6.8);
@@ -580,7 +606,10 @@ export class SwimmerMotor {
             * Math.max(0, Math.cos(this._heading))
             * this._axialRoll.forwardScale
             * this._collisionPitch.forwardScale;
-        this._distance = Math.min(this.tutorialMovementLimit(raceDistance), this._distance + forwardSpeed * dt);
+        const currentDistanceDelta = this._whirlpool?.active && !this._glidePhaseActive ? this._whirlpool.forwardDelta : 0;
+        this._distance = currentDistanceDelta === 0
+            ? Math.min(this.tutorialMovementLimit(raceDistance), this._distance + forwardSpeed * dt)
+            : Math.max(0, Math.min(this.tutorialMovementLimit(raceDistance), this._distance + forwardSpeed * dt + currentDistanceDelta));
         // Lateral drift accumulates the sideways component, clamped to the pool.
         const requestedLateralOffset = this._lateralOffset + this._currentSpeed * Math.sin(this._heading) * dt;
         this._lateralOffset = clamp(requestedLateralOffset, this._lateralOffsetMin, this._lateralOffsetMax);
@@ -589,11 +618,18 @@ export class SwimmerMotor {
             this.returnToLaneFromPoolWall(wallCorrection);
         }
         this.integrateKnockback(dt, this.tutorialMovementLimit(raceDistance));
+        if (this._whirlpool?.active && !this._glidePhaseActive) {
+            const requested = this._lateralOffset + this._whirlpool.lateralDelta;
+            this._lateralOffset = clamp(requested, this._lateralOffsetMin, this._lateralOffsetMax);
+            const correction = this._lateralOffset - requested;
+            if (Math.abs(correction) > 1e-6) this.returnToLaneFromPoolWall(correction);
+        }
         if (!options.isAI) {
             this.checkArmStrokeTimeout();
         }
 
         if (this._distance >= raceDistance) {
+            this._whirlpool?.reset();
             this._isRacing = false;
             this._kickRecoveryRemaining = 0;
             this.collisionSoftness.reset();
@@ -605,6 +641,7 @@ export class SwimmerMotor {
 
     private resetRaceState(initialDistance = 0) {
         this._entertainment?.reset();
+        this._whirlpool?.reset();
         this._heartRate.reset();
         this.ability.reset();
         this._authoritativeHeartRate = -1;
@@ -708,6 +745,7 @@ export class SwimmerMotor {
 
     // 海豚跳冻结心率数值但采样时钟照走；普通转身等阶段自然恢复。
     tickRestingHeartRate(dt: number, freezeValue = false) {
+        this._whirlpool?.reset();
         if (!this._isRacing) return;
         this._heartRate.tick(dt, freezeValue);
         this._entertainment?.tick(dt);
