@@ -3,6 +3,7 @@ import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { SupplySlot } from './SupplyRaceController';
 import { sampleWaterFloatOffset, WATER_FLOAT_PROFILES } from './WaterFloatMotion';
 import { ENTERTAINMENT_DEBUG_TUNING } from '../core/EntertainmentBalance';
+import { FloatingItemRenderer } from './FloatingItemRenderer';
 
 /** 赛前一次建立双模型池；比赛帧只以 20Hz 消费逻辑状态。 */
 export class SupplyRacePresentation {
@@ -11,7 +12,8 @@ export class SupplyRacePresentation {
     private readonly slush: Node[] = [];
     private elapsed = 1;
     private disposed = false;
-    constructor(world: Node, private readonly course: RaceCourseLayout, count: number, soda: Prefab, slush: Prefab) {
+    constructor(world: Node, private readonly course: RaceCourseLayout, count: number, soda: Prefab, slush: Prefab,
+        private readonly rendering: FloatingItemRenderer) {
         for (let id = 0; id < count; id++) {
             const root = new Node(`EntertainmentSupply${id}`);
             root.setParent(world); root.layer = world.layer; root.setScale(.7, .7, .7);
@@ -20,6 +22,7 @@ export class SupplyRacePresentation {
             this.setLayer(a, world.layer); this.setLayer(b, world.layer);
             a.active = false; b.active = false; root.active = false;
             this.roots.push(root); this.soda.push(a); this.slush.push(b);
+            this.rendering.bind(root);
         }
     }
     reset() { this.elapsed = 1; for (const node of this.roots) this.active(node, false); }
@@ -44,7 +47,14 @@ export class SupplyRacePresentation {
             node.setRotationFromEuler(landed ? 7 * Math.sin(slot.age * 1.8) : 230 * (1 - t), i * 53 + slot.age * 8, 0);
         }
     }
-    dispose() { if (this.disposed) return; this.disposed = true; for (const node of this.roots) if (node.isValid) node.destroy(); }
+    dispose() {
+        if (this.disposed) return;
+        this.disposed = true;
+        for (const node of this.roots) {
+            this.rendering.unbind(node);
+            if (node.isValid) node.destroy();
+        }
+    }
     private active(node: Node, value: boolean) { if (node.isValid && node.active !== value) node.active = value; }
     private setLayer(node: Node, layer: number) { node.layer = layer; for (const child of node.children) this.setLayer(child, layer); }
 }

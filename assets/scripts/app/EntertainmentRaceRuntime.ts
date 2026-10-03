@@ -1,4 +1,4 @@
-import { Node, Prefab } from 'cc';
+import { EffectAsset, Node, Prefab } from 'cc';
 import { GameState } from '../core/GameConstants';
 import { laneCenterZ } from '../venue/LaneLayout';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
@@ -15,6 +15,7 @@ import { EntertainmentRacerState, SupplyRaceController } from '../entertainment/
 import { SupplyRacePresentation } from '../entertainment/SupplyRacePresentation';
 import { LitterBrawlController, LitterRacerState } from '../entertainment/LitterBrawlController';
 import { LitterBrawlPresentation } from '../entertainment/LitterBrawlPresentation';
+import { FloatingItemRenderer, FloatingItemLayers } from '../entertainment/FloatingItemRenderer';
 
 export type EntertainmentRacerBinding = {
     lane: number;
@@ -30,12 +31,14 @@ export class EntertainmentRaceRuntime {
     private readonly litter: LitterBrawlController | null;
     private supplyPresentation: SupplyRacePresentation | null = null;
     private litterPresentation: LitterBrawlPresentation | null = null;
+    private rendering: FloatingItemRenderer | null = null;
     private routeClock = 1;
     private disposed = false;
     private previousState: GameState | null = null;
     private prepareDone: ((error?: Error | null) => void) | null = null;
     constructor(private readonly world: Node, private readonly course: RaceCourseLayout, mode: EntertainmentDebugMode,
-        seed: number, private readonly raceDistance: number, private readonly racers: readonly EntertainmentRacerBinding[]) {
+        seed: number, private readonly raceDistance: number, private readonly racers: readonly EntertainmentRacerBinding[],
+        private readonly waterLayers: FloatingItemLayers | null = null) {
         this.states = racers.map(() => ({ active: false, canContact: false, finished: false, distance: 0, lateral: 0, heading: 0 }));
         this.litterStates = Array.from({ length: course.laneCount }, () => ({ active: false, finished: false, distance: 0, lateral: 0 }));
         const centers = Array.from({ length: course.laneCount }, (_, lane) => laneCenterZ(lane, course));
@@ -74,21 +77,34 @@ export class EntertainmentRaceRuntime {
         if (this.disposed || !this.world?.isValid) { done(new Error('娱乐调试场景已失效')); return; }
         this.prepareDone = done;
         try {
-            if (this.litter) this.litterPresentation = new LitterBrawlPresentation(this.world, this.course, this.litter.clusters().length);
-            if (!this.supplies) { this.finishPrepare(); return; }
-            loadRaceAsset(RESOURCE_PATHS.entertainmentSupplies.soda, Prefab, (error, soda) => {
+            if (!this.litter && !this.supplies) { this.finishPrepare(); return; }
+            loadRaceAsset(RESOURCE_PATHS.venueHeightShadeEffect, EffectAsset, (error, effect) => {
                 if (this.disposed) return;
-                if (error || !soda) { this.finishPrepare(error ?? new Error('苏打模型缺失')); return; }
-                loadRaceAsset(RESOURCE_PATHS.entertainmentSupplies.slush, Prefab, (slushError, slush) => {
-                    if (this.disposed) return;
-                    if (slushError || !slush || !this.world.isValid) { this.finishPrepare(slushError ?? new Error('冰沙模型缺失')); return; }
-                    try {
-                        this.supplyPresentation = new SupplyRacePresentation(this.world, this.course, this.supplies.slots.length, soda, slush);
-                        this.finishPrepare();
-                    } catch (e) { this.finishPrepare(e instanceof Error ? e : new Error(String(e))); }
-                });
+                if (error || !effect || !this.world.isValid) { this.finishPrepare(error ?? new Error('漂浮物水线材质缺失')); return; }
+                try {
+                    this.rendering = new FloatingItemRenderer(effect, this.course.waterY, this.waterLayers);
+                    if (this.litter) this.litterPresentation = new LitterBrawlPresentation(
+                        this.world, this.course, this.litter.clusters().length, this.rendering);
+                    this.prepareSupplies();
+                } catch (e) { this.finishPrepare(e instanceof Error ? e : new Error(String(e))); }
             });
         } catch (e) { this.finishPrepare(e instanceof Error ? e : new Error(String(e))); }
+    }
+    private prepareSupplies() {
+        if (!this.supplies) { this.finishPrepare(); return; }
+        loadRaceAsset(RESOURCE_PATHS.entertainmentSupplies.soda, Prefab, (error, soda) => {
+            if (this.disposed) return;
+            if (error || !soda) { this.finishPrepare(error ?? new Error('苏打模型缺失')); return; }
+            loadRaceAsset(RESOURCE_PATHS.entertainmentSupplies.slush, Prefab, (slushError, slush) => {
+                if (this.disposed) return;
+                if (slushError || !slush || !this.world.isValid) { this.finishPrepare(slushError ?? new Error('冰沙模型缺失')); return; }
+                try {
+                    this.supplyPresentation = new SupplyRacePresentation(this.world, this.course, this.supplies!.slots.length,
+                        soda, slush, this.rendering!);
+                    this.finishPrepare();
+                } catch (e) { this.finishPrepare(e instanceof Error ? e : new Error(String(e))); }
+            });
+        });
     }
     onStateChanged(state: GameState) {
         if (this.disposed || state === this.previousState) return;
@@ -142,6 +158,7 @@ export class EntertainmentRaceRuntime {
         this.disposed = true; this.clearInfluence();
         for (const binding of this.racers) binding.swimmer.motor.configureEntertainment(false);
         this.supplyPresentation?.dispose(); this.litterPresentation?.dispose(); this.litter?.dispose();
+        this.rendering?.dispose(); this.rendering = null;
         this.finishPrepare(new Error('娱乐调试加载已取消'));
     }
     private clearInfluence() {

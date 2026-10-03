@@ -1,9 +1,10 @@
 // Unlit venue-stand shading driven by a BAKED per-vertex brightness (COLOR_0).
 // The arena dimming (bright poolside/low, dark high/far) is baked into vertex
 // colours by sceneresource/export-flatcolor-venue-glb.py, so there is NO runtime
-// height/distance math here — this is a fixed scene with fixed lighting. The
+// height/distance shading here — this is a fixed scene with fixed lighting. The
 // visible colour + optional texture come from StandHeightShade.ts; the bleacher
 // atlas keeps white vertex colours so its authored tiers stay unchanged.
+// 池岸和娱乐漂浮物变体按世界水线染色；普通看台保持原有烘焙明暗。
 CCEffect %{
   techniques:
   - name: opaque
@@ -27,10 +28,13 @@ CCProgram venue-shade-vs %{
   #include <legacy/decode-base>
   #include <legacy/local-batch>
 
+  #if USE_TEXTURE
   out vec2 v_uv;
-  #if USE_POOLSIDE_WATERLINE
+  #endif
+  #if USE_POOLSIDE_WATERLINE || USE_FLOATING_VERTEX_COLOR
   out float v_worldY;
-  #else
+  #endif
+  #if !USE_POOLSIDE_WATERLINE
   in vec4 a_color;
   out vec4 v_color;
   #endif
@@ -40,11 +44,14 @@ CCProgram venue-shade-vs %{
     CCVertInput(position);
     mat4 matWorld;
     CCGetWorldMatrix(matWorld);
+    #if USE_TEXTURE
     v_uv = a_texCoord;
+    #endif
     vec4 worldPos = matWorld * position;
-    #if USE_POOLSIDE_WATERLINE
+    #if USE_POOLSIDE_WATERLINE || USE_FLOATING_VERTEX_COLOR
     v_worldY = worldPos.y;
-    #else
+    #endif
+    #if !USE_POOLSIDE_WATERLINE
     v_color = a_color;
     #endif
     return cc_matProj * (cc_matView * worldPos);
@@ -56,10 +63,13 @@ CCProgram venue-shade-fs %{
   #include <legacy/output-standard>
   #include <builtin/uniforms/cc-global>
 
+  #if USE_TEXTURE
   in vec2 v_uv;
-  #if USE_POOLSIDE_WATERLINE
+  #endif
+  #if USE_POOLSIDE_WATERLINE || USE_FLOATING_VERTEX_COLOR
   in float v_worldY;
-  #else
+  #endif
+  #if !USE_POOLSIDE_WATERLINE
   in vec4 v_color;
   #endif
   #if USE_TEXTURE
@@ -84,8 +94,13 @@ CCProgram venue-shade-fs %{
     float alpha = mainColor.a;
     #endif
     // Baked arena dimming: per-vertex brightness multiplier (COLOR_0, linear).
-    #if USE_POOLSIDE_WATERLINE
-    // 池岸图集已经烘焙明暗，模型没有法线和顶点色；仅对水下部分叠加水色。
+    #if USE_FLOATING_VERTEX_COLOR
+    // 补给与杂物沿用 builtin-unlit 的顶点色空间，不叠加环境光或圆周明暗。
+    base *= SRGBToLinear(v_color.rgb);
+    alpha *= v_color.a;
+    #endif
+    #if USE_POOLSIDE_WATERLINE || USE_FLOATING_VERTEX_COLOR
+    // 水上保留本色，仅对世界水线以下的片元叠加与浮漂一致的水色。
     float belowWater = step(v_worldY, waterLine.x) * step(0.5, waterLine.y);
     base = mix(base, underwaterColor.rgb, belowWater * underwaterColor.a);
     return CCFragOutput(vec4(base, alpha));

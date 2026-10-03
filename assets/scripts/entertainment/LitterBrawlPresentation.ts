@@ -1,8 +1,9 @@
-import { Color, Material, Mesh, MeshRenderer, Node, utils } from 'cc';
+import { Mesh, MeshRenderer, Node, utils } from 'cc';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { LitterClusterState } from './LitterBrawlController';
 import { buildBottleLitterGeometry, buildMealTrayLitterGeometry } from './LitterDebrisGeometry';
 import { sampleWaterFloatOffset, WATER_FLOAT_PROFILES } from './WaterFloatMotion';
+import { FloatingItemRenderer } from './FloatingItemRenderer';
 
 const PRESENTATION_INTERVAL = 1 / 20;
 const RIGID_IMPACT_PULSE_SECONDS = 0.65;
@@ -18,7 +19,6 @@ export class LitterBrawlPresentation {
     private readonly impactPulses: number[] = [];
     private readonly bottleMeshes: Mesh[] = [];
     private trayMesh: Mesh | null = null;
-    private clusterMaterial: Material | null = null;
     private elapsed = PRESENTATION_INTERVAL;
     private clock = 0;
     private visible = true;
@@ -28,6 +28,7 @@ export class LitterBrawlPresentation {
         private readonly worldRoot: Node,
         private readonly course: RaceCourseLayout,
         clusterCount: number,
+        private readonly rendering: FloatingItemRenderer,
     ) {
         if (!worldRoot?.isValid) return;
         for (let variant = 0; variant < 3; variant++) {
@@ -35,18 +36,8 @@ export class LitterBrawlPresentation {
         }
         const trayMesh = utils.createMesh(buildMealTrayLitterGeometry());
         this.trayMesh = trayMesh;
-        this.clusterMaterial = new Material();
-        this.clusterMaterial.initialize({
-            effectName: 'builtin-unlit',
-            technique: 0,
-            // 四种网格分别合批；不支持实例化的设备由引擎回退到普通绘制。
-            // 必须在共享材质初始化时启用，不能创建逐节点材质实例。
-            defines: { USE_VERTEX_COLOR: true, USE_INSTANCING: true },
-        });
-        this.clusterMaterial.name = 'LitterClusterMaterial';
-        this.clusterMaterial.setProperty('mainColor', Color.WHITE);
         for (let id = 0; id < clusterCount; id++) {
-            const node = this.makeMeshNode(`LitterCluster${id}`, this.bottleMeshes[id % 3], this.clusterMaterial);
+            const node = this.makeMeshNode(`LitterCluster${id}`, this.bottleMeshes[id % 3]);
             node.active = false;
             this.clusterNodes.push(node);
             this.clusterRenderers.push(node.getComponent(MeshRenderer)!);
@@ -214,26 +205,28 @@ export class LitterBrawlPresentation {
     dispose(): void {
         if (this.disposed) return;
         this.disposed = true;
-        for (const node of this.clusterNodes) if (node.isValid) node.destroy();
+        for (const node of this.clusterNodes) {
+            this.rendering.unbind(node);
+            if (node.isValid) node.destroy();
+        }
         this.clusterNodes.length = 0;
         this.clusterRenderers.length = 0;
         for (const mesh of this.bottleMeshes) mesh.destroy();
         this.bottleMeshes.length = 0;
         this.trayMesh?.destroy();
-        this.clusterMaterial?.destroy();
     }
 
     private hideAll(): void {
         for (const node of this.clusterNodes) this.setActive(node, false);
     }
 
-    private makeMeshNode(name: string, mesh: Mesh, material: Material): Node {
+    private makeMeshNode(name: string, mesh: Mesh): Node {
         const node = new Node(name);
         node.setParent(this.worldRoot);
         node.layer = this.worldRoot.layer;
         const renderer = node.addComponent(MeshRenderer);
         renderer.mesh = mesh;
-        renderer.setMaterial(material, 0);
+        this.rendering.bind(node);
         return node;
     }
 

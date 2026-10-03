@@ -121,6 +121,13 @@ function computeFloorDeepColor(): Color {
 // is on its own layer and excluded) into a RenderTexture. The water material then
 // samples that texture with a wave-driven offset, so everything beneath the
 // surface is genuinely bent/distorted from any camera angle.
+type FloatingObjectBinding = {
+    root: Node;
+    nodes: Node[];
+    originalLayers: number[];
+    release: () => void;
+};
+
 export class WaterRefractionController {
     private _refractionCamera: Camera | null = null;
     private _swimmerCamera: Camera | null = null;
@@ -133,6 +140,7 @@ export class WaterRefractionController {
     private _boundMaterial: Material | null = null;
     private _getSwimmerNodes: (() => Node[]) | null = null;
     private readonly _laneFloatNodes: Node[] = [];
+    private readonly _floatingObjects: FloatingObjectBinding[] = [];
     private _rtWidth = 0;
     private _rtHeight = 0;
     // Planar-reflection pass: mirrors the main camera across the water plane and
@@ -374,6 +382,36 @@ export class WaterRefractionController {
         }
     }
 
+    /** 动态漂浮物赛前注册完整子树；比赛帧不扫描，水下与浮漂使用相同遮挡路径。 */
+    registerFloatingObject(root: Node): () => void {
+        if (!root.isValid || !this._swimmerCamera?.isValid) return () => {};
+        const existing = this._floatingObjects.find(binding => binding.root === root);
+        if (existing) return existing.release;
+        const nodes: Node[] = [], originalLayers: number[] = [];
+        captureNodeLayers(root, nodes, originalLayers);
+        const binding: FloatingObjectBinding = {
+            root, nodes, originalLayers,
+            release: () => {
+                const index = this._floatingObjects.indexOf(binding);
+                if (index < 0) return;
+                restoreNodeLayers(binding);
+                this._floatingObjects.splice(index, 1);
+            },
+        };
+        this._floatingObjects.push(binding);
+        this.applyFloatingObjectLayers();
+        return binding.release;
+    }
+
+    private applyFloatingObjectLayers() {
+        const layer = this._underwaterViewActive ? Layers.Enum.DEFAULT : SWIMMER_LAYER;
+        for (const binding of this._floatingObjects) {
+            for (const node of binding.nodes) {
+                if (node.isValid && node.layer !== layer) node.layer = layer;
+            }
+        }
+    }
+
     // The refracting surface is only meaningful when viewed from above. Hide it
     // for dedicated underwater camera shots so it cannot cut across the view,
     // and pause the now-unused refraction RenderTexture camera. The swimmer
@@ -424,6 +462,7 @@ export class WaterRefractionController {
         // from the clean blue pool floor + the surface mirror (no uniform haze).
         this._underwaterViewActive = active;
         this._poolsideWaterline.setUnderwaterViewActive(active);
+        this.applyFloatingObjectLayers();
         // Lane floats swap between the overlay layer (above water, submerged half
         // shows over the surface) and the main DEFAULT layer (underwater, so the
         // opaque mirror surface occludes them instead of the overlay drawing them
@@ -654,6 +693,8 @@ export class WaterRefractionController {
     }
 
     dispose() {
+        for (const binding of this._floatingObjects) restoreNodeLayers(binding);
+        this._floatingObjects.length = 0;
         if (this._mainCamera?.isValid) setSpectatorCameraUnderwater(this._mainCamera, false);
         this._poolsideWaterline.dispose();
         // Clear the swimmer reflection-clip flag: it is module-level state, so
@@ -933,6 +974,21 @@ function collectNodesByNamePrefix(root: Node, prefix: string, out: Node[], count
         count = collectNodesByNamePrefix(child, prefix, out, count);
     }
     return count;
+}
+
+function captureNodeLayers(node: Node, nodes: Node[], layers: number[]) {
+    if (!node.isValid) return;
+    nodes.push(node);
+    layers.push(node.layer);
+    for (const child of node.children) captureNodeLayers(child, nodes, layers);
+}
+
+function restoreNodeLayers(binding: FloatingObjectBinding) {
+    for (let i = 0; i < binding.nodes.length; i++) {
+        const node = binding.nodes[i];
+        const layer = binding.originalLayers[i];
+        if (node.isValid && node.layer !== layer) node.layer = layer;
+    }
 }
 
 function setLayerRecursive(node: Node, layer: number) {

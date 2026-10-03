@@ -171,12 +171,14 @@ test('杂物重复重赛保持池上限，取消剩余波次后旧物品正常�
 });
 
 function runtimeFixture(deferred=false, lanes=1) {
-    const pending=[], counts={built:0,destroyed:0,presentationUpdates:0};
+    const pending=[], counts={built:0,destroyed:0,presentationUpdates:0,renderBuilt:0,renderDestroyed:0};
     class Presentation { constructor(){counts.built++;} reset(){} update(){counts.presentationUpdates++;} dispose(){counts.destroyed++;} }
+    class Rendering { constructor(){counts.renderBuilt++;} dispose(){counts.renderDestroyed++;} }
     const h=fixture({ '../core/RaceBundleLoader':{loadRaceAsset(_path,_type,done){if(deferred)pending.push(done);else done(null,{});}},
         '../entertainment/SupplyRacePresentation':{SupplyRacePresentation:Presentation},
-        '../entertainment/LitterBrawlPresentation':{LitterBrawlPresentation:Presentation} });
-    h.cc.Prefab=class{};
+        '../entertainment/LitterBrawlPresentation':{LitterBrawlPresentation:Presentation},
+        '../entertainment/FloatingItemRenderer':{FloatingItemRenderer:Rendering} });
+    h.cc.Prefab=class{};h.cc.EffectAsset=class{};
     const {EntertainmentRaceRuntime}=h.load('app/EntertainmentRaceRuntime'),{GameState}=h.load('core/GameConstants');
     const {PlayerConditionModel}=h.load('condition/PlayerConditionModel'),{SwimmerMotor}=h.load('swimmer/SwimmerMotor');
     const motor=new SwimmerMotor();motor.startRace();
@@ -197,8 +199,9 @@ test('娱乐生命周期重复重赛不重建表现，结束清除阻力和路�
         assert.equal(f.getRoute(),null);near(f.motor._entertainment.drag,0);assert.equal(f.counts.built,2);
     }
     f.runtime.dispose();f.runtime.dispose();assert.equal(f.counts.destroyed,2);assert.equal(f.motor._entertainment,null);
+    assert.equal(f.counts.renderBuilt,1);assert.equal(f.counts.renderDestroyed,1);
     const d=runtimeFixture(true);let canceled=0;d.runtime.prepare(e=>{assert.ok(e);canceled++;});
-    d.runtime.dispose();d.pending[0](null,{});assert.equal(canceled,1);assert.equal(d.counts.built,1);assert.equal(d.counts.destroyed,1);
+    d.runtime.dispose();d.pending[0](null,{});assert.equal(canceled,1);assert.equal(d.counts.built,0);assert.equal(d.counts.renderBuilt,0);
 });
 
 test('仅杂物模式不启用补给的转向倍率；转身和海豚跳期间效果仍按比赛时间过期', () => {
@@ -221,7 +224,9 @@ test('补给表现使用真实模块，20次重赛不创建额外模型，隐藏
     }
     const h=fixture();Object.assign(h.cc,{Node,instantiate:()=>new Node()});
     const {SupplyRacePresentation}=h.load('entertainment/SupplyRacePresentation');
-    const p=new SupplyRacePresentation({children:[],layer:1},{waterY:0,poolWidth:21,distanceToWorldX:v=>v},6,{},{});
+    let bindings=0,releases=0;
+    const p=new SupplyRacePresentation({children:[],layer:1},{waterY:0,poolWidth:21,distanceToWorldX:v=>v},6,{},{},
+        {bind(){bindings++;},unbind(){releases++;}});
     const slots=Array.from({length:6},(_,id)=>({id,active:true,kind:'heartbeat-soda',age:2,courseX:20,lateral:id}));
     for(let round=0;round<20;round++){
         p.reset();for(let i=0;i<60;i++)p.update(1/60,slots,true);
@@ -229,14 +234,28 @@ test('补给表现使用真实模块，20次重赛不创建额外模型，隐藏
         const before=writes;for(let i=0;i<60;i++)p.update(1/60,slots,false);assert.equal(writes,before);
         assert.equal(created,18);
     }
-    p.dispose();p.dispose();assert.equal(destroyed,18);
+    p.dispose();p.dispose();assert.equal(destroyed,18);assert.equal(bindings,6);assert.equal(releases,6);
 });
 
 test('任一补给模型加载失败立即清理固定池和 Motor 配置，回调只完成一次', () => {
     const d=runtimeFixture(true);let failed=0;
-    d.runtime.prepare(e=>{assert.ok(e);failed++;});d.pending[0](new Error('模型缺失'));
+    d.runtime.prepare(e=>{assert.ok(e);failed++;});d.pending.shift()(null,{});d.pending.shift()(new Error('模型缺失'));
     assert.equal(failed,1);assert.equal(d.counts.destroyed,1);assert.equal(d.motor._entertainment,null);
+    assert.equal(d.counts.renderDestroyed,1);
     d.runtime.dispose();assert.equal(failed,1);
+});
+
+test('水线效果加载失败不建池；冰沙迟到加载不复活已释放资源', () => {
+    const d=runtimeFixture(true);let failed=0;
+    d.runtime.prepare(e=>{assert.ok(e);failed++;});d.pending.shift()(new Error('水线效果缺失'));
+    assert.equal(failed,1);assert.equal(d.counts.built,0);assert.equal(d.counts.renderBuilt,0);
+    assert.equal(d.motor._entertainment,null);
+    const canceled=runtimeFixture(true);let completed=0;
+    canceled.runtime.prepare(e=>{assert.ok(e);completed++;});canceled.pending.shift()(null,{});
+    canceled.pending.shift()(null,{});const slush=canceled.pending.shift();
+    canceled.runtime.dispose();slush(null,{});
+    assert.equal(completed,1);assert.equal(canceled.counts.built,1);assert.equal(canceled.counts.destroyed,1);
+    assert.equal(canceled.counts.renderDestroyed,1);
 });
 
 test('娱乐手感参数通过统一调参保存重载，旧配置缺少新键时使用来源默认值', () => {
