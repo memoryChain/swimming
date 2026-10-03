@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "c0a0da61-2257-43ec-81f6-e997076ead87",
+  "files": [],
+  "subMetas": {
+    "43729": {
+      "importer": "gltf-mesh",
+      "uuid": "c0a0da61-2257-43ec-81f6-e997076ead87@43729",
+      "displayName": "",
+      "id": "43729",
+      "name": "GeyserWaterJetMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 176
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "a1f5a": {
+      "importer": "gltf-material",
+      "uuid": "c0a0da61-2257-43ec-81f6-e997076ead87@a1f5a",
+      "displayName": "",
+      "id": "a1f5a",
+      "name": "GeyserWaterJetVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "f2618": {
+      "importer": "gltf-scene",
+      "uuid": "c0a0da61-2257-43ec-81f6-e997076ead87@f2618",
+      "displayName": "",
+      "id": "f2618",
+      "name": "GeyserWaterJet.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "c0a0da61-2257-43ec-81f6-e997076ead87@43729"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "c0a0da61-2257-43ec-81f6-e997076ead87@a1f5a"
+      ],
+      "scenes": [
+        "c0a0da61-2257-43ec-81f6-e997076ead87@f2618"
+      ]
+    }
+  }
+}

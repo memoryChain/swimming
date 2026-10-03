@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "b18e93b4-74a5-4e8b-8c8c-180274d926ca",
+  "files": [],
+  "subMetas": {
+    "cfe8e": {
+      "importer": "gltf-mesh",
+      "uuid": "b18e93b4-74a5-4e8b-8c8c-180274d926ca@cfe8e",
+      "displayName": "",
+      "id": "cfe8e",
+      "name": "GiantWaveShoreMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 248
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "b3e36": {
+      "importer": "gltf-material",
+      "uuid": "b18e93b4-74a5-4e8b-8c8c-180274d926ca@b3e36",
+      "displayName": "",
+      "id": "b3e36",
+      "name": "GiantWaveShoreVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "377c9": {
+      "importer": "gltf-scene",
+      "uuid": "b18e93b4-74a5-4e8b-8c8c-180274d926ca@377c9",
+      "displayName": "",
+      "id": "377c9",
+      "name": "GiantWaveShore.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "b18e93b4-74a5-4e8b-8c8c-180274d926ca@cfe8e"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "b18e93b4-74a5-4e8b-8c8c-180274d926ca@b3e36"
+      ],
+      "scenes": [
+        "b18e93b4-74a5-4e8b-8c8c-180274d926ca@377c9"
+      ]
+    }
+  }
+}

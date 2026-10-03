@@ -111,7 +111,7 @@ test('固定喷泉网格贴实际水面，30Hz 更新、隐藏零变换写入，
     h.visual.hide();const hidden=h.nodes.reduce((sum,n)=>sum+n.writes,0);
     for(let i=0;i<30;i++)h.visual.update([],3+i/30,0);
     assert.equal(h.nodes.reduce((sum,n)=>sum+n.writes,0),hidden);
-    h.visual.dispose();h.visual.dispose();assert.ok(h.meshes.every(m=>m.destroyCount===1));assert.equal(h.materials[0].destroyCount,1);
+    h.visual.dispose();h.visual.dispose();assert.ok(h.meshes.every(m=>m.destroyCount===0));assert.equal(h.materials[0].destroyCount,1);
 });
 
 test('喷发前气泡实际冒出水面，泡沫有可见高度，两次预警都没有提前喷水',()=>{
@@ -152,7 +152,7 @@ test('两个表现槽位复用所有泳段，排布冻结且不消费公共随�
     const {GeyserRaceController:C}=v.loadModule('entertainment/GeyserRaceController'),rng=v.loadModule('core/SharedRNG');
     rng.reseedSharedRandom(77);const expected=rng.randomFloat();rng.reseedSharedRandom(77);
     let registered=0,released=0;
-    const c=new C(v.root,course,[f.body],42,400,{registerFloatingObject(root){registered++;return()=>released++;}});
+    const c=new C(v.root,course,[f.body],42,400,v.assets,{registerFloatingObject(root){registered++;return()=>released++;}});
     assert.equal(rng.randomFloat(),expected);assert.equal(c.patches.length,8);assert.equal(registered,2);
     const signature=JSON.stringify(c.patches),nodes=v.nodes.length,meshes=v.meshes.length,materials=v.materials.length;
     for(let round=0;round<20;round++){
@@ -167,7 +167,7 @@ test('两个表现槽位复用所有泳段，排布冻结且不消费公共随�
 
 test('真实身体扫掠驱动核心弹起与AI绕行；事件空闲不采身体或写变换',()=>{
     const v=fixture(),a=createAiHarness(),f=racer(a),course=f.body.courseLayout,{GeyserRaceController:C}=v.loadModule('entertainment/GeyserRaceController');
-    const c=new C(v.root,course,[f.body],42,200);let samples=0;
+    const c=new C(v.root,course,[f.body],42,200,v.assets);let samples=0;
     const original=f.body.sampleGeyserBody.bind(f.body);f.body.sampleGeyserBody=p=>{samples++;original(p);};
     c.update(.1,0);assert.equal(samples,0);c.update(.1,10);const vent=c.vents[0];
     const d=(vent.x-course.startX)/(course.finishX-course.startX)*course.courseLength;
@@ -177,18 +177,18 @@ test('真实身体扫掠驱动核心弹起与AI绕行；事件空闲不采身体
     assert.equal(f.body.isForcedLaunchActive,true);assert.equal(c.targetZForAi(f.body),null);
 });
 
-test('本地运行模块不加载新资源，20次重赛复用反应对象与网格，结束和销毁清理一次',()=>{
+test('本地喷泉赛前加载三份GLB，20次重赛不再加载或创建网格，结束和销毁清理一次',()=>{
     const v=fixture(),a=createAiHarness(),f=racer(a),course=f.body.courseLayout;
     v.cc.Prefab=class{};v.cc.EffectAsset=class{};
-    // 喷泉使用内置材质，若意外落入补给加载则真实资源桩会使测试失败。
+    // 仅加载三份喷泉模型；材质继续沿用内置无光照材质。
     const {EntertainmentRaceRuntime:R}=v.loadModule('app/EntertainmentRaceRuntime'),{GameState:S}=v.loadModule('core/GameConstants');
     const runtime=new R(v.root,course,'geyser',42,200,[{lane:0,swimmer:f.body,condition:f.condition,ai:null}]);
     let prepared=0;runtime.prepare(e=>{assert.ifError(e);prepared++;});assert.equal(prepared,1);
-    const reaction=f.body._geyser,nodes=v.nodes.length,meshes=v.meshes.length;
+    const reaction=f.body._geyser,nodes=v.nodes.length,meshes=v.meshes.length;assert.equal(v.requests.length,3);
     for(let round=0;round<20;round++){
         runtime.onStateChanged(S.COUNTDOWN);f.body.startRace(20,4);runtime.onStateChanged(S.RACING);runtime.update(.1,S.RACING);
         assert.equal(launch(f,a),true);runtime.onStateChanged(S.FINISHED);assert.equal(f.body.isForcedLaunchActive,false);
-        assert.equal(f.body._geyser,reaction);assert.equal(v.nodes.length,nodes);assert.equal(v.meshes.length,meshes);
+        assert.equal(f.body._geyser,reaction);assert.equal(v.requests.length,3);assert.equal(v.nodes.length,nodes);assert.equal(v.meshes.length,meshes);
     }
     runtime.dispose();runtime.dispose();assert.equal(f.body._geyser,null);assert.equal(f.body.motor._entertainment,null);
 });
@@ -206,7 +206,7 @@ test('全部主干角色在普通喷泉 200/400米、30/60Hz 可完赛，包括�
     const characters=a.load('app/PlayerCharacterConfig').PLAYER_CHARACTER_DEFINITIONS;
     for(const distance of [200,400])for(const fps of [30,60])for(const character of characters){
         balance.setRaceDifficulty(distance===200?'competitive':'championship');a.load('core/SharedRNG').reseedSharedRandom(42);
-        const f=racer(a,character.id,20),c=new C(v.root,f.body.courseLayout,[f.body],42,distance);
+        const f=racer(a,character.id,20),c=new C(v.root,f.body.courseLayout,[f.body],42,distance,v.assets);
         assert.equal(launch(f,a),true);let steps=0,clock=1;
         while(f.body.motor.isRacing && steps<fps*350){
             f.step(1/fps);c.update(1/fps,f.body.distance);clock+=1/fps;
@@ -219,23 +219,20 @@ test('全部主干角色在普通喷泉 200/400米、30/60Hz 可完赛，包括�
 });
 
 
-test('喷泉表现初始化失败回收部分网格、材质和相机层，不残留有效子节点',()=>{
-    for(const failure of ['mesh','material','part','layer']){
+test('喷泉表现初始化失败回收自有材质和相机层，保留共享网格，不残留有效子节点',()=>{
+    for(const failure of ['material','part','layer']){
         const h=fixture(),P=h.loadModule('entertainment/GeyserBrawlPresentation').GeyserBrawlPresentation;
-        const meshStart=h.meshes.length,materialStart=h.materials.length,nodeStart=h.nodes.length;
+        const materialStart=h.materials.length,nodeStart=h.nodes.length;
         let calls=0,released=0;
-        if(failure==='mesh'){
-            const create=h.cc.utils.createMesh;
-            h.cc.utils.createMesh=g=>{if(++calls===2)throw new Error('网格失败');return create(g);};
-        }else if(failure==='material'){
+        if(failure==='material'){
             h.cc.Material.prototype.initialize=function(){throw new Error('材质失败');};
         }else if(failure==='part'){
             const add=h.Node.prototype.addComponent;
             h.Node.prototype.addComponent=function(C){if(++calls===3)throw new Error('组件失败');return add.call(this,C);};
         }
         const layers={registerFloatingObject(){if(++calls===2)throw new Error('相机层失败');return()=>released++;}};
-        assert.throws(()=>new P(h.root,0,2,.055,failure==='layer'?layers:null),/失败/);
-        assert.ok(h.meshes.slice(meshStart).every(m=>m.destroyCount===1));
+        assert.throws(()=>new P(h.root,0,2,h.assets,.055,failure==='layer'?layers:null),/失败/);
+        assert.ok(h.meshes.every(m=>m.destroyCount===0));
         assert.ok(h.materials.slice(materialStart).every(m=>m.destroyCount===1));
         assert.ok(h.nodes.slice(nodeStart).every(n=>!n.isValid));
         if(failure==='layer')assert.equal(released,1);

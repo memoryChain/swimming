@@ -5,6 +5,9 @@ export type EntertainmentDebrisMeshes = {
     tray: Mesh;
 };
 
+export type GiantWaveMeshes = { body: Mesh; wake: Mesh; shore: Mesh };
+export type GeyserMeshes = { foam: Mesh; jet: Mesh; drops: Mesh };
+
 /** 赛前读取已导入 GLB 的共享 Mesh；运行时槽位不需要隐藏的模型副本。 */
 export function readEntertainmentItemMesh(prefab: Prefab, assetPath: string): Mesh {
     const root = prefab.data as Node | null;

@@ -387,6 +387,16 @@ export const PREPARE_PANORAMA_WIDTH = 2115;
 export const PREPARE_PANORAMA_HEIGHT = 743;
 
 export const RESOURCE_PATHS = {
+    geyser: {
+        foam: 'items/GeyserSurfaceFoam/GeyserSurfaceFoam',
+        jet: 'items/GeyserWaterJet/GeyserWaterJet',
+        drops: 'items/GeyserDroplets/GeyserDroplets',
+    },
+    giantWave: {
+        body: 'items/GiantWaveBody/GiantWaveBody',
+        wake: 'items/GiantWaveWake/GiantWaveWake',
+        shore: 'items/GiantWaveShore/GiantWaveShore',
+    },
     entertainmentSupplies: {
         soda: 'items/StimulantBottle/StimulantBottle',
         slush: 'items/CalmSlush/CalmSlush',

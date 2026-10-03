@@ -4,11 +4,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const ts = require(process.env.TYPESCRIPT_PATH || 'typescript');
-const { createFixedMeshHarness } = require('./helpers/fixed-mesh-harness.cjs');
+const { createImportedMeshHarness } = require('./helpers/imported-mesh-harness.cjs');
 const { createAiHarness } = require('./helpers/ai-race-harness.cjs');
 const near = (a,b,e=1e-7) => assert.ok(Math.abs(a-b)<e,`${a} != ${b}`);
 function fixture() {
-    const h=createFixedMeshHarness();
+    const h=createImportedMeshHarness('giantWave');
     return {...h,rules:h.loadModule('entertainment/GiantWaveRules')};
 }
 function racer(h,id='cartonSwimmer6',distance=20) {
@@ -161,7 +161,7 @@ function bounds(h,snapshot){
 test('预告白沫在真实水面上起伏，正反向浪头在到岸后停住，固定网格预算有界',()=>{
     for(const waterY of [.055,.35])for(const direction of [-1,1]){
         const h=fixture(),r=h.rules,P=h.loadModule('entertainment/GiantWavePresentation').GiantWavePresentation;
-        const p=new P(h.root,waterY),s=r.newGiantWaveState();
+        const p=new P(h.root,waterY,h.assets),s=r.newGiantWaveState();
         Object.assign(s,{phase:'preview',timer:3,direction,startX:direction>0?3:47,x:direction>0?3:47,endX:direction>0?47:3,width:13.2,length:6});
         const budget=h.budget();assert.deepEqual(budget.triangles,[616,336,248]);assert.equal(budget.nodes,3);assert.equal(budget.materials,3);
         let min=Infinity,max=-Infinity;
@@ -173,7 +173,7 @@ test('预告白沫在真实水面上起伏，正反向浪头在到岸后停住�
         s.age=r.waveArrivalTime(s)+.3;s.x=s.endX;p.update(s);
         const shore=h.nodes.find(n=>n.name==='GiantWaveShore');near(shore.position.x,s.endX+direction*(s.length/2-.025));
         assert.equal(shore.active,true);assert.deepEqual(h.budget(),budget);p.dispose();p.dispose();
-        assert.ok(h.meshes.every(m=>m.destroyCount===1));assert.ok(h.materials.every(m=>m.destroyCount===1));
+        assert.ok(h.meshes.every(m=>m.destroyCount===0));assert.ok(h.materials.every(m=>m.destroyCount===1));
     }
 });
 
@@ -185,7 +185,7 @@ test('表现30Hz限频，隐藏时零变换和材质写入；水上水下层注�
         ['captureNodeLayers','restoreNodeLayers']);
     const layers=new Layers();Object.assign(layers,{_floatingObjects:[],_underwaterViewActive:false,_swimmerCamera:{isValid:true},
         _poolsideWaterline:{setUnderwaterViewActive(){}},applyFloorTint(){},tagLaneFloats(){}});
-    const p=new P(h.root,.055,layers),s=h.rules.newGiantWaveState();
+    const p=new P(h.root,.055,h.assets,layers),s=h.rules.newGiantWaveState();
     Object.assign(s,{phase:'active',age:4,width:13,length:6});p.update(s);
     const writes=()=>h.nodes.reduce((n,x)=>n+x.writes,0)+h.materials.reduce((n,x)=>n+x.writes,0);
     const before=writes();s.age+=.001;s.x+=.004;p.update(s);assert.equal(writes(),before);
@@ -199,21 +199,20 @@ test('表现30Hz限频，隐藏时零变换和材质写入；水上水下层注�
     p.dispose();p.dispose();assert.equal(layers._floatingObjects.length,0);assert.ok(h.nodes.slice(1).every(n=>n.layer===1));
 });
 
-test('初始化任一步失败都回收已创建的网格/材质/节点/相机层，选手绑定失败同样清理',()=>{
-    for(const failure of ['mesh','material','part','layer','binding']){
+test('初始化失败回收自有材质/节点/相机层，保留共享网格；选手绑定失败同样清理',()=>{
+    for(const failure of ['material','part','layer','binding']){
         const h=fixture(),P=h.loadModule('entertainment/GiantWavePresentation').GiantWavePresentation;
         let calls=0,released=0;
-        if(failure==='mesh'){const create=h.cc.utils.createMesh;h.cc.utils.createMesh=g=>{if(++calls===2)throw new Error('失败');return create(g);};}
         if(failure==='material')h.cc.Material.prototype.initialize=function(){throw new Error('失败');};
         if(failure==='part'){const add=h.Node.prototype.addComponent;h.Node.prototype.addComponent=function(C){if(++calls===2)throw new Error('失败');return add.call(this,C);};}
         const layers={registerFloatingObject(){if(failure==='layer'&&++calls===2)throw new Error('失败');return()=>released++;}};
         if(failure==='binding'){
             const a=createAiHarness(),f=racer(a),C=h.loadModule('entertainment/GiantWaveRaceController').GiantWaveRaceController;
             const broken={configureEntertainmentGiantWave(state){if(state)throw new Error('失败');}};
-            assert.throws(()=>new C(h.root,f.body.courseLayout,[f.body,broken],42,200,layers),/失败/);
+            assert.throws(()=>new C(h.root,f.body.courseLayout,[f.body,broken],42,200,h.assets,layers),/失败/);
             assert.equal(f.body.motor.hasEntertainmentGiantWave,false);
-        }else assert.throws(()=>new P(h.root,.055,failure==='layer'?layers:null),/失败/);
-        assert.ok(h.meshes.every(m=>m.destroyCount===1));assert.ok(h.materials.every(m=>m.destroyCount===1));assert.ok(h.nodes.slice(1).every(n=>!n.isValid));
+        }else assert.throws(()=>new P(h.root,.055,h.assets,failure==='layer'?layers:null),/失败/);
+        assert.ok(h.meshes.every(m=>m.destroyCount===0));assert.ok(h.materials.every(m=>m.destroyCount===1));assert.ok(h.nodes.slice(1).every(n=>!n.isValid));
         if(failure==='layer')assert.equal(released,1);if(failure==='binding')assert.equal(released,3);
     }
 });
@@ -250,22 +249,22 @@ test('AI在公开预告中并入顺浪或绕开迎浪；转身、深潜、完赛
     s.age=4;sample.x=-100;assert.equal(r.giantWaveTargetZ(s,sample,0,24,.9),null);
 });
 
-test('准备阶段完成创建，20次重赛复用网格与选手状态，无额外加载，结束与销毁清理一次',()=>{
+test('赛前加载三份GLB，20次重赛复用网格与选手状态，结束后仅回收自有资源',()=>{
     const h=fixture(),a=createAiHarness(),f=racer(a),R=h.loadModule('app/EntertainmentRaceRuntime').EntertainmentRaceRuntime;
     const S=h.loadModule('core/GameConstants').GameState;
     const runtime=new R(h.root,f.body.courseLayout,'giant-wave',42,200,[{lane:0,swimmer:f.body,condition:f.condition,ai:f.ai}]);
     let prepared=0;runtime.prepare(e=>{assert.ifError(e);prepared++;});assert.equal(prepared,1);
-    const current=f.body.motor._giantWave,budget=h.budget();assert.ok(current);
+    const current=f.body.motor._giantWave,budget=h.budget();assert.ok(current);assert.equal(h.requests.length,3);
     for(let i=0;i<20;i++){
         runtime.onStateChanged(S.COUNTDOWN);f.body.startRace(20,4);runtime.onStateChanged(S.RACING);
         runtime.update(.1,S.RACING);assert.equal(runtime.giantWave.simulation.state.phase,'preview');
         runtime.update(3,S.RACING);runtime.update(4,S.RACING);
         current.state.x=f.body.courseLayout.distanceToWorldX(f.body.distance);f.body.stepSimulation(.1);assert.ok(current.lift>0);
         runtime.onStateChanged(S.FINISHED);near(current.lift,0);near(f.body.cartoonRig.giantWaveLift,0);
-        assert.equal(f.body.motor._giantWave,current);assert.deepEqual(h.budget(),budget);assert.equal(f.ai._entertainmentTargetZ,null);
+        assert.equal(f.body.motor._giantWave,current);assert.equal(h.requests.length,3);assert.deepEqual(h.budget(),budget);assert.equal(f.ai._entertainmentTargetZ,null);
     }
     runtime.dispose();runtime.dispose();assert.equal(f.body.motor.hasEntertainmentGiantWave,false);assert.equal(f.body.motor._entertainment,null);
-    assert.ok(h.meshes.every(m=>m.destroyCount===1));assert.ok(h.materials.every(m=>m.destroyCount===1));
+    assert.ok(h.meshes.every(m=>m.destroyCount===0));assert.ok(h.materials.every(m=>m.destroyCount===1));
 });
 
 test('全部主干角色在普通巨浪200/400米、30/60Hz可完赛，逻辑距离和位置始终有效',()=>{
@@ -274,7 +273,7 @@ test('全部主干角色在普通巨浪200/400米、30/60Hz可完赛，逻辑距
     let previews=0,rides=0,opposed=0;
     for(const distance of [200,400])for(const fps of [30,60])for(const character of characters){
         balance.setRaceDifficulty(distance===200?'competitive':'championship');a.load('core/SharedRNG').reseedSharedRandom(42);
-        const f=racer(a,character.id,2),c=new C(h.root,f.body.courseLayout,[f.body],42,distance);let steps=0,clock=1;
+        const f=racer(a,character.id,2),c=new C(h.root,f.body.courseLayout,[f.body],42,distance,h.assets);let steps=0,clock=1;
         while(f.body.motor.isRacing&&steps<fps*350){
             f.step(1/fps);c.update(1/fps);clock+=1/fps;
             if(clock>=.1){clock=0;f.ai.setEntertainmentTargetZ(c.targetZForAi(0));}

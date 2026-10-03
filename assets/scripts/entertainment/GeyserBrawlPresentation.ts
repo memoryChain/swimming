@@ -1,23 +1,15 @@
-import { Color, gfx, Material, Mesh, MeshRenderer, Node, utils } from 'cc';
+import { Color, gfx, Material, Mesh, MeshRenderer, Node } from 'cc';
 import { GEYSER_TUNING, geyserBurstHeight, geyserPulseIndex, geyserRadiusScale, geyserWarningSeconds,
     geyserPulseStart, type GeyserTuning, type GeyserVent } from './GeyserBrawlRules';
 import type { FloatingItemLayers } from './FloatingItemRenderer';
 
-type Geometry = { positions: number[]; colors: number[]; indices: number[] };
-type Tint = readonly [number, number, number, number];
+import type { GeyserMeshes } from './EntertainmentItemAssets';
 type VentView = { root: Node; foam: Node; jet: Node; drops: readonly Node[]; yaw: number; releaseLayers: (() => void) | null };
 const FOAM_TAIL_SECONDS = 0.3;
 const DROP_LIFE = 0.6;
 const DROP_INTERVAL = 0.64;
-const WHITE: Tint = [0.88, 0.98, 1, 0.92];
-const PALE: Tint = [0.49, 0.88, 0.96, 0.82];
-const WATER: Tint = [0.23, 0.71, 0.88, 0.8];
-const BASE: Tint = [0.12, 0.53, 0.73, 0.08];
-const SUBMERGED: Tint = [0.19, 0.66, 0.82, 0.3];
-
-/** 三份固定网格、一份材质。每口四个渲染节点，水滴与预警气泡复用槽位。 */
+/** Blender 导出的三份共享网格、一份材质。每口四个渲染节点，水滴与预警气泡复用槽位。 */
 export class GeyserBrawlPresentation {
-    private readonly meshes: Mesh[] = [];
     private material: Material | null = null;
     private readonly views: VentView[] = [];
     private readonly foamY: number;
@@ -25,17 +17,13 @@ export class GeyserBrawlPresentation {
     private sampleTick = -1;
     private disposed = false;
 
-    constructor(parent: Node, private readonly surfaceY: number, ventCount: number,
+    constructor(parent: Node, private readonly surfaceY: number, ventCount: number, meshes: GeyserMeshes,
         waterY = surfaceY + 0.055, layers: FloatingItemLayers | null = null) {
         // 水面高于泳者根节点，泡沫要放在实际水面上，不能陷进水材质里。
         this.foamY = Math.max(0.03, waterY - surfaceY + 0.025);
         this.waterlineY = waterY - surfaceY;
         let buildingRoot: Node | null = null;
         try {
-            // 逐份登记，后续创建失败时仍能回收已经分配的 GPU 资源。
-            this.meshes.push(utils.createMesh(buildSurfaceFoam()));
-            this.meshes.push(utils.createMesh(buildWaterJet(this.waterlineY)));
-            this.meshes.push(utils.createMesh(buildDroplets()));
             this.material = new Material();
             this.material.initialize({ effectName: 'builtin-unlit', technique: 1,
                 defines: { USE_VERTEX_COLOR: true }, states: {
@@ -47,10 +35,10 @@ export class GeyserBrawlPresentation {
                 const root = buildingRoot = new Node(`GeyserVent_${index}`);
                 parent.addChild(root);
                 root.layer = parent.layer;
-                const foam = this.part(root, 'SurfaceFoam', this.meshes[0]);
-                const jet = this.part(root, 'WaterJetAndCrown', this.meshes[1]);
-                const drops = [this.part(root, 'BubblesAndDropsA', this.meshes[2]),
-                    this.part(root, 'BubblesAndDropsB', this.meshes[2])];
+                const foam = this.part(root, 'SurfaceFoam', meshes.foam);
+                const jet = this.part(root, 'WaterJetAndCrown', meshes.jet);
+                const drops = [this.part(root, 'BubblesAndDropsA', meshes.drops),
+                    this.part(root, 'BubblesAndDropsB', meshes.drops)];
                 const yaw = (index * 137.508) % 360;
                 jet.setRotationFromEuler(0, yaw, 0);
                 drops[0].setRotationFromEuler(0, yaw + 23, 0);
@@ -164,7 +152,6 @@ export class GeyserBrawlPresentation {
         if (this.disposed) return;
         this.disposed = true;
         for (const view of this.views) { view.releaseLayers?.(); if (view.root.isValid) view.root.destroy(); }
-        for (const mesh of this.meshes) mesh.destroy();
         this.material?.destroy();
     }
 
@@ -187,146 +174,4 @@ function position(node: Node, x: number, y: number, z: number): void {
 }
 function scale(node: Node, x: number, y: number, z: number): void {
     if (node.scale.x !== x || node.scale.y !== y || node.scale.z !== z) node.setScale(x, y, z);
-}
-function geometry(): Geometry { return { positions: [], colors: [], indices: [] }; }
-function vertex(g: Geometry, x: number, y: number, z: number, tint: Tint): number {
-    const index = g.positions.length / 3;
-    g.positions.push(x, y, z); g.colors.push(...tint);
-    return index;
-}
-function quad(g: Geometry, a: number, b: number, c: number, d: number): void {
-    g.indices.push(a, b, c, a, c, d);
-}
-
-/** 不等长泡沫弧与倾斜小水片合在一份网格，避免规则同心圆的靶心感。 */
-function buildSurfaceFoam(): Geometry {
-    const g = geometry();
-    for (let band = 0; band < 2; band++) {
-        const count = band === 0 ? 19 : 27;
-        for (let part = 0; part < count; part++) {
-            if ((part + band) % 5 === 0) continue;
-            const angle = part / count * Math.PI * 2 + band * 0.19;
-            const next = angle + Math.PI * 2 / count * 0.82;
-            const radius = (band === 0 ? 0.53 : 1.15) + 0.065 * Math.sin(part * 2.4);
-            const width = (band === 0 ? 0.16 : 0.085) * (0.8 + 0.25 * Math.sin(part * 1.7));
-            const top = band === 0 ? 0.05 + (part % 3) * 0.035 : 0.012;
-            const a = vertex(g, Math.cos(angle) * radius, 0, Math.sin(angle) * radius, PALE);
-            const b = vertex(g, Math.cos(next) * radius, 0, Math.sin(next) * radius, PALE);
-            const c = vertex(g, Math.cos(next) * (radius + width), top, Math.sin(next) * (radius + width), WHITE);
-            const d = vertex(g, Math.cos(angle) * (radius + width), top * 0.8, Math.sin(angle) * (radius + width), WHITE);
-            quad(g, a, b, c, d);
-        }
-    }
-    // 喷口附近的低矮泡沫鼓包，使蓄压有水面体积，而不只剩警戒环。
-    for (let patch = 0; patch < 7; patch++) {
-        const angle = patch * 2.39996;
-        const radius = 0.2 + (patch % 3) * 0.15;
-        const x = Math.cos(angle) * radius, z = Math.sin(angle) * radius;
-        const size = 0.09 + (patch % 2) * 0.045;
-        const center = vertex(g, x, 0.08 + (patch % 3) * 0.025, z, WHITE);
-        for (let side = 0; side < 6; side++) {
-            const a = side / 6 * Math.PI * 2;
-            vertex(g, x + Math.cos(a) * size, 0, z + Math.sin(a) * size, PALE);
-        }
-        for (let side = 0; side < 6; side++) g.indices.push(center, center + 1 + side, center + 1 + (side + 1) % 6);
-    }
-    return g;
-}
-
-/** 脉动水束：不等截面、偏心腰身；上部八瓣水冠从中心向外翻卷。 */
-function buildWaterJet(waterlineY: number): Geometry {
-    const g = geometry();
-    const radii = [0.25, 0.25, 0.29, 0.38, 0.48, 0.32];
-    const heights = [0, 0.23, 0.48, 0.7, 0.84, 0.94];
-    const sides = 12;
-    for (let row = 0; row < radii.length; row++) {
-        const y = heights[row];
-        for (let side = 0; side < sides; side++) {
-            const angle = side / sides * Math.PI * 2;
-            const ripple = 1 + 0.1 * Math.sin(side * 2.5 + row * 1.6);
-            const radius = radii[row] * ripple;
-            const tint = row === 0 ? BASE : row < 3 ? SUBMERGED
-                : side % 4 === 1 ? PALE : row >= 4 ? PALE : WATER;
-            vertex(g, Math.cos(angle) * radius + 0.065 * Math.sin(y * 5), y,
-                Math.sin(angle) * radius + 0.045 * Math.sin(y * 7), tint);
-            if (row > 0) {
-                const a = (row - 1) * sides + side, b = (row - 1) * sides + (side + 1) % sides;
-                quad(g, a, b, b + sides, a + sides);
-            }
-        }
-    }
-    const cap = vertex(g, 0, 0.965, 0, PALE);
-    for (let side = 0; side < sides; side++) g.indices.push(cap, 5 * sides + side, 5 * sides + (side + 1) % sides);
-    for (let petal = 0; petal < 8; petal++) {
-        const angle = petal / 8 * Math.PI * 2 + 0.07 * Math.sin(petal * 3);
-        const base = g.positions.length / 3;
-        const length = 0.65 + .22 * Math.sin(petal * 2.2);
-        for (let step = 0; step < 6; step++) {
-            const t = step / 5;
-            const radius = 0.23 + length * t;
-            const y = 0.85 + (0.12 + 0.045 * Math.sin(petal * 1.8)) * Math.sin(t * Math.PI)
-                - (0.04 + 0.09 * (petal % 3) / 2) * t;
-            const halfWidth = (.1 + .08 * Math.sin(t * Math.PI)) * (1 - t * .86)
-                * (.85 + .15 * Math.cos(petal * 2.1));
-            for (const sign of [-1, 1]) vertex(g,
-                Math.cos(angle) * radius - Math.sin(angle) * halfWidth * sign, y,
-                Math.sin(angle) * radius + Math.cos(angle) * halfWidth * sign, step >= 3 && petal % 3 !== 0 ? WHITE : PALE);
-            if (step > 0) quad(g, base + step * 2 - 2, base + step * 2 - 1, base + step * 2 + 1, base + step * 2);
-        }
-    }
-    return cropJetAboveWater(g, Math.min(0.9, Math.max(0, (1.4 + waterlineY) / 2.7)));
-}
-
-/** 初始化时裁掉水下三角面，保留已认可的水上外形，再把水面至柱顶归一化。 */
-function cropJetAboveWater(source: Geometry, plane: number): Geometry {
-    const result = geometry();
-    for (let triangle = 0; triangle < source.indices.length; triangle += 3) {
-        const input: number[][] = [];
-        for (let corner = 0; corner < 3; corner++) {
-            const index = source.indices[triangle + corner];
-            input.push([...source.positions.slice(index * 3, index * 3 + 3),
-                ...source.colors.slice(index * 4, index * 4 + 4)]);
-        }
-        const polygon: number[][] = [];
-        for (let edge = 0; edge < 3; edge++) {
-            const previous = input[(edge + 2) % 3], current = input[edge];
-            const wasAbove = previous[1] >= plane, isAbove = current[1] >= plane;
-            if (wasAbove !== isAbove) {
-                const t = (plane - previous[1]) / (current[1] - previous[1]);
-                const point = previous.map((value, index) => value + (current[index] - value) * t);
-                point[1] = plane;
-                polygon.push(point);
-            }
-            if (isAbove) polygon.push(current);
-        }
-        const base = result.positions.length / 3;
-        for (const point of polygon) {
-            result.positions.push(point[0], Math.max(0, (point[1] - plane) / (1 - plane)), point[2]);
-            result.colors.push(point[3], point[4], point[5], point[6]);
-        }
-        for (let corner = 1; corner + 1 < polygon.length; corner++) result.indices.push(base, base + corner, base + corner + 1);
-    }
-    return result;
-}
-
-/** 八颗错大小切面水滴合一批；两个槽交替发射，避免逐滴创建节点。 */
-function buildDroplets(): Geometry {
-    const g = geometry();
-    for (let drop = 0; drop < 8; drop++) {
-        const angle = drop * 2.39996;
-        const radius = 0.57 + (drop % 3) * 0.19;
-        const x = Math.cos(angle) * radius, z = Math.sin(angle) * radius;
-        const y = (drop % 4) * 0.075;
-        const size = 0.055 + (drop % 3) * 0.018;
-        const base = g.positions.length / 3;
-        vertex(g, x, y + size * 1.65, z, WHITE);
-        for (let side = 0; side < 6; side++) {
-            const a = side / 6 * Math.PI * 2;
-            vertex(g, x + Math.cos(a) * size, y, z + Math.sin(a) * size, side < 3 ? WHITE : PALE);
-        }
-        vertex(g, x, y - size * 0.85, z, WATER);
-        for (let side = 0; side < 6; side++) g.indices.push(base, base + 1 + side,
-            base + 1 + (side + 1) % 6, base + 7, base + 1 + (side + 1) % 6, base + 1 + side);
-    }
-    return g;
 }

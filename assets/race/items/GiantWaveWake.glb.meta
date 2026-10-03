@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "92194976-d57e-4010-897b-dca378bc9569",
+  "files": [],
+  "subMetas": {
+    "64506": {
+      "importer": "gltf-material",
+      "uuid": "92194976-d57e-4010-897b-dca378bc9569@64506",
+      "displayName": "",
+      "id": "64506",
+      "name": "GiantWaveWakeVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "85aa7": {
+      "importer": "gltf-mesh",
+      "uuid": "92194976-d57e-4010-897b-dca378bc9569@85aa7",
+      "displayName": "",
+      "id": "85aa7",
+      "name": "GiantWaveWakeMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 336
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "fbaad": {
+      "importer": "gltf-scene",
+      "uuid": "92194976-d57e-4010-897b-dca378bc9569@fbaad",
+      "displayName": "",
+      "id": "fbaad",
+      "name": "GiantWaveWake.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "92194976-d57e-4010-897b-dca378bc9569@85aa7"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "92194976-d57e-4010-897b-dca378bc9569@64506"
+      ],
+      "scenes": [
+        "92194976-d57e-4010-897b-dca378bc9569@fbaad"
+      ]
+    }
+  }
+}

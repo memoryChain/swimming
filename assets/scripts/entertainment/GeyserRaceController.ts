@@ -7,6 +7,7 @@ import { GEYSER_TUNING, geyserBurstOverlap, geyserPhaseAt, geyserSpec, geyserPul
     planGeyserVents, geyserRadiusScale, geyserPulseIndex, geyserWarningSeconds, type GeyserHitStrength, type GeyserVent } from './GeyserBrawlRules';
 import { GeyserBrawlPresentation } from './GeyserBrawlPresentation';
 import type { FloatingItemLayers } from './FloatingItemRenderer';
+import type { GeyserMeshes } from './EntertainmentItemAssets';
 
 type Patch = { serial: number; anchorDistance: number; endDistance: number; vents: readonly GeyserVent[] };
 const EMPTY_VENTS: readonly GeyserVent[] = [];
@@ -33,7 +34,7 @@ export class GeyserRaceController {
     private _vents: readonly GeyserVent[] = EMPTY_VENTS;
     constructor(parent: Node, private readonly course: RaceCourseLayout,
         private readonly swimmers: readonly Swimmer[], seed: number, raceDistance: number,
-        layers: FloatingItemLayers | null = null) {
+        meshes: GeyserMeshes, layers: FloatingItemLayers | null = null) {
         const patches: Patch[] = [];
         const extent = Math.max(0, Math.abs(course.finishX - course.startX) * .5);
         for (let lap = 0; lap < Math.min(8, Math.ceil(raceDistance / course.courseLength)); lap++) {
@@ -50,7 +51,7 @@ export class GeyserRaceController {
         this.previousLateral = new Float64Array(swimmers.length);
         this.baseline = new Uint8Array(swimmers.length);
         this.previousBodies = swimmers.map(() => emptyGeyserBodyPose());
-        this.visual = new GeyserBrawlPresentation(parent, course.swimY, 2, course.waterY, layers);
+        this.visual = new GeyserBrawlPresentation(parent, course.swimY, 2, meshes, course.waterY, layers);
     }
     get vents(): readonly GeyserVent[] { return this._vents; }
     get elapsedSeconds(): number { return this.age; }

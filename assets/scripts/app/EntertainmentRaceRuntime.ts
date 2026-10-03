@@ -24,6 +24,8 @@ import { readEntertainmentItemMesh } from '../entertainment/EntertainmentItemAss
 
 const DEBRIS_PATHS = [RESOURCE_PATHS.entertainmentDebris.cola, RESOURCE_PATHS.entertainmentDebris.water,
     RESOURCE_PATHS.entertainmentDebris.sport, RESOURCE_PATHS.entertainmentDebris.tray] as const;
+const GIANT_WAVE_PATHS = [RESOURCE_PATHS.giantWave.body, RESOURCE_PATHS.giantWave.wake, RESOURCE_PATHS.giantWave.shore] as const;
+const GEYSER_PATHS = [RESOURCE_PATHS.geyser.foam, RESOURCE_PATHS.geyser.jet, RESOURCE_PATHS.geyser.drops] as const;
 
 export type EntertainmentRacerBinding = {
     lane: number;
@@ -101,15 +103,17 @@ export class EntertainmentRaceRuntime {
         this.prepareDone = done;
         try {
             if (this.useGiantWave) {
-                this.giantWave = new GiantWaveRaceController(this.world, this.course, this.racers.map(r => r.swimmer),
-                    this.seed, this.raceDistance, this.waterLayers);
-                this.finishPrepare(); return;
+                this.prepareEffectMeshes(GIANT_WAVE_PATHS, meshes => {
+                    this.giantWave = new GiantWaveRaceController(this.world, this.course, this.racers.map(r => r.swimmer),
+                        this.seed, this.raceDistance, { body: meshes[0], wake: meshes[1], shore: meshes[2] }, this.waterLayers);
+                }); return;
             }
             if (this.useGeyser) {
-                this.geyser = new GeyserRaceController(this.world, this.course, this.racers.map(r => r.swimmer),
-                    this.seed, this.raceDistance, this.waterLayers);
-                for (const racer of this.racers) racer.swimmer.configureEntertainmentGeyser(true);
-                this.finishPrepare(); return;
+                this.prepareEffectMeshes(GEYSER_PATHS, meshes => {
+                    this.geyser = new GeyserRaceController(this.world, this.course, this.racers.map(r => r.swimmer),
+                        this.seed, this.raceDistance, { foam: meshes[0], jet: meshes[1], drops: meshes[2] }, this.waterLayers);
+                    for (const racer of this.racers) racer.swimmer.configureEntertainmentGeyser(true);
+                }); return;
             }
             if (this.whirlpools.length) {
                 loadRaceAsset(RESOURCE_PATHS.whirlpoolFunnelEffect, EffectAsset, (error, effect) => {
@@ -132,6 +136,21 @@ export class EntertainmentRaceRuntime {
                 } catch (e) { this.finishPrepare(e instanceof Error ? e : new Error(String(e))); }
             });
         } catch (e) { this.finishPrepare(e instanceof Error ? e : new Error(String(e))); }
+    }
+    private prepareEffectMeshes(paths: readonly string[], build: (meshes: Mesh[]) => void, index = 0, meshes: Mesh[] = []) {
+        const path = paths[index];
+        loadRaceAsset(path, Prefab, (error, prefab) => {
+            if (this.disposed) return;
+            if (error || !prefab || !this.world.isValid) {
+                this.finishPrepare(error ?? new Error(`娱乐模型缺失：${path}`)); return;
+            }
+            try {
+                meshes.push(readEntertainmentItemMesh(prefab, path));
+                if (index + 1 < paths.length) { this.prepareEffectMeshes(paths, build, index + 1, meshes); return; }
+                build(meshes);
+                this.finishPrepare();
+            } catch (e) { this.finishPrepare(e instanceof Error ? e : new Error(String(e))); }
+        });
     }
     private prepareDebris(index = 0, meshes: Mesh[] = []) {
         if (!this.litter) { this.prepareSupplies(); return; }

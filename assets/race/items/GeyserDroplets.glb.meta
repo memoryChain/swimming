@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "c0513814-fd94-45a3-9a3d-3dd267bdaddb",
+  "files": [],
+  "subMetas": {
+    "27f7f": {
+      "importer": "gltf-mesh",
+      "uuid": "c0513814-fd94-45a3-9a3d-3dd267bdaddb@27f7f",
+      "displayName": "",
+      "id": "27f7f",
+      "name": "GeyserDropletsMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 96
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "3b378": {
+      "importer": "gltf-material",
+      "uuid": "c0513814-fd94-45a3-9a3d-3dd267bdaddb@3b378",
+      "displayName": "",
+      "id": "3b378",
+      "name": "GeyserDropletsVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "42d52": {
+      "importer": "gltf-scene",
+      "uuid": "c0513814-fd94-45a3-9a3d-3dd267bdaddb@42d52",
+      "displayName": "",
+      "id": "42d52",
+      "name": "GeyserDroplets.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "c0513814-fd94-45a3-9a3d-3dd267bdaddb@27f7f"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "c0513814-fd94-45a3-9a3d-3dd267bdaddb@3b378"
+      ],
+      "scenes": [
+        "c0513814-fd94-45a3-9a3d-3dd267bdaddb@42d52"
+      ]
+    }
+  }
+}

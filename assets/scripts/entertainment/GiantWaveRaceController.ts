@@ -4,6 +4,7 @@ import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { FloatingItemLayers } from './FloatingItemRenderer';
 import { GiantWaveSimulation, giantWaveTargetZ, type GiantWaveSample } from './GiantWaveRules';
 import { GiantWavePresentation } from './GiantWavePresentation';
+import type { GiantWaveMeshes } from './EntertainmentItemAssets';
 
 /** 本局独立普通巨浪，准备阶段创建，重赛复用；不管理 HUD、画中画、云端或联机。 */
 export class GiantWaveRaceController {
@@ -12,12 +13,12 @@ export class GiantWaveRaceController {
     private readonly samples: GiantWaveSample[];
     private disposed = false;
     constructor(parent: Node, private readonly course: RaceCourseLayout, private readonly swimmers: readonly Swimmer[],
-        seed: number, private readonly raceDistance: number, layers: FloatingItemLayers | null = null) {
+        seed: number, private readonly raceDistance: number, meshes: GiantWaveMeshes, layers: FloatingItemLayers | null = null) {
         this.simulation = new GiantWaveSimulation(course.courseLength, Math.min(course.poolStartX, course.poolFinishX),
             Math.max(course.poolStartX, course.poolFinishX), course.poolWidth, seed, 'three',
             Math.abs(course.finishX - course.startX), 3, raceDistance);
         this.samples = swimmers.map(() => ({ distance: 0, x: 0, z: 0, direction: 1, speed: 0, eligible: false }));
-        this.presentation = new GiantWavePresentation(parent, course.waterY, layers);
+        this.presentation = new GiantWavePresentation(parent, course.waterY, meshes, layers);
         let bound = 0;
         try {
             this.presentation.begin(this.simulation.spec.height);

@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "add0ea66-1e41-492e-9750-243ca1a3eac6",
+  "files": [],
+  "subMetas": {
+    "49053": {
+      "importer": "gltf-material",
+      "uuid": "add0ea66-1e41-492e-9750-243ca1a3eac6@49053",
+      "displayName": "",
+      "id": "49053",
+      "name": "GeyserSurfaceFoamVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "ef7ba": {
+      "importer": "gltf-mesh",
+      "uuid": "add0ea66-1e41-492e-9750-243ca1a3eac6@ef7ba",
+      "displayName": "",
+      "id": "ef7ba",
+      "name": "GeyserSurfaceFoamMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 116
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "9209c": {
+      "importer": "gltf-scene",
+      "uuid": "add0ea66-1e41-492e-9750-243ca1a3eac6@9209c",
+      "displayName": "",
+      "id": "9209c",
+      "name": "GeyserSurfaceFoam.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "add0ea66-1e41-492e-9750-243ca1a3eac6@ef7ba"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "add0ea66-1e41-492e-9750-243ca1a3eac6@49053"
+      ],
+      "scenes": [
+        "add0ea66-1e41-492e-9750-243ca1a3eac6@9209c"
+      ]
+    }
+  }
+}
