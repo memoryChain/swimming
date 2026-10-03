@@ -3,6 +3,7 @@ import { SprayBuoyRaceController } from '../entertainment/SprayBuoyRaceControlle
 import { GiantWaveRaceController } from '../entertainment/GiantWaveRaceController';
 import { EffectAsset, Mesh, Node, Prefab } from 'cc';
 import { GeyserRaceController } from '../entertainment/GeyserRaceController';
+import type { GeyserIntensity } from '../entertainment/GeyserBrawlRules';
 import { buildLightWhirlpoolSpawn, buildWhirlpoolDebugSpawns, whirlpoolTargetZForAi, WhirlpoolSpawn } from '../entertainment/WhirlpoolBrawlRules';
 import { WhirlpoolRacePresentation } from '../entertainment/WhirlpoolRacePresentation';
 import { GameState } from '../core/GameConstants';
@@ -61,7 +62,7 @@ export class EntertainmentRaceRuntime {
     private giantWave: GiantWaveRaceController | null = null;
     private readonly useGiantWave: boolean;
     private readonly useGeyser: boolean;
-    private readonly geyserIntensity: 1 | 2;
+    private readonly geyserIntensity: GeyserIntensity;
     private readonly seed: number;
     private readonly light: EntertainmentLightPlan | null;
     private leaderDistance = 0;

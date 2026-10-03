@@ -1,5 +1,6 @@
 import { buildEntertainmentLightPlan } from './EntertainmentLightPlan';
-export type EntertainmentDebugMode = 'none' | 'supplies' | 'debris' | 'supplies-debris' | 'whirlpool' | 'whirlpool-super' | 'geyser' | 'geyser-large' | 'giant-wave' | 'light-mix' | 'spray-buoy' | 'cannon';
+import type { GeyserIntensity } from './GeyserBrawlRules';
+export type EntertainmentDebugMode = 'none' | 'supplies' | 'debris' | 'supplies-debris' | 'whirlpool' | 'whirlpool-super' | 'geyser' | 'geyser-large' | 'geyser-three' | 'geyser-four' | 'geyser-five' | 'giant-wave' | 'light-mix' | 'spray-buoy' | 'cannon';
 export const ENTERTAINMENT_DEBUG_CHOICES: readonly { id: EntertainmentDebugMode; label: string }[] = [
     { id: 'none', label: '关闭' },
     { id: 'supplies', label: '补给' },
@@ -9,13 +10,27 @@ export const ENTERTAINMENT_DEBUG_CHOICES: readonly { id: EntertainmentDebugMode;
     { id: 'whirlpool-super', label: '含超级漩涡' },
     { id: 'geyser', label: '普通喷泉' },
     { id: 'geyser-large', label: '大喷泉混排' },
+    { id: 'geyser-three', label: '喷泉三档混排' },
+    { id: 'geyser-four', label: '喷泉四档混排' },
+    { id: 'geyser-five', label: '喷泉五档混排' },
     { id: 'giant-wave', label: '普通巨浪' },
     { id: 'spray-buoy', label: '喷雾浮标' },
     { id: 'cannon', label: '单发炮击' },
     { id: 'light-mix', label: '低强度组合' },
 ];
 export function normalizeEntertainmentDebugMode(value: unknown): EntertainmentDebugMode {
-    return value === 'supplies' || value === 'debris' || value === 'supplies-debris' || value === 'whirlpool' || value === 'whirlpool-super' || value === 'geyser' || value === 'geyser-large' || value === 'giant-wave' || value === 'light-mix' || value === 'spray-buoy' || value === 'cannon' ? value : 'none';
+    return value === 'supplies' || value === 'debris' || value === 'supplies-debris' || value === 'whirlpool' || value === 'whirlpool-super' || value === 'geyser' || value === 'geyser-large' || value === 'geyser-three' || value === 'geyser-four' || value === 'geyser-five' || value === 'giant-wave' || value === 'light-mix' || value === 'spray-buoy' || value === 'cannon' ? value : 'none';
+}
+/** 一、二档保留旧 id；调试界面和比赛计划消费同一个档位映射。 */
+export function entertainmentGeyserIntensity(mode: unknown): GeyserIntensity | null {
+    switch (mode) {
+        case 'geyser': return 1;
+        case 'geyser-large': return 2;
+        case 'geyser-three': return 3;
+        case 'geyser-four': return 4;
+        case 'geyser-five': return 5;
+        default: return null;
+    }
 }
 /** 门禁必须先于构造规则、绑定选手、加载资产和配置 Motor。 */
 export function entertainmentDebugAllowed(aiDebug: boolean, networked: boolean, room: boolean,
@@ -26,11 +41,12 @@ export function entertainmentDebugAllowed(aiDebug: boolean, networked: boolean, 
 export function buildEntertainmentDebugPlan(mode: EntertainmentDebugMode, raceDistance: number, seed = 1) {
     const long = raceDistance >= 400;
     const light = mode === 'light-mix' ? buildEntertainmentLightPlan(seed, raceDistance) : null;
+    const geyserIntensity = entertainmentGeyserIntensity(mode);
     return {
         sprayBuoy: mode === 'spray-buoy',
         cannon: mode === 'cannon',
-        geyser: mode === 'geyser' || mode === 'geyser-large' || light?.waterEvent === 'geyser',
-        geyserIntensity: mode === 'geyser-large' ? 2 as const : 1 as const,
+        geyser: geyserIntensity !== null || light?.waterEvent === 'geyser',
+        geyserIntensity: geyserIntensity ?? 1 as const,
         giantWave: mode === 'giant-wave' || light?.waterEvent === 'giant-wave',
         whirlpool: mode === 'whirlpool' || mode === 'whirlpool-super' || light?.waterEvent === 'whirlpool',
         whirlpoolSelection: mode === 'whirlpool-super' ? 'super' as const : 'normal' as const,

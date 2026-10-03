@@ -4,7 +4,7 @@ import type { ForcedLaunchStart } from '../swimmer/ForcedLaunchModel';
 import { emptyGeyserBodyPose, emptyGeyserContact, sampleGeyserBodyContact, geyserBodyClearance } from '../swimmer/GeyserBodyContact';
 import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { GEYSER_TUNING, geyserBurstOverlap, geyserPhaseAt, geyserSpec, geyserPulseStart, geyserHitId,
-    planGeyserVents, geyserRadiusScale, geyserPulseIndex, geyserWarningSeconds, applyGeyserSizes, type GeyserHitStrength, type GeyserVent } from './GeyserBrawlRules';
+    planGeyserVents, geyserRadiusScale, geyserPulseIndex, geyserWarningSeconds, applyGeyserSizes, type GeyserHitStrength, type GeyserVent, type GeyserIntensity } from './GeyserBrawlRules';
 import { GeyserBrawlPresentation } from './GeyserBrawlPresentation';
 import type { FloatingItemLayers } from './FloatingItemRenderer';
 import type { GeyserMeshes } from './EntertainmentItemAssets';
@@ -37,7 +37,7 @@ export class GeyserRaceController {
     constructor(parent: Node, private readonly course: RaceCourseLayout,
         private readonly swimmers: readonly Swimmer[], private readonly seed: number, raceDistance: number,
         meshes: GeyserMeshes, layers: FloatingItemLayers | null = null, singleAnchorDistance: number | null = null,
-        private readonly intensity: 1 | 2 = 1) {
+        private readonly intensity: GeyserIntensity = 1) {
         this.spec = geyserSpec(intensity);
         const patches: Patch[] = [];
         const extent = Math.max(0, Math.abs(course.finishX - course.startX) * .5);

@@ -1,5 +1,6 @@
 import { buildEntertainmentLightPlan } from '../entertainment/EntertainmentLightPlan';
-import { ENTERTAINMENT_DEBUG_CHOICES, normalizeEntertainmentDebugMode } from '../entertainment/EntertainmentDebugPlan';
+import { ENTERTAINMENT_DEBUG_CHOICES, entertainmentGeyserIntensity, normalizeEntertainmentDebugMode } from '../entertainment/EntertainmentDebugPlan';
+import { geyserSpec } from '../entertainment/GeyserBrawlRules';
 import { BlockInputEvents, Label, Node, UITransform, view } from 'cc';
 import { getAiDebugSetup, setAiDebugSetup } from '../core/GameLaunchOptions';
 import { getRaceDistance, getRaceModeTitle, RaceDifficulty } from '../core/GameBalance';
@@ -106,6 +107,12 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
     const hint = makeLabel('Hint', root, '等级与智力应用于全部 AI，玩家使用自己的角色属性', 18, uiColor(190, 210, 220)).getComponent(Label);
     hint.node.setPosition(0, -210, 0);
     const updateHint = () => {
+        const geyserLevel = !bossMode ? entertainmentGeyserIntensity(setup.entertainment) : null;
+        if (geyserLevel) {
+            const spec = geyserSpec(geyserLevel);
+            write(hint, `每组 ${spec.ventCount} 个喷口，各喷 ${spec.pulseCount} 次；最多 ${spec.largeCount} 个大口`);
+            return;
+        }
         const kind = !bossMode && setup.entertainment === 'light-mix'
             ? buildEntertainmentLightPlan(setup.seed, getRaceDistance()).waterEvent : null;
         const text = !bossMode && setup.entertainment === 'spray-buoy' ? '直接撞浮标会扶圈恢复 3.5 秒，随后保护 2 秒；附近选手仅受冲击' : bossMode ? '仅调试体验；生涯杯赛与联赛不加入这些关卡' : kind ? `组合：补给＋杂物＋${kind === 'whirlpool' ? '普通漩涡' : kind === 'geyser' ? '普通喷泉' : '普通巨浪'}（水面事件一局一次）`

@@ -1,7 +1,7 @@
 import { SeededRandom } from '../core/SharedRNG';
 import { STEERING_TUNING } from '../core/SteeringTuning';
 import { GEYSER_BODY_REACH } from '../swimmer/GeyserBodyContact';
-import { applyGeyserSizes, geyserBurstOverlap, geyserRadiusScale, geyserSpec, geyserCycleSeconds,
+import { applyGeyserSizes, geyserPulseStart, geyserWarningSeconds, geyserRadiusScale, geyserSpec, geyserCycleSeconds,
     type GeyserIntensity, type GeyserTuning, type GeyserVent } from './GeyserBrawlRules';
 
 export type GeyserDanger = Readonly<{ x: number; z: number; radius: number }>;
@@ -18,9 +18,8 @@ function swept(x: number, z: number, nx: number, nz: number, cx: number, cz: num
 }
 
 /** 与身体判定相同的纵向包络，预检略留余量；侧身和转向不能只避开根节点。 */
-function bodySwept(x: number, z: number, nx: number, nz: number, heading: number,
-    direction: number, scale: number, vent: GeyserVent, radius: number): boolean {
-    const dx = direction * Math.cos(heading), dz = Math.sin(heading);
+function bodySwept(x: number, z: number, nx: number, nz: number, dx: number,
+    dz: number, scale: number, vent: GeyserVent, radius: number): boolean {
     for (let part = -1; part <= 1; part++) {
         const offset = part * GEYSER_BODY_REACH * .78 * scale;
         if (swept(x + dx * offset, z + dz * offset, nx + dx * offset, nz + dz * offset,
@@ -39,6 +38,21 @@ export function geyserRouteAvailable(racer: GeyserRouteRacer, vents: readonly Ge
     const maxHeading = steering ? Math.min(65, STEERING_TUNING.maxHeading) * rad : 0;
     const maxRate = steering ? STEERING_TUNING.maxTurnRate * rad : 0;
     const impulse = steering ? STEERING_TUNING.turnAngularImpulse * rad * Math.abs(Math.cos(racer.roll)) : 0;
+    // 只在一组启动时创建。各条候选路线共用喷发时间表，
+    // 未喷发的喷口不做身体距离检查，也不在每个动作分支重复计算时间。
+    const radii = new Float64Array(vents.length);
+    const intervals = new Float64Array(vents.length * pulseCount * 2);
+    for (let i = 0; i < vents.length; i++) {
+        radii[i] = tuning.edgeRadius * geyserRadiusScale(vents[i], tuning) + .18;
+        for (let pulse = 0; pulse < pulseCount; pulse++) {
+            const at = (i * pulseCount + pulse) * 2;
+            intervals[at] = geyserPulseStart(vents[i], pulse, tuning) + geyserWarningSeconds(vents[i], tuning);
+            intervals[at + 1] = intervals[at] + tuning.burstSeconds;
+        }
+    }
+    const straightMasks: number[] = [];
+    for (let time = 0; time < seconds; time += .1) straightMasks.push(burstMask(intervals, vents.length, pulseCount, time, time + .1));
+    const straightDamping = Math.exp(-Math.max(0, STEERING_TUNING.turnAngularDrag) * .1);
     let exitX = -Infinity;
     for (const vent of vents) exitX = Math.max(exitX, vent.x * racer.direction
         + tuning.edgeRadius * geyserRadiusScale(vent, tuning) + 1);
@@ -47,7 +61,8 @@ export function geyserRouteAvailable(racer: GeyserRouteRacer, vents: readonly Ge
         const target = candidate === 0 ? racer.z : -bound + (candidate - 1) * bound * 2 / 9;
         let x = racer.x, z = racer.z, heading = racer.heading, rate = racer.turnRate;
         let nextStroke = 0.3, safe = true;
-        for (let time = 0; time < seconds; time += 0.1) {
+        let tick = 0;
+        for (let time = 0; time < seconds; time += 0.1, tick++) {
             if (time >= nextStroke) {
                 const desired = Math.max(-maxHeading, Math.min(maxHeading, (target - z) * 0.3));
                 const sign = Math.sign(desired - heading - rate * 0.65);
@@ -55,21 +70,20 @@ export function geyserRouteAvailable(racer: GeyserRouteRacer, vents: readonly Ge
                 nextStroke += 0.45;
             }
             heading = Math.max(-maxHeading, Math.min(maxHeading, heading + rate * 0.1));
-            rate *= Math.exp(-Math.max(0, STEERING_TUNING.turnAngularDrag) * 0.1);
-            const nx = x + racer.direction * racer.speed * Math.cos(heading) * 0.1;
-            const nz = z + racer.speed * Math.sin(heading) * 0.1;
+            rate *= straightDamping;
+            const cosine = Math.cos(heading), sine = Math.sin(heading);
+            const nx = x + racer.direction * racer.speed * cosine * 0.1;
+            const nz = z + racer.speed * sine * 0.1;
             if (Math.abs(nz) > bound) { safe = false; break; }
             for (const danger of dangers) if (swept(x, z, nx, nz, danger.x, danger.z, danger.radius + 0.25)) {
                 safe = false; break;
             }
             if (!safe) break;
-            for (const vent of vents) {
-                const radius = tuning.edgeRadius * geyserRadiusScale(vent, tuning) + 0.18;
-                if (!bodySwept(x, z, nx, nz, heading, racer.direction, racer.bodyScale ?? 1, vent, radius)) continue;
-                for (let pulse = 0; pulse < pulseCount; pulse++) {
-                    if (geyserBurstOverlap(vent, pulse, time, time + 0.1, tuning) > 0) { safe = false; break; }
+            for (let i = 0; i < vents.length; i++) {
+                if (!(straightMasks[tick] & (1 << i))) continue;
+                if (bodySwept(x, z, nx, nz, racer.direction * cosine, sine, racer.bodyScale ?? 1, vents[i], radii[i])) {
+                    safe = false; break;
                 }
-                if (!safe) break;
             }
             if (!safe) break;
             x = nx; z = nz;
@@ -81,8 +95,15 @@ export function geyserRouteAvailable(racer: GeyserRouteRacer, vents: readonly Ge
     // 固定出口无法描述交错两排间的反向划水；再用有界动作搜索验证连续折线路径。
     type Route = { x: number; z: number; heading: number; rate: number; score: number };
     let states: Route[] = [{ x: racer.x, z: racer.z, heading: racer.heading, rate: racer.turnRate, score: 0 }];
+    const branchMasks = new Uint16Array(5);
     for (let time = 0; time < seconds; ) {
         const duration = Math.min(time === 0 ? 0.3 : 0.45, seconds - time);
+        const dt = duration / 5;
+        const damping = Math.exp(-Math.max(0, STEERING_TUNING.turnAngularDrag) * dt);
+        for (let step = 0; step < 5; step++) {
+            const now = time + step * dt;
+            branchMasks[step] = burstMask(intervals, vents.length, pulseCount, now, now + dt);
+        }
         const next: Route[] = [];
         const bins = new Set<string>();
         for (const state of states) for (let input = -1; input <= 1; input++) {
@@ -91,23 +112,21 @@ export function geyserRouteAvailable(racer: GeyserRouteRacer, vents: readonly Ge
             let rate = Math.max(-maxRate, Math.min(maxRate, state.rate + input * impulse));
             let safe = true;
             for (let step = 0; step < 5; step++) {
-                const dt = duration / 5, now = time + step * dt;
                 heading = Math.max(-maxHeading, Math.min(maxHeading, heading + rate * dt));
-                rate *= Math.exp(-Math.max(0, STEERING_TUNING.turnAngularDrag) * dt);
-                const nx = x + racer.direction * racer.speed * Math.cos(heading) * dt;
-                const nz = z + racer.speed * Math.sin(heading) * dt;
+                rate *= damping;
+                const cosine = Math.cos(heading), sine = Math.sin(heading);
+                const nx = x + racer.direction * racer.speed * cosine * dt;
+                const nz = z + racer.speed * sine * dt;
                 if (Math.abs(nz) > bound) { safe = false; break; }
                 for (const danger of dangers) if (swept(x, z, nx, nz, danger.x, danger.z, danger.radius + 0.25)) {
                     safe = false; break;
                 }
                 if (!safe) break;
-                for (const vent of vents) {
-                    if (!bodySwept(x, z, nx, nz, heading, racer.direction, racer.bodyScale ?? 1,
-                        vent, tuning.edgeRadius * geyserRadiusScale(vent, tuning) + .18)) continue;
-                    for (let pulse = 0; pulse < pulseCount; pulse++) {
-                        if (geyserBurstOverlap(vent, pulse, now, now + dt, tuning) > 0) { safe = false; break; }
+                for (let i = 0; i < vents.length; i++) {
+                    if (!(branchMasks[step] & (1 << i))) continue;
+                    if (bodySwept(x, z, nx, nz, racer.direction * cosine, sine, racer.bodyScale ?? 1, vents[i], radii[i])) {
+                        safe = false; break;
                     }
-                    if (!safe) break;
                 }
                 if (!safe) break;
                 x = nx; z = nz;
@@ -126,6 +145,16 @@ export function geyserRouteAvailable(racer: GeyserRouteRacer, vents: readonly Ge
         time += duration;
     }
     return states.length > 0;
+}
+
+/** 当前玩法最多十口；严格重叠判断与原 geyserBurstOverlap() > 0 相同。 */
+function burstMask(intervals: Float64Array, ventCount: number, pulseCount: number, from: number, to: number): number {
+    let mask = 0;
+    for (let i = 0; i < ventCount; i++) for (let pulse = 0; pulse < pulseCount; pulse++) {
+        const at = (i * pulseCount + pulse) * 2;
+        if (intervals[at] < to && intervals[at + 1] > from) { mask |= 1 << i; break; }
+    }
+    return mask;
 }
 
 export function selectGeyserLargeMask(seed: number, serial: number, intensity: GeyserIntensity,

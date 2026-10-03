@@ -271,3 +271,23 @@ test('低强度组合提示跟随种子切换，只更新现有文字且启动�
     root.getChildByName('Entertainment').click();assert.equal(hint.string,'等级与智力应用于全部 AI，玩家使用自己的角色属性');
     root.getChildByName('Tier4').click();root.getChildByName('Tier4').click();assert.equal(starts,1);
 });
+
+test('喷泉五档提示与实际计划一致，连续切换只改已有文字，启动仍只提交一次', () => {
+    const {Node,Label,load}=fixture();
+    const {setAiDebugSetup,getAiDebugSetup}=load('core/GameLaunchOptions');
+    const {ENTERTAINMENT_DEBUG_CHOICES,entertainmentGeyserIntensity}=load('entertainment/EntertainmentDebugPlan');
+    const {geyserSpec}=load('entertainment/GeyserBrawlRules');
+    setAiDebugSetup({...getAiDebugSetup(),entertainment:'none',bossId:null});
+    const root=new Node('root');let starts=0;load('ui/AiDebugSetupPicker').buildAiDebugSetupPicker(root,()=>starts++,()=>{});
+    const count=root.children.length,hint=root.getChildByName('Hint').getComponent(Label),seen=new Set();
+    for(let i=0;i<ENTERTAINMENT_DEBUG_CHOICES.length*3;i++) {
+        const choice=ENTERTAINMENT_DEBUG_CHOICES[i%ENTERTAINMENT_DEBUG_CHOICES.length];
+        const level=entertainmentGeyserIntensity(choice.id);
+        if(level){const spec=geyserSpec(level);seen.add(level);assert.equal(hint.string,
+            `每组 ${spec.ventCount} 个喷口，各喷 ${spec.pulseCount} 次；最多 ${spec.largeCount} 个大口`);}
+        root.getChildByName('Entertainment').click();assert.equal(root.children.length,count);
+    }
+    assert.equal(seen.size,5);root.getChildByName('Entertainment').click();
+    root.getChildByName('Tier4').click();root.getChildByName('Tier4').click();assert.equal(starts,1);
+    assert.equal(getAiDebugSetup().entertainment,'supplies');
+});

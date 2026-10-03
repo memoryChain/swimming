@@ -83,3 +83,5 @@
 - [butterfly 第十批：喷雾浮标与扶圈恢复](分支审查/2026-10-03-butterfly-第十批喷雾浮标与扶圈恢复.zh.md)
 - [butterfly 主干功能回归复查](分支审查/2026-10-03-butterfly-主干功能回归复查.zh.md)
 - [butterfly 第十一批：大喷泉混排](分支审查/2026-10-03-butterfly-第十一批大喷泉混排.zh.md)
+- [butterfly 第十二批：单发炮击](分支审查/2026-10-03-butterfly-第十二批单发炮击.zh.md)
+- [butterfly 第十三批：喷泉三至五档](分支审查/2026-10-04-butterfly-第十三批喷泉三至五档.zh.md)
